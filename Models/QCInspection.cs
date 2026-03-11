@@ -1,0 +1,69 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace Opcentrix_V3.Models;
+
+public class QCInspection
+{
+    public int Id { get; set; }
+
+    public int? JobId { get; set; }
+    public int? BuildJobId { get; set; }
+    public int? PartId { get; set; }
+    public int? PartInstanceId { get; set; }
+
+    public int InspectorUserId { get; set; }
+
+    public DateTime InspectionDate { get; set; } = DateTime.UtcNow;
+
+    public bool OverallPass { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    [MaxLength(500)]
+    public string? FailureReason { get; set; }
+
+    [MaxLength(200)]
+    public string? CorrectiveAction { get; set; }
+
+    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
+
+    // Navigation
+    public virtual Job? Job { get; set; }
+    public virtual BuildJob? BuildJob { get; set; }
+    public virtual Part? Part { get; set; }
+    public virtual PartInstance? PartInstance { get; set; }
+    public virtual User Inspector { get; set; } = null!;
+    public virtual ICollection<QCChecklistItem> ChecklistItems { get; set; } = new List<QCChecklistItem>();
+}
+
+public class QCChecklistItem
+{
+    public int Id { get; set; }
+
+    [Required]
+    public int QCInspectionId { get; set; }
+
+    [Required, MaxLength(200)]
+    public string ItemName { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? Description { get; set; }
+
+    public bool Passed { get; set; }
+
+    [MaxLength(100)]
+    public string? MeasuredValue { get; set; }
+
+    [MaxLength(100)]
+    public string? ExpectedValue { get; set; }
+
+    [MaxLength(100)]
+    public string? Tolerance { get; set; }
+
+    [MaxLength(500)]
+    public string? Notes { get; set; }
+
+    // Navigation
+    public virtual QCInspection QCInspection { get; set; } = null!;
+}

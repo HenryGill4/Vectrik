@@ -30,14 +30,14 @@
 [x] A15. Create TenantMiddleware.cs
 [x] A16. Create ITenantContext + TenantContext
 [x] A17. Create Program.cs (DI, auth, middleware)
-[x] A18. Build verified (0 errors) — EnsureCreated used instead of migrations
+[x] A18. Build verified (0 errors)
 ```
 **Phase A Status**: COMPLETE
 
 ### Phase B: Services (�11)
 ```
-[x] B1.  ITenantService + TenantService
-[x] B2.  IAuthService + AuthService
+[ ] B1.  ITenantService + TenantService
+[ ] B2.  IAuthService + AuthService
 [ ] B3.  IPartService + PartService
 [ ] B4.  IJobService + JobService
 [ ] B5.  IWorkOrderService + WorkOrderService
@@ -55,7 +55,7 @@
 [ ] B17. Machine providers + SignalR hubs
 [ ] B18. Register all services in Program.cs DI
 ```
-**Phase B Status**: IN PROGRESS (at step B3)
+**Phase B Status**: NOT STARTED
 
 ### Phase C: Pages + Navigation + PWA (�11)
 ```
