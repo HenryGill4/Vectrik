@@ -1,6 +1,7 @@
 @page "/admin/users"
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @inject IAuthService AuthService
+@inject IStageService StageService
 @using Microsoft.EntityFrameworkCore
 @rendermode InteractiveServer
 
@@ -16,17 +17,18 @@ else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>Username</th><th>Full Name</th><th>Role</th><th>Department</th><th>Active</th><th></th></tr></thead>
+            <thead><tr><th>Username</th><th>Full Name</th><th>Role</th><th>Department</th><th>Stages</th><th>Active</th><th></th></tr></thead>
             <tbody>
                 @foreach (var u in _users)
                 {
                     <tr>
                         <td>@u.Username</td>
                         <td>@u.FullName</td>
-                        <td>@u.Role</td>
-                        <td>@u.Department</td>
+                        <td><span class="badge">@u.Role</span></td>
+                        <td>@(u.Department ?? "—")</td>
+                        <td>@(string.IsNullOrWhiteSpace(u.AssignedStageIds) ? "All" : u.AssignedStageIds.Split(',').Length.ToString())</td>
                         <td><span class="badge @(u.IsActive ? "badge-active" : "badge-cancelled")">@(u.IsActive ? "Yes" : "No")</span></td>
-                        <td><button class="btn btn-sm btn-secondary" @onclick="() => { _edit = u; _showForm = true; }">Edit</button></td>
+                        <td><button class="btn btn-sm btn-secondary" @onclick="() => EditUser(u)">Edit</button></td>
                     </tr>
                 }
             </tbody>
@@ -37,48 +39,124 @@ else
 @if (_showForm && _edit != null)
 {
     <div class="modal-overlay" @onclick="() => _showForm = false">
-        <div class="modal-content" @onclick:stopPropagation>
+        <div class="modal-content" style="max-width: 650px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") User</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
             @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            @if (!string.IsNullOrEmpty(_success)) { <div class="alert" style="background: var(--success); color: white; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;">@_success</div> }
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div class="form-group"><label class="form-label">Username</label><input class="form-control" @bind="_edit.Username" /></div>
+                <div class="form-group"><label class="form-label">Username</label><input class="form-control" @bind="_edit.Username" disabled="@(_edit.Id > 0)" /></div>
                 <div class="form-group"><label class="form-label">Full Name</label><input class="form-control" @bind="_edit.FullName" /></div>
-                <div class="form-group"><label class="form-label">Email</label><input class="form-control" @bind="_edit.Email" /></div>
+                <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" @bind="_edit.Email" /></div>
                 <div class="form-group"><label class="form-label">Role</label>
                     <select class="form-control" @bind="_edit.Role">
                         @foreach (var r in _roles) { <option>@r</option> }
                     </select>
                 </div>
                 <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
-                @if (_edit.Id == 0)
+                <div class="form-group">
+                    <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
+                </div>
+            </div>
+
+            @* Password section *@
+            <div class="card" style="padding: 12px; margin-top: 12px;">
+                <div class="form-group" style="margin-bottom: 8px;"><label class="form-label">@(_edit.Id == 0 ? "Password" : "Reset Password")</label><input class="form-control" type="password" @bind="_newPassword" placeholder="@(_edit.Id == 0 ? "Required" : "Leave blank to keep current")" /></div>
+                @if (_edit.Id > 0 && !string.IsNullOrWhiteSpace(_newPassword))
                 {
-                    <div class="form-group"><label class="form-label">Password</label><input class="form-control" type="password" @bind="_newPassword" /></div>
+                    <button class="btn btn-sm btn-secondary" @onclick="ResetPassword">Reset Password</button>
                 }
             </div>
-            <button class="btn btn-primary" style="margin-top: 12px;" @onclick="Save">Save</button>
+
+            @* Stage assignment (for Operators) *@
+            @if (_edit.Role == "Operator" && _allStages != null)
+            {
+                <div class="card" style="padding: 12px; margin-top: 12px;">
+                    <div class="form-label" style="margin-bottom: 8px;">Assigned Stages (Operators see only these)</div>
+                    @foreach (var s in _allStages)
+                    {
+                        <label style="display: block; padding: 4px 0;">
+                            <input type="checkbox" checked="@IsStageAssigned(s.Id)" @onchange="e => ToggleStage(s.Id, (bool)(e.Value ?? false))" style="margin-right: 6px;" />
+                            <span style="color: @s.StageColor">⚙</span> @s.Name
+                        </label>
+                    }
+                </div>
+            }
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
         </div>
     </div>
 }
 
 @code {
     private List<User>? _users;
+    private List<ProductionStage>? _allStages;
     private User? _edit;
     private bool _showForm;
-    private string? _error, _newPassword;
+    private string? _error, _success, _newPassword;
+    private HashSet<int> _assignedStageIds = new();
     private readonly string[] _roles = ["Admin", "Manager", "Supervisor", "Scheduler", "Operator", "MaintenanceTech", "QCSpecialist", "Analyst"];
 
-    protected override async Task OnInitializedAsync() => _users = await Db.Users.OrderBy(u => u.Username).ToListAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _users = await Db.Users.OrderBy(u => u.Username).ToListAsync();
+        _allStages = await StageService.GetAllStagesAsync();
+    }
 
-    private void NewUser() { _edit = new User { Role = "Operator", CreatedBy = "System", LastModifiedBy = "System" }; _newPassword = null; _showForm = true; }
+    private void EditUser(User u)
+    {
+        _edit = u;
+        _newPassword = null;
+        _error = null;
+        _success = null;
+        _assignedStageIds = string.IsNullOrWhiteSpace(u.AssignedStageIds)
+            ? new HashSet<int>()
+            : u.AssignedStageIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToHashSet();
+        _showForm = true;
+    }
+
+    private void NewUser()
+    {
+        _edit = new User { Role = "Operator", CreatedBy = "System", LastModifiedBy = "System" };
+        _newPassword = null;
+        _error = null;
+        _success = null;
+        _assignedStageIds = new();
+        _showForm = true;
+    }
+
+    private bool IsStageAssigned(int id) => _assignedStageIds.Contains(id);
+
+    private void ToggleStage(int id, bool isChecked)
+    {
+        if (isChecked) _assignedStageIds.Add(id);
+        else _assignedStageIds.Remove(id);
+    }
+
+    private async Task ResetPassword()
+    {
+        if (string.IsNullOrWhiteSpace(_newPassword) || _edit?.Id == 0) return;
+        _edit!.PasswordHash = AuthService.HashPassword(_newPassword);
+        _edit.LastModifiedDate = DateTime.UtcNow;
+        await Db.SaveChangesAsync();
+        _newPassword = null;
+        _success = "Password reset successfully.";
+    }
 
     private async Task Save()
     {
         _error = null;
+        _success = null;
         try
         {
-            if (_edit!.Id == 0)
+            _edit!.AssignedStageIds = _assignedStageIds.Any() ? string.Join(",", _assignedStageIds.OrderBy(x => x)) : null;
+
+            if (_edit.Id == 0)
             {
-                if (string.IsNullOrWhiteSpace(_newPassword)) { _error = "Password required"; return; }
+                if (string.IsNullOrWhiteSpace(_newPassword)) { _error = "Password required for new users."; return; }
                 _edit.PasswordHash = AuthService.HashPassword(_newPassword);
                 _edit.CreatedDate = DateTime.UtcNow;
                 Db.Users.Add(_edit);

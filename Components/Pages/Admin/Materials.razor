@@ -14,13 +14,14 @@ else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>Name</th><th>Category</th><th>Cost/Kg</th><th>Supplier</th><th>Active</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Category</th><th>Density</th><th>Cost/Kg</th><th>Supplier</th><th>Active</th><th></th></tr></thead>
             <tbody>
                 @foreach (var m in _materials)
                 {
                     <tr>
                         <td>@m.Name</td>
                         <td>@m.Category</td>
+                        <td>@(m.Density?.ToString("F2") ?? "—") g/cm³</td>
                         <td>$@m.CostPerKg.ToString("N2")</td>
                         <td>@(m.Supplier ?? "—")</td>
                         <td><span class="badge @(m.IsActive ? "badge-active" : "badge-cancelled")">@(m.IsActive ? "Yes" : "No")</span></td>
@@ -35,16 +36,29 @@ else
 @if (_showForm && _edit != null)
 {
     <div class="modal-overlay" @onclick="() => _showForm = false">
-        <div class="modal-content" @onclick:stopPropagation>
+        <div class="modal-content" style="max-width: 600px;" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") Material</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
             <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div class="form-group"><label class="form-label">Category</label><input class="form-control" @bind="_edit.Category" /></div>
-                <div class="form-group"><label class="form-label">Cost/Kg</label><input class="form-control" type="number" step="0.01" @bind="_edit.CostPerKg" /></div>
-                <div class="form-group"><label class="form-label">Supplier</label><input class="form-control" @bind="_edit.Supplier" /></div>
+                <div class="form-group"><label class="form-label">Category</label>
+                    <select class="form-control" @bind="_edit.Category">
+                        <option>Metal Powder</option><option>Wire</option><option>Gas</option><option>Other</option>
+                    </select>
+                </div>
+                <div class="form-group"><label class="form-label">Cost/Kg ($)</label><input class="form-control" type="number" step="0.01" @bind="_edit.CostPerKg" /></div>
                 <div class="form-group"><label class="form-label">Density (g/cm³)</label><input class="form-control" type="number" step="0.01" @bind="_edit.Density" /></div>
+                <div class="form-group"><label class="form-label">Supplier</label><input class="form-control" @bind="_edit.Supplier" /></div>
             </div>
-            <button class="btn btn-primary" style="margin-top: 12px;" @onclick="Save">Save</button>
+            <div class="form-group"><label class="form-label">Compatible Materials (comma-separated IDs)</label><input class="form-control" @bind="_edit.CompatibleMaterials" placeholder="e.g. 1,3,4" /></div>
+            <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" @bind="_edit.Notes" rows="3"></textarea></div>
+            <div class="form-group">
+                <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
         </div>
     </div>
 }
@@ -53,6 +67,7 @@ else
     private List<Material>? _materials;
     private Material? _edit;
     private bool _showForm;
+    private string? _error;
 
     protected override async Task OnInitializedAsync() => _materials = await MaterialService.GetAllMaterialsAsync();
 
@@ -64,9 +79,14 @@ else
 
     private async Task Save()
     {
-        if (_edit!.Id == 0) await MaterialService.CreateMaterialAsync(_edit);
-        else await MaterialService.UpdateMaterialAsync(_edit);
-        _showForm = false;
-        _materials = await MaterialService.GetAllMaterialsAsync();
+        _error = null;
+        try
+        {
+            if (_edit!.Id == 0) await MaterialService.CreateMaterialAsync(_edit);
+            else await MaterialService.UpdateMaterialAsync(_edit);
+            _showForm = false;
+            _materials = await MaterialService.GetAllMaterialsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
     }
 }

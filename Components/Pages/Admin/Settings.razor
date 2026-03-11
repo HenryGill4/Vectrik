@@ -13,9 +13,17 @@
 @if (_settings == null) { <div class="loading"><span class="spinner"></span></div> }
 else
 {
-    @foreach (var group in _settings.GroupBy(s => s.Category).OrderBy(g => g.Key))
+    <div class="tab-bar" style="margin-bottom: 16px;">
+        <button class="tab @(_categoryFilter == null ? "active" : "")" @onclick="() => _categoryFilter = null">All</button>
+        @foreach (var cat in _settings.Select(s => s.Category).Distinct().OrderBy(c => c))
+        {
+            <button class="tab @(_categoryFilter == cat ? "active" : "")" @onclick="() => _categoryFilter = cat">@cat</button>
+        }
+    </div>
+
+    @foreach (var group in _settings.Where(s => _categoryFilter == null || s.Category == _categoryFilter).GroupBy(s => s.Category).OrderBy(g => g.Key))
     {
-        <div class="card">
+        <div class="card" style="margin-bottom: 12px;">
             <div class="card-header">@group.Key</div>
             <table class="data-table">
                 <thead><tr><th>Key</th><th>Value</th><th>Description</th><th></th></tr></thead>
@@ -24,7 +32,7 @@ else
                     {
                         <tr>
                             <td style="font-family: monospace;">@s.Key</td>
-                            <td>@s.Value</td>
+                            <td style="max-width: 300px; word-break: break-all;">@s.Value</td>
                             <td style="color: var(--text-muted);">@s.Description</td>
                             <td><button class="btn btn-sm btn-secondary" @onclick="() => EditSetting(s)">Edit</button></td>
                         </tr>
@@ -41,8 +49,13 @@ else
         <div class="modal-content" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">@(_editId.HasValue ? "Edit" : "New") Setting</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
             <div class="form-group"><label class="form-label">Key</label><input class="form-control" @bind="_editKey" disabled="@_editId.HasValue" /></div>
-            <div class="form-group"><label class="form-label">Value</label><textarea class="form-control" @bind="_editValue"></textarea></div>
-            <div class="form-group"><label class="form-label">Category</label><input class="form-control" @bind="_editCategory" /></div>
+            <div class="form-group"><label class="form-label">Value</label><textarea class="form-control" @bind="_editValue" rows="3"></textarea></div>
+            <div class="form-group"><label class="form-label">Category</label>
+                <select class="form-control" @bind="_editCategory">
+                    <option>General</option><option>Branding</option><option>Serial</option><option>Debug</option><option>Notifications</option>
+                </select>
+            </div>
+            <div class="form-group"><label class="form-label">Description</label><input class="form-control" @bind="_editDescription" /></div>
             <button class="btn btn-primary" @onclick="Save">Save</button>
         </div>
     </div>
@@ -53,6 +66,8 @@ else
     private bool _showForm;
     private int? _editId;
     private string _editKey = "", _editValue = "", _editCategory = "General";
+    private string? _editDescription;
+    private string? _categoryFilter;
 
     protected override async Task OnInitializedAsync() => _settings = await Db.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.Key).ToListAsync();
 
@@ -65,18 +80,18 @@ else
         _showForm = true;
     }
 
-    private void EditSetting(SystemSetting s) { _editId = s.Id; _editKey = s.Key; _editValue = s.Value; _editCategory = s.Category; _showForm = true; }
+    private void EditSetting(SystemSetting s) { _editId = s.Id; _editKey = s.Key; _editValue = s.Value; _editCategory = s.Category; _editDescription = s.Description; _showForm = true; }
 
     private async Task Save()
     {
         if (_editId.HasValue)
         {
             var s = await Db.SystemSettings.FindAsync(_editId.Value);
-            if (s != null) { s.Value = _editValue; s.Category = _editCategory; s.LastModifiedDate = DateTime.UtcNow; s.LastModifiedBy = "System"; }
+            if (s != null) { s.Value = _editValue; s.Category = _editCategory; s.Description = _editDescription; s.LastModifiedDate = DateTime.UtcNow; s.LastModifiedBy = "System"; }
         }
         else
         {
-            Db.SystemSettings.Add(new SystemSetting { Key = _editKey, Value = _editValue, Category = _editCategory, LastModifiedBy = "System" });
+            Db.SystemSettings.Add(new SystemSetting { Key = _editKey, Value = _editValue, Category = _editCategory, Description = _editDescription, LastModifiedBy = "System" });
         }
         await Db.SaveChangesAsync();
         _showForm = false; _editId = null;

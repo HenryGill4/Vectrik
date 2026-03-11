@@ -1,6 +1,7 @@
 @page "/admin/stages"
 @inject IStageService StageService
 @rendermode InteractiveServer
+@using System.Text.Json
 
 <PageTitle>Production Stages - Admin - OpCentrix</PageTitle>
 
@@ -14,17 +15,18 @@ else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Department</th><th>Batch</th><th>Built-In</th><th>Active</th><th></th></tr></thead>
+            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Department</th><th>Duration</th><th>Rate</th><th>Batch</th><th>Active</th><th></th></tr></thead>
             <tbody>
                 @foreach (var s in _stages)
                 {
                     <tr>
                         <td>@s.DisplayOrder</td>
                         <td><span style="color: @s.StageColor">⚙</span> @s.Name</td>
-                        <td>@s.StageSlug</td>
+                        <td style="font-family: monospace;">@s.StageSlug</td>
                         <td>@s.Department</td>
+                        <td>@s.DefaultDurationHours h</td>
+                        <td>$@s.DefaultHourlyRate/hr</td>
                         <td>@(s.IsBatchStage ? "Yes" : "No")</td>
-                        <td>@(s.HasBuiltInPage ? "Yes" : "No")</td>
                         <td><span class="badge @(s.IsActive ? "badge-active" : "badge-cancelled")">@(s.IsActive ? "Yes" : "No")</span></td>
                         <td><button class="btn btn-sm btn-secondary" @onclick="() => Edit(s)">Edit</button></td>
                     </tr>
@@ -37,17 +39,92 @@ else
 @if (_showForm && _edit != null)
 {
     <div class="modal-overlay" @onclick="() => _showForm = false">
-        <div class="modal-content" style="max-width: 600px;" @onclick:stopPropagation>
+        <div class="modal-content" style="max-width: 750px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New Stage" : "Edit Stage")</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
-            <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
-            <div class="form-group"><label class="form-label">Slug</label><input class="form-control" @bind="_edit.StageSlug" /></div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
-                <div class="form-group"><label class="form-label">Display Order</label><input class="form-control" type="number" @bind="_edit.DisplayOrder" /></div>
-                <div class="form-group"><label class="form-label">Default Duration (hrs)</label><input class="form-control" type="number" step="0.5" @bind="_edit.DefaultDurationHours" /></div>
-                <div class="form-group"><label class="form-label">Color</label><input class="form-control" type="color" @bind="_edit.StageColor" /></div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+
+            <div class="tab-bar" style="margin-bottom: 16px;">
+                <button class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>Info</button>
+                <button class="tab @(_tab == "options" ? "active" : "")" @onclick='() => _tab = "options"'>Options</button>
+                <button class="tab @(_tab == "fields" ? "active" : "")" @onclick='() => _tab = "fields"'>Custom Fields (@_customFields.Count)</button>
             </div>
-            <button class="btn btn-primary" style="margin-top: 12px;" @onclick="Save">Save</button>
+
+            @if (_tab == "info")
+            {
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
+                    <div class="form-group"><label class="form-label">Slug</label><input class="form-control" @bind="_edit.StageSlug" placeholder="e.g. anodizing" /></div>
+                    <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
+                    <div class="form-group"><label class="form-label">Display Order</label><input class="form-control" type="number" @bind="_edit.DisplayOrder" /></div>
+                    <div class="form-group"><label class="form-label">Default Duration (hrs)</label><input class="form-control" type="number" step="0.5" @bind="_edit.DefaultDurationHours" /></div>
+                    <div class="form-group"><label class="form-label">Hourly Rate ($)</label><input class="form-control" type="number" step="1" @bind="_edit.DefaultHourlyRate" /></div>
+                    <div class="form-group"><label class="form-label">Setup Minutes</label><input class="form-control" type="number" @bind="_edit.DefaultSetupMinutes" /></div>
+                    <div class="form-group"><label class="form-label">Material Cost ($)</label><input class="form-control" type="number" step="0.01" @bind="_edit.DefaultMaterialCost" /></div>
+                    <div class="form-group"><label class="form-label">Color</label><input class="form-control" type="color" @bind="_edit.StageColor" /></div>
+                    <div class="form-group"><label class="form-label">Icon CSS</label><input class="form-control" @bind="_edit.StageIcon" placeholder="fas fa-cogs" /></div>
+                    <div class="form-group" style="grid-column: span 2;"><label class="form-label">Description</label><input class="form-control" @bind="_edit.Description" /></div>
+                </div>
+            }
+
+            @if (_tab == "options")
+            {
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <label class="form-label"><input type="checkbox" @bind="_edit.IsBatchStage" style="margin-right: 6px;" />Batch Stage</label>
+                    <label class="form-label"><input type="checkbox" @bind="_edit.RequiresMachineAssignment" style="margin-right: 6px;" />Requires Machine</label>
+                    <label class="form-label"><input type="checkbox" @bind="_edit.RequiresSerialNumber" style="margin-right: 6px;" />Requires Serial Number</label>
+                    <label class="form-label"><input type="checkbox" @bind="_edit.RequiresQualityCheck" style="margin-right: 6px;" />Requires QC</label>
+                    <label class="form-label"><input type="checkbox" @bind="_edit.HasBuiltInPage" style="margin-right: 6px;" />Has Built-In Page</label>
+                    <label class="form-label"><input type="checkbox" @bind="_edit.AllowSkip" style="margin-right: 6px;" />Allow Skip</label>
+                    <label class="form-label"><input type="checkbox" @bind="_edit.IsOptional" style="margin-right: 6px;" />Optional</label>
+                    <label class="form-label"><input type="checkbox" @bind="_edit.AllowParallelExecution" style="margin-right: 6px;" />Parallel Execution</label>
+                    <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
+                </div>
+            }
+
+            @if (_tab == "fields")
+            {
+                <p style="color: var(--text-muted); margin-bottom: 12px;">Define the operator form fields for this stage. These appear on the shop floor when an operator processes work.</p>
+
+                @for (var i = 0; i < _customFields.Count; i++)
+                {
+                    var idx = i;
+                    var f = _customFields[idx];
+                    <div class="card" style="padding: 12px; margin-bottom: 8px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: end;">
+                            <div class="form-group" style="margin: 0;"><label class="form-label">Label</label><input class="form-control" value="@f.Label" @onchange="e => UpdateFieldLabel(idx, e)" /></div>
+                            <div class="form-group" style="margin: 0;"><label class="form-label">Name (key)</label><input class="form-control" value="@f.Name" @onchange="e => UpdateFieldName(idx, e)" /></div>
+                            <div class="form-group" style="margin: 0;"><label class="form-label">Type</label>
+                                <select class="form-control" value="@f.Type" @onchange="e => UpdateFieldType(idx, e)">
+                                    <option value="text">Text</option>
+                                    <option value="number">Number</option>
+                                    <option value="dropdown">Dropdown</option>
+                                    <option value="checkbox">Checkbox</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-sm btn-danger" style="height: 38px;" @onclick="() => RemoveField(idx)">✕</button>
+                        </div>
+                        <div style="display: flex; gap: 12px; margin-top: 8px; align-items: center;">
+                            <label style="font-size: 0.85rem;"><input type="checkbox" checked="@f.Required" @onchange="e => UpdateFieldRequired(idx, e)" style="margin-right: 4px;" />Required</label>
+                            @if (f.Type == "dropdown")
+                            {
+                                <div class="form-group" style="margin: 0; flex: 1;"><label class="form-label">Options (comma-separated)</label><input class="form-control" value="@(f.Options != null ? string.Join(", ", f.Options) : "")" @onchange="e => UpdateFieldOptions(idx, e)" /></div>
+                            }
+                            @if (f.Type == "number")
+                            {
+                                <div class="form-group" style="margin: 0;"><label class="form-label">Min</label><input class="form-control" type="number" style="width: 80px;" value="@f.Min" @onchange="e => UpdateFieldMin(idx, e)" /></div>
+                                <div class="form-group" style="margin: 0;"><label class="form-label">Max</label><input class="form-control" type="number" style="width: 80px;" value="@f.Max" @onchange="e => UpdateFieldMax(idx, e)" /></div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <button class="btn btn-sm btn-secondary" @onclick="AddField">+ Add Field</button>
+            }
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
         </div>
     </div>
 }
@@ -56,17 +133,64 @@ else
     private List<ProductionStage>? _stages;
     private ProductionStage? _edit;
     private bool _showForm;
+    private string? _error;
+    private string _tab = "info";
+    private List<CustomFieldDefinition> _customFields = new();
 
-    protected override async Task OnInitializedAsync() => _stages = await StageService.GetAllStagesAsync();
+    protected override async Task OnInitializedAsync() => _stages = await StageService.GetAllStagesAsync(activeOnly: false);
 
-    private void NewStage() { _edit = new ProductionStage { CreatedBy = "System", LastModifiedBy = "System", CustomFieldsConfig = "[]" }; _showForm = true; }
-    private void Edit(ProductionStage s) { _edit = s; _showForm = true; }
+    private void NewStage()
+    {
+        _edit = new ProductionStage { CreatedBy = "System", LastModifiedBy = "System", CustomFieldsConfig = "[]" };
+        _customFields = new();
+        _tab = "info";
+        _showForm = true;
+    }
+
+    private void Edit(ProductionStage s)
+    {
+        _edit = s;
+        _tab = "info";
+        try { _customFields = JsonSerializer.Deserialize<List<CustomFieldDefinition>>(s.CustomFieldsConfig) ?? new(); }
+        catch { _customFields = new(); }
+        _showForm = true;
+    }
+
+    private void AddField() => _customFields.Add(new CustomFieldDefinition("", "text", "", false));
+    private void RemoveField(int idx) => _customFields.RemoveAt(idx);
+
+    private void UpdateFieldLabel(int idx, ChangeEventArgs e) =>
+        _customFields[idx] = _customFields[idx] with { Label = e.Value?.ToString() ?? string.Empty };
+
+    private void UpdateFieldName(int idx, ChangeEventArgs e) =>
+        _customFields[idx] = _customFields[idx] with { Name = e.Value?.ToString() ?? string.Empty };
+
+    private void UpdateFieldType(int idx, ChangeEventArgs e) =>
+        _customFields[idx] = _customFields[idx] with { Type = e.Value?.ToString() ?? "text" };
+
+    private void UpdateFieldRequired(int idx, ChangeEventArgs e) =>
+        _customFields[idx] = _customFields[idx] with { Required = (bool)(e.Value ?? false) };
+
+    private void UpdateFieldOptions(int idx, ChangeEventArgs e) =>
+        _customFields[idx] = _customFields[idx] with { Options = e.Value?.ToString()?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) };
+
+    private void UpdateFieldMin(int idx, ChangeEventArgs e) =>
+        _customFields[idx] = _customFields[idx] with { Min = double.TryParse(e.Value?.ToString(), out var v) ? v : null };
+
+    private void UpdateFieldMax(int idx, ChangeEventArgs e) =>
+        _customFields[idx] = _customFields[idx] with { Max = double.TryParse(e.Value?.ToString(), out var v) ? v : null };
 
     private async Task Save()
     {
-        if (_edit!.Id == 0) await StageService.CreateStageAsync(_edit);
-        else await StageService.UpdateStageAsync(_edit);
-        _showForm = false;
-        _stages = await StageService.GetAllStagesAsync();
+        _error = null;
+        try
+        {
+            _edit!.CustomFieldsConfig = JsonSerializer.Serialize(_customFields);
+            if (_edit.Id == 0) await StageService.CreateStageAsync(_edit);
+            else await StageService.UpdateStageAsync(_edit);
+            _showForm = false;
+            _stages = await StageService.GetAllStagesAsync(activeOnly: false);
+        }
+        catch (Exception ex) { _error = ex.Message; }
     }
 }

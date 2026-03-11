@@ -11,7 +11,7 @@
 | Sprint | Focus | Status | File |
 |--------|-------|--------|------|
 | 1 | Login Flow + Seeding + Nav | COMPLETE | `sprints/SPRINT-01.md` |
-| 2 | Admin Pages (Full CRUD) | NOT STARTED | `sprints/SPRINT-02.md` |
+| 2 | Admin Pages (Full CRUD) | COMPLETE | `sprints/SPRINT-02.md` |
 | 3 | Work Orders + Quotes (Full Lifecycle) | NOT STARTED | `sprints/SPRINT-03.md` |
 | 4 | Shop Floor (Operator Workflow) | NOT STARTED | `sprints/SPRINT-04.md` |
 | 5 | Scheduler (Gantt + Job Management) | NOT STARTED | `sprints/SPRINT-05.md` |
