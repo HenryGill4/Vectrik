@@ -1,0 +1,72 @@
+@page "/admin/materials"
+@inject IMaterialService MaterialService
+@rendermode InteractiveServer
+
+<PageTitle>Materials - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Materials</h1>
+    <button class="btn btn-primary" @onclick="NewMaterial">+ New Material</button>
+</div>
+
+@if (_materials == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead><tr><th>Name</th><th>Category</th><th>Cost/Kg</th><th>Supplier</th><th>Active</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var m in _materials)
+                {
+                    <tr>
+                        <td>@m.Name</td>
+                        <td>@m.Category</td>
+                        <td>$@m.CostPerKg.ToString("N2")</td>
+                        <td>@(m.Supplier ?? "—")</td>
+                        <td><span class="badge @(m.IsActive ? "badge-active" : "badge-cancelled")">@(m.IsActive ? "Yes" : "No")</span></td>
+                        <td><button class="btn btn-sm btn-secondary" @onclick="() => { _edit = m; _showForm = true; }">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") Material</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
+            <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Category</label><input class="form-control" @bind="_edit.Category" /></div>
+                <div class="form-group"><label class="form-label">Cost/Kg</label><input class="form-control" type="number" step="0.01" @bind="_edit.CostPerKg" /></div>
+                <div class="form-group"><label class="form-label">Supplier</label><input class="form-control" @bind="_edit.Supplier" /></div>
+                <div class="form-group"><label class="form-label">Density (g/cm³)</label><input class="form-control" type="number" step="0.01" @bind="_edit.Density" /></div>
+            </div>
+            <button class="btn btn-primary" style="margin-top: 12px;" @onclick="Save">Save</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Material>? _materials;
+    private Material? _edit;
+    private bool _showForm;
+
+    protected override async Task OnInitializedAsync() => _materials = await MaterialService.GetAllMaterialsAsync();
+
+    private void NewMaterial()
+    {
+        _edit = new Material { Category = "Metal Powder", CreatedBy = "System", LastModifiedBy = "System" };
+        _showForm = true;
+    }
+
+    private async Task Save()
+    {
+        if (_edit!.Id == 0) await MaterialService.CreateMaterialAsync(_edit);
+        else await MaterialService.UpdateMaterialAsync(_edit);
+        _showForm = false;
+        _materials = await MaterialService.GetAllMaterialsAsync();
+    }
+}

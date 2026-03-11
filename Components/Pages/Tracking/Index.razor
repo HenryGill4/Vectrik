@@ -1,0 +1,107 @@
+@page "/tracking"
+@inject IPartTrackerService TrackerService
+@rendermode InteractiveServer
+
+<PageTitle>Part Tracker - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Part Tracker</h1>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <select class="form-control" style="width: auto;" @bind="_searchType">
+            <option value="wo">Work Order #</option>
+            <option value="part">Part Number</option>
+            <option value="serial">Serial Number</option>
+        </select>
+        <input class="form-control" style="flex: 1; min-width: 200px;" placeholder="Search..." @bind="_searchTerm" @onkeypress="HandleKey" />
+        <button class="btn btn-primary" @onclick="Search">Search</button>
+    </div>
+</div>
+
+@if (_result != null && _result.Lines.Any())
+{
+    @foreach (var line in _result.Lines)
+    {
+        <div class="card">
+            <div class="card-header">@line.OrderNumber — @line.PartNumber (@line.PartName)</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px;">
+                <div><span class="form-label">Ordered</span><div>@line.QuantityOrdered</div></div>
+                <div><span class="form-label">Produced</span><div>@line.QuantityProduced</div></div>
+                <div><span class="form-label">Shipped</span><div>@line.QuantityShipped</div></div>
+            </div>
+            @if (line.SerializedParts.Any())
+            {
+                <table class="data-table">
+                    <thead><tr><th>Serial #</th><th>Stage</th><th>Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var pi in line.SerializedParts)
+                        {
+                            <tr>
+                                <td>@pi.SerialNumber</td>
+                                <td>@pi.CurrentStageName</td>
+                                <td><span class="badge badge-@pi.Status.ToLower()">@pi.Status</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+}
+
+@if (_serialResult != null)
+{
+    <div class="card">
+        <div class="card-header">@_serialResult.SerialNumber — @_serialResult.PartNumber</div>
+        <div style="margin-bottom: 12px;">
+            <span class="badge badge-@_serialResult.Status.ToLower()">@_serialResult.Status</span>
+            Current Stage: @_serialResult.CurrentStageName
+        </div>
+        @if (_serialResult.History.Any())
+        {
+            <table class="data-table">
+                <thead><tr><th>Stage</th><th>Operator</th><th>Started</th><th>Completed</th><th>Duration</th></tr></thead>
+                <tbody>
+                    @foreach (var h in _serialResult.History)
+                    {
+                        <tr>
+                            <td>@h.StageName</td>
+                            <td>@h.OperatorName</td>
+                            <td>@h.StartedAt.ToString("MM/dd HH:mm")</td>
+                            <td>@(h.CompletedAt?.ToString("MM/dd HH:mm") ?? "In progress")</td>
+                            <td>@(h.DurationHours?.ToString("F1") ?? "—") hrs</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@if (_searched && _result?.Lines.Count == 0 && _serialResult == null)
+{
+    <div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">No results found</div></div>
+}
+
+@code {
+    private string _searchType = "wo", _searchTerm = "";
+    private PartTrackerResult? _result;
+    private PartInstanceTrack? _serialResult;
+    private bool _searched;
+
+    private async Task HandleKey(KeyboardEventArgs e) { if (e.Key == "Enter") await Search(); }
+
+    private async Task Search()
+    {
+        _result = null; _serialResult = null; _searched = true;
+        if (string.IsNullOrWhiteSpace(_searchTerm)) return;
+        switch (_searchType)
+        {
+            case "wo": _result = await TrackerService.TrackByWorkOrderAsync(_searchTerm.Trim()); break;
+            case "part": _result = await TrackerService.TrackByPartNumberAsync(_searchTerm.Trim()); break;
+            case "serial": _serialResult = await TrackerService.TrackBySerialNumberAsync(_searchTerm.Trim()); break;
+        }
+    }
+}

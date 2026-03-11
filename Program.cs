@@ -2,7 +2,11 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Opcentrix_V3.Components;
 using Opcentrix_V3.Data;
+using Opcentrix_V3.Hubs;
 using Opcentrix_V3.Middleware;
+using Opcentrix_V3.Services;
+using Opcentrix_V3.Services.Auth;
+using Opcentrix_V3.Services.MachineProviders;
 using Opcentrix_V3.Services.Platform;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,6 +45,31 @@ builder.Services.AddCascadingAuthenticationState();
 // SignalR
 builder.Services.AddSignalR();
 
+// Platform services
+builder.Services.AddScoped<ITenantService, TenantService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+// Tenant services
+builder.Services.AddScoped<IPartService, PartService>();
+builder.Services.AddScoped<IJobService, JobService>();
+builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
+builder.Services.AddScoped<IQuoteService, QuoteService>();
+builder.Services.AddScoped<IBuildService, BuildService>();
+builder.Services.AddScoped<IBuildPlanningService, BuildPlanningService>();
+builder.Services.AddScoped<IStageService, StageService>();
+builder.Services.AddScoped<ISerialNumberService, SerialNumberService>();
+builder.Services.AddScoped<IPartTrackerService, PartTrackerService>();
+builder.Services.AddScoped<ILearningService, LearningService>();
+builder.Services.AddScoped<IMaintenanceService, MaintenanceService>();
+builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
+builder.Services.AddScoped<IMaterialService, MaterialService>();
+builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
+
+// Machine providers + SignalR notifier
+builder.Services.AddScoped<MachineProviderFactory>();
+builder.Services.AddSingleton<IMachineStateNotifier, MachineStateNotifier>();
+builder.Services.AddHostedService<MachineSyncService>();
+
 var app = builder.Build();
 
 // Ensure platform DB is created
@@ -68,5 +97,6 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+app.MapHub<MachineStateHub>("/hubs/machine-state");
 
 app.Run();

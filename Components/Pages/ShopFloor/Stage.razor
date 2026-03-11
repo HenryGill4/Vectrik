@@ -1,0 +1,122 @@
+@page "/shopfloor/stage/{Slug}"
+@inject IStageService StageService
+@rendermode InteractiveServer
+
+<PageTitle>@(_stage?.Name ?? "Shop Floor") - OpCentrix</PageTitle>
+
+@if (_stage == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading stage...</div>
+}
+else
+{
+    <div class="page-header">
+        <h1 class="page-title" style="display: flex; align-items: center; gap: 10px;">
+            <span style="color: @_stage.StageColor">⚙</span> @_stage.Name
+        </h1>
+        <span class="badge badge-active">@_stage.Department</span>
+    </div>
+
+    <div class="tab-bar">
+        <button class="tab @(_tab == "queue" ? "active" : "")" @onclick='() => _tab = "queue"'>Queue (@_queue.Count)</button>
+        <button class="tab @(_tab == "active" ? "active" : "")" @onclick='() => _tab = "active"'>Active (@_active.Count)</button>
+        <button class="tab @(_tab == "history" ? "active" : "")" @onclick='() => _tab = "history"'>History (@_history.Count)</button>
+    </div>
+
+    @if (_tab == "queue")
+    {
+        @if (!_queue.Any())
+        {
+            <div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No parts in queue</div></div>
+        }
+        else
+        {
+            <div class="card">
+                <table class="data-table">
+                    <thead><tr><th>Part</th><th>Job</th><th>Priority</th><th>Due</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var exec in _queue)
+                        {
+                            <tr>
+                                <td>@exec.Job?.Part?.PartNumber</td>
+                                <td>#@exec.JobId</td>
+                                <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
+                                <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
+                                <td><button class="btn btn-sm btn-primary" @onclick="() => StartWork(exec.Id)">Start</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    @if (_tab == "active")
+    {
+        @if (!_active.Any())
+        {
+            <div class="empty-state"><div class="empty-state-icon">🔄</div><div class="empty-state-text">No active work</div></div>
+        }
+        else
+        {
+            @foreach (var exec in _active)
+            {
+                <div class="card">
+                    <div class="card-header">@exec.Job?.Part?.PartNumber — Job #@exec.JobId</div>
+                    <div style="margin-bottom: 12px;">
+                        <span class="form-label">Operator: @exec.OperatorName</span> | Started: @exec.StartedAt?.ToString("HH:mm")
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-success" @onclick="() => CompleteWork(exec.Id)">Complete</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => FailWork(exec.Id)">Fail</button>
+                    </div>
+                </div>
+            }
+        }
+    }
+
+    @if (_tab == "history")
+    {
+        <div class="card">
+            <table class="data-table">
+                <thead><tr><th>Part</th><th>Operator</th><th>Duration</th><th>Status</th><th>Completed</th></tr></thead>
+                <tbody>
+                    @foreach (var exec in _history)
+                    {
+                        <tr>
+                            <td>@exec.Job?.Part?.PartNumber</td>
+                            <td>@exec.OperatorName</td>
+                            <td>@(exec.ActualHours?.ToString("F1") ?? "—") hrs</td>
+                            <td><span class="badge badge-@exec.Status.ToString().ToLower()">@exec.Status</span></td>
+                            <td>@exec.CompletedAt?.ToString("MM/dd HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+    private ProductionStage? _stage;
+    private List<StageExecution> _queue = new(), _active = new(), _history = new();
+    private string _tab = "queue";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _stage = await StageService.GetStageBySlugAsync(Slug);
+        if (_stage != null) await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _queue = await StageService.GetQueueForStageAsync(_stage!.Id);
+        _active = await StageService.GetActiveWorkForStageAsync(_stage.Id);
+        _history = await StageService.GetRecentCompletionsAsync(_stage.Id, 20);
+    }
+
+    private async Task StartWork(int executionId) { await StageService.StartStageExecutionAsync(executionId, 0, "Operator"); await LoadData(); _tab = "active"; }
+    private async Task CompleteWork(int executionId) { await StageService.CompleteStageExecutionAsync(executionId); await LoadData(); }
+    private async Task FailWork(int executionId) { await StageService.FailStageExecutionAsync(executionId, "Failed by operator"); await LoadData(); }
+}

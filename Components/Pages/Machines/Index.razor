@@ -1,0 +1,46 @@
+@page "/machines"
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@using Microsoft.EntityFrameworkCore
+@rendermode InteractiveServer
+
+<PageTitle>Machine Status - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Machine Status</h1>
+    <button class="btn btn-secondary btn-sm" @onclick="LoadMachines">Refresh</button>
+</div>
+
+@if (_machines == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+        @foreach (var m in _machines)
+        {
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div>
+                        <div style="font-weight: 600; font-size: 1rem;">@m.Name</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">@m.MachineId · @m.MachineType</div>
+                    </div>
+                    <span class="badge badge-@m.Status.ToString().ToLower()">@m.Status</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
+                    <div><span class="form-label">Hours</span><div>@m.TotalOperatingHours.ToString("F0")</div></div>
+                    <div><span class="form-label">Since PM</span><div>@m.HoursSinceLastMaintenance.ToString("F0") / @m.MaintenanceIntervalHours.ToString("F0")</div></div>
+                    <div><span class="form-label">Material</span><div>@(m.CurrentMaterial ?? "—")</div></div>
+                    <div><span class="form-label">Rate</span><div>$@m.HourlyRate/hr</div></div>
+                </div>
+                @if (m.HoursSinceLastMaintenance / m.MaintenanceIntervalHours > 0.8)
+                {
+                    <div class="alert alert-warning" style="margin-top: 10px; margin-bottom: 0;">Maintenance due soon</div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<Machine>? _machines;
+    protected override async Task OnInitializedAsync() => await LoadMachines();
+    private async Task LoadMachines() => _machines = await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.MachineId).ToListAsync();
+}

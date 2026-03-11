@@ -1,0 +1,68 @@
+@page "/maintenance/workorders"
+@inject IMaintenanceService MaintenanceService
+@rendermode InteractiveServer
+@using Opcentrix_V3.Models.Maintenance
+
+<PageTitle>Maintenance Work Orders - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Maintenance Work Orders</h1>
+    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New</button>
+</div>
+
+@if (_workOrders == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead><tr><th>#</th><th>Machine</th><th>Type</th><th>Status</th><th>Priority</th><th>Assigned</th></tr></thead>
+            <tbody>
+                @foreach (var wo in _workOrders)
+                {
+                    <tr>
+                        <td>@wo.Id</td>
+                        <td>@wo.MachineId</td>
+                        <td>@wo.Type</td>
+                        <td><span class="badge badge-@wo.Status.ToString().ToLower()">@wo.Status</span></td>
+                        <td><span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span></td>
+                        <td>@(wo.AssignedTechnicianUserId?.ToString() ?? "Unassigned")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showCreate)
+{
+    <div class="modal-overlay" @onclick="() => _showCreate = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">New Maintenance WO</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
+            <div class="form-group"><label class="form-label">Machine ID</label><input class="form-control" @bind="_machineId" /></div>
+            <div class="form-group"><label class="form-label">Type</label>
+                <select class="form-control" @bind="_type">
+                    @foreach (var t in Enum.GetValues<MaintenanceWorkOrderType>()) { <option value="@t">@t</option> }
+                </select>
+            </div>
+            <div class="form-group"><label class="form-label">Title</label><input class="form-control" @bind="_title" /></div>
+            <div class="form-group"><label class="form-label">Description</label><textarea class="form-control" @bind="_description"></textarea></div>
+            <button class="btn btn-primary" @onclick="Create">Create</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<MaintenanceWorkOrder>? _workOrders;
+    private bool _showCreate;
+    private string _machineId = "", _description = "", _title = "";
+    private MaintenanceWorkOrderType _type = MaintenanceWorkOrderType.Preventive;
+
+    protected override async Task OnInitializedAsync() => _workOrders = await MaintenanceService.GetWorkOrdersAsync();
+
+    private async Task Create()
+    {
+        await MaintenanceService.CreateWorkOrderAsync(new MaintenanceWorkOrder { MachineId = _machineId, Type = _type, Title = _title, Description = _description, CreatedBy = "System", LastModifiedBy = "System" });
+        _showCreate = false;
+        _workOrders = await MaintenanceService.GetWorkOrdersAsync();
+    }
+}

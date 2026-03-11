@@ -1,0 +1,145 @@
+@page "/maintenance/rules"
+@inject IMaintenanceService MaintenanceService
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@using Microsoft.EntityFrameworkCore
+@using Opcentrix_V3.Models.Maintenance
+@rendermode InteractiveServer
+
+<PageTitle>Maintenance Rules - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Maintenance Rules</h1>
+</div>
+
+@if (_machines == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="form-group" style="max-width: 300px; margin-bottom: 20px;">
+        <label class="form-label">Select Machine</label>
+        <select class="form-control" @bind="_selectedMachineId" @bind:after="LoadComponents">
+            <option value="">Choose machine...</option>
+            @foreach (var m in _machines)
+            {
+                <option value="@m.MachineId">@m.Name (@m.MachineId)</option>
+            }
+        </select>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_selectedMachineId))
+    {
+        @if (_components == null) { <div class="loading"><span class="spinner"></span></div> }
+        else
+        {
+            @foreach (var comp in _components)
+            {
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>@comp.Name</span>
+                        <button class="btn btn-sm btn-primary" @onclick="() => NewRule(comp.Id)">+ Add Rule</button>
+                    </div>
+                    @if (_rulesByComponent.TryGetValue(comp.Id, out var rules) && rules.Any())
+                    {
+                        <table class="data-table">
+                            <thead><tr><th>Rule</th><th>Trigger</th><th>Threshold</th><th>Severity</th><th>Warning At</th></tr></thead>
+                            <tbody>
+                                @foreach (var rule in rules)
+                                {
+                                    <tr>
+                                        <td>@rule.Name</td>
+                                        <td>@rule.TriggerType</td>
+                                        <td>@rule.ThresholdValue</td>
+                                        <td><span class="badge badge-@rule.Severity.ToString().ToLower()">@rule.Severity</span></td>
+                                        <td>@(rule.EarlyWarningPercent)%</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <div style="padding: 12px; color: var(--text-muted); font-size: 0.85rem;">No rules configured</div>
+                    }
+                </div>
+            }
+
+            @if (!_components.Any())
+            {
+                <div class="empty-state"><div class="empty-state-icon">🔩</div><div class="empty-state-text">No components defined for this machine. Add components from Admin &gt; Machines.</div></div>
+            }
+        }
+    }
+}
+
+@if (_showRuleForm)
+{
+    <div class="modal-overlay" @onclick="() => _showRuleForm = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">New Maintenance Rule</span><button class="modal-close" @onclick="() => _showRuleForm = false">&times;</button></div>
+            <div class="form-group"><label class="form-label">Rule Name</label><input class="form-control" @bind="_newRule.Name" /></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Trigger Type</label>
+                    <select class="form-control" @bind="_newRule.TriggerType">
+                        @foreach (var t in Enum.GetValues<MaintenanceTriggerType>()) { <option value="@t">@t</option> }
+                    </select>
+                </div>
+                <div class="form-group"><label class="form-label">Threshold Value</label><input class="form-control" type="number" @bind="_newRule.ThresholdValue" /></div>
+                <div class="form-group"><label class="form-label">Severity</label>
+                    <select class="form-control" @bind="_newRule.Severity">
+                        @foreach (var s in Enum.GetValues<MaintenanceSeverity>()) { <option value="@s">@s</option> }
+                    </select>
+                </div>
+                <div class="form-group"><label class="form-label">Early Warning (%)</label><input class="form-control" type="number" min="50" max="99" @bind="_newRule.EarlyWarningPercent" /></div>
+            </div>
+            <div class="form-group"><label class="form-label">Description</label><textarea class="form-control" @bind="_newRule.Description"></textarea></div>
+            <button class="btn btn-primary" @onclick="SaveRule">Save Rule</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Machine>? _machines;
+    private string _selectedMachineId = "";
+    private List<MachineComponent>? _components;
+    private Dictionary<int, List<MaintenanceRule>> _rulesByComponent = new();
+    private bool _showRuleForm;
+    private MaintenanceRule _newRule = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _machines = await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync();
+    }
+
+    private async Task LoadComponents()
+    {
+        if (string.IsNullOrEmpty(_selectedMachineId)) { _components = null; return; }
+        _components = await MaintenanceService.GetComponentsByMachineAsync(_selectedMachineId);
+        _rulesByComponent.Clear();
+        foreach (var comp in _components)
+        {
+            var rules = await MaintenanceService.GetRulesForComponentAsync(comp.Id);
+            _rulesByComponent[comp.Id] = rules;
+        }
+    }
+
+    private void NewRule(int componentId)
+    {
+        _newRule = new MaintenanceRule
+        {
+            MachineComponentId = componentId,
+            TriggerType = MaintenanceTriggerType.HoursRun,
+            Severity = MaintenanceSeverity.Warning,
+            EarlyWarningPercent = 80,
+            ThresholdValue = 500,
+            CreatedBy = "System",
+            LastModifiedBy = "System"
+        };
+        _showRuleForm = true;
+    }
+
+    private async Task SaveRule()
+    {
+        await MaintenanceService.CreateRuleAsync(_newRule);
+        _showRuleForm = false;
+        await LoadComponents();
+    }
+}

@@ -1,19 +1,34 @@
 ﻿@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
-
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+<div class="app-container @(_sidebarCollapsed ? "sidebar-collapsed" : "")">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-brand">OpCentrix</span>
+            <button class="sidebar-toggle" @onclick="ToggleSidebar" title="Toggle sidebar">☰</button>
         </div>
+        <NavMenu />
+    </aside>
 
-        <article class="content px-4">
+    <div class="main-area">
+        <header class="top-bar">
+            <button class="mobile-toggle" @onclick="ToggleSidebar" title="Menu">☰</button>
+            <span class="top-bar-spacer"></span>
+            <AuthorizeView>
+                <Authorized>
+                    <span class="top-bar-user">@context.User.Identity?.Name</span>
+                    <a href="/account/logout" class="btn-topbar">Logout</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/account/login" class="btn-topbar">Login</a>
+                </NotAuthorized>
+            </AuthorizeView>
+            <button class="btn-topbar" @onclick="ToggleDarkMode" title="Toggle theme">@(_darkMode ? "☀️" : "🌙")</button>
+        </header>
+
+        <main class="content-area">
             @Body
-        </article>
-    </main>
+        </main>
+    </div>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -21,3 +36,11 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    private bool _sidebarCollapsed;
+    private bool _darkMode = true;
+
+    private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
+    private void ToggleDarkMode() => _darkMode = !_darkMode;
+}

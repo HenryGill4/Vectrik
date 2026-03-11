@@ -1,0 +1,72 @@
+@page "/admin/stages"
+@inject IStageService StageService
+@rendermode InteractiveServer
+
+<PageTitle>Production Stages - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Production Stages</h1>
+    <button class="btn btn-primary" @onclick="NewStage">+ New Stage</button>
+</div>
+
+@if (_stages == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Department</th><th>Batch</th><th>Built-In</th><th>Active</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var s in _stages)
+                {
+                    <tr>
+                        <td>@s.DisplayOrder</td>
+                        <td><span style="color: @s.StageColor">⚙</span> @s.Name</td>
+                        <td>@s.StageSlug</td>
+                        <td>@s.Department</td>
+                        <td>@(s.IsBatchStage ? "Yes" : "No")</td>
+                        <td>@(s.HasBuiltInPage ? "Yes" : "No")</td>
+                        <td><span class="badge @(s.IsActive ? "badge-active" : "badge-cancelled")">@(s.IsActive ? "Yes" : "No")</span></td>
+                        <td><button class="btn btn-sm btn-secondary" @onclick="() => Edit(s)">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 600px;" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New Stage" : "Edit Stage")</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
+            <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
+            <div class="form-group"><label class="form-label">Slug</label><input class="form-control" @bind="_edit.StageSlug" /></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
+                <div class="form-group"><label class="form-label">Display Order</label><input class="form-control" type="number" @bind="_edit.DisplayOrder" /></div>
+                <div class="form-group"><label class="form-label">Default Duration (hrs)</label><input class="form-control" type="number" step="0.5" @bind="_edit.DefaultDurationHours" /></div>
+                <div class="form-group"><label class="form-label">Color</label><input class="form-control" type="color" @bind="_edit.StageColor" /></div>
+            </div>
+            <button class="btn btn-primary" style="margin-top: 12px;" @onclick="Save">Save</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ProductionStage>? _stages;
+    private ProductionStage? _edit;
+    private bool _showForm;
+
+    protected override async Task OnInitializedAsync() => _stages = await StageService.GetAllStagesAsync();
+
+    private void NewStage() { _edit = new ProductionStage { CreatedBy = "System", LastModifiedBy = "System", CustomFieldsConfig = "[]" }; _showForm = true; }
+    private void Edit(ProductionStage s) { _edit = s; _showForm = true; }
+
+    private async Task Save()
+    {
+        if (_edit!.Id == 0) await StageService.CreateStageAsync(_edit);
+        else await StageService.UpdateStageAsync(_edit);
+        _showForm = false;
+        _stages = await StageService.GetAllStagesAsync();
+    }
+}

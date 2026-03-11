@@ -1,0 +1,68 @@
+@page "/quotes"
+@inject IQuoteService QuoteService
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Quotes - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Quotes</h1>
+    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Quote</button>
+</div>
+
+@if (_quotes == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead><tr><th>Quote #</th><th>Customer</th><th>Total</th><th>Quoted</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var q in _quotes)
+                {
+                    <tr>
+                        <td>@q.QuoteNumber</td>
+                        <td>@q.CustomerName</td>
+                        <td>$@q.TotalEstimatedCost.ToString("N2")</td>
+                        <td>@(q.QuotedPrice.HasValue ? $"${q.QuotedPrice:N2}" : "—")</td>
+                        <td><span class="badge badge-@q.Status.ToString().ToLower()">@q.Status</span></td>
+                        <td><a href="/quotes/@q.Id" class="btn btn-sm btn-secondary">View</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showCreate)
+{
+    <div class="modal-overlay" @onclick="() => _showCreate = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">New Quote</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            <div class="form-group"><label class="form-label">Customer Name</label><input class="form-control" @bind="_customerName" /></div>
+            <div class="form-group"><label class="form-label">Customer Email</label><input class="form-control" @bind="_customerEmail" /></div>
+            <button class="btn btn-primary" @onclick="Create">Create</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Quote>? _quotes;
+    private bool _showCreate;
+    private string _customerName = "", _customerEmail = "";
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => _quotes = await QuoteService.GetAllQuotesAsync();
+
+    private async Task Create()
+    {
+        _error = null;
+        try
+        {
+            var q = await QuoteService.CreateQuoteAsync(new Quote { CustomerName = _customerName, CustomerEmail = _customerEmail });
+            _showCreate = false;
+            Nav.NavigateTo($"/quotes/{q.Id}");
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

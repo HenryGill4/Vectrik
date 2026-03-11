@@ -1,0 +1,94 @@
+@page "/platform/tenants"
+@inject ITenantService TenantService
+@inject IAuthService AuthService
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "SuperAdmin")]
+@rendermode InteractiveServer
+
+<PageTitle>Tenants - OpCentrix Platform</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Tenants</h1>
+    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Tenant</button>
+</div>
+
+@if (_tenants == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr><th>Code</th><th>Company</th><th>Status</th><th>Created</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _tenants)
+                {
+                    <tr>
+                        <td>@t.Code</td>
+                        <td>@t.CompanyName</td>
+                        <td><span class="badge @(t.IsActive ? "badge-active" : "badge-cancelled")">@(t.IsActive ? "Active" : "Inactive")</span></td>
+                        <td>@t.CreatedDate.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            @if (t.IsActive)
+                            {
+                                <button class="btn btn-sm btn-danger" @onclick="() => Deactivate(t.Id)">Deactivate</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => Activate(t.Id)">Activate</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showCreate)
+{
+    <div class="modal-overlay" @onclick="() => _showCreate = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">New Tenant</span>
+                <button class="modal-close" @onclick="() => _showCreate = false">&times;</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            <div class="form-group">
+                <label class="form-label">Code (lowercase, no spaces)</label>
+                <input class="form-control" @bind="_newCode" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Company Name</label>
+                <input class="form-control" @bind="_newCompany" />
+            </div>
+            <button class="btn btn-primary" @onclick="CreateTenant">Create Tenant</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Opcentrix_V3.Models.Platform.Tenant>? _tenants;
+    private bool _showCreate;
+    private string _newCode = "", _newCompany = "";
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => _tenants = await TenantService.GetAllTenantsAsync();
+
+    private async Task CreateTenant()
+    {
+        _error = null;
+        try
+        {
+            await TenantService.CreateTenantAsync(_newCode, _newCompany, "SuperAdmin");
+            _showCreate = false;
+            _tenants = await TenantService.GetAllTenantsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task Deactivate(int id) { await TenantService.DeactivateTenantAsync(id); _tenants = await TenantService.GetAllTenantsAsync(); }
+    private async Task Activate(int id) { await TenantService.ActivateTenantAsync(id); _tenants = await TenantService.GetAllTenantsAsync(); }
+}

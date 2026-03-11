@@ -1,30 +1,131 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">Opcentrix-V3</a>
-    </div>
-</div>
+﻿@inject IStageService StageService
+@inject IServiceProvider ServiceProvider
+@using Microsoft.AspNetCore.Components.Authorization
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+<AuthorizeView>
+    <Authorized>
+        @{
+            var role = context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+            var isPlatform = context.User.FindFirst("IsPlatform")?.Value == "true";
+            var isOperator = role == "Operator";
+        }
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+        <nav class="sidebar-nav">
+            <NavLink class="nav-item" href="" Match="NavLinkMatch.All">
+                <span class="nav-icon">📊</span> Dashboard
             </NavLink>
-        </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
+            @if (!isOperator)
+            {
+                <div class="nav-section">PRODUCTION</div>
+                <NavLink class="nav-item" href="scheduler">
+                    <span class="nav-icon">📅</span> Production Scheduler
+                </NavLink>
+                <NavLink class="nav-item" href="workorders">
+                    <span class="nav-icon">📋</span> Work Orders
+                </NavLink>
+                <NavLink class="nav-item" href="quotes">
+                    <span class="nav-icon">💰</span> Quotes
+                </NavLink>
+                <NavLink class="nav-item" href="builds">
+                    <span class="nav-icon">🏗️</span> Build Planning
+                </NavLink>
+            }
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
+            <div class="nav-section">SHOP FLOOR</div>
+            @if (_stages != null)
+            {
+                @foreach (var stage in _stages)
+                {
+                    @if (!isOperator || IsAssignedStage(context.User, stage.Id))
+                    {
+                        <NavLink class="nav-item" href="@($"shopfloor/stage/{stage.StageSlug}")">
+                            <span class="nav-icon" style="color: @stage.StageColor">⚙</span> @stage.Name
+                        </NavLink>
+                    }
+                }
+            }
+
+            @if (!isOperator)
+            {
+                <div class="nav-section">VISIBILITY</div>
+                <NavLink class="nav-item" href="tracking">
+                    <span class="nav-icon">🔍</span> Part Tracker
+                </NavLink>
+                <NavLink class="nav-item" href="analytics">
+                    <span class="nav-icon">📈</span> Analytics
+                </NavLink>
+                <NavLink class="nav-item" href="machines">
+                    <span class="nav-icon">🖥️</span> Machine Status
+                </NavLink>
+
+                <div class="nav-section">MAINTENANCE</div>
+                <NavLink class="nav-item" href="maintenance">
+                    <span class="nav-icon">🔧</span> Maintenance Dashboard
+                </NavLink>
+                <NavLink class="nav-item" href="maintenance/workorders">
+                    <span class="nav-icon">📝</span> Maintenance Work Orders
+                </NavLink>
+                <NavLink class="nav-item" href="maintenance/rules">
+                    <span class="nav-icon">📐</span> Maintenance Rules
+                </NavLink>
+            }
+            else
+            {
+                <NavLink class="nav-item" href="tracking">
+                    <span class="nav-icon">🔍</span> Part Tracker
+                </NavLink>
+            }
+
+            @if (role == "Admin" || role == "Manager" || role == "Supervisor")
+            {
+                <div class="nav-section">ADMIN</div>
+                <NavLink class="nav-item" href="admin">
+                    <span class="nav-icon">⚙️</span> Admin Panel
+                </NavLink>
+            }
+
+            @if (isPlatform)
+            {
+                <div class="nav-section">PLATFORM</div>
+                <NavLink class="nav-item" href="platform/tenants">
+                    <span class="nav-icon">🏢</span> Tenants
+                </NavLink>
+                <NavLink class="nav-item" href="platform/users">
+                    <span class="nav-icon">👤</span> Platform Users
+                </NavLink>
+            }
+        </nav>
+    </Authorized>
+    <NotAuthorized>
+        <nav class="sidebar-nav">
+            <NavLink class="nav-item" href="account/login" Match="NavLinkMatch.All">
+                <span class="nav-icon">🔑</span> Login
             </NavLink>
-        </div>
-    </nav>
-</div>
+        </nav>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<ProductionStage>? _stages;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _stages = await StageService.GetAllStagesAsync(activeOnly: true);
+        }
+        catch
+        {
+            _stages = new();
+        }
+    }
+
+    private static bool IsAssignedStage(System.Security.Claims.ClaimsPrincipal user, int stageId)
+    {
+        var assignedIds = user.FindFirst("AssignedStageIds")?.Value;
+        if (string.IsNullOrWhiteSpace(assignedIds)) return true;
+        return assignedIds.Split(',').Any(id => id.Trim() == stageId.ToString());
+    }
+}
 

@@ -1,0 +1,58 @@
+@* Generic Stage - Fallback for custom stages, renders CustomFieldsConfig dynamically *@
+@using Opcentrix_V3.Models
+
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">📝 Stage Form</div>
+    @if (_fields != null && _fields.Any())
+    {
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+            @foreach (var field in _fields)
+            {
+                <div class="form-group">
+                    <label class="form-label">@field.Label @(field.Required ? "*" : "")</label>
+                    @switch (field.Type?.ToLower())
+                    {
+                        case "dropdown":
+                            <select class="form-control">
+                                <option value="">Select...</option>
+                                @if (field.Options != null)
+                                {
+                                    @foreach (var opt in field.Options) { <option>@opt</option> }
+                                }
+                            </select>
+                            break;
+                        case "checkbox":
+                            <div style="min-height: var(--tap-target); display: flex; align-items: center;">
+                                <input type="checkbox" style="width: 20px; height: 20px;" />
+                            </div>
+                            break;
+                        case "number":
+                            <input class="form-control" type="number"
+                                   min="@field.Min" max="@field.Max"
+                                   inputmode="numeric" />
+                            break;
+                        default:
+                            <input class="form-control" type="text" />
+                            break;
+                    }
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="empty-state"><div class="empty-state-text">No custom fields configured for this stage</div></div>
+    }
+</div>
+
+@code {
+    [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public ProductionStage? Stage { get; set; }
+
+    private List<CustomFieldDefinition>? _fields;
+
+    protected override void OnParametersSet()
+    {
+        _fields = Stage?.GetCustomFields();
+    }
+}

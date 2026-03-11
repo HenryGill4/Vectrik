@@ -1,7 +1,78 @@
 ﻿@page "/"
+@inject IAnalyticsService AnalyticsService
+@rendermode InteractiveServer
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Dashboard - OpCentrix</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="page-header">
+    <h1 class="page-title">Dashboard</h1>
+</div>
 
-Welcome to your new app.
+@if (_kpis == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading dashboard...</div>
+}
+else
+{
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-label">Active Jobs</div>
+            <div class="kpi-value">@_kpis.ActiveJobs</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Active Work Orders</div>
+            <div class="kpi-value">@_kpis.ActiveWorkOrders</div>
+            @if (_kpis.OverdueWorkOrders > 0)
+            {
+                <div class="kpi-sub" style="color: var(--danger);">@_kpis.OverdueWorkOrders overdue</div>
+            }
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Machine Utilization</div>
+            <div class="kpi-value">@_kpis.AverageUtilization.ToString("F0")%</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">On-Time Delivery</div>
+            <div class="kpi-value">@_kpis.OnTimeDeliveryRate.ToString("F0")%</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Scrap Rate</div>
+            <div class="kpi-value">@_kpis.ScrapRate.ToString("F1")%</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Cost/Part</div>
+            <div class="kpi-value">$@_kpis.AverageCostPerPart.ToString("F2")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Maintenance Alerts</div>
+            <div class="kpi-value" style="color: @(_kpis.MaintenanceAlerts > 0 ? "var(--warning)" : "inherit")">@_kpis.MaintenanceAlerts</div>
+        </div>
+    </div>
+
+    @if (_kpis.Pipeline.Any())
+    {
+        <div class="card">
+            <div class="card-header">Stage Pipeline</div>
+            <div class="pipeline">
+                @foreach (var stage in _kpis.Pipeline)
+                {
+                    <div class="pipeline-stage" style="background: @stage.StageColor">
+                        <div>@stage.StageName</div>
+                        <div style="font-size: 1.2rem; font-weight: 700;">@(stage.PartsInQueue + stage.PartsInProgress)</div>
+                        <div>@stage.PartsInQueue Q / @stage.PartsInProgress A</div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private DashboardKpis? _kpis;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _kpis = await AnalyticsService.GetDashboardKpisAsync(); }
+        catch { _kpis = new DashboardKpis(); }
+    }
+}

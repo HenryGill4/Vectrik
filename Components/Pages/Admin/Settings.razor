@@ -1,0 +1,85 @@
+@page "/admin/settings"
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@using Microsoft.EntityFrameworkCore
+@rendermode InteractiveServer
+
+<PageTitle>Settings - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">System Settings</h1>
+    <button class="btn btn-primary" @onclick="NewSetting">+ New Setting</button>
+</div>
+
+@if (_settings == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    @foreach (var group in _settings.GroupBy(s => s.Category).OrderBy(g => g.Key))
+    {
+        <div class="card">
+            <div class="card-header">@group.Key</div>
+            <table class="data-table">
+                <thead><tr><th>Key</th><th>Value</th><th>Description</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var s in group)
+                    {
+                        <tr>
+                            <td style="font-family: monospace;">@s.Key</td>
+                            <td>@s.Value</td>
+                            <td style="color: var(--text-muted);">@s.Description</td>
+                            <td><button class="btn btn-sm btn-secondary" @onclick="() => EditSetting(s)">Edit</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@if (_showForm)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">@(_editId.HasValue ? "Edit" : "New") Setting</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
+            <div class="form-group"><label class="form-label">Key</label><input class="form-control" @bind="_editKey" disabled="@_editId.HasValue" /></div>
+            <div class="form-group"><label class="form-label">Value</label><textarea class="form-control" @bind="_editValue"></textarea></div>
+            <div class="form-group"><label class="form-label">Category</label><input class="form-control" @bind="_editCategory" /></div>
+            <button class="btn btn-primary" @onclick="Save">Save</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<SystemSetting>? _settings;
+    private bool _showForm;
+    private int? _editId;
+    private string _editKey = "", _editValue = "", _editCategory = "General";
+
+    protected override async Task OnInitializedAsync() => _settings = await Db.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.Key).ToListAsync();
+
+    private void NewSetting()
+    {
+        _editId = null;
+        _editKey = "";
+        _editValue = "";
+        _editCategory = "General";
+        _showForm = true;
+    }
+
+    private void EditSetting(SystemSetting s) { _editId = s.Id; _editKey = s.Key; _editValue = s.Value; _editCategory = s.Category; _showForm = true; }
+
+    private async Task Save()
+    {
+        if (_editId.HasValue)
+        {
+            var s = await Db.SystemSettings.FindAsync(_editId.Value);
+            if (s != null) { s.Value = _editValue; s.Category = _editCategory; s.LastModifiedDate = DateTime.UtcNow; s.LastModifiedBy = "System"; }
+        }
+        else
+        {
+            Db.SystemSettings.Add(new SystemSetting { Key = _editKey, Value = _editValue, Category = _editCategory, LastModifiedBy = "System" });
+        }
+        await Db.SaveChangesAsync();
+        _showForm = false; _editId = null;
+        _settings = await Db.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.Key).ToListAsync();
+    }
+}

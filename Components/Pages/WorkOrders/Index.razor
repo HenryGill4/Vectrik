@@ -1,0 +1,72 @@
+@page "/workorders"
+@inject IWorkOrderService WorkOrderService
+@inject IPartService PartService
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Work Orders - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Work Orders</h1>
+    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Work Order</button>
+</div>
+
+@if (_orders == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead><tr><th>Order #</th><th>Customer</th><th>Due Date</th><th>Lines</th><th>Status</th><th>Priority</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var wo in _orders)
+                {
+                    <tr>
+                        <td>@wo.OrderNumber</td>
+                        <td>@wo.CustomerName</td>
+                        <td style="color: @(wo.DueDate < DateTime.UtcNow && wo.Status != WorkOrderStatus.Complete ? "var(--danger)" : "inherit")">@wo.DueDate.ToString("yyyy-MM-dd")</td>
+                        <td>@wo.Lines.Count</td>
+                        <td><span class="badge badge-@wo.Status.ToString().ToLower()">@wo.Status</span></td>
+                        <td><span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span></td>
+                        <td><a href="/workorders/@wo.Id" class="btn btn-sm btn-secondary">View</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showCreate)
+{
+    <div class="modal-overlay" @onclick="() => _showCreate = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">New Work Order</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            <div class="form-group"><label class="form-label">Customer Name</label><input class="form-control" @bind="_customerName" /></div>
+            <div class="form-group"><label class="form-label">Customer PO</label><input class="form-control" @bind="_customerPO" /></div>
+            <div class="form-group"><label class="form-label">Due Date</label><input class="form-control" type="date" @bind="_dueDate" /></div>
+            <button class="btn btn-primary" @onclick="Create">Create</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<WorkOrder>? _orders;
+    private bool _showCreate;
+    private string _customerName = "", _customerPO = "";
+    private DateTime _dueDate = DateTime.UtcNow.AddDays(30);
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => _orders = await WorkOrderService.GetAllWorkOrdersAsync();
+
+    private async Task Create()
+    {
+        _error = null;
+        try
+        {
+            var wo = await WorkOrderService.CreateWorkOrderAsync(new WorkOrder { CustomerName = _customerName, CustomerPO = _customerPO, DueDate = _dueDate, CreatedBy = "System", LastModifiedBy = "System" });
+            _showCreate = false;
+            Nav.NavigateTo($"/workorders/{wo.Id}");
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

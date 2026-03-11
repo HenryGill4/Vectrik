@@ -36,51 +36,51 @@
 
 ### Phase B: Services (�11)
 ```
-[ ] B1.  ITenantService + TenantService
-[ ] B2.  IAuthService + AuthService
-[ ] B3.  IPartService + PartService
-[ ] B4.  IJobService + JobService
-[ ] B5.  IWorkOrderService + WorkOrderService
-[ ] B6.  IQuoteService + QuoteService
-[ ] B7.  IBuildService + BuildService
-[ ] B8.  IBuildPlanningService + BuildPlanningService
-[ ] B9.  IStageService + StageService
-[ ] B10. ISerialNumberService + SerialNumberService
-[ ] B11. IPartTrackerService + PartTrackerService
-[ ] B12. ILearningService + LearningService
-[ ] B13. IMaintenanceService + MaintenanceService
-[ ] B14. IAnalyticsService + AnalyticsService
-[ ] B15. IMaterialService + MaterialService
-[ ] B16. IDataSeedingService + DataSeedingService
-[ ] B17. Machine providers + SignalR hubs
-[ ] B18. Register all services in Program.cs DI
+[x] B1.  ITenantService + TenantService
+[x] B2.  IAuthService + AuthService
+[x] B3.  IPartService + PartService
+[x] B4.  IJobService + JobService
+[x] B5.  IWorkOrderService + WorkOrderService
+[x] B6.  IQuoteService + QuoteService
+[x] B7.  IBuildService + BuildService
+[x] B8.  IBuildPlanningService + BuildPlanningService
+[x] B9.  IStageService + StageService
+[x] B10. ISerialNumberService + SerialNumberService
+[x] B11. IPartTrackerService + PartTrackerService
+[x] B12. ILearningService + LearningService
+[x] B13. IMaintenanceService + MaintenanceService
+[x] B14. IAnalyticsService + AnalyticsService
+[x] B15. IMaterialService + MaterialService
+[x] B16. IDataSeedingService + DataSeedingService
+[x] B17. Machine providers + SignalR hubs
+[x] B18. Register all services in Program.cs DI
 ```
-**Phase B Status**: NOT STARTED
+**Phase B Status**: COMPLETE
 
 ### Phase C: Pages + Navigation + PWA (�11)
 ```
-[ ] C1.  _Layout.cshtml (dynamic sidebar)
-[ ] C2.  PWA files (manifest, service worker, icons)
-[ ] C3.  Login + Logout pages
-[ ] C4.  Platform pages (Tenants, TenantSetup, Users)
-[ ] C5.  Dashboard (/)
-[ ] C6.  Scheduler (Gantt + scheduler.js)
-[ ] C7.  WorkOrders (Index + Details)
-[ ] C8.  Quotes (Index + Details)
-[ ] C9.  Builds (Build Planning)
-[ ] C10. ShopFloor/Stage.cshtml (dynamic route)
-[ ] C11. Shop Floor Partials (9 built-in + 1 generic)
-[ ] C12. dynamic-form-renderer.js
-[ ] C13. Part Tracker (/Tracking)
-[ ] C14. Analytics Dashboard
-[ ] C15. Machine Status (+ machine-state-client.js)
-[ ] C16. Maintenance pages (Dashboard, WorkOrders, Rules)
-[ ] C17. Admin pages (7 pages + _PartForm partial)
-[ ] C18. site.css (mobile-first, dark mode)
-[ ] C19. site.js (sidebar, dark mode, PWA)
-[ ] C20. Build + run + verify full flow
+[x] C1.  _Layout.cshtml (dynamic sidebar)
+[x] C2.  PWA files (manifest, service worker, icons)
+[x] C3.  Login + Logout pages
+[x] C4.  Platform pages (Tenants, TenantSetup, Users)
+[x] C5.  Dashboard (/)
+[x] C6.  Scheduler (Gantt + scheduler.js)
+[x] C7.  WorkOrders (Index + Details)
+[x] C8.  Quotes (Index + Details)
+[x] C9.  Builds (Build Planning)
+[x] C10. ShopFloor/Stage.cshtml (dynamic route)
+[x] C11. Shop Floor Partials (9 built-in + 1 generic)
+[x] C12. dynamic-form-renderer.js
+[x] C13. Part Tracker (/Tracking)
+[x] C14. Analytics Dashboard
+[x] C15. Machine Status (+ machine-state-client.js)
+[x] C16. Maintenance pages (Dashboard, WorkOrders, Rules)
+[x] C17. Admin pages (7 pages + _PartForm partial)
+[x] C18. site.css (mobile-first, dark mode)
+[x] C19. site.js (sidebar, dark mode, PWA)
+[x] C20. Build + run + verify full flow
 ```
-**Phase C Status**: NOT STARTED
+**Phase C Status**: COMPLETE
 
 ### Phase D: Tests + Retirement (�11)
 ```

@@ -1,0 +1,111 @@
+@page "/scheduler"
+@inject IJobService JobService
+@inject IPartService PartService
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@using Microsoft.EntityFrameworkCore
+@rendermode InteractiveServer
+
+<PageTitle>Production Scheduler - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Production Scheduler</h1>
+    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Job</button>
+</div>
+
+<div class="card">
+    <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+        <select class="form-control" style="width: auto; min-width: 150px;" @bind="_statusFilter">
+            <option value="">All Statuses</option>
+            @foreach (var s in Enum.GetValues<JobStatus>()) { <option value="@s">@s</option> }
+        </select>
+        <button class="btn btn-secondary btn-sm" @onclick="LoadJobs">Refresh</button>
+    </div>
+
+    @if (_jobs == null) { <div class="loading"><span class="spinner"></span></div> }
+    else if (!_jobs.Any()) { <div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No jobs scheduled</div></div> }
+    else
+    {
+        <table class="data-table">
+            <thead><tr><th>Part</th><th>Machine</th><th>Start</th><th>End</th><th>Qty</th><th>Status</th><th>Priority</th></tr></thead>
+            <tbody>
+                @foreach (var j in _jobs)
+                {
+                    <tr>
+                        <td>@j.PartNumber</td>
+                        <td>@j.MachineId</td>
+                        <td>@j.ScheduledStart.ToString("MM/dd HH:mm")</td>
+                        <td>@j.ScheduledEnd.ToString("MM/dd HH:mm")</td>
+                        <td>@j.Quantity</td>
+                        <td><span class="badge badge-@j.Status.ToString().ToLower()">@j.Status</span></td>
+                        <td><span class="badge badge-@j.Priority.ToString().ToLower()">@j.Priority</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@if (_showCreate)
+{
+    <div class="modal-overlay" @onclick="() => _showCreate = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">New Job</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            <div class="form-group"><label class="form-label">Part</label>
+                <select class="form-control" @bind="_newJob.PartId">
+                    <option value="0">Select part...</option>
+                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber - @p.Name</option> } }
+                </select>
+            </div>
+            <div class="form-group"><label class="form-label">Machine</label>
+                <select class="form-control" @bind="_newJob.MachineId">
+                    <option value="">Select machine...</option>
+                    @if (_machines != null) { @foreach (var m in _machines) { <option value="@m.MachineId">@m.Name</option> } }
+                </select>
+            </div>
+            <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" @bind="_newJob.Quantity" min="1" /></div>
+            <div class="form-group"><label class="form-label">Scheduled Start</label><input class="form-control" type="datetime-local" @bind="_newJob.ScheduledStart" /></div>
+            <div class="form-group"><label class="form-label">Estimated Hours</label><input class="form-control" type="number" step="0.5" @bind="_newJob.EstimatedHours" /></div>
+            <button class="btn btn-primary" @onclick="CreateJob">Create Job</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Job>? _jobs;
+    private List<Part>? _parts;
+    private List<Machine>? _machines;
+    private string _statusFilter = "";
+    private bool _showCreate;
+    private Job _newJob = new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1 };
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _parts = await PartService.GetAllPartsAsync();
+        _machines = await Db.Machines.Where(m => m.IsActive).ToListAsync();
+        await LoadJobs();
+    }
+
+    private async Task LoadJobs()
+    {
+        JobStatus? filter = Enum.TryParse<JobStatus>(_statusFilter, out var s) ? s : null;
+        _jobs = await JobService.GetAllJobsAsync(filter);
+    }
+
+    private async Task CreateJob()
+    {
+        _error = null;
+        try
+        {
+            _newJob.ScheduledEnd = _newJob.ScheduledStart.AddHours(_newJob.EstimatedHours);
+            _newJob.CreatedBy = "System";
+            _newJob.LastModifiedBy = "System";
+            await JobService.CreateJobAsync(_newJob);
+            _showCreate = false;
+            _newJob = new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1 };
+            await LoadJobs();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

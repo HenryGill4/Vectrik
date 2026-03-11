@@ -1,0 +1,66 @@
+@page "/maintenance"
+@inject IMaintenanceService MaintenanceService
+@rendermode InteractiveServer
+
+<PageTitle>Maintenance Dashboard - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Maintenance Dashboard</h1>
+</div>
+
+@if (_alerts == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color: var(--danger)">@_alerts.Count(a => a.IsOverdue)</div></div>
+        <div class="kpi-card"><div class="kpi-label">Warnings</div><div class="kpi-value" style="color: var(--warning)">@_alerts.Count(a => !a.IsOverdue)</div></div>
+        <div class="kpi-card"><div class="kpi-label">Open WOs</div><div class="kpi-value">@_openWorkOrders</div></div>
+    </div>
+
+    @if (_alerts.Any())
+    {
+        <div class="card">
+            <div class="card-header">Maintenance Alerts</div>
+            <table class="data-table">
+                <thead><tr><th>Machine</th><th>Component</th><th>Rule</th><th>Severity</th><th>Usage</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var alert in _alerts)
+                    {
+                        <tr>
+                            <td>@alert.MachineName</td>
+                            <td>@alert.ComponentName</td>
+                            <td>@alert.RuleName</td>
+                            <td><span class="badge badge-@alert.Severity.ToString().ToLower()">@alert.Severity</span></td>
+                            <td>@alert.PercentUsed.ToString("F0")%</td>
+                            <td><span class="badge @(alert.IsOverdue ? "badge-overdue" : "badge-warning")">@(alert.IsOverdue ? "Overdue" : "Due Soon")</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-text">No maintenance alerts</div></div>
+    }
+}
+
+@code {
+    private List<MaintenanceAlert>? _alerts;
+    private int _openWorkOrders;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _alerts = await MaintenanceService.EvaluateMaintenanceRulesAsync();
+            var openWOs = await MaintenanceService.GetWorkOrdersAsync(Models.Enums.MaintenanceWorkOrderStatus.Open);
+            var inProgressWOs = await MaintenanceService.GetWorkOrdersAsync(Models.Enums.MaintenanceWorkOrderStatus.InProgress);
+            _openWorkOrders = openWOs.Count + inProgressWOs.Count;
+        }
+        catch
+        {
+            _alerts = new();
+        }
+    }
+}

@@ -1,0 +1,113 @@
+@page "/quotes/{Id:int}"
+@inject IQuoteService QuoteService
+@inject IPartService PartService
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Quote Details - OpCentrix</PageTitle>
+
+@if (_quote == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="page-header">
+        <h1 class="page-title">@_quote.QuoteNumber</h1>
+        <div style="display: flex; gap: 8px;">
+            @if (_quote.Status == QuoteStatus.Draft)
+            {
+                <button class="btn btn-secondary" @onclick="() => SetStatus(QuoteStatus.Sent)">Mark Sent</button>
+            }
+            @if (_quote.Status == QuoteStatus.Sent)
+            {
+                <button class="btn btn-success" @onclick="Accept">Accept & Convert</button>
+                <button class="btn btn-danger" @onclick="() => SetStatus(QuoteStatus.Rejected)">Reject</button>
+            }
+            <span class="badge badge-@_quote.Status.ToString().ToLower()" style="font-size: 0.9rem;">@_quote.Status</span>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div><span class="form-label">Customer</span><div>@_quote.CustomerName</div></div>
+            <div><span class="form-label">Estimated Cost</span><div>$@_quote.TotalEstimatedCost.ToString("N2")</div></div>
+            <div><span class="form-label">Quoted Price</span><div>@(_quote.QuotedPrice.HasValue ? $"${_quote.QuotedPrice:N2}" : "—")</div></div>
+            <div><span class="form-label">Margin</span><div>@(_quote.Markup.HasValue ? $"${_quote.Markup:N2}" : "—")</div></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Line Items</span>
+            @if (_quote.Status == QuoteStatus.Draft)
+            {
+                <button class="btn btn-sm btn-primary" @onclick="() => _showAddLine = true">+ Add Line</button>
+            }
+        </div>
+        <table class="data-table">
+            <thead><tr><th>Part</th><th>Qty</th><th>Est. Cost/Part</th><th>Quoted/Part</th><th>Line Total</th></tr></thead>
+            <tbody>
+                @foreach (var l in _quote.Lines)
+                {
+                    <tr>
+                        <td>@l.Part?.PartNumber</td>
+                        <td>@l.Quantity</td>
+                        <td>$@l.EstimatedCostPerPart.ToString("N2")</td>
+                        <td>$@l.QuotedPricePerPart.ToString("N2")</td>
+                        <td>$@((l.QuotedPricePerPart * l.Quantity).ToString("N2"))</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (_quote.ConvertedWorkOrderId.HasValue)
+    {
+        <div class="alert alert-info">Converted to <a href="/workorders/@_quote.ConvertedWorkOrderId">Work Order</a></div>
+    }
+}
+
+@if (_showAddLine)
+{
+    <div class="modal-overlay" @onclick="() => _showAddLine = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">Add Line</span><button class="modal-close" @onclick="() => _showAddLine = false">&times;</button></div>
+            <div class="form-group"><label class="form-label">Part</label>
+                <select class="form-control" @bind="_linePartId">
+                    <option value="0">Select...</option>
+                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber - @p.Name</option> } }
+                </select>
+            </div>
+            <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" @bind="_lineQty" min="1" /></div>
+            <div class="form-group"><label class="form-label">Quoted Price/Part</label><input class="form-control" type="number" step="0.01" @bind="_linePrice" /></div>
+            <button class="btn btn-primary" @onclick="AddLine">Add</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private Quote? _quote;
+    private List<Part>? _parts;
+    private bool _showAddLine;
+    private int _linePartId, _lineQty = 1;
+    private decimal _linePrice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _quote = await QuoteService.GetQuoteByIdAsync(Id);
+        _parts = await PartService.GetAllPartsAsync();
+    }
+
+    private async Task SetStatus(QuoteStatus status) { await QuoteService.UpdateStatusAsync(Id, status); _quote = await QuoteService.GetQuoteByIdAsync(Id); }
+
+    private async Task Accept()
+    {
+        await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Accepted);
+        var wo = await QuoteService.ConvertToWorkOrderAsync(Id, "System");
+        Nav.NavigateTo($"/workorders/{wo.Id}");
+    }
+
+    private async Task AddLine()
+    {
+        if (_linePartId > 0) { await QuoteService.AddLineAsync(Id, _linePartId, _lineQty, _linePrice); _showAddLine = false; _quote = await QuoteService.GetQuoteByIdAsync(Id); }
+    }
+}

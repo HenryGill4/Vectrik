@@ -1,0 +1,75 @@
+@page "/admin/machines"
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@using Microsoft.EntityFrameworkCore
+@rendermode InteractiveServer
+
+<PageTitle>Machines - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Machines</h1>
+    <button class="btn btn-primary" @onclick="NewMachine">+ New Machine</button>
+</div>
+
+@if (_machines == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Status</th><th>Hours</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var m in _machines)
+                {
+                    <tr>
+                        <td>@m.MachineId</td>
+                        <td>@m.Name</td>
+                        <td>@m.MachineType</td>
+                        <td><span class="badge badge-@m.Status.ToString().ToLower()">@m.Status</span></td>
+                        <td>@m.TotalOperatingHours.ToString("F0")</td>
+                        <td><button class="btn btn-sm btn-secondary" @onclick="() => { _edit = m; _showForm = true; }">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") Machine</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Machine ID</label><input class="form-control" @bind="_edit.MachineId" /></div>
+                <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
+                <div class="form-group"><label class="form-label">Type</label><input class="form-control" @bind="_edit.MachineType" /></div>
+                <div class="form-group"><label class="form-label">Model</label><input class="form-control" @bind="_edit.MachineModel" /></div>
+                <div class="form-group"><label class="form-label">Hourly Rate</label><input class="form-control" type="number" step="1" @bind="_edit.HourlyRate" /></div>
+                <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
+            </div>
+            <button class="btn btn-primary" style="margin-top: 12px;" @onclick="Save">Save</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Machine>? _machines;
+    private Machine? _edit;
+    private bool _showForm;
+
+    protected override async Task OnInitializedAsync() => _machines = await Db.Machines.OrderBy(m => m.MachineId).ToListAsync();
+
+    private void NewMachine()
+    {
+        _edit = new Machine { MachineType = "SLS", CreatedBy = "System", LastModifiedBy = "System" };
+        _showForm = true;
+    }
+
+    private async Task Save()
+    {
+        if (_edit!.Id == 0) { _edit.CreatedDate = DateTime.UtcNow; Db.Machines.Add(_edit); }
+        _edit.LastModifiedDate = DateTime.UtcNow;
+        await Db.SaveChangesAsync();
+        _showForm = false;
+        _machines = await Db.Machines.OrderBy(m => m.MachineId).ToListAsync();
+    }
+}

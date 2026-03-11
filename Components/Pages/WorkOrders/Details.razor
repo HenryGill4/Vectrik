@@ -1,0 +1,99 @@
+@page "/workorders/{Id:int}"
+@inject IWorkOrderService WorkOrderService
+@inject IPartService PartService
+@rendermode InteractiveServer
+
+<PageTitle>Work Order Details - OpCentrix</PageTitle>
+
+@if (_order == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="page-header">
+        <h1 class="page-title">@_order.OrderNumber</h1>
+        <div style="display: flex; gap: 8px;">
+            @if (_order.Status == WorkOrderStatus.Draft)
+            {
+                <button class="btn btn-success" @onclick="Release">Release</button>
+            }
+            <span class="badge badge-@_order.Status.ToString().ToLower()" style="font-size: 0.9rem;">@_order.Status</span>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div><span class="form-label">Customer</span><div>@_order.CustomerName</div></div>
+            <div><span class="form-label">PO</span><div>@(_order.CustomerPO ?? "—")</div></div>
+            <div><span class="form-label">Order Date</span><div>@_order.OrderDate.ToString("yyyy-MM-dd")</div></div>
+            <div><span class="form-label">Due Date</span><div style="color: @(_order.DueDate < DateTime.UtcNow && _order.Status != WorkOrderStatus.Complete ? "var(--danger)" : "inherit")">@_order.DueDate.ToString("yyyy-MM-dd")</div></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Line Items</span>
+            <button class="btn btn-sm btn-primary" @onclick="() => _showAddLine = true">+ Add Line</button>
+        </div>
+        <table class="data-table">
+            <thead><tr><th>Part</th><th>Ordered</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead>
+            <tbody>
+                @foreach (var line in _order.Lines)
+                {
+                    <tr>
+                        <td>@line.Part?.PartNumber - @line.Part?.Name</td>
+                        <td>@line.Quantity</td>
+                        <td>@line.ProducedQuantity</td>
+                        <td>@line.ShippedQuantity</td>
+                        <td><span class="badge badge-@line.Status.ToString().ToLower()">@line.Status</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showAddLine)
+{
+    <div class="modal-overlay" @onclick="() => _showAddLine = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">Add Line</span><button class="modal-close" @onclick="() => _showAddLine = false">&times;</button></div>
+            <div class="form-group"><label class="form-label">Part</label>
+                <select class="form-control" @bind="_linePartId">
+                    <option value="0">Select part...</option>
+                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber - @p.Name</option> } }
+                </select>
+            </div>
+            <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" @bind="_lineQty" min="1" /></div>
+            <button class="btn btn-primary" @onclick="AddLine">Add</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private WorkOrder? _order;
+    private List<Part>? _parts;
+    private bool _showAddLine;
+    private int _linePartId, _lineQty = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
+        _parts = await PartService.GetAllPartsAsync();
+    }
+
+    private async Task Release()
+    {
+        await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, "System");
+        _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
+    }
+
+    private async Task AddLine()
+    {
+        if (_linePartId > 0)
+        {
+            await WorkOrderService.AddLineAsync(Id, _linePartId, _lineQty);
+            _showAddLine = false;
+            _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
+        }
+    }
+}

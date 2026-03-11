@@ -1,0 +1,27 @@
+@* SLS/LPBF Printing - Rich built-in stage partial *@
+@using Opcentrix_V3.Models
+
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">🖨️ SLS/LPBF Printing Details</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+        <div><span class="form-label">Machine</span><div>@(Execution?.Job?.MachineId ?? "—")</div></div>
+        <div><span class="form-label">Material</span><div>@(Execution?.Job?.SlsMaterial ?? "—")</div></div>
+        <div><span class="form-label">Stack Level</span><div>@(Execution?.Job?.StackLevel?.ToString() ?? "—")x</div></div>
+        <div><span class="form-label">Parts in Build</span><div>@(Execution?.Job?.PartsPerBuild ?? Execution?.Job?.Quantity)</div></div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">Machine Telemetry</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
+        <div><span class="form-label">Build Progress</span><div>—</div></div>
+        <div><span class="form-label">Layer</span><div>—</div></div>
+        <div><span class="form-label">Bed Temp</span><div>—</div></div>
+        <div><span class="form-label">Chamber Temp</span><div>—</div></div>
+    </div>
+    <div class="alert alert-info" style="margin-top: 8px; margin-bottom: 0;">Live telemetry requires SignalR connection</div>
+</div>
+
+@code {
+    [Parameter] public StageExecution? Execution { get; set; }
+}
