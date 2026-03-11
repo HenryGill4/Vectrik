@@ -72,11 +72,31 @@ builder.Services.AddHostedService<MachineSyncService>();
 
 var app = builder.Build();
 
-// Ensure platform DB is created
+// Ensure platform DB is created and seeded
 using (var scope = app.Services.CreateScope())
 {
     var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
     platformDb.Database.EnsureCreated();
+
+    // Seed super admin if none exists
+    if (!platformDb.PlatformUsers.Any())
+    {
+        var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
+        platformDb.PlatformUsers.Add(new Opcentrix_V3.Models.Platform.PlatformUser
+        {
+            Username = "superadmin",
+            PasswordHash = authService.HashPassword("admin123"),
+            Role = "SuperAdmin"
+        });
+        platformDb.SaveChanges();
+    }
+
+    // Seed demo tenant if none exists
+    if (!platformDb.Tenants.Any())
+    {
+        var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
+        tenantService.CreateTenantAsync("demo", "Demo Manufacturing", "System").GetAwaiter().GetResult();
+    }
 }
 
 // Configure the HTTP request pipeline.

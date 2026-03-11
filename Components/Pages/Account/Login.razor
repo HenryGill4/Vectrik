@@ -1,9 +1,11 @@
 @page "/account/login"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@attribute [AllowAnonymous]
 @layout Components.Layout.MainLayout
 @inject IAuthService AuthService
 @inject NavigationManager Navigation
-@using Microsoft.AspNetCore.Authentication
-@using Microsoft.AspNetCore.Authentication.Cookies
 
 <PageTitle>Login - OpCentrix</PageTitle>
 
@@ -25,9 +27,7 @@
                 <label class="form-label">Password</label>
                 <InputText class="form-control" type="password" @bind-Value="_model.Password" autocomplete="current-password" />
             </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;" disabled="@_loading">
-                @if (_loading) { <span class="spinner"></span> } Login
-            </button>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">Login</button>
         </EditForm>
     </div>
 </div>
@@ -35,20 +35,23 @@
 @code {
     [SupplyParameterFromForm] private LoginModel _model { get; set; } = new();
     private string? _errorMessage;
-    private bool _loading;
 
     [CascadingParameter] private HttpContext? HttpContext { get; set; }
 
     private async Task HandleLogin()
     {
         _errorMessage = null;
-        _loading = true;
 
-        var result = await AuthService.LoginAsync(_model.Username ?? "", _model.Password ?? "");
+        if (string.IsNullOrWhiteSpace(_model.Username) || string.IsNullOrWhiteSpace(_model.Password))
+        {
+            _errorMessage = "Username and password are required.";
+            return;
+        }
+
+        var result = await AuthService.LoginAsync(_model.Username, _model.Password);
         if (!result.Success)
         {
             _errorMessage = result.ErrorMessage;
-            _loading = false;
             return;
         }
 

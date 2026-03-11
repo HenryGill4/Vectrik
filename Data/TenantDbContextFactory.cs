@@ -16,8 +16,16 @@ public class TenantDbContextFactory
     {
         var tenantCode = _tenantContext.TenantCode;
 
+        // When no tenant is resolved (unauthenticated requests, SSR prerender),
+        // return an in-memory context so DI doesn't blow up. Services will
+        // simply return empty results.
         if (string.IsNullOrEmpty(tenantCode))
-            throw new InvalidOperationException("Tenant code is not set. Cannot create tenant database context.");
+        {
+            var fallbackOptions = new DbContextOptionsBuilder<TenantDbContext>()
+                .UseInMemoryDatabase("__no_tenant__")
+                .Options;
+            return new TenantDbContext(fallbackOptions);
+        }
 
         var dbPath = Path.Combine("data", "tenants", $"{tenantCode}.db");
         var directory = Path.GetDirectoryName(dbPath);
