@@ -77,6 +77,12 @@ These items are fully implemented and do NOT need to be rebuilt:
 | 31 EF Core entity models | ✅ Scaffolded | `Models/` |
 | 37 service files | ✅ Scaffolded | `Services/` |
 | Data seeding (demo tenant + admin) | ✅ Complete | `Program.cs` |
+| EF Core migrations (not EnsureCreated) | ✅ Complete | `Data/Migrations/`, `Data/DesignTimeTenantDbContextFactory.cs` |
+| Global auth fallback policy | ✅ Complete | `Program.cs` (all pages require auth by default) |
+| Shared UI: AppModal | ✅ Complete | `Components/Shared/AppModal.razor` |
+| Shared UI: ConfirmDialog | ✅ Complete | `Components/Shared/ConfirmDialog.razor` |
+| Shared UI: ToastContainer | ✅ Complete | `Components/Shared/ToastContainer.razor`, `Services/ToastService.cs` |
+| Shared UI: Pagination | ✅ Complete | `Components/Shared/Pagination.razor` |
 
 **Demo Credentials**:
 - Super Admin: `superadmin` / `admin123` → `/platform/tenants`
@@ -175,15 +181,26 @@ Module 16 (CRM)
 These apply to every module. Copilot must follow these for every file created:
 
 ### 1. Multi-Tenant Pattern
-Every service method signature includes `string tenantCode`:
+Services inject `TenantDbContext` directly via DI. The DI container resolves
+the correct tenant DB automatically from `TenantDbContextFactory` + `ITenantContext`:
 ```csharp
-public async Task<List<Thing>> GetAllAsync(string tenantCode)
+public class ThingService : IThingService
 {
-    using var db = _dbContextFactory.CreateDbContext(tenantCode);
-    return await db.Things.ToListAsync();
+    private readonly TenantDbContext _db;
+
+    public ThingService(TenantDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<List<Thing>> GetAllAsync()
+    {
+        return await _db.Things.ToListAsync();
+    }
 }
 ```
-Never use a global DbContext — always create via `TenantDbContextFactory`.
+For cross-tenant operations (seeding, admin), use the static overload:
+`TenantDbContextFactory.CreateDbContext(tenantCode)`.
 
 ### 2. Service Registration
 All services registered in `Program.cs` as `Scoped`:
@@ -200,44 +217,53 @@ Every service must have a matching interface file:
 Every new page follows this pattern:
 ```razor
 @page "/route/{param}"
-@attribute [Authorize(Roles = "Manager,Admin")]
+@rendermode InteractiveServer
 @inject IServiceName _service
-@inject ITenantContext _tenant
+@inject ToastService Toast
 
 <PageTitle>Page Name</PageTitle>
 
-@if (isLoading)
+@if (_loading)
 {
-    <div class="loading-spinner">Loading...</div>
+    <div class="loading"><span class="spinner"></span> Loading...</div>
 }
 else
 {
     <!-- content -->
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
-    private bool isLoading = true;
-    private List<Thing> items = new();
+    private bool _loading = true;
+    private List<Thing> _items = new();
+    private ConfirmDialog _confirm = null!;
 
     protected override async Task OnInitializedAsync()
     {
-        items = await _service.GetAllAsync(_tenant.TenantCode);
-        isLoading = false;
+        _items = await _service.GetAllAsync();
+        _loading = false;
     }
 }
 ```
+**Auth**: A global fallback policy requires authentication on all pages.
+Pages needing public access must add `@attribute [AllowAnonymous]`.
+For role-restricted pages, add `@attribute [Authorize(Roles = "Manager,Admin")]`.
 
 ### 5. EF Core Migrations
+The project uses EF Core migrations (not `EnsureCreated`). Tenant DBs are
+automatically migrated on first access each app lifetime.
+
 After every module's database changes:
 ```bash
-dotnet ef migrations add Add[ModuleName] --context TenantDbContext
-dotnet ef database update
+dotnet ef migrations add Add[ModuleName] --context TenantDbContext --output-dir Data/Migrations/Tenant
 ```
 Or for platform DB changes:
 ```bash
-dotnet ef migrations add Add[FeatureName] --context PlatformDbContext
-dotnet ef database update
+dotnet ef migrations add Add[FeatureName] --context PlatformDbContext --output-dir Data/Migrations/Platform
 ```
+Do NOT run `dotnet ef database update` — migrations are applied automatically
+at runtime via `TenantDbContextFactory` (tenants) and `Program.cs` (platform).
 
 ### 6. Enum Additions
 Add new enums to the existing file (do not create new enum files unless for a
@@ -248,8 +274,9 @@ completely distinct domain):
 New component styles go in `wwwroot/css/site.css` using existing CSS variable tokens:
 ```css
 /* Use these variables — do not hardcode colors */
---color-primary, --color-secondary, --color-success, --color-danger,
---color-warning, --color-bg, --color-surface, --color-text
+--bg-primary, --bg-secondary, --bg-tertiary, --bg-card,
+--text-primary, --text-secondary, --text-muted,
+--accent, --accent-hover, --success, --warning, --danger, --border
 ```
 
 ### 8. File Uploads
@@ -263,13 +290,22 @@ Do not create new SignalR hubs — extend the existing hub with new methods.
 
 ### 10. NavMenu Updates
 After adding a new module's pages, add navigation links to `Components/Layout/NavMenu.razor`.
-Group links by domain section. Use role-based visibility:
+Group links by domain section. Use the existing `role` variable from `AuthorizeView`:
 ```razor
-@if (_authService.IsInRole("Manager") || _authService.IsInRole("Admin"))
+@if (role == "Admin" || role == "Manager")
 {
-    <NavLink href="/newmodule">New Module</NavLink>
+    <NavLink class="nav-item" href="newmodule">
+        <span class="nav-icon">📦</span> New Module
+    </NavLink>
 }
 ```
+
+### 11. Shared Components
+Use the shared components in `Components/Shared/` for every module:
+- `<AppModal>` — for create/edit forms in overlay dialogs
+- `<ConfirmDialog @ref="_confirm" />` — call `await _confirm.ShowAsync("message")` for delete confirms
+- `<Pagination>` — for list pages with many items
+- `ToastService` — inject and call `Toast.ShowSuccess("Saved")` or `Toast.ShowError("Failed")`
 
 ---
 
@@ -540,12 +576,19 @@ These features we are building that ProShop does NOT have:
 |------|---------|
 | `Program.cs` | DI registration, middleware, auth, seeding |
 | `Data/TenantDbContext.cs` | All tenant entity DbSets — ADD NEW ONES HERE |
+| `Data/TenantDbContextFactory.cs` | Creates per-tenant DB contexts, auto-migrates |
+| `Data/DesignTimeTenantDbContextFactory.cs` | Allows `dotnet ef migrations add` CLI |
 | `Data/PlatformDbContext.cs` | Platform-level entities |
 | `Models/Enums/ManufacturingEnums.cs` | All enums — ADD NEW ENUMS HERE |
 | `Components/Layout/NavMenu.razor` | Navigation — ADD NEW LINKS HERE |
-| `Components/Layout/MainLayout.razor` | Master layout |
+| `Components/Layout/MainLayout.razor` | Master layout (includes ToastContainer) |
+| `Components/Shared/AppModal.razor` | Reusable modal dialog |
+| `Components/Shared/ConfirmDialog.razor` | Async confirm dialog (`await _confirm.ShowAsync()`) |
+| `Components/Shared/ToastContainer.razor` | Toast notifications (wired in MainLayout) |
+| `Components/Shared/Pagination.razor` | Page navigation for lists |
+| `Services/ToastService.cs` | Toast event bus — inject and call `.ShowSuccess()` etc. |
 | `wwwroot/css/site.css` | All styles — ADD NEW STYLES HERE |
-| `OPCENTRIX_ARCHITECTURE_DECISIONS.md` | Original architecture decisions reference |
+| `docs/STAGED-IMPLEMENTATION-PLAN.md` | **20-stage build plan — START HERE for implementation order** |
 
 ---
 

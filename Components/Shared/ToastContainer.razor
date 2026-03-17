@@ -1,0 +1,76 @@
+@implements IDisposable
+@inject ToastService ToastService
+
+<div class="toast-container">
+    @foreach (var toast in _toasts)
+    {
+        <div class="toast-item toast-@toast.Level.ToString().ToLower() @(toast.Fading ? "toast-fade-out" : "")">
+            <div class="toast-icon">@GetIcon(toast.Level)</div>
+            <div class="toast-body">
+                <strong>@toast.Title</strong>
+                <span>@toast.Message</span>
+            </div>
+            <button class="toast-dismiss" @onclick="() => RemoveToast(toast)">&times;</button>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<ToastItem> _toasts = new();
+
+    protected override void OnInitialized()
+    {
+        ToastService.OnShow += HandleToast;
+    }
+
+    private async void HandleToast(ToastMessage message)
+    {
+        var item = new ToastItem(message);
+        _toasts.Add(item);
+        await InvokeAsync(StateHasChanged);
+
+        // Auto-dismiss after 4 seconds
+        _ = Task.Delay(4000).ContinueWith(async _ =>
+        {
+            item.Fading = true;
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(300);
+            _toasts.Remove(item);
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private void RemoveToast(ToastItem toast)
+    {
+        _toasts.Remove(toast);
+    }
+
+    private static string GetIcon(ToastLevel level) => level switch
+    {
+        ToastLevel.Success => "✓",
+        ToastLevel.Error => "✕",
+        ToastLevel.Warning => "⚠",
+        ToastLevel.Info => "ℹ",
+        _ => ""
+    };
+
+    public void Dispose()
+    {
+        ToastService.OnShow -= HandleToast;
+    }
+
+    private class ToastItem
+    {
+        public ToastLevel Level { get; }
+        public string Title { get; }
+        public string Message { get; }
+        public bool Fading { get; set; }
+
+        public ToastItem(ToastMessage msg)
+        {
+            Level = msg.Level;
+            Title = msg.Title;
+            Message = msg.Message;
+        }
+    }
+}

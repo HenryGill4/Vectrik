@@ -1,0 +1,67 @@
+@if (TotalPages > 1)
+{
+    <nav class="pagination-container">
+        <button class="btn btn-sm btn-secondary" disabled="@(CurrentPage <= 1)" @onclick="() => GoToPage(CurrentPage - 1)">
+            ← Prev
+        </button>
+
+        @foreach (var pageNum in GetPageNumbers())
+        {
+            @if (pageNum == -1)
+            {
+                <span class="pagination-ellipsis">…</span>
+            }
+            else
+            {
+                <button class="btn btn-sm @(pageNum == CurrentPage ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => GoToPage(pageNum)">
+                    @pageNum
+                </button>
+            }
+        }
+
+        <button class="btn btn-sm btn-secondary" disabled="@(CurrentPage >= TotalPages)" @onclick="() => GoToPage(CurrentPage + 1)">
+            Next →
+        </button>
+
+        <span class="pagination-info">@TotalItems items</span>
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired] public int CurrentPage { get; set; } = 1;
+    [Parameter, EditorRequired] public int TotalItems { get; set; }
+    [Parameter] public int PageSize { get; set; } = 25;
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+
+    private int TotalPages => (int)Math.Ceiling((double)TotalItems / PageSize);
+
+    private async Task GoToPage(int page)
+    {
+        if (page < 1 || page > TotalPages || page == CurrentPage) return;
+        CurrentPage = page;
+        await OnPageChanged.InvokeAsync(page);
+    }
+
+    private List<int> GetPageNumbers()
+    {
+        var pages = new List<int>();
+        if (TotalPages <= 7)
+        {
+            for (int i = 1; i <= TotalPages; i++) pages.Add(i);
+            return pages;
+        }
+
+        pages.Add(1);
+        if (CurrentPage > 3) pages.Add(-1); // ellipsis
+
+        var start = Math.Max(2, CurrentPage - 1);
+        var end = Math.Min(TotalPages - 1, CurrentPage + 1);
+        for (int i = start; i <= end; i++) pages.Add(i);
+
+        if (CurrentPage < TotalPages - 2) pages.Add(-1); // ellipsis
+        pages.Add(TotalPages);
+
+        return pages;
+    }
+}

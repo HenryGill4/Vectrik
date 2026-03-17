@@ -39,7 +39,14 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.ExpireTimeSpan = TimeSpan.FromHours(12);
         options.SlidingExpiration = true;
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Require authentication on all endpoints by default.
+    // Pages that should be public must use @attribute [AllowAnonymous].
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 builder.Services.AddCascadingAuthenticationState();
 
 // SignalR
@@ -48,6 +55,7 @@ builder.Services.AddSignalR();
 // Platform services
 builder.Services.AddScoped<ITenantService, TenantService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ToastService>();
 
 // Tenant services
 builder.Services.AddScoped<IPartService, PartService>();
@@ -76,7 +84,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-    platformDb.Database.EnsureCreated();
+    platformDb.Database.Migrate();
 
     // Seed super admin if none exists
     if (!platformDb.PlatformUsers.Any())

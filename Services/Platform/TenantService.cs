@@ -93,7 +93,7 @@ public class TenantService : ITenantService
             .Options;
 
         using var tenantDb = new TenantDbContext(options);
-        await tenantDb.Database.EnsureCreatedAsync();
+        await tenantDb.Database.MigrateAsync();
 
         // Use DataSeedingService when available (B16), for now just ensure DB exists
         var seedingService = _serviceProvider.GetService<IDataSeedingService>();
