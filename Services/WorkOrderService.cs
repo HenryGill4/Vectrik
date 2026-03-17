@@ -224,6 +224,7 @@ public class WorkOrderService : IWorkOrderService
                 PartId = line.PartId,
                 WorkOrderLineId = line.Id,
                 PartNumber = line.Part.PartNumber,
+                SlsMaterial = line.Part.Material,
                 Quantity = line.Quantity,
                 EstimatedHours = estimatedHours,
                 MachineId = stage.AssignedMachineId,

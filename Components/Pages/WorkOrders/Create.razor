@@ -6,8 +6,18 @@
 @inject ITenantFeatureService Features
 @inject NavigationManager Nav
 @inject ToastService Toast
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>New Work Order - OpCentrix</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{
+            _currentUser = context.User.FindFirst("FullName")?.Value
+                ?? context.User.FindFirst(ClaimTypes.Name)?.Value
+                ?? "System";
+        }
 
 <div class="page-header">
     <h1 class="page-title">New Work Order</h1>
@@ -174,7 +184,12 @@
     </Footer>
 </AppModal>
 
+    </Authorized>
+</AuthorizeView>
+
 @code {
+    private string _currentUser = "System";
+
     private WorkOrder _wo = new()
     {
         DueDate = DateTime.UtcNow.AddDays(30),
@@ -223,6 +238,8 @@
         _saving = true;
         try
         {
+            _wo.CreatedBy = _currentUser;
+            _wo.LastModifiedBy = _currentUser;
             var wo = await WorkOrderService.CreateWorkOrderAsync(_wo);
             foreach (var line in _lines)
             {

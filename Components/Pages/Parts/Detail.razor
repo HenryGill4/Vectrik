@@ -6,6 +6,8 @@
 @inject ITenantFeatureService Features
 @inject NavigationManager Nav
 @inject ToastService Toast
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>@(_part?.Name ?? "Part Detail") - OpCentrix</PageTitle>
 
@@ -40,6 +42,7 @@ else
         </div>
         <div style="display: flex; gap: 8px;">
             <button class="btn btn-secondary" @onclick="GoToEdit">✏️ Edit</button>
+            <button class="btn btn-secondary" @onclick="ShowCloneModal">📋 Clone</button>
             <button class="btn btn-primary" @onclick="ShowRevisionBump">📝 Bump Revision</button>
         </div>
     </div>
@@ -51,6 +54,7 @@ else
         <button class="tab @(_tab == "drawings" ? "active" : "")" @onclick='() => _tab = "drawings"'>Drawings (@(_drawings?.Count ?? 0))</button>
         <button class="tab @(_tab == "revisions" ? "active" : "")" @onclick='() => _tab = "revisions"'>Revisions (@(_part.RevisionHistory?.Count ?? 0))</button>
         <button class="tab @(_tab == "notes" ? "active" : "")" @onclick='() => _tab = "notes"'>Notes (@(_part.Notes?.Count ?? 0))</button>
+        <button class="tab @(_tab == "usage" ? "active" : "")" @onclick="LoadUsageTab">Usage</button>
     </div>
 
     <!-- Overview Tab -->
@@ -300,6 +304,116 @@ else
             }
         </div>
     }
+
+    <!-- Usage Tab -->
+    @if (_tab == "usage")
+    {
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="card">
+                <h3 class="card-title">Active Work Orders</h3>
+                @if (_usage == null)
+                {
+                    <div class="loading"><span class="spinner"></span> Loading...</div>
+                }
+                else if (_usage.ActiveWorkOrderLines.Count == 0)
+                {
+                    <p style="color: var(--text-muted);">No active work orders reference this part.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead><tr><th>WO #</th><th>Customer</th><th>Qty</th><th>Status</th><th>Due</th></tr></thead>
+                        <tbody>
+                            @foreach (var line in _usage.ActiveWorkOrderLines)
+                            {
+                                <tr>
+                                    <td><a href="/workorders/@line.WorkOrder.Id">@line.WorkOrder.OrderNumber</a></td>
+                                    <td>@line.WorkOrder.CustomerName</td>
+                                    <td>@line.Quantity</td>
+                                    <td><span class="badge badge-info">@line.WorkOrder.Status</span></td>
+                                    <td>@line.WorkOrder.DueDate.ToString("yyyy-MM-dd")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            <div class="card">
+                <h3 class="card-title">Active Jobs</h3>
+                @if (_usage == null)
+                {
+                    <div class="loading"><span class="spinner"></span> Loading...</div>
+                }
+                else if (_usage.ActiveJobs.Count == 0)
+                {
+                    <p style="color: var(--text-muted);">No active jobs for this part.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead><tr><th>Part #</th><th>Qty</th><th>Status</th><th>Scheduled</th></tr></thead>
+                        <tbody>
+                            @foreach (var job in _usage.ActiveJobs)
+                            {
+                                <tr>
+                                    <td>@job.PartNumber</td>
+                                    <td>@job.Quantity</td>
+                                    <td><span class="badge badge-info">@job.Status</span></td>
+                                    <td>@job.ScheduledStart.ToString("yyyy-MM-dd")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            <div class="card">
+                <h3 class="card-title">Recent Quotes</h3>
+                @if (_usage == null)
+                {
+                    <div class="loading"><span class="spinner"></span> Loading...</div>
+                }
+                else if (_usage.RecentQuoteLines.Count == 0)
+                {
+                    <p style="color: var(--text-muted);">No quotes reference this part.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead><tr><th>Quote #</th><th>Qty</th><th>Unit Price</th><th>Status</th></tr></thead>
+                        <tbody>
+                            @foreach (var ql in _usage.RecentQuoteLines)
+                            {
+                                <tr>
+                                    <td><a href="/quotes/@ql.Quote.Id">@ql.Quote.QuoteNumber</a></td>
+                                    <td>@ql.Quantity</td>
+                                    <td>@ql.UnitPrice.ToString("C")</td>
+                                    <td><span class="badge badge-info">@ql.Quote.Status</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            <div class="card">
+                <h3 class="card-title">Quality Summary</h3>
+                @if (_usage == null)
+                {
+                    <div class="loading"><span class="spinner"></span> Loading...</div>
+                }
+                else
+                {
+                    <div class="detail-grid">
+                        <div class="detail-label">NCRs</div><div class="detail-value">@_usage.NcrCount</div>
+                        <div class="detail-label">Inspections</div><div class="detail-value">@_usage.InspectionCount</div>
+                        <div class="detail-label">SPC Data Points</div><div class="detail-value">@_usage.SpcDataPointCount</div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
 }
 
 <!-- Revision Bump Modal -->
@@ -355,6 +469,28 @@ else
     </Footer>
 </AppModal>
 
+<!-- Clone Part Modal -->
+<AppModal Visible="_showCloneModal" VisibleChanged="v => _showCloneModal = v" Title="Clone Part" Size="sm">
+    <ChildContent>
+        <p style="color: var(--text-muted); margin-bottom: 12px;">This will create a copy of <strong>@_part?.PartNumber</strong> with its routing, but without drawings, revision history, or notes.</p>
+        <div class="form-group">
+            <label class="form-label">New Part Number <span style="color:var(--danger)">*</span></label>
+            <input class="form-control" @bind="_clonePartNumber" placeholder="e.g. PART-002" />
+        </div>
+        @if (!string.IsNullOrEmpty(_cloneError))
+        {
+            <div class="alert alert-danger" style="margin-top: 8px;">@_cloneError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showCloneModal = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="ConfirmClone" disabled="@_cloning">
+            @if (_cloning) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+            Clone Part
+        </button>
+    </Footer>
+</AppModal>
+
 <ConfirmDialog @ref="_confirm" />
 
 @code {
@@ -382,6 +518,15 @@ else
     // Notes
     private bool _showNoteModal;
     private PartNote? _editNote;
+
+    // Usage
+    private PartUsageSummary? _usage;
+
+    // Clone
+    private bool _showCloneModal;
+    private bool _cloning;
+    private string _clonePartNumber = string.Empty;
+    private string? _cloneError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -519,6 +664,46 @@ else
         < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
         _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
     };
+
+    // Usage tab
+    private async Task LoadUsageTab()
+    {
+        _tab = "usage";
+        if (_usage == null && _part != null)
+        {
+            _usage = await PartService.GetPartUsageSummaryAsync(_part.Id);
+        }
+    }
+
+    // Clone
+    private void ShowCloneModal()
+    {
+        _clonePartNumber = $"{_part?.PartNumber}-COPY";
+        _cloneError = null;
+        _showCloneModal = true;
+    }
+
+    private async Task ConfirmClone()
+    {
+        if (string.IsNullOrWhiteSpace(_clonePartNumber) || _part == null) return;
+        _cloneError = null;
+        _cloning = true;
+        try
+        {
+            var cloned = await PartService.ClonePartAsync(_part.Id, _clonePartNumber, _part.LastModifiedBy);
+            _showCloneModal = false;
+            Toast.ShowSuccess($"Part cloned as {cloned.PartNumber}");
+            Nav.NavigateTo($"/parts/{cloned.Id}");
+        }
+        catch (Exception ex)
+        {
+            _cloneError = ex.Message;
+        }
+        finally
+        {
+            _cloning = false;
+        }
+    }
 
     private void GoToEdit()
     {

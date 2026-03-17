@@ -10,10 +10,12 @@ public interface IPricingEngineService
 public class PricingBreakdown
 {
     public decimal LaborCost { get; set; }
+    public decimal SetupCost { get; set; }
     public decimal MaterialCost { get; set; }
+    public decimal StageMaterialCost { get; set; }
     public decimal OverheadCost { get; set; }
     public decimal OutsideProcessCost { get; set; }
-    public decimal TotalCost => LaborCost + MaterialCost + OverheadCost + OutsideProcessCost;
+    public decimal TotalCost => LaborCost + SetupCost + MaterialCost + StageMaterialCost + OverheadCost + OutsideProcessCost;
     public double TotalLaborMinutes { get; set; }
     public double TotalSetupMinutes { get; set; }
 }

@@ -15,7 +15,7 @@ public class PartService : IPartService
 
     public async Task<List<Part>> GetAllPartsAsync(bool activeOnly = true)
     {
-        var query = _db.Parts.AsQueryable();
+        var query = _db.Parts.Include(p => p.MaterialEntity).AsQueryable();
         if (activeOnly)
             query = query.Where(p => p.IsActive);
         return await query.OrderBy(p => p.PartNumber).ToListAsync();
@@ -24,6 +24,7 @@ public class PartService : IPartService
     public async Task<Part?> GetPartByIdAsync(int id)
     {
         return await _db.Parts
+            .Include(p => p.MaterialEntity)
             .Include(p => p.StageRequirements)
                 .ThenInclude(sr => sr.ProductionStage)
             .FirstOrDefaultAsync(p => p.Id == id);
@@ -99,7 +100,7 @@ public class PartService : IPartService
         await _db.SaveChangesAsync();
     }
 
-    public Task<List<string>> ValidatePartAsync(Part part)
+    public async Task<List<string>> ValidatePartAsync(Part part)
     {
         var errors = new List<string>();
 
@@ -108,9 +109,19 @@ public class PartService : IPartService
         if (string.IsNullOrWhiteSpace(part.Name))
             errors.Add("Part name is required.");
 
+        // Duplicate PartNumber check
+        if (!string.IsNullOrWhiteSpace(part.PartNumber))
+        {
+            var exists = await _db.Parts
+                .Where(p => p.PartNumber == part.PartNumber && p.Id != part.Id)
+                .AnyAsync();
+            if (exists)
+                errors.Add($"Part number '{part.PartNumber}' already exists.");
+        }
+
         errors.AddRange(part.ValidateStackingConfiguration());
 
-        return Task.FromResult(errors);
+        return errors;
     }
 
     // PDM Extensions
@@ -118,6 +129,7 @@ public class PartService : IPartService
     public async Task<Part?> GetPartDetailAsync(int id)
     {
         return await _db.Parts
+            .Include(p => p.MaterialEntity)
             .Include(p => p.StageRequirements)
                 .ThenInclude(sr => sr.ProductionStage)
             .Include(p => p.Drawings)
@@ -207,5 +219,134 @@ public class PartService : IPartService
         if (note == null) throw new InvalidOperationException("Note not found.");
         _db.PartNotes.Remove(note);
         await _db.SaveChangesAsync();
+    }
+
+    // Usage & Cloning
+
+    public async Task<PartUsageSummary> GetPartUsageSummaryAsync(int partId)
+    {
+        var summary = new PartUsageSummary();
+
+        summary.ActiveWorkOrderLines = await _db.WorkOrderLines
+            .Include(l => l.WorkOrder)
+            .Where(l => l.PartId == partId && l.WorkOrder.Status != Models.Enums.WorkOrderStatus.Cancelled)
+            .OrderByDescending(l => l.WorkOrder.CreatedDate)
+            .Take(20)
+            .ToListAsync();
+
+        summary.ActiveJobs = await _db.Jobs
+            .Include(j => j.Stages)
+            .Where(j => j.PartId == partId && j.Status != Models.Enums.JobStatus.Cancelled)
+            .OrderByDescending(j => j.CreatedDate)
+            .Take(20)
+            .ToListAsync();
+
+        summary.RecentQuoteLines = await _db.QuoteLines
+            .Include(l => l.Quote)
+            .Where(l => l.PartId == partId)
+            .OrderByDescending(l => l.Quote.CreatedDate)
+            .Take(20)
+            .ToListAsync();
+
+        summary.NcrCount = await _db.NonConformanceReports.CountAsync(n => n.PartId == partId);
+        summary.InspectionCount = await _db.QCInspections.CountAsync(i => i.PartId == partId);
+        summary.SpcDataPointCount = await _db.SpcDataPoints.CountAsync(s => s.PartId == partId);
+
+        return summary;
+    }
+
+    public async Task<Part> ClonePartAsync(int sourcePartId, string newPartNumber, string createdBy)
+    {
+        var source = await _db.Parts
+            .Include(p => p.StageRequirements)
+                .ThenInclude(sr => sr.ProductionStage)
+            .FirstOrDefaultAsync(p => p.Id == sourcePartId)
+            ?? throw new InvalidOperationException("Source part not found.");
+
+        // Check uniqueness of new part number
+        var exists = await _db.Parts.AnyAsync(p => p.PartNumber == newPartNumber);
+        if (exists)
+            throw new InvalidOperationException($"Part number '{newPartNumber}' already exists.");
+
+        var clone = new Part
+        {
+            PartNumber = newPartNumber,
+            Name = $"{source.Name} (Copy)",
+            Description = source.Description,
+            Material = source.Material,
+            MaterialId = source.MaterialId,
+            ManufacturingApproach = source.ManufacturingApproach,
+            CustomerPartNumber = source.CustomerPartNumber,
+            DrawingNumber = source.DrawingNumber,
+            Revision = "A",
+            EstimatedWeightKg = source.EstimatedWeightKg,
+            RawMaterialSpec = source.RawMaterialSpec,
+            CustomFieldValues = source.CustomFieldValues,
+            ItarClassification = source.ItarClassification,
+            IsDefensePart = source.IsDefensePart,
+            AllowStacking = source.AllowStacking,
+            SingleStackDurationHours = source.SingleStackDurationHours,
+            DoubleStackDurationHours = source.DoubleStackDurationHours,
+            TripleStackDurationHours = source.TripleStackDurationHours,
+            MaxStackCount = source.MaxStackCount,
+            PartsPerBuildSingle = source.PartsPerBuildSingle,
+            PartsPerBuildDouble = source.PartsPerBuildDouble,
+            PartsPerBuildTriple = source.PartsPerBuildTriple,
+            EnableDoubleStack = source.EnableDoubleStack,
+            EnableTripleStack = source.EnableTripleStack,
+            StageEstimateSingle = source.StageEstimateSingle,
+            SlsBuildDurationHours = source.SlsBuildDurationHours,
+            SlsPartsPerBuild = source.SlsPartsPerBuild,
+            DepowderingDurationHours = source.DepowderingDurationHours,
+            DepowderingPartsPerBatch = source.DepowderingPartsPerBatch,
+            HeatTreatmentDurationHours = source.HeatTreatmentDurationHours,
+            HeatTreatmentPartsPerBatch = source.HeatTreatmentPartsPerBatch,
+            WireEdmDurationHours = source.WireEdmDurationHours,
+            WireEdmPartsPerSession = source.WireEdmPartsPerSession,
+            IsActive = true,
+            CreatedBy = createdBy,
+            LastModifiedBy = createdBy,
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+
+        _db.Parts.Add(clone);
+        await _db.SaveChangesAsync();
+
+        // Deep-copy stage requirements
+        foreach (var sr in source.StageRequirements.Where(s => s.IsActive))
+        {
+            var clonedReq = new PartStageRequirement
+            {
+                PartId = clone.Id,
+                ProductionStageId = sr.ProductionStageId,
+                ExecutionOrder = sr.ExecutionOrder,
+                IsRequired = sr.IsRequired,
+                IsActive = true,
+                AllowParallelExecution = sr.AllowParallelExecution,
+                IsBlocking = sr.IsBlocking,
+                EstimatedHours = sr.EstimatedHours,
+                SetupTimeMinutes = sr.SetupTimeMinutes,
+                HourlyRateOverride = sr.HourlyRateOverride,
+                EstimatedCost = sr.EstimatedCost,
+                MaterialCost = sr.MaterialCost,
+                AssignedMachineId = sr.AssignedMachineId,
+                RequiresSpecificMachine = sr.RequiresSpecificMachine,
+                PreferredMachineIds = sr.PreferredMachineIds,
+                StageParameters = sr.StageParameters,
+                RequiredMaterials = sr.RequiredMaterials,
+                RequiredTooling = sr.RequiredTooling,
+                QualityRequirements = sr.QualityRequirements,
+                SpecialInstructions = sr.SpecialInstructions,
+                RequirementNotes = sr.RequirementNotes,
+                EstimateSource = "Manual",
+                CreatedBy = createdBy,
+                LastModifiedBy = createdBy
+            };
+            _db.PartStageRequirements.Add(clonedReq);
+        }
+
+        await _db.SaveChangesAsync();
+        return clone;
     }
 }

@@ -132,6 +132,10 @@ public class TenantDbContext : DbContext
         modelBuilder.Entity<Part>(entity =>
         {
             entity.HasIndex(e => e.PartNumber);
+            entity.HasOne(p => p.MaterialEntity)
+                .WithMany()
+                .HasForeignKey(p => p.MaterialId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // PartDrawing

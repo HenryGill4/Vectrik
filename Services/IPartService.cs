@@ -24,4 +24,18 @@ public interface IPartService
     Task<PartNote> AddNoteAsync(PartNote note);
     Task<PartNote> UpdateNoteAsync(PartNote note);
     Task DeleteNoteAsync(int noteId);
+
+    // Usage & Cloning
+    Task<PartUsageSummary> GetPartUsageSummaryAsync(int partId);
+    Task<Part> ClonePartAsync(int sourcePartId, string newPartNumber, string createdBy);
+}
+
+public class PartUsageSummary
+{
+    public List<WorkOrderLine> ActiveWorkOrderLines { get; set; } = new();
+    public List<Job> ActiveJobs { get; set; } = new();
+    public List<QuoteLine> RecentQuoteLines { get; set; } = new();
+    public int NcrCount { get; set; }
+    public int InspectionCount { get; set; }
+    public int SpcDataPointCount { get; set; }
 }

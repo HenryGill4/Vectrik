@@ -20,8 +20,12 @@ public class Part
     [Required, MaxLength(100)]
     public string Material { get; set; } = "Ti-6Al-4V Grade 5";
 
+    // Material FK (replaces fragile string-match in PricingEngine)
+    public int? MaterialId { get; set; }
+    public virtual Material? MaterialEntity { get; set; }
+
     [Required, MaxLength(100)]
-    public string ManufacturingApproach { get; set; } = "SLS-Based";
+    public string ManufacturingApproach { get; set; } = "CNC Machining";
 
     // PDM Fields
     [MaxLength(50)]
@@ -103,8 +107,9 @@ public class Part
     [Range(1, 100)]
     public int? WireEdmPartsPerSession { get; set; }
 
-    // Stage Config
-    [Required, MaxLength(1000)]
+    // Stage Config (deprecated — use StageRequirements navigation property)
+    [Obsolete("Use StageRequirements navigation property instead")]
+    [MaxLength(1000)]
     public string RequiredStages { get; set; } = "[]";
 
     // Status + Audit
