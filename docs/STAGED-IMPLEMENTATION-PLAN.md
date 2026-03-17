@@ -1,5 +1,9 @@
 # Opcentrix V3 — Staged Implementation Plan
 
+> **DEPRECATED**: This plan has been superseded by **`ROADMAP.md`** (project root).
+> Module-specific detail plans in `docs/phase-N/MODULE-XX-*.md` remain valid
+> as implementation blueprints. Retained for historical reference.
+
 > **Purpose**: This document defines the exact build order, stage-by-stage,
 > for implementing all 18 modules. Each stage is 2–4 weeks of work and
 > produces a testable, shippable increment. MES features are layered on top

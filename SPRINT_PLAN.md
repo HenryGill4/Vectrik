@@ -1,7 +1,10 @@
 # OpCentrix — Full MES Build Sprint Plan
 
+> **DEPRECATED**: This plan has been superseded by **`ROADMAP.md`** (project root).
+> Retained for historical reference only. Do not use for planning.
+
 > **Created**: 2026-03-13
-> **Status**: IN PROGRESS
+> **Status**: SUPERSEDED — See `ROADMAP.md`
 > **Starting Point**: Phases A-C complete (models, services, placeholder pages)
 
 ---

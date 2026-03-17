@@ -1,9 +1,13 @@
-# Opcentrix MES — Master Context & Progress Tracker
+# Opcentrix MES — Master Context & Architecture Reference
 
-> **For Copilot**: This is your primary navigation file. Every time you start a
-> session on this project, read this file first to understand what exists, what's
-> in progress, and which module plan to follow next. Each module plan is a
-> self-contained implementation guide. Follow them in phase order.
+> **For AI agents**: Start every session by reading **`ROADMAP.md`** (project root)
+> for current phase and next task. This file contains architecture patterns, model
+> registries, service registries, and route registries. The roadmap is the
+> **master sequencer** — this file is the **reference manual**.
+>
+> **Superseded plans**: `SPRINT_PLAN.md` and `OPCENTRIX_ARCHITECTURE_DECISIONS.md`
+> phase trackers are historical only. Do not follow them for planning. The unified
+> roadmap at `ROADMAP.md` is the single source of truth.
 
 ---
 
@@ -40,9 +44,10 @@ Opcentrix-V3/
 ├── Hubs/                 # SignalR hubs
 ├── Middleware/           # TenantMiddleware
 ├── wwwroot/              # Static assets (CSS, JS, uploads, icons)
-├── sprints/              # Original sprint plans (superseded by docs/)
-├── docs/                 # NEW: Full module implementation plans
-│   ├── MASTER_CONTEXT.md (this file)
+├── ROADMAP.md            # ★ UNIFIED ROADMAP — start here every session
+├── sprints/              # Historical sprint plans (superseded)
+├── docs/                 # Module plans & architecture reference
+│   ├── MASTER_CONTEXT.md (this file — architecture patterns)
 │   ├── phase-1/          # Core Production Engine (Months 1–6)
 │   ├── phase-2/          # Operational Depth (Months 7–12)
 │   └── phase-3/          # Platform Maturity (Months 13–18)
@@ -642,28 +647,16 @@ These features we are building that ProShop does NOT have:
 
 ---
 
-## How Copilot Should Use This Document
+## How AI Agents Should Use This Project
 
-1. **Before starting work**: Read `MASTER_CONTEXT.md` (this file) to understand
-   current state and which module to work on next.
-
-2. **To implement a module**: Open the corresponding plan file in `docs/phase-N/`.
-   Follow the steps in order. Each step specifies exact file paths and code patterns.
-
-3. **After completing a step**: Check the checkbox in the module plan file:
-   `- [ ] Step description` → `- [x] Step description`
-
-4. **After completing a full module**: Update the status in this file's module table:
-   `[ ] Not Started` → `[~] In Progress` → `[x] Complete`
-
-5. **For database changes**: Always run EF migrations as specified at the end of
-   each module's implementation steps.
-
-6. **For cross-module work**: Check the dependency map to ensure prerequisite
-   modules are complete before starting dependent ones.
-
-7. **When in doubt about patterns**: Look at existing implementations in the
-   foundation (Admin pages, MaintenanceService, etc.) and match the style.
+1. **Before starting work**: Read **`ROADMAP.md`** (project root) to find the
+   current phase and next unchecked task.
+2. **For architecture patterns**: Read this file (`docs/MASTER_CONTEXT.md`).
+3. **For module detail**: Open `docs/phase-N/MODULE-XX-*.md` for step-by-step guides.
+4. **After completing a task**: Mark it `[x]` in `ROADMAP.md`.
+5. **For database changes**: Always run EF migrations as specified in module plans.
+6. **For cross-module work**: Check the dependency map in `ROADMAP.md`.
+7. **When in doubt about patterns**: Match existing implementations (Admin pages, services).
 
 ---
 
@@ -671,6 +664,10 @@ These features we are building that ProShop does NOT have:
 
 | File | Purpose |
 |------|---------|
+| **`ROADMAP.md`** | **★ Unified roadmap — start here every session** |
+| `docs/MASTER_CONTEXT.md` | Architecture patterns & registries (this file) |
+| `docs/DLMS-CUSTOMIZATION-ARCHITECTURE.md` | DLMS + per-tenant customization architecture |
+| `docs/phase-N/MODULE-XX-*.md` | Detailed module implementation plans |
 | `Program.cs` | DI registration, middleware, auth, seeding |
 | `Data/TenantDbContext.cs` | All tenant entity DbSets — ADD NEW ONES HERE |
 | `Data/TenantDbContextFactory.cs` | Creates per-tenant DB contexts, auto-migrates |
@@ -685,10 +682,9 @@ These features we are building that ProShop does NOT have:
 | `Components/Shared/Pagination.razor` | Page navigation for lists |
 | `Services/ToastService.cs` | Toast event bus — inject and call `.ShowSuccess()` etc. |
 | `wwwroot/css/site.css` | All styles — ADD NEW STYLES HERE |
-| `docs/STAGED-IMPLEMENTATION-PLAN.md` | **21-stage build plan — START HERE for implementation order** |
-| `docs/DLMS-CUSTOMIZATION-ARCHITECTURE.md` | **DLMS integration + per-tenant customization architecture** |
 
 ---
 
-*Last Updated: June 2025*
-*18 modules + DLMS/customization foundation across 3 phases — 100% ProShop parity + defense logistics + tenant self-service customization*
+*Last Updated: 2026-03-17*
+*18 modules + DLMS/customization foundation across 4 phases — 100% ProShop parity + defense logistics + tenant self-service customization*
+*Roadmap: `ROADMAP.md` | Architecture: `docs/MASTER_CONTEXT.md` | DLMS: `docs/DLMS-CUSTOMIZATION-ARCHITECTURE.md`*

@@ -1,9 +1,13 @@
-# OpCentrix � Fresh Build Architecture Spec
+# OpCentrix — Fresh Build Architecture Spec
+
+> **PHASE TRACKER DEPRECATED**: The phase tracker in this file has been superseded
+> by **`ROADMAP.md`** (project root). This file is retained as an architecture
+> reference for decisions made during the initial build.
 
 > **Last Updated**: 2026-03-12
 > **Branch**: `New-Master-Parts`
-> **Status**: FRESH PROJECT BUILD � multi-tenant MES from scratch
-> **Old Project**: `OpCentrix/` (legacy, do not modify � will be renamed to `OpCentrix-legacy/`)
+> **Status**: Phases A-C complete. See `ROADMAP.md` for current roadmap.
+> **Old Project**: `OpCentrix/` (legacy, do not modify)
 
 ---
 
