@@ -112,6 +112,12 @@ else
                         <tr>
                             <th>Order</th>
                             <th>Stage</th>
+                            <th>Department</th>
+                            <th>Est. Hours</th>
+                            <th>Setup (min)</th>
+                            <th>Est. Cost</th>
+                            <th>Material Cost</th>
+                            <th>Machine</th>
                             <th>Required</th>
                         </tr>
                     </thead>
@@ -120,7 +126,16 @@ else
                         {
                             <tr>
                                 <td>@sr.ExecutionOrder</td>
-                                <td>@(sr.ProductionStage?.Name ?? $"Stage {sr.ProductionStageId}")</td>
+                                <td>
+                                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: @(sr.ProductionStage?.StageColor ?? "var(--accent)"); margin-right: 6px;"></span>
+                                    @(sr.ProductionStage?.Name ?? $"Stage {sr.ProductionStageId}")
+                                </td>
+                                <td>@(sr.ProductionStage?.Department ?? "—")</td>
+                                <td>@(sr.EstimatedHours?.ToString("F1") ?? sr.ProductionStage?.DefaultDurationHours.ToString("F1") ?? "—")</td>
+                                <td>@(sr.SetupTimeMinutes?.ToString() ?? "—")</td>
+                                <td>@(sr.EstimatedCost > 0 ? sr.EstimatedCost.ToString("C") : "—")</td>
+                                <td>@(sr.MaterialCost > 0 ? sr.MaterialCost.ToString("C") : "—")</td>
+                                <td>@(sr.AssignedMachineId ?? "Any")</td>
                                 <td><span class="badge @(sr.IsRequired ? "badge-active" : "badge-info")">@(sr.IsRequired ? "Required" : "Optional")</span></td>
                             </tr>
                         }
@@ -507,6 +522,6 @@ else
 
     private void GoToEdit()
     {
-        Nav.NavigateTo("/admin/parts");
+        Nav.NavigateTo($"/parts/{Id}/edit");
     }
 }

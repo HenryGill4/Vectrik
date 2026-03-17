@@ -93,6 +93,10 @@ builder.Services.AddScoped<IOeeService, OeeService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IMaterialPlanningService, MaterialPlanningService>();
 
+// Quality Systems (Module 05)
+builder.Services.AddScoped<IQualityService, QualityService>();
+builder.Services.AddScoped<ISpcService, SpcService>();
+
 // Machine providers + SignalR notifier
 builder.Services.AddScoped<MachineProviderFactory>();
 builder.Services.AddSingleton<IMachineStateNotifier, MachineStateNotifier>();
@@ -176,7 +180,7 @@ app.UseMiddleware<TenantMiddleware>();
 
 app.UseAntiforgery();
 
-app.MapStaticAssets();
+app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapHub<MachineStateHub>("/hubs/machine-state");

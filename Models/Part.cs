@@ -124,6 +124,7 @@ public class Part
     public virtual ICollection<PartDrawing> Drawings { get; set; } = new List<PartDrawing>();
     public virtual ICollection<PartRevisionHistory> RevisionHistory { get; set; } = new List<PartRevisionHistory>();
     public virtual ICollection<PartNote> Notes { get; set; } = new List<PartNote>();
+    public virtual ICollection<InspectionPlan> InspectionPlans { get; set; } = new List<InspectionPlan>();
 
     // NotMapped computed properties
     [NotMapped]

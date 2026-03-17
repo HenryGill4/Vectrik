@@ -1,0 +1,599 @@
+@page "/parts/new"
+@page "/parts/{Id:int}/edit"
+@rendermode InteractiveServer
+@inject IPartService PartService
+@inject IStageService StageService
+@inject IMaterialService MaterialService
+@inject ICustomFieldService CustomFieldService
+@inject ITenantFeatureService Features
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@using System.Security.Claims
+@using System.Text.Json
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>@(_isNew ? "New Part" : $"Edit {_part?.PartNumber}") - OpCentrix</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{
+            _currentUser = context.User.FindFirst("FullName")?.Value
+                ?? context.User.FindFirst(ClaimTypes.Name)?.Value
+                ?? "System";
+        }
+
+        @if (_loading)
+        {
+            <div class="loading"><span class="spinner"></span> Loading...</div>
+        }
+        else if (!_isNew && _part == null)
+        {
+            <div class="card" style="text-align: center; padding: 40px;">
+                <p style="color: var(--text-muted);">Part not found.</p>
+                <button class="btn btn-secondary" @onclick="GoBack">← Back to Parts</button>
+            </div>
+        }
+        else
+        {
+            <div class="page-header">
+                <div>
+                    <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Parts</button>
+                    <h1 class="page-title">@(_isNew ? "New Part" : $"Edit {_part!.PartNumber} — {_part.Name}")</h1>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="alert alert-danger" style="margin-bottom: 12px;">@_error</div>
+            }
+
+            @if (_validationErrors.Count > 0)
+            {
+                <div class="alert alert-danger" style="margin-bottom: 12px;">
+                    <strong>Please fix the following:</strong>
+                    <ul style="margin: 8px 0 0 16px;">
+                        @foreach (var err in _validationErrors)
+                        {
+                            <li>@err</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            <!-- Tab Bar -->
+            <div class="tab-bar" style="margin-bottom: 16px;">
+                <button class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>Part Info</button>
+                <button class="tab @(_tab == "pdm" ? "active" : "")" @onclick='() => _tab = "pdm"'>Drawing & Revision</button>
+                @if (!_isNew)
+                {
+                    <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_stageReqs?.Count ?? 0))</button>
+                }
+                @if (_showSlsFeatures)
+                {
+                    <button class="tab @(_tab == "stacking" ? "active" : "")" @onclick='() => _tab = "stacking"'>Stacking</button>
+                    <button class="tab @(_tab == "batch" ? "active" : "")" @onclick='() => _tab = "batch"'>Batch Durations</button>
+                }
+                @if (_showDlms)
+                {
+                    <button class="tab @(_tab == "defense" ? "active" : "")" @onclick='() => _tab = "defense"'>Defense / DLMS</button>
+                }
+                @if (_customFieldDefs.Count > 0)
+                {
+                    <button class="tab @(_tab == "custom" ? "active" : "")" @onclick='() => _tab = "custom"'>Custom Fields</button>
+                }
+            </div>
+
+            <!-- Part Info Tab -->
+            @if (_tab == "info")
+            {
+                <div class="card">
+                    <h3 class="card-title">Basic Information</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">Part Number <span style="color:var(--danger)">*</span></label>
+                            <input class="form-control" @bind="_part!.PartNumber" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                            <input class="form-control" @bind="_part!.Name" />
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" @bind="_part!.Description" rows="2"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Material <span style="color:var(--danger)">*</span></label>
+                            <select class="form-control" @bind="_part!.Material">
+                                <option value="">Select material...</option>
+                                @if (_materials != null)
+                                {
+                                    @foreach (var m in _materials)
+                                    {
+                                        <option value="@m.Name">@m.Name (@m.Category)</option>
+                                    }
+                                }
+                                @if (!string.IsNullOrEmpty(_part.Material) && _materials?.All(m => m.Name != _part.Material) == true)
+                                {
+                                    <option value="@_part.Material">@_part.Material (custom)</option>
+                                }
+                            </select>
+                            <small style="color: var(--text-muted);">Or type a custom value below:</small>
+                            <input class="form-control" @bind="_part!.Material" style="margin-top: 4px;" placeholder="Custom material name..." />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Manufacturing Approach</label>
+                            <select class="form-control" @bind="_part!.ManufacturingApproach">
+                                @foreach (var a in _approaches)
+                                {
+                                    <option value="@a">@a</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Raw Material Spec</label>
+                            <input class="form-control" @bind="_part!.RawMaterialSpec" placeholder="e.g. AMS 4911" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Estimated Weight (kg)</label>
+                            <input class="form-control" type="number" step="0.01" @bind="_part!.EstimatedWeightKg" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" @bind="_part!.IsActive" style="margin-right: 6px;" />Active
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- PDM / Drawing Tab -->
+            @if (_tab == "pdm")
+            {
+                <div class="card">
+                    <h3 class="card-title">Drawing & Revision Information</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">Drawing Number</label>
+                            <input class="form-control" @bind="_part!.DrawingNumber" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Current Revision</label>
+                            <input class="form-control" @bind="_part!.Revision" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Customer Part Number</label>
+                            <input class="form-control" @bind="_part!.CustomerPartNumber" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Revision Date</label>
+                            <input class="form-control" type="date" @bind="_part!.RevisionDate" />
+                        </div>
+                    </div>
+                    @if (!_isNew)
+                    {
+                        <p style="color: var(--text-muted); margin-top: 12px; font-size: 0.85rem;">
+                            To formally bump the revision (with history tracking), use the "Bump Revision" button on the Part Detail page.
+                            Drawings can be uploaded from the Part Detail → Drawings tab.
+                        </p>
+                    }
+                </div>
+            }
+
+            <!-- Routing / Stage Requirements Tab -->
+            @if (_tab == "routing" && !_isNew)
+            {
+                <div class="card">
+                    <h3 class="card-title">Stage Routing</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 12px;">Define the production stages this part goes through, in order. Each stage gets its own execution entry when a work order is created.</p>
+
+                    <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
+                        <select class="form-control" style="width: auto;" @bind="_addStageId">
+                            <option value="0">Add stage...</option>
+                            @if (_allStages != null)
+                            {
+                                @foreach (var s in _allStages.Where(s => _stageReqs?.All(r => r.ProductionStageId != s.Id) ?? true))
+                                {
+                                    <option value="@s.Id">@s.Name (@(s.Department ?? "—"))</option>
+                                }
+                            }
+                        </select>
+                        <button class="btn btn-sm btn-primary" @onclick="AddStageReq" disabled="@(_addStageId == 0)">+ Add Stage</button>
+                    </div>
+
+                    @if (_stageReqs != null && _stageReqs.Any())
+                    {
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Order</th>
+                                    <th>Stage</th>
+                                    <th>Department</th>
+                                    <th>Est. Hours</th>
+                                    <th>Setup (min)</th>
+                                    <th>Rate $/hr</th>
+                                    <th>Material $</th>
+                                    <th>Machine</th>
+                                    <th>Required</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var r in _stageReqs.OrderBy(r => r.ExecutionOrder))
+                                {
+                                    <tr>
+                                        <td><input class="form-control" type="number" min="1" style="width: 60px;" value="@r.ExecutionOrder" @onchange="e => UpdateReqField(r, nameof(r.ExecutionOrder), e)" /></td>
+                                        <td>
+                                            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:@(r.ProductionStage?.StageColor ?? "var(--accent)");margin-right:6px;"></span>
+                                            @(r.ProductionStage?.Name ?? $"Stage {r.ProductionStageId}")
+                                        </td>
+                                        <td>@(r.ProductionStage?.Department ?? "—")</td>
+                                        <td><input class="form-control" type="number" step="0.1" style="width: 80px;" value="@r.EstimatedHours" @onchange="e => UpdateReqField(r, nameof(r.EstimatedHours), e)" /></td>
+                                        <td><input class="form-control" type="number" style="width: 70px;" value="@r.SetupTimeMinutes" @onchange="e => UpdateReqField(r, nameof(r.SetupTimeMinutes), e)" /></td>
+                                        <td><input class="form-control" type="number" step="1" style="width: 80px;" value="@r.HourlyRateOverride" @onchange="e => UpdateReqField(r, nameof(r.HourlyRateOverride), e)" placeholder="@(r.ProductionStage?.DefaultHourlyRate.ToString("F0") ?? "—")" /></td>
+                                        <td><input class="form-control" type="number" step="0.01" style="width: 80px;" value="@r.MaterialCost" @onchange="e => UpdateReqField(r, nameof(r.MaterialCost), e)" /></td>
+                                        <td>
+                                            <select class="form-control" style="width:auto;min-width:100px;" value="@(r.AssignedMachineId ?? "")" @onchange="e => UpdateReqMachine(r, e)">
+                                                <option value="">Any</option>
+                                                @if (_machines != null)
+                                                {
+                                                    @foreach (var m in _machines.Where(m => r.ProductionStage?.Department == null || m.Department == r.ProductionStage.Department || string.IsNullOrEmpty(m.Department)))
+                                                    {
+                                                        <option value="@m.MachineId">@m.Name</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </td>
+                                        <td><input type="checkbox" checked="@r.IsRequired" @onchange="e => UpdateReqRequired(r, e)" /></td>
+                                        <td><button class="btn btn-sm btn-danger" @onclick="() => RemoveStageReq(r.Id)">✕</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+
+                        <div style="margin-top: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; display: flex; gap: 24px;">
+                            <div>
+                                <span class="form-label">Total Est. Hours</span>
+                                <div style="font-weight: 600;">@_stageReqs.Sum(r => r.GetEffectiveEstimatedHours()).ToString("F1") hrs</div>
+                            </div>
+                            <div>
+                                <span class="form-label">Total Est. Cost</span>
+                                <div style="font-weight: 600;">@_stageReqs.Sum(r => r.CalculateTotalEstimatedCost()).ToString("C")</div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚙</div>
+                            <div class="empty-state-text">No stages assigned. Add production stages to define the routing for this part.</div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- Stacking Tab (SLS feature-flagged) -->
+            @if (_tab == "stacking" && _showSlsFeatures)
+            {
+                <div class="card">
+                    <h3 class="card-title">SLS Stacking Configuration</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 12px;">Configure how this part can be stacked in SLS/LPBF builds.</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label"><input type="checkbox" @bind="_part!.AllowStacking" style="margin-right: 6px;" />Allow Stacking</label>
+                        </div>
+                        <div class="form-group"><label class="form-label">Max Stack Count</label><input class="form-control" type="number" min="1" max="10" @bind="_part!.MaxStackCount" /></div>
+                        <div class="form-group"><label class="form-label">Parts/Build (Single)</label><input class="form-control" type="number" min="1" @bind="_part!.PartsPerBuildSingle" /></div>
+                        <div class="form-group"><label class="form-label">Single Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.SingleStackDurationHours" /></div>
+
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label class="form-label"><input type="checkbox" @bind="_part!.EnableDoubleStack" style="margin-right: 6px;" />Enable Double Stack</label>
+                        </div>
+                        @if (_part!.EnableDoubleStack)
+                        {
+                            <div class="form-group"><label class="form-label">Parts/Build (Double)</label><input class="form-control" type="number" min="1" @bind="_part.PartsPerBuildDouble" /></div>
+                            <div class="form-group"><label class="form-label">Double Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part.DoubleStackDurationHours" /></div>
+                        }
+
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label class="form-label"><input type="checkbox" @bind="_part!.EnableTripleStack" style="margin-right: 6px;" />Enable Triple Stack</label>
+                        </div>
+                        @if (_part!.EnableTripleStack)
+                        {
+                            <div class="form-group"><label class="form-label">Parts/Build (Triple)</label><input class="form-control" type="number" min="1" @bind="_part.PartsPerBuildTriple" /></div>
+                            <div class="form-group"><label class="form-label">Triple Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part.TripleStackDurationHours" /></div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <!-- Batch Durations Tab (SLS feature-flagged) -->
+            @if (_tab == "batch" && _showSlsFeatures)
+            {
+                <div class="card">
+                    <h3 class="card-title">Batch Stage Durations</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 12px;">Override default durations for batch processing stages specific to this part.</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group"><label class="form-label">SLS Build Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.SlsBuildDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">SLS Parts/Build</label><input class="form-control" type="number" @bind="_part!.SlsPartsPerBuild" /></div>
+                        <div class="form-group"><label class="form-label">Depowdering Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.DepowderingDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Depowdering Parts/Batch</label><input class="form-control" type="number" @bind="_part!.DepowderingPartsPerBatch" /></div>
+                        <div class="form-group"><label class="form-label">Heat Treatment Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.HeatTreatmentDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Heat Treatment Parts/Batch</label><input class="form-control" type="number" @bind="_part!.HeatTreatmentPartsPerBatch" /></div>
+                        <div class="form-group"><label class="form-label">Wire EDM Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.WireEdmDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Wire EDM Parts/Session</label><input class="form-control" type="number" @bind="_part!.WireEdmPartsPerSession" /></div>
+                    </div>
+                </div>
+            }
+
+            <!-- Defense / DLMS Tab -->
+            @if (_tab == "defense" && _showDlms)
+            {
+                <div class="card">
+                    <h3 class="card-title">🛡️ Defense & Export Classification</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label"><input type="checkbox" @bind="_part!.IsDefensePart" style="margin-right: 6px;" />Defense Part</label>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">ITAR Classification</label>
+                            <select class="form-control" @bind="_part!.ItarClassification">
+                                @foreach (var c in Enum.GetValues<ItarClassification>())
+                                {
+                                    <option value="@c">@c</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- Custom Fields Tab -->
+            @if (_tab == "custom" && _customFieldDefs.Count > 0)
+            {
+                <div class="card">
+                    <h3 class="card-title">Custom Fields</h3>
+                    <CustomFieldsEditor FieldDefinitions="_customFieldDefs" Values="_customFieldValues" ValuesChanged="OnCustomFieldsChanged" />
+                </div>
+            }
+
+            <!-- Action Buttons -->
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
+                    @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                    @(_isNew ? "Create Part" : "Save Changes")
+                </button>
+                <button class="btn btn-secondary" @onclick="GoBack">Cancel</button>
+                @if (!_isNew)
+                {
+                    <button class="btn btn-sm btn-secondary" @onclick="ViewDetail" style="margin-left: auto;">View Part Detail →</button>
+                }
+            </div>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private bool _isNew => Id == 0;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+    private List<string> _validationErrors = new();
+    private string _tab = "info";
+    private string _currentUser = "System";
+
+    // Feature flags
+    private bool _showSlsFeatures;
+    private bool _showDlms;
+
+    // Part data
+    private Part? _part;
+    private List<PartStageRequirement>? _stageReqs;
+
+    // Reference data
+    private List<Material>? _materials;
+    private List<ProductionStage>? _allStages;
+    private List<Machine>? _machines;
+
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
+
+    // Stage requirement form state
+    private int _addStageId;
+
+    // Manufacturing approaches
+    private readonly string[] _approaches = [
+        "SLS-Based", "CNC Machining", "CNC Turning", "Wire EDM", "Casting",
+        "Injection Molding", "Sheet Metal", "3D Printing (FDM)", "3D Printing (SLA)",
+        "Additive + Subtractive", "Assembly", "Manual", "Other"
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _showSlsFeatures = Features.IsEnabled("sls.stacking") || Features.IsEnabled("sls");
+        _showDlms = Features.IsEnabled("dlms");
+
+        // Load reference data
+        _materials = await MaterialService.GetAllMaterialsAsync();
+        _allStages = await StageService.GetAllStagesAsync();
+
+        if (_isNew)
+        {
+            _part = new Part
+            {
+                Material = "",
+                ManufacturingApproach = "CNC Machining",
+                PartsPerBuildSingle = 1,
+                MaxStackCount = 1,
+                RequiredStages = "[]",
+                IsActive = true,
+                CreatedBy = _currentUser,
+                LastModifiedBy = _currentUser
+            };
+        }
+        else
+        {
+            _part = await PartService.GetPartByIdAsync(Id);
+            if (_part != null)
+            {
+                _stageReqs = await PartService.GetStageRequirementsAsync(Id);
+            }
+        }
+
+        // Load custom field definitions for "Part" entity
+        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Part");
+        if (_part != null && !string.IsNullOrEmpty(_part.CustomFieldValues))
+        {
+            try
+            {
+                _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_part.CustomFieldValues) ?? new();
+            }
+            catch { _customFieldValues = new(); }
+        }
+
+        _loading = false;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Machines are loaded in OnAfterRenderAsync to ensure tenant context is ready
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _machines == null)
+        {
+            try
+            {
+                _machines = await GetMachinesAsync();
+                StateHasChanged();
+            }
+            catch { _machines = new(); }
+        }
+    }
+
+    private async Task<List<Machine>> GetMachinesAsync()
+    {
+        return await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync();
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        _validationErrors.Clear();
+
+        // Validate
+        var errors = await PartService.ValidatePartAsync(_part!);
+        if (errors.Count > 0)
+        {
+            _validationErrors = errors;
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            // Serialize custom field values
+            if (_customFieldValues.Count > 0)
+            {
+                _part!.CustomFieldValues = JsonSerializer.Serialize(_customFieldValues);
+            }
+
+            _part!.LastModifiedBy = _currentUser;
+
+            if (_isNew)
+            {
+                _part.CreatedBy = _currentUser;
+                _part = await PartService.CreatePartAsync(_part);
+                Toast.ShowSuccess("Part created successfully");
+                Nav.NavigateTo($"/parts/{_part.Id}/edit");
+            }
+            else
+            {
+                await PartService.UpdatePartAsync(_part);
+                Toast.ShowSuccess("Part saved");
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    // Stage requirement CRUD
+    private async Task AddStageReq()
+    {
+        if (_addStageId == 0 || _part == null || _isNew) return;
+        var nextOrder = (_stageReqs?.Any() == true) ? _stageReqs.Max(r => r.ExecutionOrder) + 1 : 1;
+        var stage = _allStages?.FirstOrDefault(s => s.Id == _addStageId);
+        await PartService.AddStageRequirementAsync(new PartStageRequirement
+        {
+            PartId = _part.Id,
+            ProductionStageId = _addStageId,
+            ExecutionOrder = nextOrder,
+            EstimatedHours = stage?.DefaultDurationHours ?? 1.0,
+            SetupTimeMinutes = stage?.DefaultSetupMinutes,
+            IsRequired = true,
+            CreatedBy = _currentUser,
+            LastModifiedBy = _currentUser
+        });
+        _stageReqs = await PartService.GetStageRequirementsAsync(_part.Id);
+        _addStageId = 0;
+    }
+
+    private async Task RemoveStageReq(int id)
+    {
+        await PartService.RemoveStageRequirementAsync(id);
+        _stageReqs = await PartService.GetStageRequirementsAsync(_part!.Id);
+    }
+
+    private async Task UpdateReqField(PartStageRequirement r, string field, ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        switch (field)
+        {
+            case nameof(r.ExecutionOrder):
+                if (int.TryParse(val, out var order)) r.ExecutionOrder = order;
+                break;
+            case nameof(r.EstimatedHours):
+                r.EstimatedHours = double.TryParse(val, out var hrs) ? hrs : null;
+                break;
+            case nameof(r.SetupTimeMinutes):
+                r.SetupTimeMinutes = int.TryParse(val, out var setup) ? setup : null;
+                break;
+            case nameof(r.HourlyRateOverride):
+                r.HourlyRateOverride = decimal.TryParse(val, out var rate) ? rate : null;
+                break;
+            case nameof(r.MaterialCost):
+                r.MaterialCost = decimal.TryParse(val, out var mc) ? mc : 0;
+                break;
+        }
+        r.LastModifiedBy = _currentUser;
+        await PartService.UpdateStageRequirementAsync(r);
+    }
+
+    private async Task UpdateReqMachine(PartStageRequirement r, ChangeEventArgs e)
+    {
+        r.AssignedMachineId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString();
+        r.LastModifiedBy = _currentUser;
+        await PartService.UpdateStageRequirementAsync(r);
+    }
+
+    private async Task UpdateReqRequired(PartStageRequirement r, ChangeEventArgs e)
+    {
+        r.IsRequired = (bool)(e.Value ?? true);
+        r.LastModifiedBy = _currentUser;
+        await PartService.UpdateStageRequirementAsync(r);
+    }
+
+    private void OnCustomFieldsChanged(Dictionary<string, string> values)
+    {
+        _customFieldValues = values;
+    }
+
+    // Navigation
+    private void GoBack() => Nav.NavigateTo("/parts");
+    private void ViewDetail() => Nav.NavigateTo($"/parts/{Id}");
+}

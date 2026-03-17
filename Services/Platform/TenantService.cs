@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Opcentrix_V3.Data;
+using Opcentrix_V3.Models;
 using Opcentrix_V3.Models.Platform;
+using Opcentrix_V3.Services.Auth;
 
 namespace Opcentrix_V3.Services.Platform;
 
@@ -103,5 +105,76 @@ public class TenantService : ITenantService
         }
 
         await Task.CompletedTask;
+    }
+
+    // --- Tenant user management ---
+
+    private TenantDbContext CreateTenantDbContext(string tenantCode)
+    {
+        var dbPath = Path.Combine("data", "tenants", $"{tenantCode}.db");
+        var options = new DbContextOptionsBuilder<TenantDbContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .Options;
+        return new TenantDbContext(options);
+    }
+
+    public async Task<List<User>> GetTenantUsersAsync(string tenantCode)
+    {
+        using var db = CreateTenantDbContext(tenantCode);
+        return await db.Users.OrderBy(u => u.Username).ToListAsync();
+    }
+
+    public async Task<User?> GetTenantUserByIdAsync(string tenantCode, int userId)
+    {
+        using var db = CreateTenantDbContext(tenantCode);
+        return await db.Users.FindAsync(userId);
+    }
+
+    public async Task<User> CreateTenantUserAsync(string tenantCode, User user, string password)
+    {
+        var authService = _serviceProvider.GetRequiredService<IAuthService>();
+        user.PasswordHash = authService.HashPassword(password);
+        user.CreatedDate = DateTime.UtcNow;
+        user.LastModifiedDate = DateTime.UtcNow;
+
+        using var db = CreateTenantDbContext(tenantCode);
+        var exists = await db.Users.AnyAsync(u => u.Username == user.Username);
+        if (exists)
+            throw new InvalidOperationException($"Username '{user.Username}' already exists in this tenant.");
+
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return user;
+    }
+
+    public async Task UpdateTenantUserAsync(string tenantCode, User user)
+    {
+        using var db = CreateTenantDbContext(tenantCode);
+        var existing = await db.Users.FindAsync(user.Id);
+        if (existing == null) throw new InvalidOperationException("User not found.");
+
+        existing.FullName = user.FullName;
+        existing.Email = user.Email;
+        existing.Role = user.Role;
+        existing.Department = user.Department;
+        existing.IsActive = user.IsActive;
+        existing.AssignedStageIds = user.AssignedStageIds;
+        existing.LastModifiedDate = DateTime.UtcNow;
+        existing.LastModifiedBy = user.LastModifiedBy;
+
+        await db.SaveChangesAsync();
+    }
+
+    public async Task ResetTenantUserPasswordAsync(string tenantCode, int userId, string newPassword)
+    {
+        var authService = _serviceProvider.GetRequiredService<IAuthService>();
+
+        using var db = CreateTenantDbContext(tenantCode);
+        var user = await db.Users.FindAsync(userId);
+        if (user == null) throw new InvalidOperationException("User not found.");
+
+        user.PasswordHash = authService.HashPassword(newPassword);
+        user.LastModifiedDate = DateTime.UtcNow;
+        await db.SaveChangesAsync();
     }
 }

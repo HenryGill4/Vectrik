@@ -91,6 +91,18 @@ public class TenantDbContext : DbContext
     public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
     public DbSet<MaterialRequest> MaterialRequests { get; set; }
 
+    // Quality Systems (Module 05)
+    public DbSet<InspectionPlan> InspectionPlans { get; set; }
+    public DbSet<InspectionPlanCharacteristic> InspectionPlanCharacteristics { get; set; }
+    public DbSet<InspectionMeasurement> InspectionMeasurements { get; set; }
+    public DbSet<NonConformanceReport> NonConformanceReports { get; set; }
+    public DbSet<CorrectiveAction> CorrectiveActions { get; set; }
+    public DbSet<SpcDataPoint> SpcDataPoints { get; set; }
+
+    // Reporting & Analytics (Module 07)
+    public DbSet<DashboardLayout> DashboardLayouts { get; set; }
+    public DbSet<SavedReport> SavedReports { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -527,6 +539,63 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.IssuedFromLot)
                 .WithMany()
                 .HasForeignKey(e => e.LotId);
+        });
+
+        // InspectionPlan
+        modelBuilder.Entity<InspectionPlan>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany(e => e.InspectionPlans)
+                .HasForeignKey(e => e.PartId);
+        });
+
+        // InspectionPlanCharacteristic
+        modelBuilder.Entity<InspectionPlanCharacteristic>(entity =>
+        {
+            entity.HasOne(e => e.InspectionPlan)
+                .WithMany(e => e.Characteristics)
+                .HasForeignKey(e => e.InspectionPlanId);
+        });
+
+        // InspectionMeasurement
+        modelBuilder.Entity<InspectionMeasurement>(entity =>
+        {
+            entity.HasOne(e => e.Inspection)
+                .WithMany(e => e.Measurements)
+                .HasForeignKey(e => e.QcInspectionId);
+        });
+
+        // NonConformanceReport
+        modelBuilder.Entity<NonConformanceReport>(entity =>
+        {
+            entity.HasIndex(e => e.NcrNumber).IsUnique();
+            entity.HasOne(e => e.Job)
+                .WithMany()
+                .HasForeignKey(e => e.JobId);
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId);
+            entity.HasOne(e => e.PartInstance)
+                .WithMany()
+                .HasForeignKey(e => e.PartInstanceId);
+            entity.HasOne(e => e.CorrectiveAction)
+                .WithMany()
+                .HasForeignKey(e => e.CorrectiveActionId);
+        });
+
+        // CorrectiveAction
+        modelBuilder.Entity<CorrectiveAction>(entity =>
+        {
+            entity.HasIndex(e => e.CapaNumber).IsUnique();
+        });
+
+        // SpcDataPoint
+        modelBuilder.Entity<SpcDataPoint>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId);
+            entity.HasIndex(e => new { e.PartId, e.CharacteristicName });
         });
     }
 }

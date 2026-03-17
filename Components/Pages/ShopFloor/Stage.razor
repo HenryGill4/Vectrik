@@ -1,5 +1,8 @@
 @page "/shopfloor/stage/{Slug}"
 @inject IStageService StageService
+@inject ToastService Toast
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
 @rendermode InteractiveServer
 
 <PageTitle>@(_stage?.Name ?? "Shop Floor") - OpCentrix</PageTitle>
@@ -97,11 +100,19 @@ else
     }
 }
 
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUserId = int.TryParse(context.User.FindFirst("UserId")?.Value, out var uid) ? uid : 0; _currentUserName = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "Operator"; }
+    </Authorized>
+</AuthorizeView>
+
 @code {
     [Parameter] public string Slug { get; set; } = "";
     private ProductionStage? _stage;
     private List<StageExecution> _queue = new(), _active = new(), _history = new();
     private string _tab = "queue";
+    private int _currentUserId;
+    private string _currentUserName = "";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -116,7 +127,37 @@ else
         _history = await StageService.GetRecentCompletionsAsync(_stage.Id, 20);
     }
 
-    private async Task StartWork(int executionId) { await StageService.StartStageExecutionAsync(executionId, 0, "Operator"); await LoadData(); _tab = "active"; }
-    private async Task CompleteWork(int executionId) { await StageService.CompleteStageExecutionAsync(executionId); await LoadData(); }
-    private async Task FailWork(int executionId) { await StageService.FailStageExecutionAsync(executionId, "Failed by operator"); await LoadData(); }
+    private async Task StartWork(int executionId)
+    {
+        try
+        {
+            await StageService.StartStageExecutionAsync(executionId, _currentUserId, _currentUserName);
+            Toast.ShowSuccess("Stage started");
+            await LoadData();
+            _tab = "active";
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task CompleteWork(int executionId)
+    {
+        try
+        {
+            await StageService.CompleteStageExecutionAsync(executionId);
+            Toast.ShowSuccess("Stage completed");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task FailWork(int executionId)
+    {
+        try
+        {
+            await StageService.FailStageExecutionAsync(executionId, "Failed by operator");
+            Toast.ShowError("Failure reported");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
 }

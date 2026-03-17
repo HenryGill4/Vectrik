@@ -1,0 +1,184 @@
+@page "/platform/tenants/{Code}/users"
+@inject ITenantService TenantService
+@inject NavigationManager Nav
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "SuperAdmin")]
+@rendermode InteractiveServer
+
+<PageTitle>Users - @Code - OpCentrix Platform</PageTitle>
+
+<div class="page-header">
+    <div>
+        <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Back to Tenants</button>
+        <h1 class="page-title">Users — @Code</h1>
+    </div>
+    <button class="btn btn-primary" @onclick="NewUser">+ New User</button>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_notFound)
+{
+    <div class="alert alert-danger">Tenant "@Code" not found.</div>
+}
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Department</th><th>Active</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var u in _users)
+                {
+                    <tr>
+                        <td>@u.Username</td>
+                        <td>@u.FullName</td>
+                        <td>@(u.Email ?? "—")</td>
+                        <td><span class="badge">@u.Role</span></td>
+                        <td>@(u.Department ?? "—")</td>
+                        <td><span class="badge @(u.IsActive ? "badge-active" : "badge-cancelled")">@(u.IsActive ? "Yes" : "No")</span></td>
+                        <td><button class="btn btn-sm btn-secondary" @onclick="() => EditUser(u)">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 650px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">@(_isNew ? "New" : "Edit") User</span>
+                <button class="modal-close" @onclick="() => _showForm = false">&times;</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            @if (!string.IsNullOrEmpty(_success)) { <div class="alert" style="background: var(--success); color: white; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;">@_success</div> }
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Username</label><input class="form-control" @bind="_edit.Username" disabled="@(!_isNew)" /></div>
+                <div class="form-group"><label class="form-label">Full Name</label><input class="form-control" @bind="_edit.FullName" /></div>
+                <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" @bind="_edit.Email" /></div>
+                <div class="form-group"><label class="form-label">Role</label>
+                    <select class="form-control" @bind="_edit.Role">
+                        @foreach (var r in _roles) { <option>@r</option> }
+                    </select>
+                </div>
+                <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
+                <div class="form-group">
+                    <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
+                </div>
+            </div>
+
+            <div class="card" style="padding: 12px; margin-top: 12px;">
+                <div class="form-group" style="margin-bottom: 8px;">
+                    <label class="form-label">@(_isNew ? "Password" : "Reset Password")</label>
+                    <input class="form-control" type="password" @bind="_password" placeholder="@(_isNew ? "Required" : "Leave blank to keep current")" />
+                </div>
+                @if (!_isNew && !string.IsNullOrWhiteSpace(_password))
+                {
+                    <button class="btn btn-sm btn-secondary" @onclick="ResetPassword">Reset Password</button>
+                }
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Code { get; set; } = "";
+
+    private void GoBack() => Nav.NavigateTo("/platform/tenants");
+
+    private List<User> _users = new();
+    private User? _edit;
+    private bool _loading = true, _notFound, _showForm, _isNew;
+    private string? _error, _success, _password;
+    private readonly string[] _roles = ["Admin", "Manager", "Supervisor", "Scheduler", "Operator", "MaintenanceTech", "QCSpecialist", "Analyst"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var tenant = await TenantService.GetTenantByCodeAsync(Code);
+        if (tenant == null)
+        {
+            _notFound = true;
+            _loading = false;
+            return;
+        }
+        _users = await TenantService.GetTenantUsersAsync(Code);
+        _loading = false;
+    }
+
+    private void NewUser()
+    {
+        _edit = new User { Role = "Operator", IsActive = true, CreatedBy = "SuperAdmin", LastModifiedBy = "SuperAdmin" };
+        _isNew = true;
+        _password = null;
+        _error = null;
+        _success = null;
+        _showForm = true;
+    }
+
+    private void EditUser(User u)
+    {
+        _edit = new User
+        {
+            Id = u.Id,
+            Username = u.Username,
+            FullName = u.FullName,
+            Email = u.Email,
+            Role = u.Role,
+            Department = u.Department,
+            IsActive = u.IsActive,
+            AssignedStageIds = u.AssignedStageIds,
+            LastModifiedBy = "SuperAdmin"
+        };
+        _isNew = false;
+        _password = null;
+        _error = null;
+        _success = null;
+        _showForm = true;
+    }
+
+    private async Task ResetPassword()
+    {
+        if (string.IsNullOrWhiteSpace(_password) || _edit == null || _isNew) return;
+        _error = null;
+        try
+        {
+            await TenantService.ResetTenantUserPasswordAsync(Code, _edit.Id, _password);
+            _password = null;
+            _success = "Password reset successfully.";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        _success = null;
+        try
+        {
+            if (_isNew)
+            {
+                if (string.IsNullOrWhiteSpace(_edit!.Username)) { _error = "Username is required."; return; }
+                if (string.IsNullOrWhiteSpace(_password)) { _error = "Password is required for new users."; return; }
+                await TenantService.CreateTenantUserAsync(Code, _edit, _password);
+            }
+            else
+            {
+                await TenantService.UpdateTenantUserAsync(Code, _edit!);
+            }
+            _showForm = false;
+            _users = await TenantService.GetTenantUsersAsync(Code);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

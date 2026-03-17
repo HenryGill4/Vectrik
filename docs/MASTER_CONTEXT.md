@@ -93,6 +93,7 @@ These items are fully implemented and do NOT need to be rebuilt:
 | Parts/PDM Enhancement (Module 08) | ✅ Complete | `Components/Pages/Parts/Index.razor`, `Components/Pages/Parts/Detail.razor`, `Services/PartFileService.cs` |
 | Estimating & Quoting (Module 01) | ✅ Complete | `Components/Pages/Quotes/Index.razor`, `Edit.razor`, `Details.razor`, `RfqInbox.razor`, `Components/Pages/Portal/Rfq.razor`, `Services/QuoteService.cs`, `Services/PricingEngineService.cs` |
 | Work Order Management (Module 02) | ✅ Complete | `Components/Pages/WorkOrders/Index.razor`, `Create.razor`, `Details.razor`, `JobDetail.razor`, `Services/WorkOrderService.cs` |
+| Reporting & Analytics (Module 07) | ✅ Complete | `Components/Pages/Analytics/Index.razor`, `OnTimeDelivery.razor`, `QualityReport.razor`, `MachineOee.razor`, `CostAnalysis.razor`, `Search.razor`, `Services/AnalyticsService.cs` |
 
 **Demo Credentials**:
 - Super Admin: `superadmin` / `admin123` → `/platform/tenants`
@@ -111,9 +112,9 @@ These items are fully implemented and do NOT need to be rebuilt:
 | 02 | [Sales & Work Order Management](#) | ERP | P1 | [x] Complete | [MODULE-02-work-order-management.md](phase-1/MODULE-02-work-order-management.md) |
 | 03 | [Visual Work Instructions](#) | MES | P1 | [ ] Not Started | [MODULE-03-visual-work-instructions.md](phase-1/MODULE-03-visual-work-instructions.md) |
 | 04 | [Shop Floor Management & Scheduling](#) | MES | P1 | [x] Complete | [MODULE-04-shop-floor-scheduling.md](phase-1/MODULE-04-shop-floor-scheduling.md) |
-| 05 | [Quality Systems & Inspection (QMS)](#) | QMS | P1 | [ ] Not Started | [MODULE-05-quality-systems.md](phase-1/MODULE-05-quality-systems.md) |
+| 05 | [Quality Systems & Inspection (QMS)](#) | QMS | P1 | [x] Complete | [MODULE-05-quality-systems.md](phase-1/MODULE-05-quality-systems.md) |
 | 06 | [Inventory Control & Material Planning](#) | ERP | P1 | [x] Complete | [MODULE-06-inventory-control.md](phase-1/MODULE-06-inventory-control.md) |
-| 07 | [Reporting & Analytics](#) | ERP | P1 | [ ] Not Started | [MODULE-07-reporting-analytics.md](phase-1/MODULE-07-reporting-analytics.md) |
+| 07 | [Reporting & Analytics](#) | ERP | P1 | [x] Complete | [MODULE-07-reporting-analytics.md](phase-1/MODULE-07-reporting-analytics.md) |
 
 ### Phase 2: Operational Depth (Months 7–12)
 *Goal: Full ERP/MES/QMS platform — financially transparent, deeply traceable.*
@@ -386,12 +387,12 @@ Track which have been added to `TenantDbContext.cs`:
 | `WorkInstructionMedia` | M03 | [ ] |
 | `WorkInstructionRevision` | M03 | [ ] |
 | `OperatorFeedback` | M03 | [ ] |
-| `InspectionPlan` | M05 | [ ] |
-| `InspectionPlanCharacteristic` | M05 | [ ] |
-| `InspectionMeasurement` | M05 | [ ] |
-| `NonConformanceReport` | M05 | [ ] |
-| `CorrectiveAction` | M05 | [ ] |
-| `SpcDataPoint` | M05 | [ ] |
+| `InspectionPlan` | M05 | [x] |
+| `InspectionPlanCharacteristic` | M05 | [x] |
+| `InspectionMeasurement` | M05 | [x] |
+| `NonConformanceReport` | M05 | [x] |
+| `CorrectiveAction` | M05 | [x] |
+| `SpcDataPoint` | M05 | [x] |
 | `FairForm1` | M05 | [ ] |
 | `FairForm2` | M05 | [ ] |
 | `FairForm3` | M05 | [ ] |
@@ -400,8 +401,8 @@ Track which have been added to `TenantDbContext.cs`:
 | `InventoryLot` | M06 | [x] |
 | `InventoryTransaction` | M06 | [x] |
 | `MaterialRequest` | M06 | [x] |
-| `DashboardLayout` | M07 | [ ] |
-| `SavedReport` | M07 | [ ] |
+| `DashboardLayout` | M07 | [x] |
+| `SavedReport` | M07 | [x] |
 
 ### Phase 2 Models
 | Model | Module | DbSet Added? |
@@ -476,12 +477,12 @@ Track service registration in `Program.cs`:
 |---------|--------|------------|
 | `IPricingEngineService` | M01 | [x] |
 | `IWorkInstructionService` | M03 | [ ] |
-| `IOeeService` | M04 | [ ] |
-| `IQualityService` | M05 | [ ] |
-| `ISpcService` | M05 | [ ] |
+| `IOeeService` | M04 | [x] |
+| `IQualityService` | M05 | [x] |
+| `ISpcService` | M05 | [x] |
 | `IInventoryService` | M06 | [x] |
 | `IMaterialPlanningService` | M06 | [x] |
-| `IReportingService` | M07 | [ ] |
+| `IReportingService` | M07 | [x] (merged into IAnalyticsService) |
 
 ### Phase 2 Services
 | Service | Module | Registered? |

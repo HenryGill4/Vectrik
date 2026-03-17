@@ -110,3 +110,39 @@ public enum MaterialRequestStatus
 {
     Pending, PartiallyFulfilled, Fulfilled, Cancelled
 }
+
+// Quality Systems (Module 05)
+public enum InspectionResult
+{
+    Pending, Pass, Fail, Conditional
+}
+
+public enum NcrType
+{
+    InProcess, IncomingMaterial, CustomerReturn, Audit
+}
+
+public enum NcrSeverity
+{
+    Minor, Major, Critical
+}
+
+public enum NcrDisposition
+{
+    PendingReview, Rework, Scrap, UseAsIs, ReturnToVendor
+}
+
+public enum NcrStatus
+{
+    Open, InReview, Dispositioned, Closed
+}
+
+public enum CapaType
+{
+    Corrective, Preventive
+}
+
+public enum CapaStatus
+{
+    Open, InProgress, PendingVerification, Closed
+}

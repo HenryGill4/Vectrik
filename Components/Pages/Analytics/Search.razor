@@ -1,0 +1,81 @@
+@page "/search"
+@inject IAnalyticsService AnalyticsService
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Search - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Universal Search</h1>
+</div>
+
+<div class="card" style="padding:1.5rem;margin-bottom:1rem">
+    <div style="display:flex;gap:0.5rem">
+        <input type="text" class="form-control" style="flex:1" placeholder="Search work orders, parts, jobs, NCRs, quotes..."
+               @bind="_query" @bind:event="oninput" @onkeydown="HandleKeyDown" />
+        <button class="btn btn-primary" @onclick="DoSearch">Search</button>
+    </div>
+</div>
+
+@if (_searching) { <div class="loading"><span class="spinner"></span> Searching...</div> }
+else if (_hasSearched)
+{
+    @if (_results.Count == 0)
+    {
+        <div class="card" style="padding:2rem;text-align:center;color:var(--text-muted)">
+            No results found for "<strong>@_query</strong>".
+        </div>
+    }
+    else
+    {
+        @foreach (var group in _results.GroupBy(r => r.EntityType))
+        {
+            <div class="card" style="margin-bottom:1rem">
+                <div class="card-header">@group.Key (@group.Count())</div>
+                <table class="data-table">
+                    <tbody>
+                        @foreach (var item in group)
+                        {
+                            <tr @onclick="() => GoTo(item.Url)" style="cursor:pointer">
+                                <td style="width:80px">
+                                    <span class="badge">@item.EntityType</span>
+                                </td>
+                                <td>@item.DisplayText</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    private string _query = "";
+    private bool _searching;
+    private bool _hasSearched;
+    private List<SearchResult> _results = new();
+
+    private async Task DoSearch()
+    {
+        if (string.IsNullOrWhiteSpace(_query)) return;
+        _searching = true;
+        _hasSearched = true;
+        try
+        {
+            _results = await AnalyticsService.SearchAsync(_query.Trim());
+        }
+        catch
+        {
+            _results = new();
+        }
+        _searching = false;
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await DoSearch();
+    }
+
+    private void GoTo(string url) => Nav.NavigateTo(url);
+}

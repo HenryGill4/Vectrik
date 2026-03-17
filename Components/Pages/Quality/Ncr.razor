@@ -1,0 +1,256 @@
+@page "/quality/ncr"
+@rendermode InteractiveServer
+@inject IQualityService QualityService
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>NCR Management - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">📋 Non-Conformance Reports</h1>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/quality")'>← Dashboard</button>
+        <button class="btn btn-primary" @onclick="ShowCreate">+ New NCR</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <!-- Filters -->
+    <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+        <select class="form-control" style="max-width: 160px;" @bind="_filterStatus">
+            <option value="">All Statuses</option>
+            @foreach (var s in Enum.GetValues<NcrStatus>())
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+        <select class="form-control" style="max-width: 160px;" @bind="_filterSeverity">
+            <option value="">All Severities</option>
+            @foreach (var s in Enum.GetValues<NcrSeverity>())
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+        <select class="form-control" style="max-width: 160px;" @bind="_filterType">
+            <option value="">All Types</option>
+            @foreach (var t in Enum.GetValues<NcrType>())
+            {
+                <option value="@t">@t</option>
+            }
+        </select>
+        <input class="form-control" style="max-width: 200px;" placeholder="Search..." @bind="_search" @bind:event="oninput" />
+    </div>
+
+    <div class="card">
+        @if (FilteredNcrs.Count == 0)
+        {
+            <div style="padding: 24px; text-align: center; color: var(--text-muted);">No NCRs found.</div>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>NCR #</th>
+                        <th>Part</th>
+                        <th>Job</th>
+                        <th>Type</th>
+                        <th>Severity</th>
+                        <th>Description</th>
+                        <th>Disposition</th>
+                        <th>Status</th>
+                        <th>Days Open</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ncr in FilteredNcrs)
+                    {
+                        <tr>
+                            <td style="font-weight: 600;">@ncr.NcrNumber</td>
+                            <td>@(ncr.Part?.PartNumber ?? "—")</td>
+                            <td>@(ncr.Job != null ? $"Job #{ncr.Job.Id}" : "—")</td>
+                            <td><span class="badge badge-secondary">@ncr.Type</span></td>
+                            <td><span class="badge @GetSeverityBadge(ncr.Severity)">@ncr.Severity</span></td>
+                            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@ncr.Description</td>
+                            <td>@ncr.Disposition</td>
+                            <td><span class="badge @GetStatusBadge(ncr.Status)">@ncr.Status</span></td>
+                            <td>@((int)(DateTime.UtcNow - ncr.ReportedAt).TotalDays)</td>
+                            <td>
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShowEdit(ncr)">Edit</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 700px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") NCR</span>
+                <button class="modal-close" @onclick="() => _showForm = false">&times;</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Type</label>
+                    <select class="form-control" @bind="_edit.Type">
+                        @foreach (var t in Enum.GetValues<NcrType>())
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Severity</label>
+                    <select class="form-control" @bind="_edit.Severity">
+                        @foreach (var s in Enum.GetValues<NcrSeverity>())
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Disposition</label>
+                    <select class="form-control" @bind="_edit.Disposition">
+                        @foreach (var d in Enum.GetValues<NcrDisposition>())
+                        {
+                            <option value="@d">@d</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-control" @bind="_edit.Status">
+                        @foreach (var s in Enum.GetValues<NcrStatus>())
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Quantity Affected</label>
+                    <input class="form-control" @bind="_edit.QuantityAffected" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Part ID</label>
+                    <input class="form-control" type="number" @bind="_edit.PartId" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Job ID</label>
+                    <input class="form-control" type="number" @bind="_edit.JobId" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Description *</label>
+                <textarea class="form-control" rows="3" @bind="_edit.Description" placeholder="Describe the non-conformance..."></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveNcr">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private bool _loading = true;
+    private List<NonConformanceReport> _ncrs = new();
+    private NonConformanceReport? _edit;
+    private bool _showForm;
+    private string _search = string.Empty;
+    private string _filterStatus = string.Empty;
+    private string _filterSeverity = string.Empty;
+    private string _filterType = string.Empty;
+    private ConfirmDialog _confirm = null!;
+
+    private List<NonConformanceReport> FilteredNcrs => _ncrs
+        .Where(n => string.IsNullOrEmpty(_filterStatus) || n.Status.ToString() == _filterStatus)
+        .Where(n => string.IsNullOrEmpty(_filterSeverity) || n.Severity.ToString() == _filterSeverity)
+        .Where(n => string.IsNullOrEmpty(_filterType) || n.Type.ToString() == _filterType)
+        .Where(n => string.IsNullOrEmpty(_search) ||
+            n.NcrNumber.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            n.Description.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            (n.Part?.PartNumber ?? "").Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ncrs = await QualityService.GetAllNcrsAsync();
+        _loading = false;
+    }
+
+    private void ShowCreate()
+    {
+        _edit = new NonConformanceReport { ReportedByUserId = "System" };
+        _showForm = true;
+    }
+
+    private void ShowEdit(NonConformanceReport ncr)
+    {
+        _edit = ncr;
+        _showForm = true;
+    }
+
+    private async Task SaveNcr()
+    {
+        if (_edit == null) return;
+
+        if (string.IsNullOrWhiteSpace(_edit.Description))
+        {
+            Toast.ShowError("Description is required.");
+            return;
+        }
+
+        try
+        {
+            if (_edit.Id == 0)
+            {
+                await QualityService.CreateNcrAsync(_edit);
+                Toast.ShowSuccess("NCR created.");
+            }
+            else
+            {
+                await QualityService.UpdateNcrAsync(_edit);
+                Toast.ShowSuccess("NCR updated.");
+            }
+
+            _ncrs = await QualityService.GetAllNcrsAsync();
+            _showForm = false;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private static string GetSeverityBadge(NcrSeverity s) => s switch
+    {
+        NcrSeverity.Critical => "badge-danger",
+        NcrSeverity.Major => "badge-warning",
+        _ => "badge-secondary"
+    };
+
+    private static string GetStatusBadge(NcrStatus s) => s switch
+    {
+        NcrStatus.Open => "badge-danger",
+        NcrStatus.InReview => "badge-warning",
+        NcrStatus.Dispositioned => "badge-info",
+        NcrStatus.Closed => "badge-success",
+        _ => "badge-secondary"
+    };
+}

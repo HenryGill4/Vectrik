@@ -10,8 +10,10 @@
 <AuthorizeView>
     <Authorized>
         @{
-            var userName = context.User.FindFirst(ClaimTypes.Name)?.Value ?? "Operator";
-            var userIdStr = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userName = context.User.FindFirst("FullName")?.Value
+                ?? context.User.FindFirst(ClaimTypes.Name)?.Value
+                ?? "Operator";
+            var userIdStr = context.User.FindFirst("UserId")?.Value;
             _currentUserId = int.TryParse(userIdStr, out var uid) ? uid : 0;
             _currentUserName = userName;
         }
