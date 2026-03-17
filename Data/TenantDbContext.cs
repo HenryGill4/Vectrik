@@ -84,6 +84,13 @@ public class TenantDbContext : DbContext
     // Work Order Management
     public DbSet<WorkOrderComment> WorkOrderComments { get; set; }
 
+    // Inventory Control (Module 06)
+    public DbSet<InventoryItem> InventoryItems { get; set; }
+    public DbSet<StockLocation> StockLocations { get; set; }
+    public DbSet<InventoryLot> InventoryLots { get; set; }
+    public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
+    public DbSet<MaterialRequest> MaterialRequests { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -468,6 +475,58 @@ public class TenantDbContext : DbContext
         modelBuilder.Entity<DocumentTemplate>(entity =>
         {
             entity.HasIndex(e => new { e.EntityType, e.IsDefault });
+        });
+
+        // InventoryItem
+        modelBuilder.Entity<InventoryItem>(entity =>
+        {
+            entity.HasIndex(e => e.ItemNumber).IsUnique();
+            entity.HasOne(e => e.Material)
+                .WithMany()
+                .HasForeignKey(e => e.MaterialId);
+        });
+
+        // StockLocation
+        modelBuilder.Entity<StockLocation>(entity =>
+        {
+            entity.HasIndex(e => e.Code).IsUnique();
+        });
+
+        // InventoryLot
+        modelBuilder.Entity<InventoryLot>(entity =>
+        {
+            entity.HasOne(e => e.InventoryItem)
+                .WithMany(e => e.Lots)
+                .HasForeignKey(e => e.InventoryItemId);
+            entity.HasOne(e => e.Location)
+                .WithMany()
+                .HasForeignKey(e => e.StockLocationId);
+        });
+
+        // InventoryTransaction
+        modelBuilder.Entity<InventoryTransaction>(entity =>
+        {
+            entity.HasOne(e => e.InventoryItem)
+                .WithMany(e => e.Transactions)
+                .HasForeignKey(e => e.InventoryItemId);
+            entity.HasOne(e => e.Lot)
+                .WithMany()
+                .HasForeignKey(e => e.LotId);
+            entity.HasIndex(e => e.TransactedAt);
+        });
+
+        // MaterialRequest
+        modelBuilder.Entity<MaterialRequest>(entity =>
+        {
+            entity.HasOne(e => e.Job)
+                .WithMany()
+                .HasForeignKey(e => e.JobId);
+            entity.HasOne(e => e.InventoryItem)
+                .WithMany()
+                .HasForeignKey(e => e.InventoryItemId);
+            entity.HasOne(e => e.IssuedFromLot)
+                .WithMany()
+                .HasForeignKey(e => e.LotId);
         });
     }
 }

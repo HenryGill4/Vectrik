@@ -84,3 +84,29 @@ public enum DelayCategory
 {
     Material, Machine, Operator, Quality, WaitingForInspection, Other
 }
+
+// Inventory Control (Module 06)
+public enum InventoryItemType
+{
+    RawMaterial, Consumable, CuttingTool, Fixture, FinishedGood, WIP
+}
+
+public enum LocationType
+{
+    Warehouse, ShopFloor, Quarantine, Receiving, Shipping, CuttingToolCrib
+}
+
+public enum LotStatus
+{
+    Quarantine, Available, Depleted, Rejected
+}
+
+public enum TransactionType
+{
+    Receipt, JobConsumption, JobReturn, Adjustment, Transfer, Scrap, CustomerReturn, CycleCount
+}
+
+public enum MaterialRequestStatus
+{
+    Pending, PartiallyFulfilled, Fulfilled, Cancelled
+}

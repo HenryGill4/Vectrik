@@ -1,0 +1,151 @@
+@page "/inventory/receive"
+@rendermode InteractiveServer
+@inject IInventoryService InventoryService
+@inject ToastService Toast
+@inject NavigationManager Nav
+
+<PageTitle>Receive Stock - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">📥 Receive Stock</h1>
+    <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/inventory")'>← Back to Dashboard</button>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="card" style="max-width: 700px;">
+        <div class="card-header">Receipt Details</div>
+
+                <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div style="grid-column: 1 / -1;">
+                        <label class="form-label">Inventory Item *</label>
+                        <select class="form-control" @bind="_selectedItemId">
+                            <option value="0">— Select Item —</option>
+                            @foreach (var item in _items)
+                            {
+                                <option value="@item.Id">@item.ItemNumber — @item.Name (@item.UnitOfMeasure)</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Quantity *</label>
+                        <input type="number" step="0.01" class="form-control" @bind="_receiveQty" />
+                    </div>
+                    <div>
+                        <label class="form-label">Location</label>
+                        <select class="form-control" @bind="_selectedLocationId">
+                            <option value="">— No Location —</option>
+                            @foreach (var loc in _locations)
+                            {
+                                <option value="@loc.Id">@loc.Code — @loc.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Lot / Heat Number</label>
+                        <input class="form-control" @bind="_lotNumber" placeholder="Enter or scan lot number" />
+                    </div>
+                    <div>
+                        <label class="form-label">Certificate Number</label>
+                        <input class="form-control" @bind="_certNumber" placeholder="Material cert #" />
+                    </div>
+                    <div style="grid-column: 1 / -1;">
+                        <label class="form-label">Reference (PO#, etc.)</label>
+                        <input class="form-control" @bind="_reference" placeholder="e.g., PO-2025-001" />
+                    </div>
+                </div>
+
+                @if (_selectedItemId > 0)
+                {
+                    var selected = _items.FirstOrDefault(i => i.Id == _selectedItemId);
+                    @if (selected != null)
+                    {
+                        <div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 6px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                                <div>
+                                    <span class="form-label">Current Stock</span>
+                                    <div style="font-weight: 600;">@selected.CurrentStockQty @selected.UnitOfMeasure</div>
+                                </div>
+                                <div>
+                                    <span class="form-label">After Receipt</span>
+                                    <div style="font-weight: 600; color: var(--success);">@((selected.CurrentStockQty + _receiveQty)) @selected.UnitOfMeasure</div>
+                                </div>
+                                <div>
+                                    <span class="form-label">Tracks Lots</span>
+                                    <div>@(selected.TrackLots ? "Yes" : "No")</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                    <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/inventory")'>Cancel</button>
+                    <button class="btn btn-primary" @onclick="PostReceipt" disabled="@_saving">
+                        @(_saving ? "Posting..." : "📥 Post Receipt")
+                    </button>
+                </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private List<InventoryItem> _items = new();
+    private List<StockLocation> _locations = new();
+    private int _selectedItemId;
+    private int? _selectedLocationId;
+    private decimal _receiveQty;
+    private string _lotNumber = string.Empty;
+    private string _certNumber = string.Empty;
+    private string _reference = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _items = await InventoryService.GetAllItemsAsync();
+        _locations = await InventoryService.GetAllLocationsAsync();
+        _loading = false;
+    }
+
+    private async Task PostReceipt()
+    {
+        if (_selectedItemId <= 0)
+        {
+            Toast.ShowError("Please select an item.");
+            return;
+        }
+        if (_receiveQty <= 0)
+        {
+            Toast.ShowError("Quantity must be greater than zero.");
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await InventoryService.ReceiveStockAsync(
+                _selectedItemId,
+                _receiveQty,
+                string.IsNullOrWhiteSpace(_lotNumber) ? null : _lotNumber,
+                string.IsNullOrWhiteSpace(_certNumber) ? null : _certNumber,
+                _selectedLocationId,
+                "System",
+                string.IsNullOrWhiteSpace(_reference) ? null : _reference);
+
+            Toast.ShowSuccess($"Received {_receiveQty} units successfully.");
+            Nav.NavigateTo("/inventory");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

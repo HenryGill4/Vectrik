@@ -112,7 +112,7 @@ These items are fully implemented and do NOT need to be rebuilt:
 | 03 | [Visual Work Instructions](#) | MES | P1 | [ ] Not Started | [MODULE-03-visual-work-instructions.md](phase-1/MODULE-03-visual-work-instructions.md) |
 | 04 | [Shop Floor Management & Scheduling](#) | MES | P1 | [x] Complete | [MODULE-04-shop-floor-scheduling.md](phase-1/MODULE-04-shop-floor-scheduling.md) |
 | 05 | [Quality Systems & Inspection (QMS)](#) | QMS | P1 | [ ] Not Started | [MODULE-05-quality-systems.md](phase-1/MODULE-05-quality-systems.md) |
-| 06 | [Inventory Control & Material Planning](#) | ERP | P1 | [ ] Not Started | [MODULE-06-inventory-control.md](phase-1/MODULE-06-inventory-control.md) |
+| 06 | [Inventory Control & Material Planning](#) | ERP | P1 | [x] Complete | [MODULE-06-inventory-control.md](phase-1/MODULE-06-inventory-control.md) |
 | 07 | [Reporting & Analytics](#) | ERP | P1 | [ ] Not Started | [MODULE-07-reporting-analytics.md](phase-1/MODULE-07-reporting-analytics.md) |
 
 ### Phase 2: Operational Depth (Months 7–12)
@@ -395,11 +395,11 @@ Track which have been added to `TenantDbContext.cs`:
 | `FairForm1` | M05 | [ ] |
 | `FairForm2` | M05 | [ ] |
 | `FairForm3` | M05 | [ ] |
-| `InventoryItem` | M06 | [ ] |
-| `StockLocation` | M06 | [ ] |
-| `InventoryLot` | M06 | [ ] |
-| `InventoryTransaction` | M06 | [ ] |
-| `MaterialRequest` | M06 | [ ] |
+| `InventoryItem` | M06 | [x] |
+| `StockLocation` | M06 | [x] |
+| `InventoryLot` | M06 | [x] |
+| `InventoryTransaction` | M06 | [x] |
+| `MaterialRequest` | M06 | [x] |
 | `DashboardLayout` | M07 | [ ] |
 | `SavedReport` | M07 | [ ] |
 
@@ -479,8 +479,8 @@ Track service registration in `Program.cs`:
 | `IOeeService` | M04 | [ ] |
 | `IQualityService` | M05 | [ ] |
 | `ISpcService` | M05 | [ ] |
-| `IInventoryService` | M06 | [ ] |
-| `IMaterialPlanningService` | M06 | [ ] |
+| `IInventoryService` | M06 | [x] |
+| `IMaterialPlanningService` | M06 | [x] |
 | `IReportingService` | M07 | [ ] |
 
 ### Phase 2 Services

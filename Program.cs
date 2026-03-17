@@ -89,6 +89,10 @@ builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
 // Shop Floor & Scheduling (Stage 4)
 builder.Services.AddScoped<IOeeService, OeeService>();
 
+// Inventory Control (Module 06)
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<IMaterialPlanningService, MaterialPlanningService>();
+
 // Machine providers + SignalR notifier
 builder.Services.AddScoped<MachineProviderFactory>();
 builder.Services.AddSingleton<IMachineStateNotifier, MachineStateNotifier>();
