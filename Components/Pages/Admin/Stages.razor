@@ -94,7 +94,7 @@ else
                             <div class="form-group" style="margin: 0;"><label class="form-label">Label</label><input class="form-control" value="@f.Label" @onchange="e => UpdateFieldLabel(idx, e)" /></div>
                             <div class="form-group" style="margin: 0;"><label class="form-label">Name (key)</label><input class="form-control" value="@f.Name" @onchange="e => UpdateFieldName(idx, e)" /></div>
                             <div class="form-group" style="margin: 0;"><label class="form-label">Type</label>
-                                <select class="form-control" value="@f.Type" @onchange="e => UpdateFieldType(idx, e)">
+                                <select class="form-control" value="@f.FieldType" @onchange="e => UpdateFieldType(idx, e)">
                                     <option value="text">Text</option>
                                     <option value="number">Number</option>
                                     <option value="dropdown">Dropdown</option>
@@ -104,15 +104,15 @@ else
                             <button class="btn btn-sm btn-danger" style="height: 38px;" @onclick="() => RemoveField(idx)">✕</button>
                         </div>
                         <div style="display: flex; gap: 12px; margin-top: 8px; align-items: center;">
-                            <label style="font-size: 0.85rem;"><input type="checkbox" checked="@f.Required" @onchange="e => UpdateFieldRequired(idx, e)" style="margin-right: 4px;" />Required</label>
-                            @if (f.Type == "dropdown")
+                            <label style="font-size: 0.85rem;"><input type="checkbox" checked="@f.IsRequired" @onchange="e => UpdateFieldRequired(idx, e)" style="margin-right: 4px;" />Required</label>
+                            @if (f.FieldType == "dropdown")
                             {
-                                <div class="form-group" style="margin: 0; flex: 1;"><label class="form-label">Options (comma-separated)</label><input class="form-control" value="@(f.Options != null ? string.Join(", ", f.Options) : "")" @onchange="e => UpdateFieldOptions(idx, e)" /></div>
+                                <div class="form-group" style="margin: 0; flex: 1;"><label class="form-label">Options (comma-separated)</label><input class="form-control" value="@(f.Options ?? "")" @onchange="e => UpdateFieldOptions(idx, e)" /></div>
                             }
-                            @if (f.Type == "number")
+                            @if (f.FieldType == "number")
                             {
-                                <div class="form-group" style="margin: 0;"><label class="form-label">Min</label><input class="form-control" type="number" style="width: 80px;" value="@f.Min" @onchange="e => UpdateFieldMin(idx, e)" /></div>
-                                <div class="form-group" style="margin: 0;"><label class="form-label">Max</label><input class="form-control" type="number" style="width: 80px;" value="@f.Max" @onchange="e => UpdateFieldMax(idx, e)" /></div>
+                                <div class="form-group" style="margin: 0;"><label class="form-label">Min</label><input class="form-control" type="number" style="width: 80px;" value="@f.MinValue" @onchange="e => UpdateFieldMin(idx, e)" /></div>
+                                <div class="form-group" style="margin: 0;"><label class="form-label">Max</label><input class="form-control" type="number" style="width: 80px;" value="@f.MaxValue" @onchange="e => UpdateFieldMax(idx, e)" /></div>
                             }
                         </div>
                     </div>
@@ -156,29 +156,29 @@ else
         _showForm = true;
     }
 
-    private void AddField() => _customFields.Add(new CustomFieldDefinition("", "text", "", false));
+    private void AddField() => _customFields.Add(new CustomFieldDefinition { FieldType = "text" });
     private void RemoveField(int idx) => _customFields.RemoveAt(idx);
 
     private void UpdateFieldLabel(int idx, ChangeEventArgs e) =>
-        _customFields[idx] = _customFields[idx] with { Label = e.Value?.ToString() ?? string.Empty };
+        _customFields[idx].Label = e.Value?.ToString() ?? string.Empty;
 
     private void UpdateFieldName(int idx, ChangeEventArgs e) =>
-        _customFields[idx] = _customFields[idx] with { Name = e.Value?.ToString() ?? string.Empty };
+        _customFields[idx].Name = e.Value?.ToString() ?? string.Empty;
 
     private void UpdateFieldType(int idx, ChangeEventArgs e) =>
-        _customFields[idx] = _customFields[idx] with { Type = e.Value?.ToString() ?? "text" };
+        _customFields[idx].FieldType = e.Value?.ToString() ?? "text";
 
     private void UpdateFieldRequired(int idx, ChangeEventArgs e) =>
-        _customFields[idx] = _customFields[idx] with { Required = (bool)(e.Value ?? false) };
+        _customFields[idx].IsRequired = (bool)(e.Value ?? false);
 
     private void UpdateFieldOptions(int idx, ChangeEventArgs e) =>
-        _customFields[idx] = _customFields[idx] with { Options = e.Value?.ToString()?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) };
+        _customFields[idx].Options = e.Value?.ToString();
 
     private void UpdateFieldMin(int idx, ChangeEventArgs e) =>
-        _customFields[idx] = _customFields[idx] with { Min = double.TryParse(e.Value?.ToString(), out var v) ? v : null };
+        _customFields[idx].MinValue = double.TryParse(e.Value?.ToString(), out var v) ? v : null;
 
     private void UpdateFieldMax(int idx, ChangeEventArgs e) =>
-        _customFields[idx] = _customFields[idx] with { Max = double.TryParse(e.Value?.ToString(), out var v) ? v : null };
+        _customFields[idx].MaxValue = double.TryParse(e.Value?.ToString(), out var v) ? v : null;
 
     private async Task Save()
     {

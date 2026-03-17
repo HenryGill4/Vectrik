@@ -7,36 +7,38 @@
     {
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
             @foreach (var field in _fields)
-            {
-                <div class="form-group">
-                    <label class="form-label">@field.Label @(field.Required ? "*" : "")</label>
-                    @switch (field.Type?.ToLower())
-                    {
-                        case "dropdown":
-                            <select class="form-control">
-                                <option value="">Select...</option>
-                                @if (field.Options != null)
-                                {
-                                    @foreach (var opt in field.Options) { <option>@opt</option> }
-                                }
-                            </select>
-                            break;
-                        case "checkbox":
-                            <div style="min-height: var(--tap-target); display: flex; align-items: center;">
-                                <input type="checkbox" style="width: 20px; height: 20px;" />
-                            </div>
-                            break;
-                        case "number":
-                            <input class="form-control" type="number"
-                                   min="@field.Min" max="@field.Max"
-                                   inputmode="numeric" />
-                            break;
-                        default:
-                            <input class="form-control" type="text" />
-                            break;
-                    }
-                </div>
-            }
+                {
+                    <div class="form-group">
+                        <label class="form-label">@field.Label @(field.IsRequired ? "*" : "")</label>
+                        @switch (field.FieldType?.ToLower())
+                        {
+                            case "dropdown":
+                            case "select":
+                                <select class="form-control">
+                                    <option value="">Select...</option>
+                                    @if (!string.IsNullOrWhiteSpace(field.Options))
+                                    {
+                                        @foreach (var opt in field.Options.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) { <option>@opt</option> }
+                                    }
+                                </select>
+                                break;
+                            case "checkbox":
+                                <div style="min-height: var(--tap-target); display: flex; align-items: center;">
+                                    <input type="checkbox" style="width: 20px; height: 20px;" />
+                                </div>
+                                break;
+                            case "number":
+                            case "decimal":
+                                <input class="form-control" type="number"
+                                       min="@field.MinValue" max="@field.MaxValue"
+                                       inputmode="numeric" />
+                                break;
+                            default:
+                                <input class="form-control" type="text" />
+                                break;
+                        }
+                    </div>
+                }
         </div>
     }
     else

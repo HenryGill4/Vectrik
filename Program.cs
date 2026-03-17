@@ -73,6 +73,13 @@ builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
 
+// Customization Foundation (Stage 0.5)
+builder.Services.AddScoped<ITenantFeatureService, TenantFeatureService>();
+builder.Services.AddScoped<ICustomFieldService, CustomFieldService>();
+builder.Services.AddScoped<INumberSequenceService, NumberSequenceService>();
+builder.Services.AddScoped<IWorkflowEngine, WorkflowEngine>();
+builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
+
 // Machine providers + SignalR notifier
 builder.Services.AddScoped<MachineProviderFactory>();
 builder.Services.AddSingleton<IMachineStateNotifier, MachineStateNotifier>();
@@ -104,6 +111,40 @@ using (var scope = app.Services.CreateScope())
     {
         var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
         tenantService.CreateTenantAsync("demo", "Demo Manufacturing", "System").GetAwaiter().GetResult();
+    }
+
+    // Seed default feature flags for demo tenant
+    if (!platformDb.TenantFeatureFlags.Any(f => f.TenantCode == "demo"))
+    {
+        var coreFlags = new[]
+        {
+            "module.quoting", "module.workorders", "module.instructions",
+            "module.shopfloor", "module.quality", "module.inventory",
+            "module.analytics", "module.pdm", "module.costing",
+            "module.tools", "module.maintenance", "module.purchasing",
+            "module.timeclock", "module.documents", "module.shipping",
+            "module.crm", "module.compliance", "module.training",
+            "advanced.spc", "advanced.workflows", "advanced.custom_fields",
+            "dlms", "dlms.iuid", "dlms.wawf", "dlms.gfm", "dlms.cdrl"
+        };
+        var enabledByDefault = new HashSet<string>
+        {
+            "module.quoting", "module.workorders", "module.shopfloor",
+            "module.quality", "module.inventory", "module.analytics",
+            "module.pdm", "module.maintenance", "advanced.workflows",
+            "advanced.custom_fields"
+        };
+        foreach (var key in coreFlags)
+        {
+            platformDb.TenantFeatureFlags.Add(new Opcentrix_V3.Models.Platform.TenantFeatureFlag
+            {
+                TenantCode = "demo",
+                FeatureKey = key,
+                IsEnabled = enabledByDefault.Contains(key),
+                EnabledAt = enabledByDefault.Contains(key) ? DateTime.UtcNow : null
+            });
+        }
+        platformDb.SaveChanges();
     }
 }
 

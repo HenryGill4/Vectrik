@@ -1,0 +1,127 @@
+@page "/admin/branding"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@inject ToastService Toast
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Company Branding - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Company Branding & Identity</h1>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="card">
+        <div class="card-header">Company Information</div>
+        <div style="padding: 16px;">
+            <div class="form-group">
+                <label class="form-label">Company Name</label>
+                <input class="form-control" @bind="_companyName" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Address</label>
+                <textarea class="form-control" rows="3" @bind="_companyAddress"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Logo URL</label>
+                <input class="form-control" @bind="_logoUrl" placeholder="/uploads/branding/logo.png" />
+                @if (!string.IsNullOrWhiteSpace(_logoUrl))
+                {
+                    <div style="margin-top: 8px;">
+                        <img src="@_logoUrl" alt="Company Logo" style="max-height: 60px; border: 1px solid var(--border); border-radius: 4px; padding: 4px;" />
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 12px;">
+        <div class="card-header">Defense / Government Identifiers</div>
+        <div style="padding: 16px;">
+            <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                <div class="form-group" style="flex: 1; min-width: 200px;">
+                    <label class="form-label">CAGE Code</label>
+                    <input class="form-control" @bind="_cageCode" maxlength="5" placeholder="5-character code" />
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 200px;">
+                    <label class="form-label">DoDAAC</label>
+                    <input class="form-control" @bind="_dodaac" maxlength="6" placeholder="DoD Activity Address Code" />
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 200px;">
+                    <label class="form-label">DUNS / SAM UEI</label>
+                    <input class="form-control" @bind="_duns" placeholder="Unique Entity Identifier" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top: 16px;">
+        <button class="btn btn-primary" @onclick="Save">Save</button>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private string _companyName = "";
+    private string _companyAddress = "";
+    private string _logoUrl = "";
+    private string _cageCode = "";
+    private string _dodaac = "";
+    private string _duns = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await Db.SystemSettings
+            .Where(s => s.Category == "Branding" || s.Category == "Defense")
+            .ToListAsync();
+
+        _companyName = settings.FirstOrDefault(s => s.Key == "company.name")?.Value ?? "";
+        _companyAddress = settings.FirstOrDefault(s => s.Key == "company.address")?.Value ?? "";
+        _logoUrl = settings.FirstOrDefault(s => s.Key == "company.logo_url")?.Value ?? "";
+        _cageCode = settings.FirstOrDefault(s => s.Key == "company.cage_code")?.Value ?? "";
+        _dodaac = settings.FirstOrDefault(s => s.Key == "company.dodaac")?.Value ?? "";
+        _duns = settings.FirstOrDefault(s => s.Key == "company.duns")?.Value ?? "";
+        _loading = false;
+    }
+
+    private async Task Save()
+    {
+        await UpsertSetting("company.name", _companyName, "Branding", "Company name on all documents");
+        await UpsertSetting("company.address", _companyAddress, "Branding", "Address for documents");
+        await UpsertSetting("company.logo_url", _logoUrl, "Branding", "Logo for reports/packing lists");
+        await UpsertSetting("company.cage_code", _cageCode, "Defense", "CAGE code for DLMS transactions");
+        await UpsertSetting("company.dodaac", _dodaac, "Defense", "DoD Activity Address Code");
+        await UpsertSetting("company.duns", _duns, "Defense", "DUNS/SAM UEI number");
+
+        await Db.SaveChangesAsync();
+        Toast.ShowSuccess("Branding saved.");
+    }
+
+    private async Task UpsertSetting(string key, string value, string category, string description)
+    {
+        var setting = await Db.SystemSettings.FirstOrDefaultAsync(s => s.Key == key);
+        if (setting == null)
+        {
+            Db.SystemSettings.Add(new SystemSetting
+            {
+                Key = key,
+                Value = value,
+                Category = category,
+                Description = description,
+                LastModifiedBy = "Admin"
+            });
+        }
+        else
+        {
+            setting.Value = value;
+            setting.LastModifiedDate = DateTime.UtcNow;
+            setting.LastModifiedBy = "Admin";
+        }
+    }
+}

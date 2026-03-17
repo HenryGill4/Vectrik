@@ -4,15 +4,6 @@ using System.Text.Json;
 
 namespace Opcentrix_V3.Models;
 
-public record CustomFieldDefinition(
-    string Name,
-    string Type,
-    string Label,
-    bool Required = false,
-    string[]? Options = null,
-    double? Min = null,
-    double? Max = null);
-
 public class ProductionStage
 {
     public int Id { get; set; }

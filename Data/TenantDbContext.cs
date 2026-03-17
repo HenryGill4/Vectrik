@@ -65,6 +65,13 @@ public class TenantDbContext : DbContext
     public DbSet<MaintenanceWorkOrder> MaintenanceWorkOrders { get; set; }
     public DbSet<MaintenanceActionLog> MaintenanceActionLogs { get; set; }
 
+    // Customization Foundation
+    public DbSet<CustomFieldConfig> CustomFieldConfigs { get; set; }
+    public DbSet<WorkflowDefinition> WorkflowDefinitions { get; set; }
+    public DbSet<WorkflowStep> WorkflowSteps { get; set; }
+    public DbSet<WorkflowInstance> WorkflowInstances { get; set; }
+    public DbSet<DocumentTemplate> DocumentTemplates { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -360,6 +367,35 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.MaintenanceRule)
                 .WithMany()
                 .HasForeignKey(e => e.MaintenanceRuleId);
+        });
+
+        // CustomFieldConfig
+        modelBuilder.Entity<CustomFieldConfig>(entity =>
+        {
+            entity.HasIndex(e => e.EntityType).IsUnique();
+        });
+
+        // WorkflowDefinition
+        modelBuilder.Entity<WorkflowDefinition>(entity =>
+        {
+            entity.HasMany(e => e.Steps)
+                .WithOne(e => e.WorkflowDefinition)
+                .HasForeignKey(e => e.WorkflowDefinitionId);
+        });
+
+        // WorkflowInstance
+        modelBuilder.Entity<WorkflowInstance>(entity =>
+        {
+            entity.HasOne(e => e.WorkflowDefinition)
+                .WithMany()
+                .HasForeignKey(e => e.WorkflowDefinitionId);
+            entity.HasIndex(e => new { e.EntityType, e.EntityId });
+        });
+
+        // DocumentTemplate
+        modelBuilder.Entity<DocumentTemplate>(entity =>
+        {
+            entity.HasIndex(e => new { e.EntityType, e.IsDefault });
         });
     }
 }
