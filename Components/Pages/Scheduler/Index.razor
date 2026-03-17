@@ -1,6 +1,8 @@
 @page "/scheduler"
+@inject IStageService StageService
 @inject IJobService JobService
 @inject IPartService PartService
+@inject ToastService Toast
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @using Microsoft.EntityFrameworkCore
 @rendermode InteractiveServer
@@ -8,43 +10,188 @@
 <PageTitle>Production Scheduler - OpCentrix</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Production Scheduler</h1>
-    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Job</button>
-</div>
-
-<div class="card">
-    <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
-        <select class="form-control" style="width: auto; min-width: 150px;" @bind="_statusFilter">
-            <option value="">All Statuses</option>
-            @foreach (var s in Enum.GetValues<JobStatus>()) { <option value="@s">@s</option> }
-        </select>
-        <button class="btn btn-secondary btn-sm" @onclick="LoadJobs">Refresh</button>
+    <h1 class="page-title">📅 Production Scheduler</h1>
+    <div style="display: flex; gap: 8px;">
+        <a href="scheduler/capacity" class="btn btn-secondary">📊 Capacity</a>
+        <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Job</button>
     </div>
-
-    @if (_jobs == null) { <div class="loading"><span class="spinner"></span></div> }
-    else if (!_jobs.Any()) { <div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No jobs scheduled</div></div> }
-    else
-    {
-        <table class="data-table">
-            <thead><tr><th>Part</th><th>Machine</th><th>Start</th><th>End</th><th>Qty</th><th>Status</th><th>Priority</th></tr></thead>
-            <tbody>
-                @foreach (var j in _jobs)
-                {
-                    <tr>
-                        <td>@j.PartNumber</td>
-                        <td>@j.MachineId</td>
-                        <td>@j.ScheduledStart.ToString("MM/dd HH:mm")</td>
-                        <td>@j.ScheduledEnd.ToString("MM/dd HH:mm")</td>
-                        <td>@j.Quantity</td>
-                        <td><span class="badge badge-@j.Status.ToString().ToLower()">@j.Status</span></td>
-                        <td><span class="badge badge-@j.Priority.ToString().ToLower()">@j.Priority</span></td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
 </div>
 
+@* ── Controls ── *@
+<div class="card" style="margin-bottom: 16px;">
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">From</label>
+            <input class="form-control" type="date" @bind="_dateFrom" @bind:event="onchange" />
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">To</label>
+            <input class="form-control" type="date" @bind="_dateTo" @bind:event="onchange" />
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">View</label>
+            <select class="form-control" @bind="_viewMode">
+                <option value="table">📋 Table</option>
+                <option value="gantt">📊 Gantt</option>
+            </select>
+        </div>
+        <button class="btn btn-secondary btn-sm" @onclick="LoadData" style="height: 38px;">🔄 Refresh</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading schedule...</div>
+}
+else if (_viewMode == "gantt")
+{
+    @* ── Gantt View ── *@
+    <div class="card" style="overflow-x: auto;">
+        <div class="card-header">Gantt — By Machine</div>
+        @if (!_machines.Any())
+        {
+            <div class="empty-state"><div class="empty-state-text">No machines configured</div></div>
+        }
+        else
+        {
+            <div class="gantt-container">
+                @* Header row with dates *@
+                <div class="gantt-header">
+                    <div class="gantt-resource-label" style="font-weight: 600;">Machine</div>
+                    @foreach (var day in _ganttDays)
+                    {
+                        <div class="gantt-day-header @(day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday ? "gantt-weekend" : "")">
+                            @day.ToString("ddd M/d")
+                        </div>
+                    }
+                </div>
+
+                @* Row per machine *@
+                @foreach (var machine in _machines)
+                {
+                    var machineExecs = _executions.Where(e => e.MachineId == machine.Id).ToList();
+                    <div class="gantt-row">
+                        <div class="gantt-resource-label">
+                            <span class="badge badge-@machine.Status.ToString().ToLower()" style="margin-right: 4px;">●</span>
+                            @machine.Name
+                        </div>
+                        <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
+                            @foreach (var exec in machineExecs)
+                            {
+                                var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
+                                var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                var leftPct = GetGanttPosition(start);
+                                var widthPct = GetGanttWidth(start, end);
+                                var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
+                                var isOverlap = HasOverlap(machine.Id, exec, machineExecs);
+                                <div class="gantt-bar gantt-bar-@priorityClass @(isOverlap ? "gantt-bar-conflict" : "")"
+                                     style="left: @(leftPct)%; width: @(widthPct)%;"
+                                     title="@(exec.Job?.Part?.PartNumber ?? "?") — @(exec.ProductionStage?.Name ?? "Stage") | @start.ToString("MM/dd HH:mm") - @end.ToString("MM/dd HH:mm")">
+                                    <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? "#@exec.JobId") · @(exec.ProductionStage?.Name ?? "")</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* Unassigned row *@
+                @{
+                    var unassigned = _executions.Where(e => e.MachineId == null).ToList();
+                }
+                @if (unassigned.Any())
+                {
+                    <div class="gantt-row">
+                        <div class="gantt-resource-label" style="color: var(--text-muted);">⚠ Unassigned</div>
+                        <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
+                            @foreach (var exec in unassigned)
+                            {
+                                var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
+                                var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                var leftPct = GetGanttPosition(start);
+                                var widthPct = GetGanttWidth(start, end);
+                                <div class="gantt-bar gantt-bar-unassigned" style="left: @(leftPct)%; width: @(widthPct)%;"
+                                     title="@(exec.Job?.Part?.PartNumber ?? "#@exec.JobId") — UNASSIGNED">
+                                    <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? "#@exec.JobId")</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* Legend *@
+            <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 0.85em; color: var(--text-muted);">
+                <span><span class="gantt-bar gantt-bar-rush" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> Rush/Emergency</span>
+                <span><span class="gantt-bar gantt-bar-high" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> High</span>
+                <span><span class="gantt-bar gantt-bar-normal" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> Normal</span>
+                <span><span class="gantt-bar gantt-bar-low" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> Low</span>
+                <span><span class="gantt-bar gantt-bar-conflict" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> Conflict</span>
+            </div>
+        }
+    </div>
+}
+else
+{
+    @* ── Table View ── *@
+    <div class="card">
+        <div class="card-header">Stage Executions — @_executions.Count scheduled</div>
+        @if (!_executions.Any())
+        {
+            <div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No stage executions in this period</div></div>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr><th>Part</th><th>Stage</th><th>Machine</th><th>Operator</th><th>Start</th><th>End</th><th>Status</th><th>Priority</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var exec in _executions)
+                    {
+                        <tr>
+                            <td>@(exec.Job?.Part?.PartNumber ?? "—")</td>
+                            <td>@(exec.ProductionStage?.Name ?? "—")</td>
+                            <td>@(exec.Machine?.Name ?? "—")</td>
+                            <td>@(exec.OperatorName ?? "—")</td>
+                            <td>@((exec.ScheduledStartAt ?? exec.Job?.ScheduledStart)?.ToString("MM/dd HH:mm") ?? "—")</td>
+                            <td>@((exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd)?.ToString("MM/dd HH:mm") ?? "—")</td>
+                            <td><span class="badge badge-@exec.Status.ToString().ToLower()">@exec.Status</span></td>
+                            <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@exec.Job?.Priority</span></td>
+                            <td>
+                                @if (exec.Status == StageExecutionStatus.NotStarted)
+                                {
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => ShowReschedule(exec)">📅</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@* ── Reschedule Modal ── *@
+@if (_showReschedule && _rescheduleExec != null)
+{
+    <div class="modal-overlay" @onclick="() => _showReschedule = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">📅 Reschedule</span><button class="modal-close" @onclick="() => _showReschedule = false">&times;</button></div>
+            <div class="form-group">
+                <label class="form-label">Machine</label>
+                <select class="form-control" @bind="_rescheduleMachineId">
+                    <option value="">Unassigned</option>
+                    @foreach (var m in _machines) { <option value="@m.Id">@m.Name</option> }
+                </select>
+            </div>
+            <div class="form-group"><label class="form-label">Start</label><input class="form-control" type="datetime-local" @bind="_rescheduleStart" /></div>
+            <div class="form-group"><label class="form-label">End</label><input class="form-control" type="datetime-local" @bind="_rescheduleEnd" /></div>
+            <button class="btn btn-primary" @onclick="ConfirmReschedule">Save Schedule</button>
+        </div>
+    </div>
+}
+
+@* ── Create Job Modal ── *@
 @if (_showCreate)
 {
     <div class="modal-overlay" @onclick="() => _showCreate = false">
@@ -60,7 +207,7 @@
             <div class="form-group"><label class="form-label">Machine</label>
                 <select class="form-control" @bind="_newJob.MachineId">
                     <option value="">Select machine...</option>
-                    @if (_machines != null) { @foreach (var m in _machines) { <option value="@m.MachineId">@m.Name</option> } }
+                    @foreach (var m in _machines) { <option value="@m.MachineId">@m.Name</option> }
                 </select>
             </div>
             <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" @bind="_newJob.Quantity" min="1" /></div>
@@ -72,25 +219,98 @@
 }
 
 @code {
-    private List<Job>? _jobs;
+    private bool _loading = true;
+    private List<StageExecution> _executions = new();
+    private List<Machine> _machines = new();
     private List<Part>? _parts;
-    private List<Machine>? _machines;
-    private string _statusFilter = "";
+    private List<DateTime> _ganttDays = new();
+    private DateTime _dateFrom = DateTime.UtcNow.Date;
+    private DateTime _dateTo = DateTime.UtcNow.Date.AddDays(14);
+    private string _viewMode = "gantt";
+
+    // Create job
     private bool _showCreate;
     private Job _newJob = new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1 };
     private string? _error;
 
+    // Reschedule
+    private bool _showReschedule;
+    private StageExecution? _rescheduleExec;
+    private string _rescheduleMachineId = "";
+    private DateTime _rescheduleStart;
+    private DateTime _rescheduleEnd;
+
     protected override async Task OnInitializedAsync()
     {
         _parts = await PartService.GetAllPartsAsync();
-        _machines = await Db.Machines.Where(m => m.IsActive).ToListAsync();
-        await LoadJobs();
+        _machines = await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync();
+        await LoadData();
     }
 
-    private async Task LoadJobs()
+    private async Task LoadData()
     {
-        JobStatus? filter = Enum.TryParse<JobStatus>(_statusFilter, out var s) ? s : null;
-        _jobs = await JobService.GetAllJobsAsync(filter);
+        _loading = true;
+        _executions = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
+        BuildGanttDays();
+        _loading = false;
+    }
+
+    private void BuildGanttDays()
+    {
+        _ganttDays = new List<DateTime>();
+        for (var d = _dateFrom.Date; d <= _dateTo.Date; d = d.AddDays(1))
+            _ganttDays.Add(d);
+    }
+
+    private double GetGanttPosition(DateTime start)
+    {
+        var totalSpan = (_dateTo - _dateFrom).TotalHours;
+        if (totalSpan <= 0) return 0;
+        var offset = (start - _dateFrom).TotalHours;
+        return Math.Clamp(offset / totalSpan * 100, 0, 100);
+    }
+
+    private double GetGanttWidth(DateTime start, DateTime end)
+    {
+        var totalSpan = (_dateTo - _dateFrom).TotalHours;
+        if (totalSpan <= 0) return 1;
+        var width = (end - start).TotalHours / totalSpan * 100;
+        return Math.Clamp(width, 0.5, 100);
+    }
+
+    private bool HasOverlap(int machineId, StageExecution current, List<StageExecution> machineExecs)
+    {
+        var cStart = current.ScheduledStartAt ?? current.Job?.ScheduledStart;
+        var cEnd = current.ScheduledEndAt ?? current.Job?.ScheduledEnd;
+        if (cStart == null || cEnd == null) return false;
+
+        return machineExecs.Any(e =>
+            e.Id != current.Id &&
+            (e.ScheduledStartAt ?? e.Job?.ScheduledStart) < cEnd &&
+            (e.ScheduledEndAt ?? e.Job?.ScheduledEnd) > cStart);
+    }
+
+    private void ShowReschedule(StageExecution exec)
+    {
+        _rescheduleExec = exec;
+        _rescheduleMachineId = exec.MachineId?.ToString() ?? "";
+        _rescheduleStart = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? DateTime.UtcNow;
+        _rescheduleEnd = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? DateTime.UtcNow.AddHours(4);
+        _showReschedule = true;
+    }
+
+    private async Task ConfirmReschedule()
+    {
+        if (_rescheduleExec == null) return;
+        try
+        {
+            int? machineId = int.TryParse(_rescheduleMachineId, out var mid) ? mid : null;
+            await StageService.UpdateScheduleAsync(_rescheduleExec.Id, _rescheduleStart, _rescheduleEnd, machineId);
+            Toast.ShowSuccess("Schedule updated");
+            _showReschedule = false;
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task CreateJob()
@@ -104,7 +324,7 @@
             await JobService.CreateJobAsync(_newJob);
             _showCreate = false;
             _newJob = new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1 };
-            await LoadJobs();
+            await LoadData();
         }
         catch (Exception ex) { _error = ex.Message; }
     }

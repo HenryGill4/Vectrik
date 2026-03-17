@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Opcentrix_V3.Models.Enums;
 
 namespace Opcentrix_V3.Models;
 
@@ -21,6 +22,31 @@ public class Part
 
     [Required, MaxLength(100)]
     public string ManufacturingApproach { get; set; } = "SLS-Based";
+
+    // PDM Fields
+    [MaxLength(50)]
+    public string? CustomerPartNumber { get; set; }
+
+    [MaxLength(50)]
+    public string? DrawingNumber { get; set; }
+
+    [MaxLength(20)]
+    public string? Revision { get; set; }
+
+    public DateTime? RevisionDate { get; set; }
+
+    [Range(0, 10000)]
+    public double? EstimatedWeightKg { get; set; }
+
+    [MaxLength(200)]
+    public string? RawMaterialSpec { get; set; }
+
+    // DLMS / Customization
+    public string? CustomFieldValues { get; set; }
+
+    public ItarClassification ItarClassification { get; set; } = ItarClassification.None;
+
+    public bool IsDefensePart { get; set; }
 
     // SLS Stacking
     public bool AllowStacking { get; set; }
@@ -95,6 +121,9 @@ public class Part
     // Navigation
     public virtual ICollection<PartStageRequirement> StageRequirements { get; set; } = new List<PartStageRequirement>();
     public virtual ICollection<Job> Jobs { get; set; } = new List<Job>();
+    public virtual ICollection<PartDrawing> Drawings { get; set; } = new List<PartDrawing>();
+    public virtual ICollection<PartRevisionHistory> RevisionHistory { get; set; } = new List<PartRevisionHistory>();
+    public virtual ICollection<PartNote> Notes { get; set; } = new List<PartNote>();
 
     // NotMapped computed properties
     [NotMapped]

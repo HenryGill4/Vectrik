@@ -1,113 +1,275 @@
 @page "/quotes/{Id:int}"
 @inject IQuoteService QuoteService
 @inject IPartService PartService
+@inject ITenantFeatureService Features
 @inject NavigationManager Nav
+@inject ToastService Toast
 @rendermode InteractiveServer
 
-<PageTitle>Quote Details - OpCentrix</PageTitle>
+<PageTitle>@(_quote?.QuoteNumber ?? "Quote") - OpCentrix</PageTitle>
 
-@if (_quote == null) { <div class="loading"><span class="spinner"></span></div> }
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading quote...</div>
+}
+else if (_quote == null)
+{
+    <div class="card" style="text-align: center; padding: 40px;">
+        <p style="color: var(--text-muted);">Quote not found.</p>
+        <button class="btn btn-secondary" @onclick="GoBack">← Back to Quotes</button>
+    </div>
+}
 else
 {
     <div class="page-header">
-        <h1 class="page-title">@_quote.QuoteNumber</h1>
+        <div>
+            <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Quotes</button>
+            <h1 class="page-title">@_quote.QuoteNumber — @_quote.CustomerName</h1>
+            <div style="display: flex; gap: 8px; margin-top: 4px; align-items: center;">
+                <span class="badge @GetStatusBadge(_quote.Status)">@_quote.Status</span>
+                <span class="badge badge-info">Rev @_quote.RevisionNumber</span>
+                @if (_quote.IsDefenseContract)
+                {
+                    <span class="badge badge-warning">🛡️ Defense</span>
+                }
+            </div>
+        </div>
         <div style="display: flex; gap: 8px;">
             @if (_quote.Status == QuoteStatus.Draft)
             {
-                <button class="btn btn-secondary" @onclick="() => SetStatus(QuoteStatus.Sent)">Mark Sent</button>
+                <button class="btn btn-secondary" @onclick="GoToEdit">✏️ Edit</button>
+                <button class="btn btn-primary" @onclick="MarkSent">📤 Mark Sent</button>
             }
             @if (_quote.Status == QuoteStatus.Sent)
             {
-                <button class="btn btn-success" @onclick="Accept">Accept & Convert</button>
-                <button class="btn btn-danger" @onclick="() => SetStatus(QuoteStatus.Rejected)">Reject</button>
-            }
-            <span class="badge badge-@_quote.Status.ToString().ToLower()" style="font-size: 0.9rem;">@_quote.Status</span>
-        </div>
-    </div>
-
-    <div class="card" style="margin-bottom: 16px;">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-            <div><span class="form-label">Customer</span><div>@_quote.CustomerName</div></div>
-            <div><span class="form-label">Estimated Cost</span><div>$@_quote.TotalEstimatedCost.ToString("N2")</div></div>
-            <div><span class="form-label">Quoted Price</span><div>@(_quote.QuotedPrice.HasValue ? $"${_quote.QuotedPrice:N2}" : "—")</div></div>
-            <div><span class="form-label">Margin</span><div>@(_quote.Markup.HasValue ? $"${_quote.Markup:N2}" : "—")</div></div>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>Line Items</span>
-            @if (_quote.Status == QuoteStatus.Draft)
-            {
-                <button class="btn btn-sm btn-primary" @onclick="() => _showAddLine = true">+ Add Line</button>
+                <button class="btn btn-success" @onclick="AcceptAndConvert">✅ Accept & Convert to WO</button>
+                <button class="btn btn-danger" @onclick="Reject">❌ Reject</button>
             }
         </div>
-        <table class="data-table">
-            <thead><tr><th>Part</th><th>Qty</th><th>Est. Cost/Part</th><th>Quoted/Part</th><th>Line Total</th></tr></thead>
-            <tbody>
-                @foreach (var l in _quote.Lines)
-                {
-                    <tr>
-                        <td>@l.Part?.PartNumber</td>
-                        <td>@l.Quantity</td>
-                        <td>$@l.EstimatedCostPerPart.ToString("N2")</td>
-                        <td>$@l.QuotedPricePerPart.ToString("N2")</td>
-                        <td>$@((l.QuotedPricePerPart * l.Quantity).ToString("N2"))</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
     </div>
 
-    @if (_quote.ConvertedWorkOrderId.HasValue)
+    <!-- Tab Bar -->
+    <div class="tab-bar" style="margin-bottom: 16px;">
+        <button class="tab @(_tab == "summary" ? "active" : "")" @onclick='() => _tab = "summary"'>Summary</button>
+        <button class="tab @(_tab == "lines" ? "active" : "")" @onclick='() => _tab = "lines"'>Lines (@_quote.Lines.Count)</button>
+        <button class="tab @(_tab == "revisions" ? "active" : "")" @onclick='() => _tab = "revisions"'>Revisions (@(_quote.Revisions?.Count ?? 0))</button>
+    </div>
+
+    <!-- Summary Tab -->
+    @if (_tab == "summary")
     {
-        <div class="alert alert-info">Converted to <a href="/workorders/@_quote.ConvertedWorkOrderId">Work Order</a></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="card">
+                <h3 class="card-title">Customer</h3>
+                <div class="detail-grid">
+                    <div class="detail-label">Name</div><div class="detail-value">@_quote.CustomerName</div>
+                    <div class="detail-label">Email</div><div class="detail-value">@(_quote.CustomerEmail ?? "—")</div>
+                    <div class="detail-label">Phone</div><div class="detail-value">@(_quote.CustomerPhone ?? "—")</div>
+                    <div class="detail-label">Created</div><div class="detail-value">@_quote.CreatedDate.ToString("yyyy-MM-dd")</div>
+                    <div class="detail-label">Expiration</div><div class="detail-value">@(_quote.ExpirationDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                    @if (_quote.SentAt.HasValue)
+                    {
+                        <div class="detail-label">Sent At</div><div class="detail-value">@_quote.SentAt.Value.ToString("yyyy-MM-dd HH:mm")</div>
+                    }
+                    @if (_quote.AcceptedAt.HasValue)
+                    {
+                        <div class="detail-label">Accepted At</div><div class="detail-value">@_quote.AcceptedAt.Value.ToString("yyyy-MM-dd HH:mm")</div>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="card-title">Financials</h3>
+                <div class="detail-grid">
+                    <div class="detail-label">Est. Labor Cost</div><div class="detail-value">@_quote.EstimatedLaborCost.ToString("C")</div>
+                    <div class="detail-label">Est. Material Cost</div><div class="detail-value">@_quote.EstimatedMaterialCost.ToString("C")</div>
+                    <div class="detail-label">Est. Overhead Cost</div><div class="detail-value">@_quote.EstimatedOverheadCost.ToString("C")</div>
+                    <div class="detail-label">Total Est. Cost</div><div class="detail-value"><strong>@_quote.TotalEstimatedCost.ToString("C")</strong></div>
+                    <div class="detail-label">Quoted Price</div><div class="detail-value"><strong>@(_quote.QuotedPrice?.ToString("C") ?? "—")</strong></div>
+                    <div class="detail-label">Markup</div>
+                    <div class="detail-value" style="color: @(_quote.Markup >= 0 ? "var(--success)" : "var(--danger)")">
+                        @(_quote.Markup?.ToString("C") ?? "—")
+                    </div>
+                    <div class="detail-label">Target Margin</div><div class="detail-value">@_quote.TargetMarginPct.ToString("F1")%</div>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_quote.Notes))
+            {
+                <div class="card" style="grid-column: span 2;">
+                    <h3 class="card-title">Notes</h3>
+                    <p style="color: var(--text-secondary);">@_quote.Notes</p>
+                </div>
+            }
+
+            @if (_quote.ConvertedWorkOrderId.HasValue)
+            {
+                <div class="card" style="grid-column: span 2; background: rgba(16, 185, 129, 0.08); border-color: var(--success);">
+                    <p style="margin: 0;">✅ Converted to <a href="/workorders/@_quote.ConvertedWorkOrderId" style="color: var(--accent); font-weight: 600;">Work Order</a></p>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Lines Tab -->
+    @if (_tab == "lines")
+    {
+        <div class="card">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th>Qty</th>
+                        <th>Labor (min)</th>
+                        <th>Setup (min)</th>
+                        <th>Material $/ea</th>
+                        <th>Est. Cost/Part</th>
+                        <th>Quoted $/Part</th>
+                        <th>Line Total</th>
+                        <th>Margin</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var l in _quote.Lines)
+                    {
+                        <tr>
+                            <td><strong>@(l.Part?.PartNumber ?? "—")</strong> — @(l.Part?.Name ?? "")</td>
+                            <td>@l.Quantity</td>
+                            <td>@l.LaborMinutes.ToString("F0")</td>
+                            <td>@l.SetupMinutes.ToString("F0")</td>
+                            <td>@l.MaterialCostEach.ToString("C")</td>
+                            <td>@l.EstimatedCostPerPart.ToString("C")</td>
+                            <td>@l.QuotedPricePerPart.ToString("C")</td>
+                            <td>@((l.QuotedPricePerPart * l.Quantity).ToString("C"))</td>
+                            <td>
+                                @if (l.QuotedPricePerPart > 0)
+                                {
+                                    var m = (l.QuotedPricePerPart - l.EstimatedCostPerPart) / l.QuotedPricePerPart * 100;
+                                    <span style="color: @(m >= 0 ? "var(--success)" : "var(--danger)")">@m.ToString("F1")%</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight: 600;">
+                        <td>Totals</td>
+                        <td>@_quote.Lines.Sum(l => l.Quantity)</td>
+                        <td colspan="3"></td>
+                        <td>@_quote.TotalEstimatedCost.ToString("C")</td>
+                        <td></td>
+                        <td>@(_quote.QuotedPrice?.ToString("C") ?? "—")</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+
+    <!-- Revisions Tab -->
+    @if (_tab == "revisions")
+    {
+        <div class="card">
+            <h3 class="card-title">Revision History</h3>
+            @if (_quote.Revisions == null || !_quote.Revisions.Any())
+            {
+                <p style="color: var(--text-muted);">No revision history yet.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Rev #</th>
+                            <th>Est. Cost</th>
+                            <th>Quoted Price</th>
+                            <th>Change Notes</th>
+                            <th>Date</th>
+                            <th>By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rev in _quote.Revisions.OrderByDescending(r => r.RevisionNumber))
+                        {
+                            <tr>
+                                <td><strong>R@rev.RevisionNumber</strong></td>
+                                <td>@rev.TotalEstimatedCost.ToString("C")</td>
+                                <td>@(rev.QuotedPrice?.ToString("C") ?? "—")</td>
+                                <td>@(rev.ChangeNotes ?? "—")</td>
+                                <td>@rev.CreatedDate.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@rev.CreatedBy</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
     }
 }
 
-@if (_showAddLine)
-{
-    <div class="modal-overlay" @onclick="() => _showAddLine = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">Add Line</span><button class="modal-close" @onclick="() => _showAddLine = false">&times;</button></div>
-            <div class="form-group"><label class="form-label">Part</label>
-                <select class="form-control" @bind="_linePartId">
-                    <option value="0">Select...</option>
-                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber - @p.Name</option> } }
-                </select>
-            </div>
-            <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" @bind="_lineQty" min="1" /></div>
-            <div class="form-group"><label class="form-label">Quoted Price/Part</label><input class="form-control" type="number" step="0.01" @bind="_linePrice" /></div>
-            <button class="btn btn-primary" @onclick="AddLine">Add</button>
-        </div>
-    </div>
-}
+<ConfirmDialog @ref="_confirm" />
 
 @code {
     [Parameter] public int Id { get; set; }
+
+    private bool _loading = true;
     private Quote? _quote;
-    private List<Part>? _parts;
-    private bool _showAddLine;
-    private int _linePartId, _lineQty = 1;
-    private decimal _linePrice;
+    private string _tab = "summary";
+    private ConfirmDialog _confirm = null!;
 
     protected override async Task OnInitializedAsync()
     {
-        _quote = await QuoteService.GetQuoteByIdAsync(Id);
-        _parts = await PartService.GetAllPartsAsync();
+        _quote = await QuoteService.GetQuoteDetailAsync(Id);
+        _loading = false;
     }
 
-    private async Task SetStatus(QuoteStatus status) { await QuoteService.UpdateStatusAsync(Id, status); _quote = await QuoteService.GetQuoteByIdAsync(Id); }
-
-    private async Task Accept()
+    private async Task MarkSent()
     {
-        await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Accepted);
-        var wo = await QuoteService.ConvertToWorkOrderAsync(Id, "System");
-        Nav.NavigateTo($"/workorders/{wo.Id}");
+        if (_quote == null) return;
+        _quote.SentAt = DateTime.UtcNow;
+        await QuoteService.UpdateQuoteAsync(_quote);
+        await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Sent);
+        _quote = await QuoteService.GetQuoteDetailAsync(Id);
+        Toast.ShowSuccess("Quote marked as sent");
     }
 
-    private async Task AddLine()
+    private async Task AcceptAndConvert()
     {
-        if (_linePartId > 0) { await QuoteService.AddLineAsync(Id, _linePartId, _lineQty, _linePrice); _showAddLine = false; _quote = await QuoteService.GetQuoteByIdAsync(Id); }
+        if (_quote == null) return;
+        if (!await _confirm.ShowAsync("Accept this quote and create a Work Order?")) return;
+        try
+        {
+            _quote.AcceptedAt = DateTime.UtcNow;
+            await QuoteService.UpdateQuoteAsync(_quote);
+            var wo = await QuoteService.ConvertToWorkOrderAsync(Id, _quote.LastModifiedBy ?? "System");
+            Toast.ShowSuccess("Work Order created");
+            Nav.NavigateTo($"/workorders/{wo.Id}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
     }
+
+    private async Task Reject()
+    {
+        if (_quote == null) return;
+        if (!await _confirm.ShowAsync("Reject this quote?")) return;
+        await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Rejected);
+        _quote = await QuoteService.GetQuoteDetailAsync(Id);
+        Toast.ShowSuccess("Quote rejected");
+    }
+
+    private void GoToEdit() => Nav.NavigateTo($"/quotes/{Id}/edit");
+    private void GoBack() => Nav.NavigateTo("/quotes");
+
+    private static string GetStatusBadge(QuoteStatus status) => status switch
+    {
+        QuoteStatus.Draft => "badge-info",
+        QuoteStatus.Sent => "badge-warning",
+        QuoteStatus.Accepted => "badge-active",
+        QuoteStatus.Rejected => "badge-cancelled",
+        QuoteStatus.Expired => "badge-cancelled",
+        _ => ""
+    };
 }

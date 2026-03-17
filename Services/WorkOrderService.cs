@@ -40,6 +40,24 @@ public class WorkOrderService : IWorkOrderService
             .FirstOrDefaultAsync(w => w.Id == id);
     }
 
+    public async Task<WorkOrder?> GetWorkOrderDetailAsync(int id)
+    {
+        return await _db.WorkOrders
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.Part)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.Jobs)
+                    .ThenInclude(j => j.Stages)
+                        .ThenInclude(s => s.ProductionStage)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.PartInstances)
+            .Include(w => w.Comments.Where(c => c.ParentCommentId == null))
+                .ThenInclude(c => c.Replies)
+            .Include(w => w.Quote)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(w => w.Id == id);
+    }
+
     public async Task<WorkOrder?> GetWorkOrderByNumberAsync(string orderNumber)
     {
         return await _db.WorkOrders
@@ -104,11 +122,21 @@ public class WorkOrderService : IWorkOrderService
         wo.LastModifiedDate = DateTime.UtcNow;
         wo.LastModifiedBy = updatedBy;
 
-        // When releasing, update all lines to Released
+        // When releasing, update all lines to Released and auto-generate jobs
         if (newStatus == WorkOrderStatus.Released)
         {
             foreach (var line in wo.Lines.Where(l => l.Status == WorkOrderStatus.Draft))
+            {
                 line.Status = WorkOrderStatus.Released;
+            }
+
+            // Auto-generate jobs for lines that don't have them yet
+            foreach (var line in wo.Lines)
+            {
+                var hasJobs = await _db.Jobs.AnyAsync(j => j.WorkOrderLineId == line.Id);
+                if (!hasJobs)
+                    await GenerateJobsForLineAsync(line.Id, updatedBy);
+            }
         }
 
         await _db.SaveChangesAsync();
@@ -165,5 +193,125 @@ public class WorkOrderService : IWorkOrderService
         }
 
         return $"{prefix}{nextNumber:D4}";
+    }
+
+    // --- Job Generation from Part Routing ---
+
+    public async Task<List<Job>> GenerateJobsForLineAsync(int workOrderLineId, string createdBy)
+    {
+        var line = await _db.WorkOrderLines
+            .Include(l => l.Part)
+            .FirstOrDefaultAsync(l => l.Id == workOrderLineId)
+            ?? throw new InvalidOperationException("Work order line not found.");
+
+        var routing = await _db.PartStageRequirements
+            .Include(r => r.ProductionStage)
+            .Where(r => r.PartId == line.PartId && r.IsActive)
+            .OrderBy(r => r.ExecutionOrder)
+            .ToListAsync();
+
+        if (routing.Count == 0)
+            return new List<Job>();
+
+        var jobs = new List<Job>();
+        Job? previousJob = null;
+
+        foreach (var stage in routing)
+        {
+            var estimatedHours = stage.EstimatedHours ?? stage.ProductionStage.DefaultDurationHours;
+            var job = new Job
+            {
+                PartId = line.PartId,
+                WorkOrderLineId = line.Id,
+                PartNumber = line.Part.PartNumber,
+                Quantity = line.Quantity,
+                EstimatedHours = estimatedHours,
+                MachineId = stage.AssignedMachineId,
+                Status = JobStatus.Draft,
+                Priority = JobPriority.Normal,
+                PredecessorJobId = previousJob?.Id,
+                ScheduledStart = DateTime.UtcNow,
+                ScheduledEnd = DateTime.UtcNow.AddHours(estimatedHours),
+                CreatedBy = createdBy,
+                LastModifiedBy = createdBy,
+                Notes = $"Auto-generated for {line.Part.PartNumber} — Stage: {stage.ProductionStage.Name}"
+            };
+
+            _db.Jobs.Add(job);
+            await _db.SaveChangesAsync(); // Save to get Id for predecessor chain
+
+            // Create stage execution for this job
+            var execution = new StageExecution
+            {
+                JobId = job.Id,
+                ProductionStageId = stage.ProductionStageId,
+                EstimatedHours = estimatedHours,
+                EstimatedCost = stage.EstimatedCost,
+                MaterialCost = stage.MaterialCost,
+                SetupHours = stage.SetupTimeMinutes.HasValue ? stage.SetupTimeMinutes.Value / 60.0 : null,
+                QualityCheckRequired = stage.ProductionStage.RequiresQualityCheck
+            };
+
+            _db.StageExecutions.Add(execution);
+            await _db.SaveChangesAsync();
+
+            jobs.Add(job);
+            previousJob = job;
+        }
+
+        return jobs;
+    }
+
+    public async Task<Job?> GetJobDetailAsync(int jobId)
+    {
+        return await _db.Jobs
+            .Include(j => j.Part)
+            .Include(j => j.WorkOrderLine)
+                .ThenInclude(l => l!.WorkOrder)
+            .Include(j => j.Stages)
+                .ThenInclude(s => s.ProductionStage)
+            .Include(j => j.Stages)
+                .ThenInclude(s => s.Operator)
+            .Include(j => j.OperatorUser)
+            .Include(j => j.JobNotes)
+            .FirstOrDefaultAsync(j => j.Id == jobId);
+    }
+
+    // --- Comments ---
+
+    public async Task<List<WorkOrderComment>> GetCommentsAsync(int workOrderId)
+    {
+        return await _db.WorkOrderComments
+            .Where(c => c.WorkOrderId == workOrderId && c.ParentCommentId == null)
+            .Include(c => c.Replies)
+            .Include(c => c.AuthorUser)
+            .OrderByDescending(c => c.CreatedDate)
+            .ToListAsync();
+    }
+
+    public async Task<WorkOrderComment> AddCommentAsync(int workOrderId, string content, string authorName, int? authorUserId = null, int? parentCommentId = null)
+    {
+        var comment = new WorkOrderComment
+        {
+            WorkOrderId = workOrderId,
+            Content = content,
+            AuthorName = authorName,
+            AuthorUserId = authorUserId,
+            ParentCommentId = parentCommentId
+        };
+
+        _db.WorkOrderComments.Add(comment);
+        await _db.SaveChangesAsync();
+        return comment;
+    }
+
+    public async Task DeleteCommentAsync(int commentId)
+    {
+        var comment = await _db.WorkOrderComments.FindAsync(commentId);
+        if (comment != null)
+        {
+            _db.WorkOrderComments.Remove(comment);
+            await _db.SaveChangesAsync();
+        }
     }
 }

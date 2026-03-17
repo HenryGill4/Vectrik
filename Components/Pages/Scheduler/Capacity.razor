@@ -1,0 +1,185 @@
+@page "/scheduler/capacity"
+@rendermode InteractiveServer
+@inject IStageService StageService
+@inject IOeeService OeeService
+@inject ToastService Toast
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager,Supervisor")]
+
+<PageTitle>Capacity Dashboard - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">📊 Capacity Dashboard</h1>
+    <a href="scheduler" class="btn btn-secondary">← Scheduler</a>
+</div>
+
+@* ── Date Range ── *@
+<div class="card" style="margin-bottom: 16px;">
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">From</label>
+            <input class="form-control" type="date" @bind="_dateFrom" />
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">To</label>
+            <input class="form-control" type="date" @bind="_dateTo" />
+        </div>
+        <button class="btn btn-primary btn-sm" @onclick="LoadData" style="height: 38px;">Apply</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Calculating capacity...</div>
+}
+else
+{
+    @* ── OEE Summary ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">📈 OEE Summary</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
+            <div class="stat-card">
+                <div class="stat-value">@_overallOee.Oee%</div>
+                <div class="stat-label">Overall OEE</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@_overallOee.Availability%</div>
+                <div class="stat-label">Availability</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@_overallOee.Performance%</div>
+                <div class="stat-label">Performance</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@_overallOee.Quality%</div>
+                <div class="stat-label">Quality</div>
+            </div>
+        </div>
+    </div>
+
+    @* ── Capacity by Machine (visual bars) ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">🏭 Machine Capacity</div>
+        @if (!_capacity.Any())
+        {
+            <div class="empty-state"><div class="empty-state-text">No machines available for scheduling</div></div>
+        }
+        else
+        {
+            @foreach (var m in _capacity)
+            {
+                var barColor = m.UtilizationPct switch
+                {
+                    > 100 => "var(--danger)",
+                    > 80 => "var(--warning)",
+                    _ => "var(--success)"
+                };
+                var barWidth = Math.Min(m.UtilizationPct, 100);
+                <div style="margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="font-weight: 600;">@m.MachineName <span style="color: var(--text-muted); font-weight: 400;">(@m.MachineType)</span></span>
+                        <span style="font-weight: 600; color: @barColor;">@m.UtilizationPct%</span>
+                    </div>
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; height: 24px; overflow: hidden; position: relative;">
+                        <div style="background: @barColor; height: 100%; width: @(barWidth)%; border-radius: 6px; transition: width 0.3s;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8em; color: var(--text-muted); margin-top: 2px;">
+                        <span>@m.LoadedHours hrs loaded</span>
+                        <span>@m.AvailableHours hrs available</span>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    @* ── Capacity Table ── *@
+    <div class="card">
+        <div class="card-header">📋 Detailed Capacity</div>
+        <table class="data-table">
+            <thead>
+                <tr><th>Machine</th><th>Type</th><th>Available Hrs</th><th>Loaded Hrs</th><th>Open Capacity</th><th>Utilization</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var m in _capacity)
+                {
+                    var openHrs = Math.Max(m.AvailableHours - m.LoadedHours, 0);
+                    <tr>
+                        <td style="font-weight: 600;">@m.MachineName</td>
+                        <td>@m.MachineType</td>
+                        <td>@m.AvailableHours</td>
+                        <td>@m.LoadedHours</td>
+                        <td>@Math.Round(openHrs, 1)</td>
+                        <td>
+                            @{
+                                var badgeClass = m.UtilizationPct switch
+                                {
+                                    > 100 => "badge-danger",
+                                    > 80 => "badge-warning",
+                                    _ => "badge-success"
+                                };
+                            }
+                            <span class="badge @badgeClass">@m.UtilizationPct%</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @* ── Per-Machine OEE ── *@
+    @if (_machineOee.Any())
+    {
+        <div class="card" style="margin-top: 16px;">
+            <div class="card-header">⚡ OEE by Machine</div>
+            <table class="data-table">
+                <thead>
+                    <tr><th>Machine</th><th>Availability</th><th>Performance</th><th>Quality</th><th>OEE</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in _machineOee)
+                    {
+                        <tr>
+                            <td style="font-weight: 600;">@o.MachineName</td>
+                            <td>@o.Availability%</td>
+                            <td>@o.Performance%</td>
+                            <td>@o.Quality%</td>
+                            <td><span class="badge @(o.Oee >= 85 ? "badge-success" : o.Oee >= 60 ? "badge-warning" : "badge-danger")">@o.Oee%</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private DateTime _dateFrom = DateTime.UtcNow.Date;
+    private DateTime _dateTo = DateTime.UtcNow.Date.AddDays(28);
+    private List<MachineCapacityInfo> _capacity = new();
+    private OeeData _overallOee = new(0, "Overall", 0, 0, 0, 0);
+    private List<OeeData> _machineOee = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            _capacity = await StageService.GetMachineCapacityAsync(_dateFrom, _dateTo);
+            _overallOee = await OeeService.GetOverallOeeAsync(_dateFrom, _dateTo);
+            _machineOee = await OeeService.GetAllMachineOeeAsync(_dateFrom, _dateTo);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading capacity: {ex.Message}");
+        }
+
+        _loading = false;
+    }
+}

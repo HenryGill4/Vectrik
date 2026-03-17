@@ -1,0 +1,164 @@
+@page "/quotes/rfq-inbox"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject IQuoteService QuoteService
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>RFQ Inbox - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">RFQ Inbox</h1>
+</div>
+
+<!-- Status Filter Tabs -->
+<div class="tab-bar" style="margin-bottom: 16px;">
+    <button class="tab @(_filter == null ? "active" : "")" @onclick="() => Filter(null)">All (@_allRfqs.Count)</button>
+    @foreach (var s in new[] { "New", "Reviewed", "Quoted", "Declined" })
+    {
+        var count = _allRfqs.Count(r => r.Status == s);
+        <button class="tab @(_filter == s ? "active" : "")" @onclick="() => Filter(s)">@s (@count)</button>
+    }
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!_filtered.Any())
+{
+    <div class="card" style="text-align: center; padding: 40px;">
+        <p style="color: var(--text-muted);">No RFQ requests found.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Contact</th>
+                    <th>Email</th>
+                    <th>Material</th>
+                    <th>Qty</th>
+                    <th>Need By</th>
+                    <th>Submitted</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var rfq in _filtered)
+                {
+                    <tr>
+                        <td><strong>@rfq.CompanyName</strong></td>
+                        <td>@rfq.ContactName</td>
+                        <td>@rfq.Email</td>
+                        <td>@(rfq.Material ?? "—")</td>
+                        <td>@(rfq.Quantity?.ToString() ?? "—")</td>
+                        <td>@(rfq.NeededByDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                        <td>@rfq.SubmittedDate.ToString("yyyy-MM-dd")</td>
+                        <td><span class="badge @GetBadge(rfq.Status)">@rfq.Status</span></td>
+                        <td style="display: flex; gap: 4px;">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ViewDetail(rfq)">View</button>
+                            @if (rfq.Status == "New" || rfq.Status == "Reviewed")
+                            {
+                                <button class="btn btn-sm btn-primary" @onclick="() => ConvertToQuote(rfq)">→ Quote</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- RFQ Detail Modal -->
+<AppModal Visible="_showDetail" VisibleChanged="v => _showDetail = v" Title="@(_selectedRfq?.CompanyName ?? "RFQ Detail")" Size="md">
+    <ChildContent>
+        @if (_selectedRfq != null)
+        {
+            <div class="detail-grid" style="margin-bottom: 16px;">
+                <div class="detail-label">Company</div><div class="detail-value">@_selectedRfq.CompanyName</div>
+                <div class="detail-label">Contact</div><div class="detail-value">@_selectedRfq.ContactName</div>
+                <div class="detail-label">Email</div><div class="detail-value">@_selectedRfq.Email</div>
+                <div class="detail-label">Phone</div><div class="detail-value">@(_selectedRfq.Phone ?? "—")</div>
+                <div class="detail-label">Quantity</div><div class="detail-value">@(_selectedRfq.Quantity?.ToString() ?? "—")</div>
+                <div class="detail-label">Material</div><div class="detail-value">@(_selectedRfq.Material ?? "—")</div>
+                <div class="detail-label">Need By</div><div class="detail-value">@(_selectedRfq.NeededByDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                <div class="detail-label">Submitted</div><div class="detail-value">@_selectedRfq.SubmittedDate.ToString("yyyy-MM-dd HH:mm")</div>
+                <div class="detail-label">Status</div><div class="detail-value"><span class="badge @GetBadge(_selectedRfq.Status)">@_selectedRfq.Status</span></div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 12px; color: var(--text-secondary); white-space: pre-wrap;">@_selectedRfq.Description</div>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showDetail = false">Close</button>
+        @if (_selectedRfq?.Status == "New" || _selectedRfq?.Status == "Reviewed")
+        {
+            <button class="btn btn-primary" @onclick="() => ConvertToQuote(_selectedRfq!)">Convert to Quote</button>
+        }
+    </Footer>
+</AppModal>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private bool _loading = true;
+    private List<RfqRequest> _allRfqs = new();
+    private List<RfqRequest> _filtered = new();
+    private string? _filter;
+    private RfqRequest? _selectedRfq;
+    private bool _showDetail;
+    private ConfirmDialog _confirm = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allRfqs = await QuoteService.GetRfqRequestsAsync();
+        _filtered = _allRfqs;
+        _loading = false;
+    }
+
+    private void Filter(string? status)
+    {
+        _filter = status;
+        _filtered = status != null
+            ? _allRfqs.Where(r => r.Status == status).ToList()
+            : _allRfqs;
+    }
+
+    private void ViewDetail(RfqRequest rfq)
+    {
+        _selectedRfq = rfq;
+        _showDetail = true;
+    }
+
+    private async Task ConvertToQuote(RfqRequest rfq)
+    {
+        if (!await _confirm.ShowAsync($"Convert RFQ from {rfq.CompanyName} to a new quote?")) return;
+        try
+        {
+            var quote = await QuoteService.ConvertRfqToQuoteAsync(rfq.Id, "System");
+            Toast.ShowSuccess("Quote created from RFQ");
+            Nav.NavigateTo($"/quotes/{quote.Id}/edit");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private static string GetBadge(string status) => status switch
+    {
+        "New" => "badge-info",
+        "Reviewed" => "badge-warning",
+        "Quoted" => "badge-active",
+        "Declined" => "badge-cancelled",
+        _ => ""
+    };
+}

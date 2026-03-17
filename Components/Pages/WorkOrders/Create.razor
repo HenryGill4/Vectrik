@@ -1,0 +1,250 @@
+@page "/workorders/new"
+@rendermode InteractiveServer
+@inject IWorkOrderService WorkOrderService
+@inject IPartService PartService
+@inject IQuoteService QuoteService
+@inject ITenantFeatureService Features
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>New Work Order - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">New Work Order</h1>
+    <a href="/workorders" class="btn btn-secondary">← Back</a>
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+    <h3 class="card-title">Customer Information</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-group">
+            <label class="form-label">Customer Name <span style="color:var(--danger)">*</span></label>
+            <input class="form-control" @bind="_wo.CustomerName" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Customer PO</label>
+            <input class="form-control" @bind="_wo.CustomerPO" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Customer Email</label>
+            <input class="form-control" type="email" @bind="_wo.CustomerEmail" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Customer Phone</label>
+            <input class="form-control" type="tel" @bind="_wo.CustomerPhone" />
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+    <h3 class="card-title">Dates & Priority</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px;">
+        <div class="form-group">
+            <label class="form-label">Due Date <span style="color:var(--danger)">*</span></label>
+            <input class="form-control" type="date" @bind="_wo.DueDate" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Ship By Date</label>
+            <input class="form-control" type="date" @bind="_wo.ShipByDate" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Promised Date</label>
+            <input class="form-control" type="date" @bind="_wo.PromisedDate" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Priority</label>
+            <select class="form-control" @bind="_wo.Priority">
+                @foreach (var p in Enum.GetValues<JobPriority>())
+                {
+                    <option value="@p">@p</option>
+                }
+            </select>
+        </div>
+    </div>
+</div>
+
+@if (Features.IsEnabled("dlms"))
+{
+    <div class="card" style="margin-bottom: 16px;">
+        <h3 class="card-title">🛡️ Defense Contract</h3>
+        <div style="display: grid; grid-template-columns: auto 1fr 1fr; gap: 12px; align-items: end;">
+            <div class="form-group">
+                <label class="form-label">Defense Contract?</label>
+                <input type="checkbox" @bind="_wo.IsDefenseContract" style="width: 20px; height: 20px;" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Contract Number</label>
+                <input class="form-control" @bind="_wo.ContractNumber" disabled="@(!_wo.IsDefenseContract)" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">CLIN</label>
+                <input class="form-control" @bind="_wo.ContractLineItem" disabled="@(!_wo.IsDefenseContract)" />
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card" style="margin-bottom: 16px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 class="card-title" style="margin-bottom: 0;">Line Items</h3>
+        <button class="btn btn-sm btn-primary" @onclick="() => _showAddLine = true">+ Add Line</button>
+    </div>
+
+    @if (_lines.Count == 0)
+    {
+        <div style="text-align: center; padding: 24px; color: var(--text-muted);">
+            No line items yet. Add parts to this work order.
+        </div>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Part</th>
+                    <th>Part #</th>
+                    <th>Quantity</th>
+                    <th>Notes</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _lines)
+                {
+                    var part = _parts?.FirstOrDefault(p => p.Id == line.PartId);
+                    <tr>
+                        <td>@(part?.Name ?? "—")</td>
+                        <td>@(part?.PartNumber ?? "—")</td>
+                        <td>@line.Quantity</td>
+                        <td style="color: var(--text-muted); font-size: 0.85rem;">@(line.Notes ?? "—")</td>
+                        <td><button class="btn btn-sm btn-danger" @onclick="() => _lines.Remove(line)">✕</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="form-group">
+    <label class="form-label">Notes</label>
+    <textarea class="form-control" @bind="_wo.Notes" rows="3"></textarea>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger" style="margin-top: 12px;">@_error</div>
+}
+
+<div style="display: flex; gap: 8px; margin-top: 16px;">
+    <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
+        @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+        Create Work Order
+    </button>
+    <a href="/workorders" class="btn btn-secondary">Cancel</a>
+</div>
+
+<!-- Add Line Modal -->
+<AppModal Visible="_showAddLine" VisibleChanged="v => _showAddLine = v" Title="Add Line Item" Size="sm">
+    <ChildContent>
+        <div class="form-group">
+            <label class="form-label">Part</label>
+            <select class="form-control" @bind="_linePartId">
+                <option value="0">Select part...</option>
+                @if (_parts != null)
+                {
+                    @foreach (var p in _parts)
+                    {
+                        <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input class="form-control" type="number" min="1" @bind="_lineQty" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notes</label>
+            <input class="form-control" @bind="_lineNotes" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showAddLine = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="AddLine">Add</button>
+    </Footer>
+</AppModal>
+
+@code {
+    private WorkOrder _wo = new()
+    {
+        DueDate = DateTime.UtcNow.AddDays(30),
+        CreatedBy = "System",
+        LastModifiedBy = "System"
+    };
+
+    private List<WorkOrderLineDto> _lines = new();
+    private List<Part>? _parts;
+    private bool _showAddLine;
+    private int _linePartId;
+    private int _lineQty = 1;
+    private string? _lineNotes;
+    private bool _saving;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _parts = await PartService.GetAllPartsAsync();
+    }
+
+    private void AddLine()
+    {
+        if (_linePartId == 0) return;
+        _lines.Add(new WorkOrderLineDto { PartId = _linePartId, Quantity = _lineQty, Notes = _lineNotes });
+        _linePartId = 0;
+        _lineQty = 1;
+        _lineNotes = null;
+        _showAddLine = false;
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_wo.CustomerName))
+        {
+            _error = "Customer name is required.";
+            return;
+        }
+        if (_lines.Count == 0)
+        {
+            _error = "Add at least one line item.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var wo = await WorkOrderService.CreateWorkOrderAsync(_wo);
+            foreach (var line in _lines)
+            {
+                await WorkOrderService.AddLineAsync(wo.Id, line.PartId, line.Quantity, line.Notes);
+            }
+            Toast.ShowSuccess($"Work order {wo.OrderNumber} created");
+            Nav.NavigateTo($"/workorders/{wo.Id}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private class WorkOrderLineDto
+    {
+        public int PartId { get; set; }
+        public int Quantity { get; set; }
+        public string? Notes { get; set; }
+    }
+}

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using Opcentrix_V3.Models.Enums;
 
 namespace Opcentrix_V3.Models;
@@ -25,6 +26,11 @@ public class WorkOrder
     public DateTime OrderDate { get; set; } = DateTime.UtcNow;
     public DateTime DueDate { get; set; }
 
+    // Shipping & Promise Dates
+    public DateTime? ShipByDate { get; set; }
+    public DateTime? PromisedDate { get; set; }
+    public DateTime? ActualShipDate { get; set; }
+
     public WorkOrderStatus Status { get; set; } = WorkOrderStatus.Draft;
     public JobPriority Priority { get; set; } = JobPriority.Normal;
 
@@ -32,6 +38,25 @@ public class WorkOrder
 
     public string? Notes { get; set; }
 
+    // Approval
+    [MaxLength(100)]
+    public string? ApprovedBy { get; set; }
+    public DateTime? ApprovedDate { get; set; }
+    public int? WorkflowInstanceId { get; set; }
+
+    // DLMS / Defense
+    [MaxLength(100)]
+    public string? ContractNumber { get; set; }
+
+    [MaxLength(50)]
+    public string? ContractLineItem { get; set; }
+
+    public bool IsDefenseContract { get; set; }
+
+    // Custom Fields
+    public string CustomFieldValues { get; set; } = "{}";
+
+    // Audit
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
 
@@ -43,7 +68,9 @@ public class WorkOrder
 
     // Navigation
     public virtual ICollection<WorkOrderLine> Lines { get; set; } = new List<WorkOrderLine>();
+    public virtual ICollection<WorkOrderComment> Comments { get; set; } = new List<WorkOrderComment>();
     public virtual Quote? Quote { get; set; }
+    public virtual WorkflowInstance? WorkflowInstance { get; set; }
 }
 
 public class WorkOrderLine

@@ -1,0 +1,126 @@
+@page "/portal/rfq"
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@inject IQuoteService QuoteService
+@inject NavigationManager Nav
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>Request for Quote - OpCentrix</PageTitle>
+
+<div class="rfq-container">
+    <div class="rfq-card">
+        <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="font-size: 1.6rem; color: var(--text-primary); margin-bottom: 4px;">Request for Quote</h1>
+            <p style="color: var(--text-muted);">Submit your requirements and we'll get back to you with a quote.</p>
+        </div>
+
+        @if (_submitted)
+        {
+            <div class="rfq-success">
+                <div style="font-size: 2rem; margin-bottom: 12px;">✅</div>
+                <h2 style="margin-bottom: 8px;">RFQ Submitted Successfully</h2>
+                <p style="color: var(--text-muted);">Thank you, @_rfq.ContactName. We'll review your request and respond to <strong>@_rfq.Email</strong> shortly.</p>
+                <button class="btn btn-primary" style="margin-top: 16px;" @onclick="Reset">Submit Another</button>
+            </div>
+        }
+        else
+        {
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="alert alert-danger">@_error</div>
+            }
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Company Name <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="_rfq.CompanyName" placeholder="Acme Manufacturing" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Contact Name <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="_rfq.ContactName" placeholder="John Doe" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" type="email" @bind="_rfq.Email" placeholder="john@acme.com" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Phone</label>
+                    <input class="form-control" type="tel" @bind="_rfq.Phone" placeholder="(555) 123-4567" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Description of Parts/Work Needed <span style="color:var(--danger)">*</span></label>
+                <textarea class="form-control" @bind="_rfq.Description" rows="4" placeholder="Describe the parts, tolerances, finishes, and any special requirements..."></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Quantity</label>
+                    <input class="form-control" type="number" min="1" @bind="_rfq.Quantity" placeholder="100" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Material</label>
+                    <input class="form-control" @bind="_rfq.Material" placeholder="e.g., 6061-T6 Aluminum" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Need By Date</label>
+                    <input class="form-control" type="date" @bind="_rfq.NeededByDate" />
+                </div>
+            </div>
+
+            <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+                <button class="btn btn-primary" @onclick="Submit" disabled="@_submitting">
+                    @if (_submitting)
+                    {
+                        <span class="spinner" style="width: 14px; height: 14px; margin-right: 6px;"></span>
+                    }
+                    Submit RFQ
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private RfqRequest _rfq = new();
+    private bool _submitted;
+    private bool _submitting;
+    private string? _error;
+
+    private async Task Submit()
+    {
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_rfq.CompanyName) ||
+            string.IsNullOrWhiteSpace(_rfq.ContactName) ||
+            string.IsNullOrWhiteSpace(_rfq.Email) ||
+            string.IsNullOrWhiteSpace(_rfq.Description))
+        {
+            _error = "Please fill in all required fields.";
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            await QuoteService.SubmitRfqAsync(_rfq);
+            _submitted = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to submit: {ex.Message}";
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private void Reset()
+    {
+        _rfq = new RfqRequest();
+        _submitted = false;
+        _error = null;
+    }
+}

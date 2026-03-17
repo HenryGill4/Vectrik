@@ -72,6 +72,18 @@ public class TenantDbContext : DbContext
     public DbSet<WorkflowInstance> WorkflowInstances { get; set; }
     public DbSet<DocumentTemplate> DocumentTemplates { get; set; }
 
+    // Parts / PDM
+    public DbSet<PartDrawing> PartDrawings { get; set; }
+    public DbSet<PartRevisionHistory> PartRevisionHistories { get; set; }
+    public DbSet<PartNote> PartNotes { get; set; }
+
+    // Quoting
+    public DbSet<QuoteRevision> QuoteRevisions { get; set; }
+    public DbSet<RfqRequest> RfqRequests { get; set; }
+
+    // Work Order Management
+    public DbSet<WorkOrderComment> WorkOrderComments { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -103,6 +115,30 @@ public class TenantDbContext : DbContext
             entity.HasIndex(e => e.PartNumber);
         });
 
+        // PartDrawing
+        modelBuilder.Entity<PartDrawing>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany(e => e.Drawings)
+                .HasForeignKey(e => e.PartId);
+        });
+
+        // PartRevisionHistory
+        modelBuilder.Entity<PartRevisionHistory>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany(e => e.RevisionHistory)
+                .HasForeignKey(e => e.PartId);
+        });
+
+        // PartNote
+        modelBuilder.Entity<PartNote>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany(e => e.Notes)
+                .HasForeignKey(e => e.PartId);
+        });
+
         // PartStageRequirement
         modelBuilder.Entity<PartStageRequirement>(entity =>
         {
@@ -121,6 +157,23 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Quote)
                 .WithOne()
                 .HasForeignKey<WorkOrder>(e => e.QuoteId);
+            entity.HasOne(e => e.WorkflowInstance)
+                .WithMany()
+                .HasForeignKey(e => e.WorkflowInstanceId);
+        });
+
+        // WorkOrderComment
+        modelBuilder.Entity<WorkOrderComment>(entity =>
+        {
+            entity.HasOne(e => e.WorkOrder)
+                .WithMany(e => e.Comments)
+                .HasForeignKey(e => e.WorkOrderId);
+            entity.HasOne(e => e.AuthorUser)
+                .WithMany()
+                .HasForeignKey(e => e.AuthorUserId);
+            entity.HasOne(e => e.ParentComment)
+                .WithMany(e => e.Replies)
+                .HasForeignKey(e => e.ParentCommentId);
         });
 
         // WorkOrderLine
@@ -149,6 +202,22 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Part)
                 .WithMany()
                 .HasForeignKey(e => e.PartId);
+        });
+
+        // QuoteRevision
+        modelBuilder.Entity<QuoteRevision>(entity =>
+        {
+            entity.HasOne(e => e.Quote)
+                .WithMany(e => e.Revisions)
+                .HasForeignKey(e => e.QuoteId);
+        });
+
+        // RfqRequest
+        modelBuilder.Entity<RfqRequest>(entity =>
+        {
+            entity.HasOne(e => e.ConvertedQuote)
+                .WithMany()
+                .HasForeignKey(e => e.ConvertedQuoteId);
         });
 
         // Job
@@ -180,6 +249,12 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Operator)
                 .WithMany()
                 .HasForeignKey(e => e.OperatorUserId);
+            entity.HasOne(e => e.Machine)
+                .WithMany()
+                .HasForeignKey(e => e.MachineId);
+            entity.HasMany(e => e.DelayLogs)
+                .WithOne(e => e.StageExecution)
+                .HasForeignKey(e => e.StageExecutionId);
         });
 
         // JobNote
@@ -309,9 +384,6 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Job)
                 .WithMany()
                 .HasForeignKey(e => e.JobId);
-            entity.HasOne(e => e.StageExecution)
-                .WithMany()
-                .HasForeignKey(e => e.StageExecutionId);
         });
 
         // SystemSetting

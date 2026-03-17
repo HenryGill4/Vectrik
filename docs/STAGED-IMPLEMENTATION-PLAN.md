@@ -62,7 +62,7 @@ PHASE 3 — Platform Maturity
 
 ## PHASE 0: Customization & DLMS Foundation
 
-### Stage 0.5 — Tenant Customization Infrastructure
+### Stage 0.5 — Tenant Customization Infrastructure ✅
 **Duration**: 2 weeks | **Prereqs**: Foundation ✅
 **Why first**: Every downstream module uses feature flags, custom fields, and
 configurable number sequences. Building this infrastructure before Stage 1
@@ -109,7 +109,7 @@ These are all OFF by default — defense shops enable what they need.
 
 ## PHASE 1: Core Production Engine
 
-### Stage 1 — Parts / PDM Enhancement (Module 08)
+### Stage 1 — Parts / PDM Enhancement (Module 08) ✅
 **Duration**: 2–3 weeks | **Prereqs**: Foundation ✅
 **Why first**: Every module downstream reads part routing, revision, and drawing data.
 
@@ -142,7 +142,7 @@ Operators can view current revision. Part data is the source of truth for all do
 
 ---
 
-### Stage 2 — Estimating & Quoting (Module 01)
+### Stage 2 — Estimating & Quoting (Module 01) ✅
 **Duration**: 2–3 weeks | **Prereqs**: Stage 1 (Parts/PDM)
 **Why here**: Quotes are the entry point for all work. They reference parts and their routings.
 
@@ -175,7 +175,7 @@ send to customer, receive acceptance, convert to work order.
 
 ---
 
-### Stage 3 — Work Order Management (Module 02)
+### Stage 3 — Work Order Management (Module 02) ✅
 **Duration**: 2 weeks | **Prereqs**: Stage 2 (Quoting)
 **Why here**: Work orders bridge ERP (quotes, customers) to MES (shop floor execution).
 

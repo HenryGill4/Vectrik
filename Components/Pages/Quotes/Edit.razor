@@ -1,0 +1,368 @@
+@page "/quotes/new"
+@page "/quotes/{Id:int}/edit"
+@rendermode InteractiveServer
+@inject IQuoteService QuoteService
+@inject IPartService PartService
+@inject IPricingEngineService PricingEngine
+@inject ITenantFeatureService Features
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>@(_isNew ? "New Quote" : "Edit Quote") - OpCentrix</PageTitle>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="page-header">
+        <div>
+            <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Quotes</button>
+            <h1 class="page-title">@(_isNew ? "New Quote" : $"Edit {_quote.QuoteNumber}")</h1>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" @onclick="SaveQuote">💾 Save</button>
+            @if (!_isNew)
+            {
+                <button class="btn btn-secondary" @onclick="SaveRevision">📝 Save as Revision</button>
+            }
+        </div>
+    </div>
+
+    <!-- Customer & Quote Info -->
+    <div class="card" style="margin-bottom: 16px;">
+        <h3 class="card-title">Quote Information</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+                <label class="form-label">Customer Name <span style="color:var(--danger)">*</span></label>
+                <input class="form-control" @bind="_quote.CustomerName" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Customer Email</label>
+                <input class="form-control" @bind="_quote.CustomerEmail" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Customer Phone</label>
+                <input class="form-control" @bind="_quote.CustomerPhone" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Expiration Date</label>
+                <input class="form-control" type="date" @bind="_quote.ExpirationDate" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Target Margin %</label>
+                <input class="form-control" type="number" step="0.1" @bind="_quote.TargetMarginPct" />
+            </div>
+            @if (_showDlms)
+            {
+                <div class="form-group">
+                    <label class="form-label">Contract Number</label>
+                    <input class="form-control" @bind="_quote.ContractNumber" />
+                </div>
+            }
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" @bind="_quote.Notes" rows="2"></textarea>
+        </div>
+    </div>
+
+    <!-- Line Items BOM Builder -->
+    <div class="card" style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 class="card-title" style="margin: 0;">Line Items</h3>
+            <button class="btn btn-sm btn-primary" @onclick="ShowAddLine">+ Add Part</button>
+        </div>
+
+        @if (_quote.Lines.Any())
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th>Qty</th>
+                        <th>Labor (min)</th>
+                        <th>Setup (min)</th>
+                        <th>Material $/ea</th>
+                        <th>Est. Cost/Part</th>
+                        <th>Quoted $/Part</th>
+                        <th>Line Total</th>
+                        <th>Margin</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _quote.Lines)
+                    {
+                        <tr>
+                            <td>@(line.Part?.PartNumber ?? "—") — @(line.Part?.Name ?? "")</td>
+                            <td>@line.Quantity</td>
+                            <td>@line.LaborMinutes.ToString("F0")</td>
+                            <td>@line.SetupMinutes.ToString("F0")</td>
+                            <td>@line.MaterialCostEach.ToString("C")</td>
+                            <td>@line.EstimatedCostPerPart.ToString("C")</td>
+                            <td>@line.QuotedPricePerPart.ToString("C")</td>
+                            <td>@((line.QuotedPricePerPart * line.Quantity).ToString("C"))</td>
+                            <td>
+                                @if (line.QuotedPricePerPart > 0)
+                                {
+                                    var lineMargin = (line.QuotedPricePerPart - line.EstimatedCostPerPart) / line.QuotedPricePerPart * 100;
+                                    <span style="color: @(lineMargin >= 0 ? "var(--success)" : "var(--danger)")">@lineMargin.ToString("F1")%</span>
+                                }
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(line.Id)">✕</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p style="color: var(--text-muted); text-align: center; padding: 20px;">No line items. Click "+ Add Part" to build your quote.</p>
+        }
+    </div>
+
+    <!-- Live Margin Summary -->
+    <div class="card">
+        <h3 class="card-title">Quote Summary</h3>
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; text-align: center;">
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Est. Cost</div>
+                <div style="font-size: 1.2rem; font-weight: 600;">@_quote.TotalEstimatedCost.ToString("C")</div>
+            </div>
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Quoted Price</div>
+                <div style="font-size: 1.2rem; font-weight: 600;">@(_quote.QuotedPrice?.ToString("C") ?? "$0.00")</div>
+            </div>
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Markup</div>
+                <div style="font-size: 1.2rem; font-weight: 600; color: @(_quote.Markup >= 0 ? "var(--success)" : "var(--danger)")">@(_quote.Markup?.ToString("C") ?? "$0.00")</div>
+            </div>
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Margin %</div>
+                <div style="font-size: 1.2rem; font-weight: 600; color: @(ComputedMarginPct >= _quote.TargetMarginPct ? "var(--success)" : "var(--warning)")">@ComputedMarginPct.ToString("F1")%</div>
+            </div>
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Target</div>
+                <div style="font-size: 1.2rem; font-weight: 600;">@_quote.TargetMarginPct.ToString("F1")%</div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Add Line Modal -->
+<AppModal Visible="_showAddLine" VisibleChanged="v => _showAddLine = v" Title="Add Part to Quote" Size="md">
+    <ChildContent>
+        <div class="form-group">
+            <label class="form-label">Part</label>
+            <select class="form-control" @bind="_linePartId" @bind:after="OnPartSelected">
+                <option value="0">Select a part...</option>
+                @foreach (var p in _parts)
+                {
+                    <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                }
+            </select>
+        </div>
+        @if (_lineBreakdown != null)
+        {
+            <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px;">Cost Estimate</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 0.85rem;">
+                    <span>Labor (@_lineBreakdown.TotalLaborMinutes.ToString("F0") min):</span><span>@_lineBreakdown.LaborCost.ToString("C")</span>
+                    <span>Material:</span><span>@_lineBreakdown.MaterialCost.ToString("C")</span>
+                    <span>Overhead:</span><span>@_lineBreakdown.OverheadCost.ToString("C")</span>
+                    <strong>Total/Part:</strong><strong>@_lineBreakdown.TotalCost.ToString("C")</strong>
+                </div>
+            </div>
+        }
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+                <label class="form-label">Quantity</label>
+                <input class="form-control" type="number" min="1" @bind="_lineQty" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Quoted Price/Part</label>
+                <input class="form-control" type="number" step="0.01" @bind="_linePrice" />
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showAddLine = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="AddLine" disabled="@(_linePartId == 0)">Add Line</button>
+    </Footer>
+</AppModal>
+
+<!-- Revision Notes Modal -->
+<AppModal Visible="_showRevisionModal" VisibleChanged="v => _showRevisionModal = v" Title="Save Revision" Size="sm">
+    <ChildContent>
+        <div class="form-group">
+            <label class="form-label">Change Notes</label>
+            <textarea class="form-control" @bind="_revisionNotes" rows="3" placeholder="Describe what changed..."></textarea>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showRevisionModal = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="ConfirmRevision">Save Revision</button>
+    </Footer>
+</AppModal>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private bool _loading = true;
+    private bool _isNew;
+    private bool _showDlms;
+    private Quote _quote = new();
+    private List<Part> _parts = new();
+    private ConfirmDialog _confirm = null!;
+
+    // Add line
+    private bool _showAddLine;
+    private int _linePartId;
+    private int _lineQty = 1;
+    private decimal _linePrice;
+    private PricingBreakdown? _lineBreakdown;
+
+    // Revision
+    private bool _showRevisionModal;
+    private string _revisionNotes = string.Empty;
+
+    private decimal ComputedMarginPct => _quote.QuotedPrice > 0
+        ? (_quote.QuotedPrice.Value - _quote.TotalEstimatedCost) / _quote.QuotedPrice.Value * 100
+        : 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _showDlms = Features.IsEnabled("dlms");
+        _parts = await PartService.GetAllPartsAsync();
+
+        if (Id > 0)
+        {
+            _quote = await QuoteService.GetQuoteByIdAsync(Id) ?? new Quote();
+            _isNew = false;
+        }
+        else
+        {
+            _isNew = true;
+            _quote = new Quote
+            {
+                QuoteNumber = await QuoteService.GenerateQuoteNumberAsync(),
+                TargetMarginPct = 25,
+                ExpirationDate = DateTime.UtcNow.AddDays(30)
+            };
+        }
+        _loading = false;
+    }
+
+    private async Task OnPartSelected()
+    {
+        if (_linePartId > 0)
+        {
+            _lineBreakdown = await PricingEngine.CalculatePartCostAsync(_linePartId, _lineQty);
+            _linePrice = _lineBreakdown.TotalCost > 0
+                ? Math.Round(_lineBreakdown.TotalCost / (1 - _quote.TargetMarginPct / 100), 2)
+                : 0;
+        }
+        else
+        {
+            _lineBreakdown = null;
+        }
+    }
+
+    private void ShowAddLine()
+    {
+        _linePartId = 0;
+        _lineQty = 1;
+        _linePrice = 0;
+        _lineBreakdown = null;
+        _showAddLine = true;
+    }
+
+    private async Task AddLine()
+    {
+        if (_linePartId == 0) return;
+        try
+        {
+            await QuoteService.AddLineAsync(_quote.Id > 0 ? _quote.Id : 0, _linePartId, _lineQty, _linePrice);
+            if (_quote.Id == 0)
+            {
+                // Save the quote first if new
+                _quote = await QuoteService.CreateQuoteAsync(_quote);
+                await QuoteService.AddLineAsync(_quote.Id, _linePartId, _lineQty, _linePrice);
+            }
+            _quote = await QuoteService.GetQuoteByIdAsync(_quote.Id) ?? _quote;
+            _showAddLine = false;
+            Toast.ShowSuccess("Line added");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private async Task RemoveLine(int lineId)
+    {
+        if (!await _confirm.ShowAsync("Remove this line item?")) return;
+        await QuoteService.RemoveLineAsync(lineId);
+        _quote = await QuoteService.GetQuoteByIdAsync(_quote.Id) ?? _quote;
+        Toast.ShowSuccess("Line removed");
+    }
+
+    private async Task SaveQuote()
+    {
+        if (string.IsNullOrWhiteSpace(_quote.CustomerName))
+        {
+            Toast.ShowError("Customer name is required.");
+            return;
+        }
+
+        try
+        {
+            if (_isNew)
+            {
+                _quote = await QuoteService.CreateQuoteAsync(_quote);
+                _isNew = false;
+                Toast.ShowSuccess("Quote created");
+                Nav.NavigateTo($"/quotes/{_quote.Id}/edit", replace: true);
+            }
+            else
+            {
+                _quote = await QuoteService.UpdateQuoteAsync(_quote);
+                Toast.ShowSuccess("Quote saved");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private void SaveRevision()
+    {
+        _revisionNotes = string.Empty;
+        _showRevisionModal = true;
+    }
+
+    private async Task ConfirmRevision()
+    {
+        try
+        {
+            await QuoteService.UpdateQuoteAsync(_quote);
+            await QuoteService.CreateRevisionAsync(_quote.Id, _revisionNotes, _quote.LastModifiedBy ?? "System");
+            _quote = await QuoteService.GetQuoteByIdAsync(_quote.Id) ?? _quote;
+            _showRevisionModal = false;
+            Toast.ShowSuccess($"Revision R{_quote.RevisionNumber} saved");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private void GoBack() => Nav.NavigateTo("/quotes");
+}

@@ -71,7 +71,7 @@ else
 
     @if (_showForm)
     {
-        <AppModal Visible="_showForm" VisibleChanged="v => _showForm = v" Title="@(_editIndex.HasValue ? "Edit" : "Add") Custom Field">
+        <AppModal Visible="_showForm" VisibleChanged="v => _showForm = v" Title="@_formTitle">
             <div class="form-group">
                 <label class="form-label">Field Name <span style="color:var(--danger);">*</span></label>
                 <input class="form-control" @bind="_editField.Name" placeholder="e.g. contract_number" />
@@ -145,6 +145,8 @@ else
     private bool _showForm;
     private int? _editIndex;
     private CustomFieldDefinition _editField = new();
+
+    private string _formTitle => (_editIndex.HasValue ? "Edit" : "Add") + " Custom Field";
 
     protected override async Task OnInitializedAsync()
     {

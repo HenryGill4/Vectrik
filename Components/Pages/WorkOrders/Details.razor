@@ -1,99 +1,352 @@
 @page "/workorders/{Id:int}"
+@rendermode InteractiveServer
 @inject IWorkOrderService WorkOrderService
 @inject IPartService PartService
-@rendermode InteractiveServer
+@inject ITenantFeatureService Features
+@inject NavigationManager Nav
+@inject ToastService Toast
 
 <PageTitle>Work Order Details - OpCentrix</PageTitle>
 
-@if (_order == null) { <div class="loading"><span class="spinner"></span></div> }
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_order == null)
+{
+    <div class="alert alert-danger">Work order not found.</div>
+}
 else
 {
     <div class="page-header">
-        <h1 class="page-title">@_order.OrderNumber</h1>
-        <div style="display: flex; gap: 8px;">
+        <div>
+            <h1 class="page-title" style="margin-bottom: 2px;">@_order.OrderNumber</h1>
+            <span style="color: var(--text-muted); font-size: 0.85rem;">@_order.CustomerName @(string.IsNullOrEmpty(_order.CustomerPO) ? "" : $"• PO: {_order.CustomerPO}")</span>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
             @if (_order.Status == WorkOrderStatus.Draft)
             {
-                <button class="btn btn-success" @onclick="Release">Release</button>
+                <button class="btn btn-success" @onclick="Release">🚀 Release</button>
             }
-            <span class="badge badge-@_order.Status.ToString().ToLower()" style="font-size: 0.9rem;">@_order.Status</span>
+            @if (_order.Status == WorkOrderStatus.Released)
+            {
+                <button class="btn btn-warning" @onclick="() => SetStatus(WorkOrderStatus.OnHold)">⏸ Hold</button>
+            }
+            @if (_order.Status == WorkOrderStatus.OnHold)
+            {
+                <button class="btn btn-primary" @onclick="() => SetStatus(WorkOrderStatus.Released)">▶ Resume</button>
+            }
+            @if (_order.Status != WorkOrderStatus.Complete && _order.Status != WorkOrderStatus.Cancelled)
+            {
+                <button class="btn btn-danger" @onclick="Cancel">✕ Cancel</button>
+            }
+            <span class="badge @GetBadge(_order.Status)" style="font-size: 0.9rem; padding: 6px 14px;">@_order.Status</span>
         </div>
     </div>
 
-    <div class="card" style="margin-bottom: 16px;">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-            <div><span class="form-label">Customer</span><div>@_order.CustomerName</div></div>
-            <div><span class="form-label">PO</span><div>@(_order.CustomerPO ?? "—")</div></div>
-            <div><span class="form-label">Order Date</span><div>@_order.OrderDate.ToString("yyyy-MM-dd")</div></div>
-            <div><span class="form-label">Due Date</span><div style="color: @(_order.DueDate < DateTime.UtcNow && _order.Status != WorkOrderStatus.Complete ? "var(--danger)" : "inherit")">@_order.DueDate.ToString("yyyy-MM-dd")</div></div>
+    <!-- Info Cards -->
+    <div class="kpi-grid" style="margin-bottom: 16px;">
+        <div class="kpi-card">
+            <div class="kpi-label">Due Date</div>
+            <div class="kpi-value" style="font-size: 1.2rem; color: @(_order.DueDate < DateTime.UtcNow && _order.Status != WorkOrderStatus.Complete ? "var(--danger)" : "var(--text-primary)")">@_order.DueDate.ToString("MMM dd, yyyy")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Priority</div>
+            <div class="kpi-value" style="font-size: 1.2rem;"><span class="badge badge-@_order.Priority.ToString().ToLower()">@_order.Priority</span></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Lines</div>
+            <div class="kpi-value" style="font-size: 1.4rem;">@_order.Lines.Count</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Fulfillment</div>
+            @{
+                var totalQty = _order.Lines.Sum(l => l.Quantity);
+                var producedQty = _order.Lines.Sum(l => l.ProducedQuantity);
+                var pct = totalQty > 0 ? (int)(producedQty * 100.0 / totalQty) : 0;
+            }
+            <div class="kpi-value" style="font-size: 1.4rem;">@pct%</div>
+            <div class="kpi-sub">@producedQty / @totalQty produced</div>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>Line Items</span>
-            <button class="btn btn-sm btn-primary" @onclick="() => _showAddLine = true">+ Add Line</button>
-        </div>
-        <table class="data-table">
-            <thead><tr><th>Part</th><th>Ordered</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead>
-            <tbody>
-                @foreach (var line in _order.Lines)
+    <!-- Tabs -->
+    <div class="tab-bar" style="margin-bottom: 16px;">
+        <button class="tab @(_tab == "lines" ? "active" : "")" @onclick='() => _tab = "lines"'>Lines & Jobs</button>
+        <button class="tab @(_tab == "comments" ? "active" : "")" @onclick='() => _tab = "comments"'>Comments (@(_order.Comments?.Count ?? 0))</button>
+        <button class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>Details</button>
+    </div>
+
+    @if (_tab == "lines")
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 class="card-title" style="margin-bottom: 0;">Line Items</h3>
+                @if (_order.Status == WorkOrderStatus.Draft)
                 {
-                    <tr>
-                        <td>@line.Part?.PartNumber - @line.Part?.Name</td>
-                        <td>@line.Quantity</td>
-                        <td>@line.ProducedQuantity</td>
-                        <td>@line.ShippedQuantity</td>
-                        <td><span class="badge badge-@line.Status.ToString().ToLower()">@line.Status</span></td>
-                    </tr>
+                    <button class="btn btn-sm btn-primary" @onclick="() => _showAddLine = true">+ Add Line</button>
                 }
-            </tbody>
-        </table>
-    </div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th>Ordered</th>
+                        <th>Produced</th>
+                        <th>Shipped</th>
+                        <th>Jobs</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _order.Lines)
+                    {
+                        <tr>
+                            <td><strong>@line.Part?.PartNumber</strong> — @line.Part?.Name</td>
+                            <td>@line.Quantity</td>
+                            <td>@line.ProducedQuantity</td>
+                            <td>@line.ShippedQuantity</td>
+                            <td>@line.Jobs.Count</td>
+                            <td><span class="badge @GetBadge(line.Status)">@line.Status</span></td>
+                            <td style="display: flex; gap: 4px;">
+                                @if (line.Jobs.Count == 0 && _order.Status != WorkOrderStatus.Draft)
+                                {
+                                    <button class="btn btn-sm btn-primary" @onclick="() => GenerateJobs(line.Id)">Generate Jobs</button>
+                                }
+                                @foreach (var job in line.Jobs.Take(3))
+                                {
+                                    <a href="/workorders/@_order.Id/jobs/@job.Id" class="btn btn-sm btn-secondary">Job #@job.Id</a>
+                                }
+                                @if (_order.Status == WorkOrderStatus.Draft)
+                                {
+                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(line.Id)">✕</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (_tab == "comments")
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <h3 class="card-title">Comments</h3>
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                <input class="form-control" @bind="_newComment" placeholder="Add a comment..." style="flex: 1;" />
+                <button class="btn btn-primary" @onclick="AddComment" disabled="@string.IsNullOrWhiteSpace(_newComment)">Post</button>
+            </div>
+            @if (_order.Comments != null && _order.Comments.Any())
+            {
+                @foreach (var comment in _order.Comments.OrderByDescending(c => c.CreatedDate))
+                {
+                    <div class="comment-item">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <strong style="font-size: 0.85rem;">@comment.AuthorName</strong>
+                            <span style="color: var(--text-muted); font-size: 0.75rem;">@comment.CreatedDate.ToString("MMM dd, yyyy HH:mm")</span>
+                        </div>
+                        <div style="color: var(--text-secondary); font-size: 0.9rem; white-space: pre-wrap;">@comment.Content</div>
+                        @if (comment.Replies != null && comment.Replies.Any())
+                        {
+                            <div style="margin-left: 20px; margin-top: 8px; border-left: 2px solid var(--border); padding-left: 12px;">
+                                @foreach (var reply in comment.Replies.OrderBy(r => r.CreatedDate))
+                                {
+                                    <div style="margin-bottom: 8px;">
+                                        <strong style="font-size: 0.8rem;">@reply.AuthorName</strong>
+                                        <span style="color: var(--text-muted); font-size: 0.7rem; margin-left: 8px;">@reply.CreatedDate.ToString("MMM dd HH:mm")</span>
+                                        <div style="color: var(--text-secondary); font-size: 0.85rem;">@reply.Content</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <div style="text-align: center; padding: 24px; color: var(--text-muted);">No comments yet.</div>
+            }
+        </div>
+    }
+    else if (_tab == "info")
+    {
+        <div class="card">
+            <h3 class="card-title">Work Order Details</h3>
+            <div class="detail-grid">
+                <div class="detail-label">Order Number</div><div class="detail-value">@_order.OrderNumber</div>
+                <div class="detail-label">Customer</div><div class="detail-value">@_order.CustomerName</div>
+                <div class="detail-label">Customer PO</div><div class="detail-value">@(_order.CustomerPO ?? "—")</div>
+                <div class="detail-label">Email</div><div class="detail-value">@(_order.CustomerEmail ?? "—")</div>
+                <div class="detail-label">Phone</div><div class="detail-value">@(_order.CustomerPhone ?? "—")</div>
+                <div class="detail-label">Order Date</div><div class="detail-value">@_order.OrderDate.ToString("yyyy-MM-dd")</div>
+                <div class="detail-label">Due Date</div><div class="detail-value">@_order.DueDate.ToString("yyyy-MM-dd")</div>
+                <div class="detail-label">Ship By</div><div class="detail-value">@(_order.ShipByDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                <div class="detail-label">Promised</div><div class="detail-value">@(_order.PromisedDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                <div class="detail-label">Approved By</div><div class="detail-value">@(_order.ApprovedBy ?? "—")</div>
+                <div class="detail-label">Created By</div><div class="detail-value">@_order.CreatedBy</div>
+                <div class="detail-label">Created Date</div><div class="detail-value">@_order.CreatedDate.ToString("yyyy-MM-dd HH:mm")</div>
+                @if (_order.QuoteId.HasValue)
+                {
+                    <div class="detail-label">From Quote</div>
+                    <div class="detail-value"><a href="/quotes/@_order.QuoteId">Quote #@_order.Quote?.QuoteNumber</a></div>
+                }
+                @if (_order.IsDefenseContract)
+                {
+                    <div class="detail-label">Contract #</div><div class="detail-value">@_order.ContractNumber</div>
+                    <div class="detail-label">CLIN</div><div class="detail-value">@(_order.ContractLineItem ?? "—")</div>
+                }
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_order.Notes))
+            {
+                <div style="margin-top: 16px;">
+                    <label class="form-label">Notes</label>
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 12px; color: var(--text-secondary); white-space: pre-wrap;">@_order.Notes</div>
+                </div>
+            }
+        </div>
+    }
 }
 
-@if (_showAddLine)
-{
-    <div class="modal-overlay" @onclick="() => _showAddLine = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">Add Line</span><button class="modal-close" @onclick="() => _showAddLine = false">&times;</button></div>
-            <div class="form-group"><label class="form-label">Part</label>
-                <select class="form-control" @bind="_linePartId">
-                    <option value="0">Select part...</option>
-                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber - @p.Name</option> } }
-                </select>
-            </div>
-            <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" @bind="_lineQty" min="1" /></div>
-            <button class="btn btn-primary" @onclick="AddLine">Add</button>
+<!-- Add Line Modal -->
+<AppModal Visible="_showAddLine" VisibleChanged="v => _showAddLine = v" Title="Add Line Item" Size="sm">
+    <ChildContent>
+        <div class="form-group">
+            <label class="form-label">Part</label>
+            <select class="form-control" @bind="_linePartId">
+                <option value="0">Select part...</option>
+                @if (_parts != null)
+                {
+                    @foreach (var p in _parts)
+                    {
+                        <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                    }
+                }
+            </select>
         </div>
-    </div>
-}
+        <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input class="form-control" type="number" min="1" @bind="_lineQty" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showAddLine = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="AddLine">Add</button>
+    </Footer>
+</AppModal>
+
+<ConfirmDialog @ref="_confirm" />
 
 @code {
     [Parameter] public int Id { get; set; }
+
     private WorkOrder? _order;
     private List<Part>? _parts;
+    private bool _loading = true;
+    private string _tab = "lines";
+    private string _newComment = "";
     private bool _showAddLine;
-    private int _linePartId, _lineQty = 1;
+    private int _linePartId;
+    private int _lineQty = 1;
+    private ConfirmDialog _confirm = null!;
 
     protected override async Task OnInitializedAsync()
     {
-        _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
+        await LoadOrder();
         _parts = await PartService.GetAllPartsAsync();
+        _loading = false;
+    }
+
+    private async Task LoadOrder()
+    {
+        _order = await WorkOrderService.GetWorkOrderDetailAsync(Id);
     }
 
     private async Task Release()
     {
-        await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, "System");
-        _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
+        if (!await _confirm.ShowAsync("Release this work order? Jobs will be auto-generated from part routing.")) return;
+        try
+        {
+            await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, "System");
+            Toast.ShowSuccess("Work order released — jobs generated");
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task SetStatus(WorkOrderStatus status)
+    {
+        try
+        {
+            await WorkOrderService.UpdateStatusAsync(Id, status, "System");
+            Toast.ShowSuccess($"Status changed to {status}");
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task Cancel()
+    {
+        if (!await _confirm.ShowAsync("Cancel this work order? This cannot be undone.")) return;
+        await SetStatus(WorkOrderStatus.Cancelled);
+    }
+
+    private async Task GenerateJobs(int lineId)
+    {
+        try
+        {
+            var jobs = await WorkOrderService.GenerateJobsForLineAsync(lineId, "System");
+            Toast.ShowSuccess($"{jobs.Count} job(s) generated from routing");
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task AddLine()
     {
-        if (_linePartId > 0)
+        if (_linePartId == 0) return;
+        try
         {
             await WorkOrderService.AddLineAsync(Id, _linePartId, _lineQty);
             _showAddLine = false;
-            _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
+            _linePartId = 0;
+            _lineQty = 1;
+            await LoadOrder();
         }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
+
+    private async Task RemoveLine(int lineId)
+    {
+        if (!await _confirm.ShowAsync("Remove this line item?")) return;
+        try
+        {
+            await WorkOrderService.RemoveLineAsync(lineId);
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task AddComment()
+    {
+        if (string.IsNullOrWhiteSpace(_newComment)) return;
+        try
+        {
+            await WorkOrderService.AddCommentAsync(Id, _newComment, "System");
+            _newComment = "";
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private static string GetBadge(WorkOrderStatus status) => status switch
+    {
+        WorkOrderStatus.Draft => "badge-draft",
+        WorkOrderStatus.Released => "badge-released",
+        WorkOrderStatus.InProgress => "badge-inprogress",
+        WorkOrderStatus.Complete => "badge-complete",
+        WorkOrderStatus.Cancelled => "badge-cancelled",
+        WorkOrderStatus.OnHold => "badge-warning",
+        _ => ""
+    };
 }

@@ -80,6 +80,15 @@ builder.Services.AddScoped<INumberSequenceService, NumberSequenceService>();
 builder.Services.AddScoped<IWorkflowEngine, WorkflowEngine>();
 builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
 
+// Parts / PDM (Stage 1)
+builder.Services.AddScoped<IPartFileService, PartFileService>();
+
+// Estimating & Quoting (Stage 2)
+builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
+
+// Shop Floor & Scheduling (Stage 4)
+builder.Services.AddScoped<IOeeService, OeeService>();
+
 // Machine providers + SignalR notifier
 builder.Services.AddScoped<MachineProviderFactory>();
 builder.Services.AddSingleton<IMachineStateNotifier, MachineStateNotifier>();

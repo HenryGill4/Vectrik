@@ -32,7 +32,7 @@ public enum BuildPackageStatus
 
 public enum StageExecutionStatus
 {
-    NotStarted, InProgress, Completed, Skipped, Failed
+    NotStarted, InProgress, Paused, Completed, Skipped, Failed
 }
 
 public enum PartInstanceStatus
@@ -68,4 +68,19 @@ public enum MaintenanceWorkOrderStatus
 public enum MachineStatus
 {
     Idle, Running, Building, Preheating, Cooling, Maintenance, Error, Offline, Setup
+}
+
+public enum ItarClassification
+{
+    None, ITAR, EAR, CUI
+}
+
+public enum StageExecutionAction
+{
+    Start, Pause, Resume, Complete, Fail, Skip
+}
+
+public enum DelayCategory
+{
+    Material, Machine, Operator, Quality, WaitingForInspection, Other
 }

@@ -1,0 +1,512 @@
+@page "/parts/{Id:int}"
+@rendermode InteractiveServer
+@inject IPartService PartService
+@inject IPartFileService FileService
+@inject ICustomFieldService CustomFieldService
+@inject ITenantFeatureService Features
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>@(_part?.Name ?? "Part Detail") - OpCentrix</PageTitle>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading part...</div>
+}
+else if (_part == null)
+{
+    <div class="card" style="text-align: center; padding: 40px;">
+        <p style="color: var(--text-muted);">Part not found.</p>
+        <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/parts")'>← Back to Parts</button>
+    </div>
+}
+else
+{
+    <div class="page-header">
+        <div>
+            <button class="btn btn-sm btn-secondary" @onclick='() => Nav.NavigateTo("/parts")' style="margin-bottom: 8px;">← Parts</button>
+            <h1 class="page-title" style="margin: 0;">@_part.PartNumber — @_part.Name</h1>
+            <div style="display: flex; gap: 8px; margin-top: 4px; align-items: center;">
+                <span class="badge @(_part.IsActive ? "badge-active" : "badge-cancelled")">@(_part.IsActive ? "Active" : "Inactive")</span>
+                @if (!string.IsNullOrEmpty(_part.Revision))
+                {
+                    <span class="badge badge-info">Rev @_part.Revision</span>
+                }
+                @if (_part.IsDefensePart)
+                {
+                    <span class="badge badge-warning">🛡️ Defense</span>
+                }
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary" @onclick="GoToEdit">✏️ Edit</button>
+            <button class="btn btn-primary" @onclick="ShowRevisionBump">📝 Bump Revision</button>
+        </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar" style="margin-bottom: 16px;">
+        <button class="tab @(_tab == "overview" ? "active" : "")" @onclick='() => _tab = "overview"'>Overview</button>
+        <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_part.StageRequirements?.Count ?? 0))</button>
+        <button class="tab @(_tab == "drawings" ? "active" : "")" @onclick='() => _tab = "drawings"'>Drawings (@(_drawings?.Count ?? 0))</button>
+        <button class="tab @(_tab == "revisions" ? "active" : "")" @onclick='() => _tab = "revisions"'>Revisions (@(_part.RevisionHistory?.Count ?? 0))</button>
+        <button class="tab @(_tab == "notes" ? "active" : "")" @onclick='() => _tab = "notes"'>Notes (@(_part.Notes?.Count ?? 0))</button>
+    </div>
+
+    <!-- Overview Tab -->
+    @if (_tab == "overview")
+    {
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="card">
+                <h3 class="card-title">Part Information</h3>
+                <div class="detail-grid">
+                    <div class="detail-label">Part Number</div><div class="detail-value">@_part.PartNumber</div>
+                    <div class="detail-label">Name</div><div class="detail-value">@_part.Name</div>
+                    <div class="detail-label">Description</div><div class="detail-value">@(_part.Description ?? "—")</div>
+                    <div class="detail-label">Material</div><div class="detail-value">@_part.Material</div>
+                    <div class="detail-label">Raw Material Spec</div><div class="detail-value">@(_part.RawMaterialSpec ?? "—")</div>
+                    <div class="detail-label">Approach</div><div class="detail-value">@_part.ManufacturingApproach</div>
+                    <div class="detail-label">Est. Weight (kg)</div><div class="detail-value">@(_part.EstimatedWeightKg?.ToString("F2") ?? "—")</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="card-title">Drawing & Revision</h3>
+                <div class="detail-grid">
+                    <div class="detail-label">Drawing Number</div><div class="detail-value">@(_part.DrawingNumber ?? "—")</div>
+                    <div class="detail-label">Current Revision</div><div class="detail-value">@(_part.Revision ?? "—")</div>
+                    <div class="detail-label">Revision Date</div><div class="detail-value">@(_part.RevisionDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                    <div class="detail-label">Customer P/N</div><div class="detail-value">@(_part.CustomerPartNumber ?? "—")</div>
+                    @if (_showDlms)
+                    {
+                        <div class="detail-label">ITAR Classification</div><div class="detail-value">@_part.ItarClassification</div>
+                    }
+                </div>
+            </div>
+
+            <div class="card" style="grid-column: span 2;">
+                <h3 class="card-title">Audit</h3>
+                <div class="detail-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
+                    <div class="detail-label">Created</div><div class="detail-value">@_part.CreatedDate.ToString("yyyy-MM-dd HH:mm")</div>
+                    <div class="detail-label">Created By</div><div class="detail-value">@_part.CreatedBy</div>
+                    <div class="detail-label">Modified</div><div class="detail-value">@_part.LastModifiedDate.ToString("yyyy-MM-dd HH:mm")</div>
+                    <div class="detail-label">Modified By</div><div class="detail-value">@_part.LastModifiedBy</div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Routing Tab -->
+    @if (_tab == "routing")
+    {
+        <div class="card">
+            <h3 class="card-title">Stage Routing</h3>
+            @if (_part.StageRequirements == null || !_part.StageRequirements.Any())
+            {
+                <p style="color: var(--text-muted);">No routing stages defined. Edit this part to add stages.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Stage</th>
+                            <th>Required</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var sr in _part.StageRequirements.OrderBy(s => s.ExecutionOrder))
+                        {
+                            <tr>
+                                <td>@sr.ExecutionOrder</td>
+                                <td>@(sr.ProductionStage?.Name ?? $"Stage {sr.ProductionStageId}")</td>
+                                <td><span class="badge @(sr.IsRequired ? "badge-active" : "badge-info")">@(sr.IsRequired ? "Required" : "Optional")</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Drawings Tab -->
+    @if (_tab == "drawings")
+    {
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 class="card-title" style="margin: 0;">Drawings & Files</h3>
+                <button class="btn btn-sm btn-primary" @onclick="() => _showUpload = !_showUpload">@(_showUpload ? "Cancel" : "+ Upload")</button>
+            </div>
+
+            @if (_showUpload)
+            {
+                <div style="margin-bottom: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px;">
+                    <FileUpload OnFilesChanged="OnFilesSelected" />
+                    <div style="display: flex; gap: 8px; margin-top: 12px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Description</label>
+                            <input class="form-control" @bind="_uploadDescription" />
+                        </div>
+                        <div class="form-group" style="width: 120px;">
+                            <label class="form-label">Revision</label>
+                            <input class="form-control" @bind="_uploadRevision" />
+                        </div>
+                    </div>
+                    @if (_uploadFiles.Count > 0)
+                    {
+                        <button class="btn btn-primary" style="margin-top: 8px;" @onclick="UploadDrawings" disabled="@_uploading">
+                            @(_uploading ? "Uploading..." : $"Upload {_uploadFiles.Count} file(s)")
+                        </button>
+                    }
+                </div>
+            }
+
+            @if (_drawings == null || !_drawings.Any())
+            {
+                <p style="color: var(--text-muted);">No drawings uploaded yet.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>File Name</th>
+                            <th>Type</th>
+                            <th>Revision</th>
+                            <th>Size</th>
+                            <th>Uploaded</th>
+                            <th>By</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in _drawings)
+                        {
+                            <tr>
+                                <td>@(d.IsPrimary ? "⭐" : "")</td>
+                                <td>
+                                    <a href="@d.FilePath" target="_blank">@d.FileName</a>
+                                </td>
+                                <td><span class="badge badge-info">@d.FileType</span></td>
+                                <td>@(d.Revision ?? "—")</td>
+                                <td>@FormatSize(d.FileSizeBytes)</td>
+                                <td>@d.UploadedDate.ToString("yyyy-MM-dd")</td>
+                                <td>@d.UploadedBy</td>
+                                <td style="display: flex; gap: 4px;">
+                                    @if (!d.IsPrimary)
+                                    {
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => SetPrimary(d.Id)" title="Set as primary">⭐</button>
+                                    }
+                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteDrawing(d)">🗑️</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Revisions Tab -->
+    @if (_tab == "revisions")
+    {
+        <div class="card">
+            <h3 class="card-title">Revision History</h3>
+            @if (_part.RevisionHistory == null || !_part.RevisionHistory.Any())
+            {
+                <p style="color: var(--text-muted);">No revision history yet.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Revision</th>
+                            <th>Previous</th>
+                            <th>Change Description</th>
+                            <th>Drawing #</th>
+                            <th>Date</th>
+                            <th>By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rev in _part.RevisionHistory.OrderByDescending(r => r.RevisionDate))
+                        {
+                            <tr>
+                                <td><strong>@rev.Revision</strong></td>
+                                <td>@(rev.PreviousRevision ?? "—")</td>
+                                <td>@(rev.ChangeDescription ?? "—")</td>
+                                <td>@(rev.DrawingNumber ?? "—")</td>
+                                <td>@rev.RevisionDate.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@rev.CreatedBy</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Notes Tab -->
+    @if (_tab == "notes")
+    {
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 class="card-title" style="margin: 0;">Engineering Notes</h3>
+                <button class="btn btn-sm btn-primary" @onclick="NewNote">+ Add Note</button>
+            </div>
+
+            @if (_part.Notes == null || !_part.Notes.Any())
+            {
+                <p style="color: var(--text-muted);">No notes yet.</p>
+            }
+            else
+            {
+                @foreach (var note in _part.Notes.OrderByDescending(n => n.IsPinned).ThenByDescending(n => n.CreatedDate))
+                {
+                    <div class="note-card" style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                @if (note.IsPinned) { <span>📌</span> }
+                                <strong>@note.Title</strong>
+                                <span class="badge badge-info" style="margin-left: 8px;">@note.NoteType</span>
+                            </div>
+                            <div style="display: flex; gap: 4px;">
+                                <button class="btn btn-sm btn-secondary" @onclick="() => EditNote(note)">✏️</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteNote(note)">🗑️</button>
+                            </div>
+                        </div>
+                        <p style="margin: 8px 0 4px 0; color: var(--text-secondary);">@note.Content</p>
+                        <small style="color: var(--text-muted);">@note.CreatedBy — @note.CreatedDate.ToString("yyyy-MM-dd HH:mm")</small>
+                    </div>
+                }
+            }
+        </div>
+    }
+}
+
+<!-- Revision Bump Modal -->
+<AppModal Visible="_showRevisionModal" VisibleChanged="v => _showRevisionModal = v" Title="Bump Revision" Size="sm">
+    <ChildContent>
+        <div class="form-group">
+            <label class="form-label">New Revision</label>
+            <input class="form-control" @bind="_newRevision" placeholder="e.g. B, C, 2.0" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Change Description</label>
+            <textarea class="form-control" @bind="_revisionDescription" rows="3"></textarea>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showRevisionModal = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="ConfirmRevisionBump">Bump Revision</button>
+    </Footer>
+</AppModal>
+
+<!-- Note Modal -->
+<AppModal Visible="_showNoteModal" VisibleChanged="v => _showNoteModal = v" Title="@(_editNote?.Id > 0 ? "Edit Note" : "Add Note")" Size="md">
+    <ChildContent>
+        @if (_editNote != null)
+        {
+            <div class="form-group">
+                <label class="form-label">Title</label>
+                <input class="form-control" @bind="_editNote.Title" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Type</label>
+                <select class="form-control" @bind="_editNote.NoteType">
+                    <option value="Engineering">Engineering</option>
+                    <option value="Quality">Quality</option>
+                    <option value="Manufacturing">Manufacturing</option>
+                    <option value="General">General</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Content</label>
+                <textarea class="form-control" @bind="_editNote.Content" rows="5"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" @bind="_editNote.IsPinned" style="margin-right: 6px;" />Pinned
+                </label>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showNoteModal = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="SaveNote">Save</button>
+    </Footer>
+</AppModal>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private bool _loading = true;
+    private Part? _part;
+    private string _tab = "overview";
+    private bool _showDlms;
+    private ConfirmDialog _confirm = null!;
+
+    // Drawings
+    private List<PartDrawing> _drawings = new();
+    private bool _showUpload;
+    private bool _uploading;
+    private IReadOnlyList<Microsoft.AspNetCore.Components.Forms.IBrowserFile> _uploadFiles = new List<Microsoft.AspNetCore.Components.Forms.IBrowserFile>();
+    private string? _uploadDescription;
+    private string? _uploadRevision;
+
+    // Revision bump
+    private bool _showRevisionModal;
+    private string _newRevision = string.Empty;
+    private string _revisionDescription = string.Empty;
+
+    // Notes
+    private bool _showNoteModal;
+    private PartNote? _editNote;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _showDlms = Features.IsEnabled("dlms");
+        _part = await PartService.GetPartDetailAsync(Id);
+        if (_part != null)
+        {
+            _drawings = await FileService.GetDrawingsAsync(Id);
+        }
+        _loading = false;
+    }
+
+    // Drawing methods
+    private void OnFilesSelected(IReadOnlyList<Microsoft.AspNetCore.Components.Forms.IBrowserFile> files)
+    {
+        _uploadFiles = files;
+    }
+
+    private async Task UploadDrawings()
+    {
+        if (_part == null || !_uploadFiles.Any()) return;
+        _uploading = true;
+
+        try
+        {
+            foreach (var file in _uploadFiles)
+            {
+                using var stream = file.OpenReadStream(50 * 1024 * 1024);
+                await FileService.UploadDrawingAsync(_part.Id, file.Name, stream, file.Size, _part.LastModifiedBy, _uploadDescription, _uploadRevision);
+            }
+            _drawings = await FileService.GetDrawingsAsync(_part.Id);
+            _showUpload = false;
+            _uploadFiles = new List<Microsoft.AspNetCore.Components.Forms.IBrowserFile>();
+            _uploadDescription = null;
+            _uploadRevision = null;
+            Toast.ShowSuccess($"Uploaded {_uploadFiles.Count} file(s)");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Upload failed: {ex.Message}");
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task SetPrimary(int drawingId)
+    {
+        await FileService.SetPrimaryDrawingAsync(Id, drawingId);
+        _drawings = await FileService.GetDrawingsAsync(Id);
+        Toast.ShowSuccess("Primary drawing updated");
+    }
+
+    private async Task DeleteDrawing(PartDrawing drawing)
+    {
+        if (!await _confirm.ShowAsync($"Delete '{drawing.FileName}'?")) return;
+        await FileService.DeleteDrawingAsync(drawing.Id);
+        _drawings = await FileService.GetDrawingsAsync(Id);
+        Toast.ShowSuccess("Drawing deleted");
+    }
+
+    // Revision methods
+    private void ShowRevisionBump()
+    {
+        _newRevision = string.Empty;
+        _revisionDescription = string.Empty;
+        _showRevisionModal = true;
+    }
+
+    private async Task ConfirmRevisionBump()
+    {
+        if (string.IsNullOrWhiteSpace(_newRevision) || _part == null) return;
+        try
+        {
+            await PartService.BumpRevisionAsync(_part.Id, _newRevision, _revisionDescription, _part.LastModifiedBy);
+            _part = await PartService.GetPartDetailAsync(Id);
+            _showRevisionModal = false;
+            Toast.ShowSuccess($"Revision bumped to {_newRevision}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed: {ex.Message}");
+        }
+    }
+
+    // Note methods
+    private void NewNote()
+    {
+        _editNote = new PartNote { PartId = Id, CreatedBy = _part?.LastModifiedBy ?? "" };
+        _showNoteModal = true;
+    }
+
+    private void EditNote(PartNote note)
+    {
+        _editNote = note;
+        _showNoteModal = true;
+    }
+
+    private async Task SaveNote()
+    {
+        if (_editNote == null || string.IsNullOrWhiteSpace(_editNote.Title)) return;
+        try
+        {
+            if (_editNote.Id == 0)
+            {
+                await PartService.AddNoteAsync(_editNote);
+            }
+            else
+            {
+                _editNote.LastModifiedBy = _part?.LastModifiedBy;
+                await PartService.UpdateNoteAsync(_editNote);
+            }
+            _part = await PartService.GetPartDetailAsync(Id);
+            _showNoteModal = false;
+            Toast.ShowSuccess("Note saved");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteNote(PartNote note)
+    {
+        if (!await _confirm.ShowAsync($"Delete note '{note.Title}'?")) return;
+        await PartService.DeleteNoteAsync(note.Id);
+        _part = await PartService.GetPartDetailAsync(Id);
+        Toast.ShowSuccess("Note deleted");
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
+    };
+
+    private void GoToEdit()
+    {
+        Nav.NavigateTo("/admin/parts");
+    }
+}

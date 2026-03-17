@@ -313,6 +313,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int?>("BuildJobId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Category")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("DelayMinutes")
                         .HasColumnType("INTEGER");
 
@@ -340,8 +343,18 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("StageExecutionId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -1132,6 +1145,13 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CustomFieldValues")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CustomerPartNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
                     b.Property<double?>("DepowderingDurationHours")
                         .HasColumnType("REAL");
 
@@ -1145,11 +1165,18 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<double?>("DoubleStackDurationHours")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("DrawingNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("EnableDoubleStack")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("EnableTripleStack")
                         .HasColumnType("INTEGER");
+
+                    b.Property<double?>("EstimatedWeightKg")
+                        .HasColumnType("REAL");
 
                     b.Property<double?>("HeatTreatmentDurationHours")
                         .HasColumnType("REAL");
@@ -1158,6 +1185,12 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDefensePart")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ItarClassification")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("LastModifiedBy")
@@ -1200,9 +1233,20 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int?>("PartsPerBuildTriple")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("RawMaterialSpec")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("RequiredStages")
                         .IsRequired()
                         .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Revision")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevisionDate")
                         .HasColumnType("TEXT");
 
                     b.Property<double?>("SingleStackDurationHours")
@@ -1231,6 +1275,59 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("PartNumber");
 
                     b.ToTable("Parts");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.PartDrawing", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FilePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FileType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Revision")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UploadedDate")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartId");
+
+                    b.ToTable("PartDrawings");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.PartInstance", b =>
@@ -1318,6 +1415,102 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("ProductionStageId");
 
                     b.ToTable("PartInstanceStageLogs");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.PartNote", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsPinned")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastModifiedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NoteType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartId");
+
+                    b.ToTable("PartNotes");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.PartRevisionHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ChangeDescription")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DrawingNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PreviousRevision")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RawMaterialSpec")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Revision")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("RevisionDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RoutingSnapshot")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartId");
+
+                    b.ToTable("PartRevisionHistories");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.PartStageRequirement", b =>
@@ -1670,13 +1863,27 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("AcceptedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContractNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("ConvertedWorkOrderId")
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("ConvertedWorkOrderId2")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CustomFieldValues")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("CustomerEmail")
@@ -1692,7 +1899,26 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal>("EstimatedLaborCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("EstimatedMaterialCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("EstimatedOverheadCost")
+                        .HasColumnType("decimal(10,2)");
+
                     b.Property<DateTime?>("ExpirationDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDefenseContract")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastModifiedDate")
                         .HasColumnType("TEXT");
 
                     b.Property<decimal?>("Markup")
@@ -1709,8 +1935,17 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<decimal?>("QuotedPrice")
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("TargetMarginPct")
+                        .HasColumnType("TEXT");
 
                     b.Property<decimal>("TotalEstimatedCost")
                         .HasColumnType("decimal(10,2)");
@@ -1734,9 +1969,18 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<decimal>("EstimatedCostPerPart")
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<double>("LaborMinutes")
+                        .HasColumnType("REAL");
+
+                    b.Property<decimal>("MaterialCostEach")
+                        .HasColumnType("decimal(10,2)");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
+
+                    b.Property<decimal>("OutsideProcessCost")
+                        .HasColumnType("decimal(10,2)");
 
                     b.Property<int>("PartId")
                         .HasColumnType("INTEGER");
@@ -1750,6 +1994,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<decimal>("QuotedPricePerPart")
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<double>("SetupMinutes")
+                        .HasColumnType("REAL");
+
                     b.HasKey("Id");
 
                     b.HasIndex("PartId");
@@ -1757,6 +2004,125 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("QuoteId");
 
                     b.ToTable("QuoteLines");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.QuoteRevision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ChangeNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("EstimatedLaborCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("EstimatedMaterialCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("EstimatedOverheadCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("LinesSnapshot")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("QuoteId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal?>("QuotedPrice")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("TargetMarginPct")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("TotalEstimatedCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuoteId");
+
+                    b.ToTable("QuoteRevisions");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.RfqRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AttachmentPaths")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CompanyName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContactName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ConvertedQuoteId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Material")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NeededByDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReviewedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReviewedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("SubmittedDate")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConvertedQuoteId");
+
+                    b.ToTable("RfqRequests");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.StageExecution", b =>
@@ -1768,10 +2134,24 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<decimal?>("ActualCost")
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<DateTime?>("ActualEndAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<double?>("ActualHours")
                         .HasColumnType("REAL");
 
+                    b.Property<DateTime?>("ActualStartAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AssignedOperatorId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CompletionNotes")
+                        .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("CreatedBy")
@@ -1791,6 +2171,13 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<double?>("EstimatedHours")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsUnmanned")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Issues")
                         .HasColumnType("TEXT");
 
@@ -1803,6 +2190,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
                     b.Property<DateTime>("LastModifiedDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("MachineId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<decimal?>("MaterialCost")
                         .HasColumnType("decimal(10,2)");
@@ -1830,8 +2220,23 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal>("RunHoursActual")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ScheduledEndAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ScheduledStartAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<double?>("SetupHours")
                         .HasColumnType("REAL");
+
+                    b.Property<decimal>("SetupHoursActual")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("TEXT");
@@ -1842,6 +2247,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasKey("Id");
 
                     b.HasIndex("JobId");
+
+                    b.HasIndex("MachineId");
 
                     b.HasIndex("OperatorUserId");
 
@@ -1996,12 +2403,34 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("ActualShipDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ApprovedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContractLineItem")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContractNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CustomFieldValues")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("CustomerEmail")
@@ -2023,6 +2452,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
                     b.Property<DateTime>("DueDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDefenseContract")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("LastModifiedBy")
                         .IsRequired()
@@ -2046,10 +2478,19 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int>("Priority")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("PromisedDate")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("QuoteId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("ShipByDate")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("WorkflowInstanceId")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
@@ -2060,7 +2501,53 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("QuoteId")
                         .IsUnique();
 
+                    b.HasIndex("WorkflowInstanceId");
+
                     b.ToTable("WorkOrders");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderComment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AuthorName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("AuthorUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EditedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsInternal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ParentCommentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WorkOrderId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorUserId");
+
+                    b.HasIndex("ParentCommentId");
+
+                    b.HasIndex("WorkOrderId");
+
+                    b.ToTable("WorkOrderComments");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderLine", b =>
@@ -2317,7 +2804,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasForeignKey("JobId");
 
                     b.HasOne("Opcentrix_V3.Models.StageExecution", "StageExecution")
-                        .WithMany()
+                        .WithMany("DelayLogs")
                         .HasForeignKey("StageExecutionId");
 
                     b.Navigation("BuildJob");
@@ -2429,6 +2916,17 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("MaintenanceRule");
                 });
 
+            modelBuilder.Entity("Opcentrix_V3.Models.PartDrawing", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                        .WithMany("Drawings")
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Part");
+                });
+
             modelBuilder.Entity("Opcentrix_V3.Models.PartInstance", b =>
                 {
                     b.HasOne("Opcentrix_V3.Models.ProductionStage", "CurrentStage")
@@ -2471,6 +2969,28 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("PartInstance");
 
                     b.Navigation("ProductionStage");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.PartNote", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                        .WithMany("Notes")
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Part");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.PartRevisionHistory", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                        .WithMany("RevisionHistory")
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Part");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.PartStageRequirement", b =>
@@ -2566,11 +3086,35 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Quote");
                 });
 
+            modelBuilder.Entity("Opcentrix_V3.Models.QuoteRevision", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.Quote", "Quote")
+                        .WithMany("Revisions")
+                        .HasForeignKey("QuoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Quote");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.RfqRequest", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.Quote", "ConvertedQuote")
+                        .WithMany()
+                        .HasForeignKey("ConvertedQuoteId");
+
+                    b.Navigation("ConvertedQuote");
+                });
+
             modelBuilder.Entity("Opcentrix_V3.Models.StageExecution", b =>
                 {
                     b.HasOne("Opcentrix_V3.Models.Job", "Job")
                         .WithMany("Stages")
                         .HasForeignKey("JobId");
+
+                    b.HasOne("Opcentrix_V3.Models.Machine", "Machine")
+                        .WithMany()
+                        .HasForeignKey("MachineId");
 
                     b.HasOne("Opcentrix_V3.Models.User", "Operator")
                         .WithMany()
@@ -2583,6 +3127,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .IsRequired();
 
                     b.Navigation("Job");
+
+                    b.Navigation("Machine");
 
                     b.Navigation("Operator");
 
@@ -2606,7 +3152,36 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .WithOne()
                         .HasForeignKey("Opcentrix_V3.Models.WorkOrder", "QuoteId");
 
+                    b.HasOne("Opcentrix_V3.Models.WorkflowInstance", "WorkflowInstance")
+                        .WithMany()
+                        .HasForeignKey("WorkflowInstanceId");
+
                     b.Navigation("Quote");
+
+                    b.Navigation("WorkflowInstance");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderComment", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.User", "AuthorUser")
+                        .WithMany()
+                        .HasForeignKey("AuthorUserId");
+
+                    b.HasOne("Opcentrix_V3.Models.WorkOrderComment", "ParentComment")
+                        .WithMany("Replies")
+                        .HasForeignKey("ParentCommentId");
+
+                    b.HasOne("Opcentrix_V3.Models.WorkOrder", "WorkOrder")
+                        .WithMany("Comments")
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AuthorUser");
+
+                    b.Navigation("ParentComment");
+
+                    b.Navigation("WorkOrder");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderLine", b =>
@@ -2683,7 +3258,13 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
             modelBuilder.Entity("Opcentrix_V3.Models.Part", b =>
                 {
+                    b.Navigation("Drawings");
+
                     b.Navigation("Jobs");
+
+                    b.Navigation("Notes");
+
+                    b.Navigation("RevisionHistory");
 
                     b.Navigation("StageRequirements");
                 });
@@ -2710,6 +3291,13 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
             modelBuilder.Entity("Opcentrix_V3.Models.Quote", b =>
                 {
                     b.Navigation("Lines");
+
+                    b.Navigation("Revisions");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.StageExecution", b =>
+                {
+                    b.Navigation("DelayLogs");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.User", b =>
@@ -2719,7 +3307,14 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkOrder", b =>
                 {
+                    b.Navigation("Comments");
+
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderComment", b =>
+                {
+                    b.Navigation("Replies");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderLine", b =>
