@@ -25,6 +25,9 @@
 ## Stage Map Overview
 
 ```
+PHASE 0 — Customization & DLMS Foundation
+├── Stage 0.5: Tenant Customization Infrastructure     ← MUST be built first
+
 PHASE 1 — Core Production Engine
 ├── Stage 1: Parts/PDM Enhancement (Module 08)         ← data foundation
 ├── Stage 2: Estimating & Quoting (Module 01)          ← ERP entry point
@@ -52,7 +55,55 @@ PHASE 3 — Platform Maturity
 ├── Stage 18: CMMC & Compliance (Module 17)            ← QMS compliance
 ├── Stage 19: Training / LMS (Module 18)               ← QMS knowledge
 ├── Stage 20: API Layer & Customer Portal              ← platform maturity
+├── Stage 21: DLMS Transaction Services                ← defense logistics
 ```
+
+---
+
+## PHASE 0: Customization & DLMS Foundation
+
+### Stage 0.5 — Tenant Customization Infrastructure
+**Duration**: 2 weeks | **Prereqs**: Foundation ✅
+**Why first**: Every downstream module uses feature flags, custom fields, and
+configurable number sequences. Building this infrastructure before Stage 1
+means every entity we create from day one supports customer customization.
+
+> **Full architecture**: See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md)
+
+| Step | Description | Files |
+|------|-------------|-------|
+| 0.1 | Create `TenantFeatureFlag` model (Id, TenantCode, FeatureKey, IsEnabled, EnabledAt) | `Models/Platform/TenantFeatureFlag.cs` |
+| 0.2 | Add `DbSet<TenantFeatureFlag>` to `PlatformDbContext` | `Data/PlatformDbContext.cs` |
+| 0.3 | Generate platform migration: `dotnet ef migrations add AddFeatureFlags --context PlatformDbContext --output-dir Data/Migrations/Platform` | |
+| 0.4 | Create `ITenantFeatureService` / `TenantFeatureService` — `IsEnabled(key)`, `GetEnabledFeatures()`, checks current tenant's flags from PlatformDbContext | `Services/ITenantFeatureService.cs`, `Services/TenantFeatureService.cs` |
+| 0.5 | Seed default feature flags for demo tenant (core modules on, DLMS off, advanced off) | `Program.cs` |
+| 0.6 | Create `CustomFieldConfig` model (Id, EntityType, FieldDefinitionsJson) — stores `List<CustomFieldDefinition>` per entity type | `Models/CustomFieldConfig.cs` |
+| 0.7 | Create `ICustomFieldService` / `CustomFieldService` — get config by entity type, validate values against config | `Services/ICustomFieldService.cs`, `Services/CustomFieldService.cs` |
+| 0.8 | Build `<CustomFieldsEditor>` shared Razor component — auto-renders form fields from config JSON, two-way binds `CustomFieldValues` | `Components/Shared/CustomFieldsEditor.razor` |
+| 0.9 | Create `INumberSequenceService` / `NumberSequenceService` — `NextAsync("WorkOrder")` reads prefix + digits from `SystemSetting`, stores last-used counter | `Services/INumberSequenceService.cs`, `Services/NumberSequenceService.cs` |
+| 0.10 | Create `WorkflowDefinition`, `WorkflowStep`, `WorkflowInstance` models | `Models/WorkflowDefinition.cs`, `Models/WorkflowStep.cs`, `Models/WorkflowInstance.cs` |
+| 0.11 | Create `DocumentTemplate` model (Id, Name, EntityType, TemplateHtml, HeaderHtml, FooterHtml, CssOverrides, IsDefault) | `Models/DocumentTemplate.cs` |
+| 0.12 | Add DbSets for `CustomFieldConfig`, `WorkflowDefinition`, `WorkflowStep`, `WorkflowInstance`, `DocumentTemplate` to `TenantDbContext` | `Data/TenantDbContext.cs` |
+| 0.13 | Generate tenant migration: `dotnet ef migrations add AddCustomizationFoundation --context TenantDbContext --output-dir Data/Migrations/Tenant` | |
+| 0.14 | Seed all `SystemSetting` keys from DLMS-CUSTOMIZATION-ARCHITECTURE.md Part 2, Layer 1 table (company, numbering, quality, shipping, inventory, costing, dlms, workflow categories) | `Program.cs` |
+| 0.15 | Build `/admin/features` page — toggle features on/off per tenant | `Components/Pages/Admin/Features.razor` |
+| 0.16 | Build `/admin/custom-fields` page — visual field designer per entity type | `Components/Pages/Admin/CustomFields.razor` |
+| 0.17 | Build `/admin/numbering` page — configure prefixes, digit counts, separators | `Components/Pages/Admin/Numbering.razor` |
+| 0.18 | Build `/admin/branding` page — company name, logo, CAGE code, DoDAAC, address | `Components/Pages/Admin/Branding.razor` |
+| 0.19 | Create `IWorkflowEngine` / `WorkflowEngine` — start instance, advance step, check pending approvals | `Services/IWorkflowEngine.cs`, `Services/WorkflowEngine.cs` |
+| 0.20 | Create `IDocumentTemplateService` / `DocumentTemplateService` — render template + merge fields → HTML → PDF | `Services/IDocumentTemplateService.cs`, `Services/DocumentTemplateService.cs` |
+| 0.21 | Update NavMenu to check `ITenantFeatureService` for conditional nav sections | `Components/Layout/NavMenu.razor` |
+| 0.22 | Register all new services in DI as Scoped | `Program.cs` |
+
+**Deliverable**: Every tenant can toggle features on/off, define custom fields
+on any entity, configure number sequences, and set company branding. The
+workflow engine and template renderer are available for all downstream modules
+to use. DLMS-specific settings are configurable but hidden until the `dlms`
+feature flag is enabled.
+
+**DLMS foundation in this stage**: CAGE code, DoDAAC, DUNS in SystemSettings.
+Feature flags for `dlms`, `dlms.iuid`, `dlms.wawf`, `dlms.gfm`, `dlms.cdrl`.
+These are all OFF by default — defense shops enable what they need.
 
 ---
 
@@ -81,6 +132,14 @@ PHASE 3 — Platform Maturity
 **Deliverable**: Managers can browse parts with full routing and attached drawings.
 Operators can view current revision. Part data is the source of truth for all downstream modules.
 
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Add `CustomFieldValues` (JSON) column to `Part` model
+> - Add `ItarClassification` (None, ITAR, EAR, CUI) enum + field to `Part`
+> - Add `IsDefensePart` flag — controls visibility of DLMS-specific fields in UI
+> - Use `INumberSequenceService` for auto-generated part numbers when `numbering.part_auto` is true
+> - Render `<CustomFieldsEditor>` on part create/edit forms
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
+
 ---
 
 ### Stage 2 — Estimating & Quoting (Module 01)
@@ -105,6 +164,15 @@ Operators can view current revision. Part data is the source of truth for all do
 **Deliverable**: Full quoting workflow — create quote from parts, calculate costs/margins,
 send to customer, receive acceptance, convert to work order.
 
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Add `CustomFieldValues` (JSON) column to `Quote` model
+> - Add `ContractNumber`, `IsDefenseContract` fields to `Quote`
+> - Use `INumberSequenceService.NextAsync("Quote")` for quote numbers
+> - Build first `DocumentTemplate` — quote PDF output using `IDocumentTemplateService`
+> - Build `/admin/templates` page (at least quote template editing)
+> - When `dlms` feature flag is on, show defense contract fields in quote form
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
+
 ---
 
 ### Stage 3 — Work Order Management (Module 02)
@@ -125,6 +193,15 @@ send to customer, receive acceptance, convert to work order.
 
 **Deliverable**: Complete order lifecycle — quote acceptance auto-creates WO,
 WO auto-generates jobs from part routing, managers track fulfillment.
+
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Add `CustomFieldValues` (JSON) column to `WorkOrder` model
+> - Add `ContractNumber`, `ContractLineItem` (CLIN), `IsDefenseContract` to `WorkOrder`
+> - Use `INumberSequenceService.NextAsync("WorkOrder")` for WO numbers
+> - Wire `IWorkflowEngine` for WO release approval (first real workflow usage)
+> - Build `/admin/workflows` page (at least WO approval workflow editing)
+> - When `dlms` feature flag is on, show contract fields in WO form
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
 
 ---
 
@@ -198,6 +275,17 @@ Operators see instructions during stage execution. Feedback loop captures confus
 **Deliverable**: Full QMS — inspection plans, measurement recording, NCR/CAPA workflow,
 SPC charts. Operators record measurements during QC stage. Quality team manages NCRs.
 
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Create `FairForm1` (Part Number Accountability), `FairForm2` (Product Accountability),
+>   `FairForm3` (Characteristic Accountability) models for structured AS9102 FAIR
+> - Auto-populate FAIR forms from part routing + material certs + measurements
+> - Add `DocumentTemplate` for FAIR PDF export in standard AS9102 format
+> - Add `CustomFieldValues` (JSON) to `QCInspection` / inspection models
+> - Wire `IWorkflowEngine` for NCR disposition approval chain
+> - Use `INumberSequenceService.NextAsync("NCR")` for NCR numbers
+> - When `quality.require_fair` setting is true, require FAIR on first articles
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
+
 ---
 
 ### Stage 7 — Inventory Control (Module 06)
@@ -219,6 +307,13 @@ SPC charts. Operators record measurements during QC stage. Quality team manages 
 
 **Deliverable**: Track raw material stock, auto-reserve on WO release,
 receive material with lot tracking, detect shortages before production starts.
+
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Add `IsGovernmentFurnished`, `ContractNumber`, `AccountabilityCode`, `CustodianUserId` to `InventoryItem`
+> - Add `CustomFieldValues` (JSON) to `InventoryItem`
+> - GFM/GFE fields only visible when `Features.IsEnabled("dlms.gfm")` is true
+> - Lot tracking toggleable via `inventory.track_lots` setting
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
 
 ---
 
@@ -273,6 +368,13 @@ After Stage 8, you have a **complete core MES/ERP/QMS**:
 | 9.5 | Build `/admin/rates` — labor rate + overhead rate configuration | |
 | 9.6 | Build `/analytics/cost` enhancement — job-level P&L | |
 | 9.7 | Wire cost entries into stage completion (auto-log labor + machine cost) | |
+
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Overhead method selectable per tenant via `costing.overhead_method` setting ("percentage" or "activity")
+> - Default margin configurable via `costing.default_margin_pct` setting
+> - Prepare WAWF invoice data structure (ContractNumber, CLIN, amounts) — full WAWF output in Stage 21
+> - Wire `IWorkflowEngine` for PO approval by dollar threshold
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
 
 ---
 
@@ -338,6 +440,12 @@ After Stage 8, you have a **complete core MES/ERP/QMS**:
 | 13.8 | Wire PO receiving into inventory transactions | |
 | 13.9 | Wire vendor quality data from NCRs into scorecards | |
 
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Add `CustomFieldValues` (JSON) to `PurchaseOrder` and `Vendor`
+> - Use `INumberSequenceService.NextAsync("PurchaseOrder")` for PO numbers
+> - Wire `IWorkflowEngine` for PO approval chain (configurable per tenant)
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
+
 ---
 
 ### Stage 14 — Document Control (Module 14)
@@ -352,6 +460,13 @@ After Stage 8, you have a **complete core MES/ERP/QMS**:
 | 14.5 | Build `/documents/{id}` — document detail with revision history, approval workflow | |
 | 14.6 | Build `/documents/my-acknowledgments` — operator pending reads | |
 | 14.7 | Wire controlled documents into quality inspection plans | |
+
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Add `IsCdrl`, `CdrlNumber`, `ContractNumber`, `DueDate`, `DeliveryStatus` to `ControlledDocument`
+> - CDRL fields only visible when `Features.IsEnabled("dlms.cdrl")` is true
+> - Add CDRL deliverable dashboard — what's due, submitted, overdue
+> - Wire `IWorkflowEngine` for document revision approval (Author → Reviewer → Approver)
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
 
 ---
 
@@ -395,6 +510,16 @@ After Stage 14:
 | 16.4 | Build `/shipping/create/{woId}` — shipment wizard |
 | 16.5 | Wire shipped quantities back to WO fulfillment tracking |
 
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Add `WawfDocumentNumber`, `ContractNumber`, `ContractLineItem`, `DoDAAC` to `Shipment`
+> - Add `CustomFieldValues` (JSON) to `Shipment`
+> - Add `DocumentTemplate` entries for packing list, BOL, CoC — all customizable per tenant
+> - Use `INumberSequenceService.NextAsync("Shipment")` for shipment numbers
+> - When `dlms` feature is enabled: show defense shipping fields, enable ASN generation
+> - When `shipping.require_coc` is true, require CoC document before shipment close
+> - IUID barcode printing on labels when `dlms.iuid` feature is enabled
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
+
 ---
 
 ### Stage 17 — CRM & Contact Management (Module 16)
@@ -421,6 +546,13 @@ After Stage 14:
 | 18.4 | Build `/compliance`, `/compliance/assess/{frameworkId}` |
 | 18.5 | Build `/admin/audit-log`, `/admin/security` |
 | 18.6 | Seed AS9100, ISO 13485, CMMC Level 2 framework controls |
+
+> **🛡️ DLMS/Customization Notes for this stage**:
+> - Add DFARS clause tracking (252.204-7012, 252.204-7019, 252.204-7020, etc.)
+> - Wire ITAR/EAR classification from Part model into compliance checks
+> - Add CUI marking enforcement when `dlms` feature is enabled
+> - Compliance frameworks are pre-seeded but fully customizable per tenant
+> - See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) Part 3
 
 ---
 
@@ -450,16 +582,45 @@ After Stage 14:
 
 ---
 
+### Stage 21 — DLMS Transaction Services 🛡️
+**Duration**: 2–3 weeks | **Prereqs**: Stage 16 (Shipping), Stage 18 (Compliance)
+**Why here**: All the DLMS data fields have been added throughout Stages 1–18.
+Now build the services that generate actual DLMS transaction outputs.
+
+| Step | Description | Files |
+|------|-------------|-------|
+| 21.1 | Create `IDlmsService` / `DlmsService` — generate DLMS 856 ASN data package from `Shipment` | `Services/IDlmsService.cs`, `Services/DlmsService.cs` |
+| 21.2 | Create `IIuidService` / `IuidService` — generate UII codes (Construct 1 & 2), register with DoD IUID Registry API | `Services/IIuidService.cs`, `Services/IuidService.cs` |
+| 21.3 | Add WAWF invoice data export — generate receiving report + invoice package from `Shipment` + `CostEntry` data | `Services/DlmsService.cs` |
+| 21.4 | Add MILSTRIP requisition import — parse inbound 511 transactions into `WorkOrder` | `Services/DlmsService.cs` |
+| 21.5 | Build `/admin/dlms` settings page — CAGE, DoDAAC, IUID construct type, WAWF config | `Components/Pages/Admin/Dlms.razor` |
+| 21.6 | Add Data Matrix barcode generation for IUID labels | `Services/IuidService.cs` |
+| 21.7 | Build DLMS transaction log viewer — audit trail of all DLMS transactions sent/received | `Components/Pages/Admin/DlmsLog.razor` |
+| 21.8 | Register DLMS services in DI (conditional on `dlms` feature flag) | `Program.cs` |
+| 21.9 | End-to-end DLMS smoke test: Defense quote → WO with contract → production → FAIR → ASN + WAWF | |
+
+> All DLMS features require `Features.IsEnabled("dlms")`. Non-defense shops
+> never see any of this. Defense shops enable the specific DLMS sub-features
+> they need (`dlms.iuid`, `dlms.wawf`, `dlms.gfm`, `dlms.cdrl`).
+
+**Deliverable**: Full DLMS transaction support for defense manufacturing.
+ASN generation, WAWF invoice export, IUID barcode marking, MILSTRIP import.
+All behind feature flags — zero impact on commercial-only customers.
+
+---
+
 ## PHASE 3 CHECKPOINT ✅
 
-After Stage 20:
-- 🚚 Shipping with packing lists and BOL
+After Stage 21:
+- 🚚 Shipping with packing lists, BOL, and CoC
 - 👥 CRM with customer portal
 - 🔒 Multi-framework compliance (CMMC, AS9100, ISO)
 - 📚 LMS with contextual in-app training
 - 🔌 REST API for external integrations
+- 🛡️ **DLMS transaction support (ASN, WAWF, IUID, MILSTRIP)**
+- ⚙️ **Per-tenant customization (feature flags, custom fields, workflows, templates, numbering)**
 
-**Full ProShop ERP parity + competitive differentiators achieved.**
+**Full ProShop ERP parity + defense logistics + tenant self-service customization.**
 
 ---
 
@@ -488,12 +649,23 @@ These are the MES-specific features and which stages deliver them:
 | Real-time machine state (SignalR) | Foundation ✅ | — |
 | Barcode/camera scan for receiving | Stage 7 | M06 |
 | Operator training requirements per stage | Stage 19 | M18 |
+| Per-tenant feature flags (module toggling) | Stage 0.5 | Foundation |
+| No-code custom fields on all entities | Stage 0.5 | Foundation |
+| Configurable number sequences | Stage 0.5 | Foundation |
+| Configurable approval workflows | Stage 0.5 | Foundation |
+| Customer-branded document templates | Stage 0.5 | Foundation |
+| DLMS ASN (856) generation | Stage 21 | DLMS |
+| WAWF invoice export | Stage 21 | DLMS |
+| IUID barcode marking | Stage 21 | DLMS |
+| GFM/GFE property tracking | Stage 7 | M06 |
+| CDRL deliverable tracking | Stage 14 | M14 |
+| Structured AS9102 FAIR | Stage 6 | M05 |
 
 ---
 
 ## How to Use This Plan
 
-1. **Start at Stage 1** and complete all steps in order.
+1. **Start at Stage 0.5** (customization foundation) then proceed through Stage 1+.
 2. Each stage begins with models → migration → services → UI.
 3. After each stage, verify the build compiles: `dotnet build`.
 4. After completing a stage, update the checkbox in the corresponding
@@ -501,5 +673,9 @@ These are the MES-specific features and which stages deliver them:
 5. Stages within a phase can occasionally be parallelized (e.g., Stage 5
    and Stage 6 are both independent of each other after Stage 4), but the
    numbered order is the recommended serial path.
+6. **DLMS notes**: Each stage includes a 🛡️ callout box with DLMS-specific
+   fields and customization integration points. Follow these alongside the
+   main steps. See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md)
+   for the full architecture.
 
-**Current status**: Foundation fixes complete. Ready to begin **Stage 1 (Parts/PDM)**.
+**Current status**: Foundation fixes complete. Ready to begin **Stage 0.5 (Customization Foundation)**.

@@ -307,12 +307,63 @@ Use the shared components in `Components/Shared/` for every module:
 - `<Pagination>` — for list pages with many items
 - `ToastService` — inject and call `Toast.ShowSuccess("Saved")` or `Toast.ShowError("Failed")`
 
+### 12. DLMS & Customer Customization
+See [DLMS-CUSTOMIZATION-ARCHITECTURE.md](DLMS-CUSTOMIZATION-ARCHITECTURE.md) for the
+full architecture. Every module must respect these cross-cutting patterns:
+
+**Feature Flags**: Gate optional sections behind `ITenantFeatureService` checks.
+DLMS fields, SPC charts, advanced modules — all behind flags. NavMenu hides
+links for disabled features. Pages return a "not enabled" message if accessed.
+```csharp
+@inject ITenantFeatureService Features
+
+@if (!Features.IsEnabled("module.quality"))
+{
+    <div class="alert-warning">This module is not enabled. Contact your admin.</div>
+    return;
+}
+```
+
+**Custom Fields**: Every major entity gets a `CustomFieldValues` JSON column.
+Use the shared `<CustomFieldsEditor>` component to render/edit custom fields
+on create/edit forms. Custom field configs are stored in `SystemSetting` with
+key pattern `custom_fields.{entity_type}`.
+
+**Configurable Numbering**: Use `INumberSequenceService.NextAsync("WorkOrder")`
+to generate sequential numbers. Format is tenant-configurable via settings
+(prefix, digit count, separator).
+
+**Document Templates**: All printable documents (quotes, packing lists, CoC,
+FAIR reports, BOL) use `DocumentTemplate` with Handlebars-style merge fields.
+Customers customize via `/admin/templates`.
+
+**Workflow Engine**: Approval chains for WO release, quote approval, NCR
+disposition, PO approval, and document revisions use `WorkflowDefinition`
+models. Customers configure via `/admin/workflows`.
+
+**DLMS Fields**: When building models that touch defense contracts, add
+DLMS-specific columns (ContractNumber, CLIN, DoDAAC, IUID, GFM flags) but
+only show them in the UI when `Features.IsEnabled("dlms")` is true.
+
 ---
 
 ## New Database Models Summary (All 18 Modules)
 
 This is the complete list of new models to be added across all phases.
 Track which have been added to `TenantDbContext.cs`:
+
+### Foundation Models (Stage 0.5 — Customization Infrastructure)
+| Model | Module | DbSet Added? |
+|-------|--------|-------------|
+| `WorkflowDefinition` | Foundation | [ ] |
+| `WorkflowStep` | Foundation | [ ] |
+| `WorkflowInstance` | Foundation | [ ] |
+| `DocumentTemplate` | Foundation | [ ] |
+| `CustomFieldConfig` | Foundation | [ ] |
+
+| Model | Module | DbContext |
+|-------|--------|-----------|
+| `TenantFeatureFlag` | Foundation | **PlatformDbContext** |
 
 ### Phase 1 Models
 | Model | Module | DbSet Added? |
@@ -331,6 +382,9 @@ Track which have been added to `TenantDbContext.cs`:
 | `NonConformanceReport` | M05 | [ ] |
 | `CorrectiveAction` | M05 | [ ] |
 | `SpcDataPoint` | M05 | [ ] |
+| `FairForm1` | M05 | [ ] |
+| `FairForm2` | M05 | [ ] |
+| `FairForm3` | M05 | [ ] |
 | `InventoryItem` | M06 | [ ] |
 | `StockLocation` | M06 | [ ] |
 | `InventoryLot` | M06 | [ ] |
@@ -396,6 +450,17 @@ Track which have been added to `TenantDbContext.cs`:
 
 Track service registration in `Program.cs`:
 
+### Foundation Services (Stage 0.5)
+| Service | Module | Registered? |
+|---------|--------|------------|
+| `ITenantFeatureService` | Foundation | [ ] |
+| `ICustomFieldService` | Foundation | [ ] |
+| `INumberSequenceService` | Foundation | [ ] |
+| `IWorkflowEngine` | Foundation | [ ] |
+| `IDocumentTemplateService` | Foundation | [ ] |
+| `IDlmsService` | DLMS | [ ] |
+| `IIuidService` | DLMS | [ ] |
+
 ### Phase 1 Services
 | Service | Module | Registered? |
 |---------|--------|------------|
@@ -437,6 +502,17 @@ Track service registration in `Program.cs`:
 ## New Pages / Routes Summary
 
 All new routes to add to the application:
+
+### Foundation Routes (Stage 0.5 — Admin Customization Tools)
+```
+/admin/custom-fields             Custom field designer per entity type
+/admin/workflows                 Workflow approval chain builder
+/admin/templates                 Document template editor
+/admin/numbering                 Number sequence configuration
+/admin/features                  Enable/disable modules and features
+/admin/dlms                      DLMS settings (CAGE, DoDAAC, IUID, WAWF)
+/admin/branding                  Company logo, colors, report headers
+```
 
 ### Phase 1 Routes
 ```
@@ -542,6 +618,16 @@ These features we are building that ProShop does NOT have:
 | Tool lifecycle wear tracking with predictive alerts | Module 10 (Tools) | [ ] |
 | Vendor scorecards (quality + delivery + cost) | Module 12 (Purchasing) | [ ] |
 | Activity-based overhead allocation | Module 09 (Job Costing) | [ ] |
+| **DLMS transaction support (ASN, WAWF, IUID)** | **Modules 06/09/15 + DLMS Services** | **[ ]** |
+| **Per-tenant feature flags (module toggling)** | **Foundation (Stage 0.5)** | **[ ]** |
+| **No-code custom fields on all entities** | **Foundation (Stage 0.5)** | **[ ]** |
+| **Configurable approval workflows** | **Foundation (Stage 0.5)** | **[ ]** |
+| **Customer-branded document templates** | **Foundation (Stage 0.5)** | **[ ]** |
+| **GFM/GFE government property tracking** | **Module 06 (Inventory) + DLMS** | **[ ]** |
+| **Structured AS9102 FAIR auto-generation** | **Module 05 (Quality) + DLMS** | **[ ]** |
+| **CDRL deliverable tracking & dashboards** | **Module 14 (Documents) + DLMS** | **[ ]** |
+| **IUID barcode marking & DoD registry** | **Module 15 (Shipping) + DLMS** | **[ ]** |
+| **Configurable number sequences per tenant** | **Foundation (Stage 0.5)** | **[ ]** |
 
 ---
 
@@ -588,9 +674,10 @@ These features we are building that ProShop does NOT have:
 | `Components/Shared/Pagination.razor` | Page navigation for lists |
 | `Services/ToastService.cs` | Toast event bus — inject and call `.ShowSuccess()` etc. |
 | `wwwroot/css/site.css` | All styles — ADD NEW STYLES HERE |
-| `docs/STAGED-IMPLEMENTATION-PLAN.md` | **20-stage build plan — START HERE for implementation order** |
+| `docs/STAGED-IMPLEMENTATION-PLAN.md` | **21-stage build plan — START HERE for implementation order** |
+| `docs/DLMS-CUSTOMIZATION-ARCHITECTURE.md` | **DLMS integration + per-tenant customization architecture** |
 
 ---
 
-*Last Updated: March 2026*
-*18 modules planned across 3 phases covering 100% of ProShop ERP feature parity + key improvements*
+*Last Updated: June 2025*
+*18 modules + DLMS/customization foundation across 3 phases — 100% ProShop parity + defense logistics + tenant self-service customization*

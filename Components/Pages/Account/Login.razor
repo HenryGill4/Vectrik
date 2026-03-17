@@ -33,8 +33,13 @@
 </div>
 
 @code {
-    [SupplyParameterFromForm] private LoginModel _model { get; set; } = new();
+    [SupplyParameterFromForm] private LoginModel _model { get; set; } = null!;
     private string? _errorMessage;
+
+    protected override void OnInitialized()
+    {
+        _model ??= new();
+    }
 
     [CascadingParameter] private HttpContext? HttpContext { get; set; }
 
