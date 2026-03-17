@@ -69,6 +69,7 @@
                 @if (!_isNew)
                 {
                     <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_stageReqs?.Count ?? 0))</button>
+                    <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM / Materials (@(_bomItems?.Count ?? 0))</button>
                 }
                 @if (_showSlsFeatures)
                 {
@@ -273,6 +274,76 @@
                 </div>
             }
 
+            <!-- BOM / Materials Tab -->
+            @if (_tab == "bom" && !_isNew)
+            {
+                <div class="card">
+                    <h3 class="card-title">Bill of Materials</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 12px;">Define raw materials and inventory items required to produce one unit of this part.</p>
+
+                    <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: end;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Material / Inventory Item</label>
+                            <select class="form-control" @bind="_bomMaterialId">
+                                <option value="0">Select material...</option>
+                                @if (_materials != null)
+                                {
+                                    @foreach (var m in _materials)
+                                    {
+                                        <option value="@m.Id">@m.Name (@m.Category)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group" style="width: 100px;">
+                            <label class="form-label">Qty</label>
+                            <input class="form-control" type="number" step="0.01" min="0.01" @bind="_bomQty" />
+                        </div>
+                        <div class="form-group" style="width: 80px;">
+                            <label class="form-label">UoM</label>
+                            <input class="form-control" @bind="_bomUom" placeholder="kg" />
+                        </div>
+                        <button class="btn btn-sm btn-primary" @onclick="AddBomItem" disabled="@(_bomMaterialId == 0)" style="height: 36px;">+ Add</button>
+                    </div>
+
+                    @if (_bomItems != null && _bomItems.Any())
+                    {
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Order</th>
+                                    <th>Material</th>
+                                    <th>Quantity</th>
+                                    <th>UoM</th>
+                                    <th>Notes</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _bomItems.Where(b => b.IsActive).OrderBy(b => b.SortOrder))
+                                {
+                                    <tr>
+                                        <td>@item.SortOrder</td>
+                                        <td>@(item.Material?.Name ?? $"Material {item.MaterialId}")</td>
+                                        <td>@item.QuantityRequired.ToString("F2")</td>
+                                        <td>@item.UnitOfMeasure</td>
+                                        <td><input class="form-control" style="width: 150px;" value="@item.Notes" @onchange="async e => { item.Notes = e.Value?.ToString(); await SaveBomItem(item); }" placeholder="Notes..." /></td>
+                                        <td><button class="btn btn-sm btn-danger" @onclick="() => RemoveBomItem(item)">✕</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📦</div>
+                            <div class="empty-state-text">No BOM items. Add materials required to manufacture this part.</div>
+                        </div>
+                    }
+                </div>
+            }
+
             <!-- Stacking Tab (SLS feature-flagged) -->
             @if (_tab == "stacking" && _showSlsFeatures)
             {
@@ -402,6 +473,12 @@
     private List<CustomFieldDefinition> _customFieldDefs = new();
     private Dictionary<string, string> _customFieldValues = new();
 
+    // BOM
+    private List<PartBomItem>? _bomItems;
+    private int _bomMaterialId;
+    private decimal _bomQty = 1;
+    private string _bomUom = "kg";
+
     // Stage requirement form state
     private int _addStageId;
 
@@ -441,6 +518,12 @@
             if (_part != null)
             {
                 _stageReqs = await PartService.GetStageRequirementsAsync(Id);
+                _bomItems = await Db.PartBomItems
+                    .Include(b => b.Material)
+                    .Include(b => b.InventoryItem)
+                    .Where(b => b.PartId == Id && b.IsActive)
+                    .OrderBy(b => b.SortOrder)
+                    .ToListAsync();
 
                 // Backfill MaterialId from Material string if not set
                 if (_part.MaterialId == null && !string.IsNullOrEmpty(_part.Material))
@@ -606,6 +689,49 @@
     private void OnCustomFieldsChanged(Dictionary<string, string> values)
     {
         _customFieldValues = values;
+    }
+
+    // BOM CRUD
+    private async Task AddBomItem()
+    {
+        if (_bomMaterialId == 0 || _part == null || _isNew) return;
+        var nextOrder = (_bomItems?.Any() == true) ? _bomItems.Max(b => b.SortOrder) + 1 : 1;
+        var item = new PartBomItem
+        {
+            PartId = _part.Id,
+            MaterialId = _bomMaterialId,
+            QuantityRequired = _bomQty,
+            UnitOfMeasure = _bomUom,
+            SortOrder = nextOrder,
+            CreatedBy = _currentUser
+        };
+        Db.PartBomItems.Add(item);
+        await Db.SaveChangesAsync();
+        _bomItems = await Db.PartBomItems
+            .Include(b => b.Material)
+            .Include(b => b.InventoryItem)
+            .Where(b => b.PartId == _part.Id && b.IsActive)
+            .OrderBy(b => b.SortOrder)
+            .ToListAsync();
+        _bomMaterialId = 0;
+        _bomQty = 1;
+        _bomUom = "kg";
+    }
+
+    private async Task RemoveBomItem(PartBomItem item)
+    {
+        item.IsActive = false;
+        item.LastModifiedDate = DateTime.UtcNow;
+        Db.PartBomItems.Update(item);
+        await Db.SaveChangesAsync();
+        _bomItems?.Remove(item);
+    }
+
+    private async Task SaveBomItem(PartBomItem item)
+    {
+        item.LastModifiedDate = DateTime.UtcNow;
+        Db.PartBomItems.Update(item);
+        await Db.SaveChangesAsync();
     }
 
     // Navigation

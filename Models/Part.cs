@@ -130,6 +130,7 @@ public class Part
     public virtual ICollection<PartRevisionHistory> RevisionHistory { get; set; } = new List<PartRevisionHistory>();
     public virtual ICollection<PartNote> Notes { get; set; } = new List<PartNote>();
     public virtual ICollection<InspectionPlan> InspectionPlans { get; set; } = new List<InspectionPlan>();
+    public virtual ICollection<PartBomItem> BomItems { get; set; } = new List<PartBomItem>();
 
     // NotMapped computed properties
     [NotMapped]

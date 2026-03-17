@@ -76,6 +76,7 @@ public class TenantDbContext : DbContext
     public DbSet<PartDrawing> PartDrawings { get; set; }
     public DbSet<PartRevisionHistory> PartRevisionHistories { get; set; }
     public DbSet<PartNote> PartNotes { get; set; }
+    public DbSet<PartBomItem> PartBomItems { get; set; }
 
     // Quoting
     public DbSet<QuoteRevision> QuoteRevisions { get; set; }
@@ -160,6 +161,22 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Part)
                 .WithMany(e => e.Notes)
                 .HasForeignKey(e => e.PartId);
+        });
+
+        // PartBomItem
+        modelBuilder.Entity<PartBomItem>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany(e => e.BomItems)
+                .HasForeignKey(e => e.PartId);
+            entity.HasOne(e => e.InventoryItem)
+                .WithMany()
+                .HasForeignKey(e => e.InventoryItemId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Material)
+                .WithMany()
+                .HasForeignKey(e => e.MaterialId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // PartStageRequirement
