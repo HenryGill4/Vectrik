@@ -1,10 +1,17 @@
 # OpCentrix V3 — Unified Implementation Roadmap
 
 > **Created**: 2026-03-17
-> **Status**: IN PROGRESS — Phase 1 Hardening
-> **Purpose**: Single source of truth for all implementation work. Supersedes
-> `SPRINT_PLAN.md`, `OPCENTRIX_ARCHITECTURE_DECISIONS.md` phase tracker, and
-> `docs/STAGED-IMPLEMENTATION-PLAN.md`.
+> **Updated**: 2026-03-18 — Added SLS Build Plate flow, Part System Integration,
+> ProShop competitive analysis. Consolidated all planning docs into this single file.
+> **Status**: IN PROGRESS — Phase 1 Hardening (H6 remaining), then Build Plate flow
+> **Purpose**: Single source of truth for ALL implementation work.
+>
+> **Supersedes**: `SPRINT_PLAN.md`, `OPCENTRIX_ARCHITECTURE_DECISIONS.md`,
+> `docs/STAGED-IMPLEMENTATION-PLAN.md`, `docs/PART-SYSTEM-INTEGRATION-PLAN.md`,
+> `sprints/SPRINT-*.md`. These files are in `archive/` for historical reference only.
+>
+> **Competitive analysis**: See `docs/SYSTEM-REVIEW-VS-PROSHOP.md` for the full
+> feature-by-feature comparison with ProShop ERP.
 
 ---
 
@@ -64,8 +71,15 @@ PHASE 1A — HARDENING (Production-readiness for existing code)
 ├── Stage H3: Shop Floor & Scheduling Hardening        [COMPLETE]
 ├── Stage H4: Quality & Inventory Hardening            [COMPLETE]
 ├── Stage H5: Analytics, Builds & Tracking Hardening   [COMPLETE]
-├── Stage H6: Cross-Cutting Wiring (Feature flags,     [NOT STARTED]
+├── Stage H6: Cross-Cutting Wiring (Feature flags,     [NOT STARTED]  ← RESUME HERE
 │             custom fields, numbering, workflows)
+
+PHASE 1D — PART SYSTEM & BUILD PLATE ★ NEW ★
+├── Stage PI: Part System Integration (Material FK,    [NOT STARTED]
+│             PricingEngine, BOM, cleanup)
+├── Stage BP: SLS Build Plate Multi-Part Flow          [NOT STARTED]
+│             (Build-level stages, revision control,
+│              slice-derived durations, part separation)
 
 PHASE 1B — MISSING PHASE 1 MODULE
 ├── Stage 5:  Visual Work Instructions (Module 03)     [NOT STARTED]
@@ -388,6 +402,183 @@ workflows, document templates) into all existing pages.
 
 ---
 
+## PHASE 1D: PART SYSTEM & BUILD PLATE FLOW
+
+> **Why now**: The Part model has 12 known disconnects (material FK, pricing engine,
+> BOM) and the SLS build plate flow is the core differentiator vs ProShop ERP.
+> Fixing these before adding new modules prevents compounding technical debt.
+>
+> **Absorbed from**: `docs/PART-SYSTEM-INTEGRATION-PLAN.md` (Phases A-E)
+
+---
+
+### Stage PI — Part System Integration
+**Duration**: 3–5 sessions | **Prereqs**: H1–H5 complete
+
+Fix the 12 disconnects between the Part model and the rest of the system.
+
+#### PI-A: Part ↔ Material FK (data integrity)
+- [ ] PI.1 — `Part.MaterialId` (int?) FK and `MaterialEntity` nav property already exist — verify migration applied
+- [ ] PI.2 — Update `TenantDbContext.OnModelCreating` with FK relationship config
+- [ ] PI.3 — Fix `PricingEngineService` to use FK instead of string match, use `PartStageRequirement` overrides (EstimatedHours, HourlyRateOverride, MaterialCost)
+- [ ] PI.4 — Update `Parts/Edit.razor` material dropdown to sync both `MaterialId` + `Material` string
+- [ ] PI.5 — Update `PartService` queries to `.Include(p => p.MaterialEntity)`
+- [ ] PI.6 — Backfill `MaterialId` from `Material` string in `DataSeedingService`
+
+#### PI-B: PricingEngine + Quote Accuracy
+- [ ] PI.7 — Rewrite `PricingEngineService.CalculatePartCostAsync` to use `PartStageRequirement` data (EstimatedHours, HourlyRateOverride, SetupTimeMinutes, MaterialCost)
+- [ ] PI.8 — Add `StageMaterialCost` + `SetupCost` fields to `PricingBreakdown`
+- [ ] PI.9 — Verify `QuoteService.CalculateEstimatedCostAsync` uses corrected engine
+
+#### PI-C: Cleanup + Audit Fixes
+- [ ] PI.10 — Mark `Part.RequiredStages` as `[Obsolete]`, remove `[Required]` (already done — verify)
+- [ ] PI.11 — Make `PartService.ValidatePartAsync` truly async, add duplicate PartNumber check
+- [ ] PI.12 — Fix `WorkOrders/Create.razor` to capture auth user instead of "System"
+- [ ] PI.13 — Set `Job.SlsMaterial` from `Part.Material` during job generation in `WorkOrderService`
+
+#### PI-D: Downstream Usage + Part Cloning
+- [ ] PI.14 — Add "Usage" tab to `Parts/Detail.razor` (active WOs, Jobs, Quotes, NCRs)
+- [ ] PI.15 — Add `GetPartUsageSummaryAsync` to `IPartService` + `PartService`
+- [ ] PI.16 — Add `ClonePartAsync` to `IPartService` + `PartService` (deep-copy routing, not history)
+- [ ] PI.17 — Add Clone button + modal to `Parts/Detail.razor`
+
+#### PI-E: Part ↔ Inventory BOM
+- [ ] PI.18 — `PartBomItem` model already exists — verify migration applied
+- [ ] PI.19 — Add BOM tab to `Parts/Edit.razor` (add inventory items/materials, qty per unit)
+- [ ] PI.20 — Update `MaterialPlanningService` to check BOM on WO release
+
+---
+
+### Stage BP — SLS Build Plate Multi-Part Flow
+**Duration**: 5–8 sessions | **Prereqs**: Stage PI complete
+
+> **The manufacturing reality**: In SLS, multiple different parts from different
+> work orders are packed onto one build plate. The build plate moves as a unit
+> through SLS Printing → Depowdering → Wire EDM. After EDM cuts parts off the
+> plate, individual parts split to their own routings (heat treat, finishing, etc.)
+
+#### Build Plate Concept
+
+```
+                     BUILD-LEVEL STAGES (plate moves as unit)
+                    ┌─────────┐    ┌──────────────┐    ┌──────────┐
+  BuildPackage ──►  │   SLS   │──►│ Depowdering  │──►│ Wire EDM │
+  (mixed parts)     │ Printing│    │              │    │ (cutoff) │
+                    └─────────┘    └──────────────┘    └──────────┘
+                                                             │
+                         ┌───────────────────────────────────┤
+                         │              PARTS SEPARATE       │
+                         ▼                                   ▼
+                   ┌───────────┐                      ┌───────────┐
+                   │ Part A    │                      │ Part B    │
+                   │ Heat Treat│                      │ Surface   │
+                   │ CNC       │                      │ Finishing │
+                   │ QC        │                      │ QC        │
+                   │ Ship      │                      │ Ship      │
+                   └───────────┘                      └───────────┘
+```
+
+#### BP-1: Model Changes
+
+- [ ] BP.1 — Add `BuildPackageRevision` model for revision control:
+  ```
+  BuildPackageRevision { Id, BuildPackageId, RevisionNumber, RevisionDate,
+    ChangedBy, ChangeNotes, PartsSnapshotJson, ParametersSnapshotJson }
+  ```
+- [ ] BP.2 — Add to `BuildPackage`:
+  - `int? CurrentRevision` — current rev number
+  - `string? BuildParameters` — JSON for build-level params (layer thickness, laser power, etc.)
+- [ ] BP.3 — Add to `StageExecution`:
+  - `int? BuildPackageId` — nullable FK to link build-level executions to a BuildPackage
+- [ ] BP.4 — Add `IsBuildLevelStage` boolean to `ProductionStage` — marks stages where the
+  build plate moves as a unit (SLS Printing, Depowdering, Wire EDM)
+- [ ] BP.5 — EF migration for all model changes
+- [ ] BP.6 — Seed `IsBuildLevelStage = true` for "sls-printing", "depowdering", "wire-edm" stages
+
+#### BP-2: Duration from Slice File
+
+- [ ] BP.7 — SLS build duration comes from `BuildFileInfo.EstimatedPrintTimeHours` (the slicer's
+  estimate), NOT from `Part.SlsBuildDurationHours`. When a BuildPackage has a BuildFileInfo,
+  the stage execution's EstimatedHours = BuildFileInfo.EstimatedPrintTimeHours
+- [ ] BP.8 — Hours-per-part allocation: `BuildFileInfo.EstimatedPrintTimeHours / BuildPackage.TotalPartCount`
+  (simple equal split — can refine to volume-weighted later)
+- [ ] BP.9 — Update `Part.SlsPerPartHours` computed property to check if part is in an active
+  BuildPackage with a BuildFileInfo and use that duration instead of the part-level estimate
+- [ ] BP.10 — When BuildFileInfo is saved/updated, auto-update the BuildPackage's
+  `EstimatedDurationHours` and all linked StageExecution EstimatedHours
+
+#### BP-3: Build-Level Stage Execution
+
+- [ ] BP.11 — Update `IBuildPlanningService` with:
+  - `Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy)`
+    Creates StageExecutions for all build-level stages (SLS → Depowder → EDM) linked to the BuildPackage
+  - `Task CreatePartStageExecutionsAsync(int buildPackageId, string createdBy)`
+    After EDM, creates individual StageExecutions for each part's remaining routing stages
+- [ ] BP.12 — When BuildPackage status → "Scheduled": call `CreateBuildStageExecutionsAsync`
+  - Creates one StageExecution per build-level stage, all linked to BuildPackageId
+  - SLS execution gets EstimatedHours from BuildFileInfo
+  - The Job on these executions can be a "build job" referencing the build package, not a single part
+- [ ] BP.13 — When the Wire EDM stage completes: call `CreatePartStageExecutionsAsync`
+  - For each BuildPackagePart, look up the Part's routing (PartStageRequirements)
+  - Skip build-level stages (SLS, Depowder, EDM — already done)
+  - Create individual Jobs + StageExecutions for remaining stages per part
+  - Link each Job to the WorkOrderLine via BuildPackagePart.WorkOrderLineId
+
+#### BP-4: Build Revision Control
+
+- [ ] BP.14 — Add `CreateRevisionAsync(int buildPackageId, string changedBy, string? notes)` to
+  `IBuildPlanningService` — snapshots current parts list and parameters to `BuildPackageRevision`
+- [ ] BP.15 — Auto-create revision when parts are added/removed from a BuildPackage
+- [ ] BP.16 — Auto-create revision when BuildFileInfo is updated (new slice file imported)
+- [ ] BP.17 — Add revision history display to `Builds/Index.razor` — expandable section
+  showing all revisions with date, who, what changed
+
+#### BP-5: Enhanced SLS Printing UI
+
+- [ ] BP.18 — Update `SLSPrinting.razor` to detect if execution has a BuildPackageId
+  - If yes: show ALL parts in the build with quantities and WO references
+  - If no: show single-part view (backward compatible)
+- [ ] BP.19 — Show build-level info: machine, material, estimated print time from slice,
+  layer count, build height, powder estimate (all from BuildFileInfo)
+- [ ] BP.20 — Show which work orders each part belongs to (BuildPackagePart.WorkOrderLineId → WorkOrder.OrderNumber)
+- [ ] BP.21 — Add build progress tracking (layer count vs total, % complete)
+- [ ] BP.22 — When completing the SLS stage, advance the build to depowdering (not individual parts)
+
+#### BP-6: Part Separation After EDM
+
+- [ ] BP.23 — When EDM stage completes, show a "Part Separation" confirmation UI:
+  - List all parts that were on the build
+  - Operator confirms each part is separated and accounted for
+  - Creates individual PartInstance records with serial numbers
+  - Triggers `CreatePartStageExecutionsAsync` for downstream routing
+- [ ] BP.24 — Handle partial separation: if some parts are damaged/scrapped during EDM,
+  operator can mark them as failed → auto-create NCR
+- [ ] BP.25 — Update `PartInstance` tracking to link back to the originating BuildPackage
+
+#### BP-7: Scheduling & Cost Integration
+
+- [ ] BP.26 — Update `Scheduler/Index.razor` Gantt to show build-level executions as a single
+  block spanning all parts (not one bar per part)
+- [ ] BP.27 — Update `Scheduler/Capacity.razor` to account for build plate as single machine occupation
+- [ ] BP.28 — Build cost (powder, gas, laser time) allocated across parts for job costing:
+  `partCost = buildCost * (partQty / totalPartsInBuild)`
+
+#### Verification Checklist
+
+After Stage BP is complete, verify:
+1. Create a BuildPackage with 3 different parts from 2 different work orders
+2. Import/set build file info (layer count, print time, powder)
+3. Schedule the build → see StageExecutions created for SLS, Depowder, EDM
+4. Start SLS stage → SLSPrinting.razor shows all 3 parts with WO references
+5. Complete SLS → build advances to Depowdering (not individual parts)
+6. Complete Depowdering → build advances to EDM
+7. Complete EDM → part separation UI, individual jobs created for downstream stages
+8. Each part follows its own routing (heat treat, finishing, QC, etc.)
+9. Hours-per-part reflects slice time divided across parts
+10. Build revision history tracks changes to part list
+
+---
+
 ## PHASE 1B: MISSING PHASE 1 MODULE
 
 ### Stage 5 — Visual Work Instructions (Module 03)
@@ -693,7 +884,8 @@ These apply to ALL work. See `docs/MASTER_CONTEXT.md` for full details.
 
 | What | Where |
 |------|-------|
-| This roadmap | `ROADMAP.md` |
+| This roadmap (START HERE) | `ROADMAP.md` |
+| ProShop competitive analysis | `docs/SYSTEM-REVIEW-VS-PROSHOP.md` |
 | Architecture patterns & registries | `docs/MASTER_CONTEXT.md` |
 | DLMS/customization architecture | `docs/DLMS-CUSTOMIZATION-ARCHITECTURE.md` |
 | Module detail plans | `docs/phase-N/MODULE-XX-*.md` |
@@ -705,6 +897,14 @@ These apply to ALL work. See `docs/MASTER_CONTEXT.md` for full details.
 
 ---
 
-*This roadmap supersedes `SPRINT_PLAN.md` and the phase tracker in
-`OPCENTRIX_ARCHITECTURE_DECISIONS.md`. Those files are retained for historical
-reference but should not be used for planning.*
+## Archived / Superseded Documents
+
+These files are in `archive/` (or root for legacy). Do **NOT** use for planning:
+
+| File | Reason |
+|------|--------|
+| `SPRINT_PLAN.md` | Superseded by this roadmap |
+| `OPCENTRIX_ARCHITECTURE_DECISIONS.md` | Phase tracker superseded |
+| `docs/STAGED-IMPLEMENTATION-PLAN.md` | Superseded by this roadmap |
+| `docs/PART-SYSTEM-INTEGRATION-PLAN.md` | Absorbed into Stage PI above |
+| `sprints/SPRINT-01.md` through `SPRINT-11.md` | Historical sprint logs |
