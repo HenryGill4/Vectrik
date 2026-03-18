@@ -333,6 +333,32 @@ public class StageService : IStageService
         await _db.SaveChangesAsync();
     }
 
+    // ── Delay logging ────────────────────────────────────────────
+
+    public async Task<DelayLog> LogDelayAsync(int executionId, string reason, DelayCategory category, int delayMinutes, string loggedBy, string? notes = null)
+    {
+        var execution = await _db.StageExecutions.FindAsync(executionId);
+        if (execution == null) throw new InvalidOperationException("Stage execution not found.");
+
+        var delay = new DelayLog
+        {
+            StageExecutionId = executionId,
+            JobId = execution.JobId,
+            Reason = reason,
+            Category = category,
+            DelayMinutes = delayMinutes,
+            StartedAt = DateTime.UtcNow,
+            ResolvedAt = DateTime.UtcNow,
+            LoggedBy = loggedBy,
+            LoggedAt = DateTime.UtcNow,
+            Notes = notes
+        };
+
+        _db.DelayLogs.Add(delay);
+        await _db.SaveChangesAsync();
+        return delay;
+    }
+
     // ── Operator queue ──────────────────────────────────────────
 
     public async Task<List<StageExecution>> GetOperatorQueueAsync(int operatorUserId)
@@ -439,6 +465,21 @@ public class StageService : IStageService
                 && ((e.ScheduledStartAt != null && e.ScheduledStartAt <= to && (e.ScheduledEndAt ?? e.ScheduledStartAt) >= from)
                     || (e.ScheduledStartAt == null && e.Job != null && e.Job.ScheduledStart <= to && e.Job.ScheduledEnd >= from)))
             .OrderBy(e => e.ScheduledStartAt ?? (e.Job != null ? e.Job.ScheduledStart : DateTime.MaxValue))
+            .ToListAsync();
+    }
+
+    public async Task<List<StageExecution>> GetUnscheduledExecutionsAsync()
+    {
+        return await _db.StageExecutions
+            .Include(e => e.Job)
+                .ThenInclude(j => j!.Part)
+            .Include(e => e.ProductionStage)
+            .Include(e => e.Machine)
+            .Where(e => e.Status == StageExecutionStatus.NotStarted
+                && (e.ScheduledStartAt == null || e.MachineId == null))
+            .OrderByDescending(e => e.Job != null ? (int)e.Job.Priority : 0)
+            .ThenBy(e => e.Job != null ? e.Job.ScheduledStart : DateTime.MaxValue)
+            .ThenBy(e => e.SortOrder)
             .ToListAsync();
     }
 

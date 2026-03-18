@@ -8,10 +8,12 @@ namespace Opcentrix_V3.Services;
 public class JobService : IJobService
 {
     private readonly TenantDbContext _db;
+    private readonly ISchedulingService _scheduler;
 
-    public JobService(TenantDbContext db)
+    public JobService(TenantDbContext db, ISchedulingService scheduler)
     {
         _db = db;
+        _scheduler = scheduler;
     }
 
     public async Task<List<Job>> GetAllJobsAsync(JobStatus? statusFilter = null)
@@ -92,6 +94,61 @@ public class JobService : IJobService
 
         _db.Jobs.Add(job);
         await _db.SaveChangesAsync();
+
+        // Generate StageExecution records from part routing
+        if (job.PartId > 0)
+        {
+            var routing = await _db.PartStageRequirements
+                .Include(r => r.ProductionStage)
+                .Where(r => r.PartId == job.PartId && r.IsActive)
+                .OrderBy(r => r.ExecutionOrder)
+                .ToListAsync();
+
+            if (routing.Count > 0)
+            {
+                // Build machine lookup: string MachineId → int Id
+                var machineLookup = await _db.Machines
+                    .ToDictionaryAsync(m => m.MachineId, m => m.Id);
+
+                int? defaultMachineIntId = null;
+                if (!string.IsNullOrEmpty(job.MachineId) && machineLookup.TryGetValue(job.MachineId, out var mid))
+                    defaultMachineIntId = mid;
+
+                foreach (var stage in routing)
+                {
+                    var estHours = stage.EstimatedHours ?? stage.ProductionStage?.DefaultDurationHours ?? 1.0;
+
+                    // Resolve stage-specific machine, fall back to job machine
+                    int? machineIntId = defaultMachineIntId;
+                    if (!string.IsNullOrEmpty(stage.AssignedMachineId)
+                        && machineLookup.TryGetValue(stage.AssignedMachineId, out var smid))
+                    {
+                        machineIntId = smid;
+                    }
+
+                    _db.StageExecutions.Add(new StageExecution
+                    {
+                        JobId = job.Id,
+                        ProductionStageId = stage.ProductionStageId,
+                        SortOrder = stage.ExecutionOrder,
+                        EstimatedHours = estHours,
+                        EstimatedCost = stage.EstimatedCost,
+                        MaterialCost = stage.MaterialCost,
+                        SetupHours = stage.SetupTimeMinutes.HasValue ? stage.SetupTimeMinutes.Value / 60.0 : null,
+                        QualityCheckRequired = stage.ProductionStage?.RequiresQualityCheck ?? true,
+                        MachineId = machineIntId,
+                        CreatedBy = job.CreatedBy,
+                        LastModifiedBy = job.LastModifiedBy
+                    });
+                }
+
+                await _db.SaveChangesAsync();
+
+                // Auto-schedule: assign optimal machines and non-overlapping time slots
+                await _scheduler.AutoScheduleJobAsync(job.Id, job.ScheduledStart);
+            }
+        }
+
         return job;
     }
 

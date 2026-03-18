@@ -1,8 +1,15 @@
-@* Shipping - Packing + fulfillment *@
+@* Shipping - Packing + fulfillment context *@
 @using Opcentrix_V3.Models
 
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">📦 Shipping Details</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px;">
+        <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
+        <div><span class="form-label">Work Order</span><div>@(Execution?.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "—")</div></div>
+        <div><span class="form-label">Customer</span><div>@(Execution?.Job?.WorkOrderLine?.WorkOrder?.CustomerName ?? "—")</div></div>
+        <div><span class="form-label">Quantity</span><div>@(Execution?.Job?.Quantity) pcs</div></div>
+    </div>
+    <hr style="margin: 0 0 12px; border-color: var(--border);" />
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
         <div class="form-group"><label class="form-label">Carrier</label>
             <select class="form-control"><option>FedEx</option><option>UPS</option><option>DHL</option><option>USPS</option><option>Customer Pickup</option></select>
@@ -13,6 +20,11 @@
     <div class="form-group"><label class="form-label">Packing List (serial numbers, one per line)</label><textarea class="form-control" rows="4" placeholder="SN-2026-00001&#10;SN-2026-00002"></textarea></div>
 </div>
 
+<LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
+
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public ProductionStage? Stage { get; set; }
+
+    private string _operatorName => Execution?.OperatorName ?? "Operator";
 }

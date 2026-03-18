@@ -68,6 +68,7 @@ public class Job
     public virtual WorkOrderLine? WorkOrderLine { get; set; }
     public virtual ICollection<StageExecution> Stages { get; set; } = new List<StageExecution>();
     public virtual ICollection<JobNote> JobNotes { get; set; } = new List<JobNote>();
+    public virtual ICollection<DelayLog> DelayLogs { get; set; } = new List<DelayLog>();
 
     // NotMapped
     [NotMapped]

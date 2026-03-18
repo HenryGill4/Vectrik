@@ -1,11 +1,13 @@
 @page "/maintenance/rules"
 @inject IMaintenanceService MaintenanceService
-@inject Opcentrix_V3.Data.TenantDbContext Db
-@using Microsoft.EntityFrameworkCore
+@inject IMachineService MachineService
+@inject ToastService Toast
 @using Opcentrix_V3.Models.Maintenance
 @rendermode InteractiveServer
 
 <PageTitle>Maintenance Rules - OpCentrix</PageTitle>
+
+<ConfirmDialog @ref="_confirmDialog" />
 
 <div class="page-header">
     <h1 class="page-title">Maintenance Rules</h1>
@@ -40,7 +42,7 @@ else
                     @if (_rulesByComponent.TryGetValue(comp.Id, out var rules) && rules.Any())
                     {
                         <table class="data-table">
-                            <thead><tr><th>Rule</th><th>Trigger</th><th>Threshold</th><th>Severity</th><th>Warning At</th></tr></thead>
+                            <thead><tr><th>Rule</th><th>Trigger</th><th>Threshold</th><th>Severity</th><th>Warning At</th><th>Preview</th><th></th></tr></thead>
                             <tbody>
                                 @foreach (var rule in rules)
                                 {
@@ -50,6 +52,10 @@ else
                                         <td>@rule.ThresholdValue</td>
                                         <td><span class="badge badge-@rule.Severity.ToString().ToLower()">@rule.Severity</span></td>
                                         <td>@(rule.EarlyWarningPercent)%</td>
+                                        <td style="font-size:0.8rem;color:var(--text-muted)">@RulePreview(rule)</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteRule(rule)">🗑️</button>
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -75,14 +81,14 @@ else
     <div class="modal-overlay" @onclick="() => _showRuleForm = false">
         <div class="modal-content" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">New Maintenance Rule</span><button class="modal-close" @onclick="() => _showRuleForm = false">&times;</button></div>
-            <div class="form-group"><label class="form-label">Rule Name</label><input class="form-control" @bind="_newRule.Name" /></div>
+            <div class="form-group"><label class="form-label">Rule Name *</label><input class="form-control" @bind="_newRule.Name" /></div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                 <div class="form-group"><label class="form-label">Trigger Type</label>
                     <select class="form-control" @bind="_newRule.TriggerType">
                         @foreach (var t in Enum.GetValues<MaintenanceTriggerType>()) { <option value="@t">@t</option> }
                     </select>
                 </div>
-                <div class="form-group"><label class="form-label">Threshold Value</label><input class="form-control" type="number" @bind="_newRule.ThresholdValue" /></div>
+                <div class="form-group"><label class="form-label">Threshold Value</label><input class="form-control" type="number" min="1" @bind="_newRule.ThresholdValue" /></div>
                 <div class="form-group"><label class="form-label">Severity</label>
                     <select class="form-control" @bind="_newRule.Severity">
                         @foreach (var s in Enum.GetValues<MaintenanceSeverity>()) { <option value="@s">@s</option> }
@@ -91,6 +97,12 @@ else
                 <div class="form-group"><label class="form-label">Early Warning (%)</label><input class="form-control" type="number" min="50" max="99" @bind="_newRule.EarlyWarningPercent" /></div>
             </div>
             <div class="form-group"><label class="form-label">Description</label><textarea class="form-control" @bind="_newRule.Description"></textarea></div>
+            @if (!string.IsNullOrEmpty(_newRule.Name) && _newRule.ThresholdValue > 0)
+            {
+                <div style="padding:0.5rem;margin-bottom:0.75rem;background:var(--bg-tertiary);border-radius:6px;font-size:0.85rem;color:var(--text-secondary)">
+                    📋 @RulePreview(_newRule)
+                </div>
+            }
             <button class="btn btn-primary" @onclick="SaveRule">Save Rule</button>
         </div>
     </div>
@@ -103,10 +115,11 @@ else
     private Dictionary<int, List<MaintenanceRule>> _rulesByComponent = new();
     private bool _showRuleForm;
     private MaintenanceRule _newRule = new();
+    private ConfirmDialog _confirmDialog = null!;
 
     protected override async Task OnInitializedAsync()
     {
-        _machines = await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync();
+        _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
     }
 
     private async Task LoadComponents()
@@ -138,8 +151,41 @@ else
 
     private async Task SaveRule()
     {
-        await MaintenanceService.CreateRuleAsync(_newRule);
-        _showRuleForm = false;
-        await LoadComponents();
+        if (string.IsNullOrWhiteSpace(_newRule.Name)) { Toast.ShowError("Rule name is required."); return; }
+        if (_newRule.ThresholdValue <= 0) { Toast.ShowError("Threshold must be greater than 0."); return; }
+        try
+        {
+            await MaintenanceService.CreateRuleAsync(_newRule);
+            _showRuleForm = false;
+            Toast.ShowSuccess("Rule created.");
+            await LoadComponents();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to save rule: {ex.Message}"); }
+    }
+
+    private async Task DeleteRule(MaintenanceRule rule)
+    {
+        var confirmed = await _confirmDialog.ShowAsync($"Delete rule \"{rule.Name}\"? This cannot be undone.", "Delete Rule");
+        if (!confirmed) return;
+        try
+        {
+            await MaintenanceService.DeleteRuleAsync(rule.Id);
+            Toast.ShowSuccess("Rule deleted.");
+            await LoadComponents();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to delete rule: {ex.Message}"); }
+    }
+
+    private static string RulePreview(MaintenanceRule rule)
+    {
+        var trigger = rule.TriggerType switch
+        {
+            MaintenanceTriggerType.HoursRun => $"every {rule.ThresholdValue:N0} hours of runtime",
+            MaintenanceTriggerType.BuildsCompleted => $"every {rule.ThresholdValue:N0} builds completed",
+            MaintenanceTriggerType.DateInterval => $"every {rule.ThresholdValue:N0} days",
+            MaintenanceTriggerType.CustomMeter => $"every {rule.ThresholdValue:N0} meter units",
+            _ => $"at threshold {rule.ThresholdValue:N0}"
+        };
+        return $"Triggers {trigger}, warns at {rule.EarlyWarningPercent}% ({rule.Severity})";
     }
 }

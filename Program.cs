@@ -29,6 +29,11 @@ builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<TenantDbContextFactory>();
 builder.Services.AddScoped(sp => sp.GetRequiredService<TenantDbContextFactory>().CreateDbContext());
 
+// Populate TenantContext from auth claims when a Blazor interactive circuit opens
+// (TenantMiddleware only runs on HTTP requests, not SignalR circuit connections)
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler,
+    Opcentrix_V3.Services.Platform.TenantCircuitHandler>();
+
 // Authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -88,6 +93,7 @@ builder.Services.AddScoped<IPartFileService, PartFileService>();
 builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
 
 // Shop Floor & Scheduling (Stage 4)
+builder.Services.AddScoped<ISchedulingService, SchedulingService>();
 builder.Services.AddScoped<IOeeService, OeeService>();
 
 // Inventory Control (Module 06)

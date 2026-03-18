@@ -4,8 +4,9 @@
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">🖨️ SLS/LPBF Printing Details</div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-        <div><span class="form-label">Machine</span><div>@(Execution?.Job?.MachineId ?? "—")</div></div>
+        <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? Execution?.Job?.MachineId ?? "—")</div></div>
         <div><span class="form-label">Material</span><div>@(Execution?.Job?.SlsMaterial ?? "—")</div></div>
+        <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
         <div><span class="form-label">Stack Level</span><div>@(Execution?.Job?.StackLevel?.ToString() ?? "—")x</div></div>
         <div><span class="form-label">Parts in Build</span><div>@(Execution?.Job?.PartsPerBuild ?? Execution?.Job?.Quantity)</div></div>
     </div>
@@ -22,6 +23,11 @@
     <div class="alert alert-info" style="margin-top: 8px; margin-bottom: 0;">Live telemetry requires SignalR connection</div>
 </div>
 
+<LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
+
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public ProductionStage? Stage { get; set; }
+
+    private string _operatorName => Execution?.OperatorName ?? "Operator";
 }

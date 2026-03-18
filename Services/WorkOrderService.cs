@@ -8,10 +8,12 @@ namespace Opcentrix_V3.Services;
 public class WorkOrderService : IWorkOrderService
 {
     private readonly TenantDbContext _db;
+    private readonly ISchedulingService _scheduler;
 
-    public WorkOrderService(TenantDbContext db)
+    public WorkOrderService(TenantDbContext db, ISchedulingService scheduler)
     {
         _db = db;
+        _scheduler = scheduler;
     }
 
     public async Task<List<WorkOrder>> GetAllWorkOrdersAsync(WorkOrderStatus? statusFilter = null)
@@ -213,6 +215,10 @@ public class WorkOrderService : IWorkOrderService
         if (routing.Count == 0)
             return new List<Job>();
 
+        // Build machine lookup: string MachineId → int Id
+        var machineLookup = await _db.Machines
+            .ToDictionaryAsync(m => m.MachineId, m => m.Id);
+
         var jobs = new List<Job>();
         Job? previousJob = null;
 
@@ -231,8 +237,6 @@ public class WorkOrderService : IWorkOrderService
                 Status = JobStatus.Draft,
                 Priority = JobPriority.Normal,
                 PredecessorJobId = previousJob?.Id,
-                ScheduledStart = DateTime.UtcNow,
-                ScheduledEnd = DateTime.UtcNow.AddHours(estimatedHours),
                 CreatedBy = createdBy,
                 LastModifiedBy = createdBy,
                 Notes = $"Auto-generated for {line.Part.PartNumber} — Stage: {stage.ProductionStage.Name}"
@@ -241,20 +245,38 @@ public class WorkOrderService : IWorkOrderService
             _db.Jobs.Add(job);
             await _db.SaveChangesAsync(); // Save to get Id for predecessor chain
 
-            // Create stage execution for this job
+            // Resolve machine assignment
+            int? machineIntId = null;
+            if (!string.IsNullOrEmpty(stage.AssignedMachineId)
+                && machineLookup.TryGetValue(stage.AssignedMachineId, out var smid))
+            {
+                machineIntId = smid;
+            }
+
+            // Create stage execution for this job (no preset schedule — auto-scheduler assigns times)
             var execution = new StageExecution
             {
                 JobId = job.Id,
                 ProductionStageId = stage.ProductionStageId,
+                SortOrder = stage.ExecutionOrder,
                 EstimatedHours = estimatedHours,
                 EstimatedCost = stage.EstimatedCost,
                 MaterialCost = stage.MaterialCost,
                 SetupHours = stage.SetupTimeMinutes.HasValue ? stage.SetupTimeMinutes.Value / 60.0 : null,
-                QualityCheckRequired = stage.ProductionStage.RequiresQualityCheck
+                QualityCheckRequired = stage.ProductionStage.RequiresQualityCheck,
+                MachineId = machineIntId,
+                CreatedBy = createdBy,
+                LastModifiedBy = createdBy
             };
 
             _db.StageExecutions.Add(execution);
             await _db.SaveChangesAsync();
+
+            // Auto-schedule: assign optimal machine and non-overlapping time slot
+            await _scheduler.AutoScheduleJobAsync(job.Id, previousJob?.ScheduledEnd);
+
+            // Reload to get updated schedule times from auto-scheduler
+            await _db.Entry(job).ReloadAsync();
 
             jobs.Add(job);
             previousJob = job;
@@ -275,6 +297,7 @@ public class WorkOrderService : IWorkOrderService
                 .ThenInclude(s => s.Operator)
             .Include(j => j.OperatorUser)
             .Include(j => j.JobNotes)
+            .Include(j => j.DelayLogs)
             .FirstOrDefaultAsync(j => j.Id == jobId);
     }
 
@@ -302,6 +325,17 @@ public class WorkOrderService : IWorkOrderService
         };
 
         _db.WorkOrderComments.Add(comment);
+        await _db.SaveChangesAsync();
+        return comment;
+    }
+
+    public async Task<WorkOrderComment> UpdateCommentAsync(int commentId, string newContent)
+    {
+        var comment = await _db.WorkOrderComments.FindAsync(commentId)
+            ?? throw new InvalidOperationException("Comment not found.");
+
+        comment.Content = newContent;
+        comment.EditedDate = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return comment;
     }

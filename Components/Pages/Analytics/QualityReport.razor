@@ -1,6 +1,7 @@
 @page "/analytics/quality"
 @inject IAnalyticsService AnalyticsService
 @inject ISpcService SpcService
+@inject NavigationManager Nav
 @rendermode InteractiveServer
 
 <PageTitle>Quality Metrics - OpCentrix</PageTitle>
@@ -13,6 +14,7 @@
             <option value="60">Last 60 Days</option>
             <option value="90">Last 90 Days</option>
         </select>
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
     </div>
 </div>
 
@@ -163,5 +165,13 @@ else
             _rangeDays = d;
             await LoadDataAsync();
         }
+    }
+
+    private void ExportCsv()
+    {
+        if (!_scrapByPart.Any()) return;
+        var csv = "PartNumber,PartName,TotalProduced,Scrapped,ScrapRate%\n" +
+            string.Join("\n", _scrapByPart.Select(r => $"{r.PartNumber},{r.PartName},{r.TotalProduced},{r.Scrapped},{r.ScrapRatePct:F1}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
     }
 }

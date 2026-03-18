@@ -50,6 +50,7 @@ else
                     <th style="text-align: right;">Available</th>
                     <th style="text-align: right;">Unit Cost</th>
                     <th>Status</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -81,6 +82,10 @@ else
                             {
                                 <span class="badge badge-success">OK</span>
                             }
+                        </td>
+                        <td style="white-space: nowrap;" @onclick:stopPropagation>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ShowEdit(item)">Edit</button>
+                            <button class="btn btn-sm btn-danger" style="margin-left: 4px;" @onclick="() => DeleteItem(item)">Delete</button>
                         </td>
                     </tr>
                 }
@@ -222,6 +227,31 @@ else
     {
         _editItem = new InventoryItem();
         _showForm = true;
+    }
+
+    private void ShowEdit(InventoryItem item)
+    {
+        _editItem = item;
+        _showForm = true;
+    }
+
+    private async Task DeleteItem(InventoryItem item)
+    {
+        var confirmed = await _confirm.ShowAsync(
+            $"Delete inventory item \"{item.ItemNumber} — {item.Name}\"? This cannot be undone.",
+            "Delete Item");
+        if (!confirmed) return;
+
+        try
+        {
+            await InventoryService.DeleteItemAsync(item.Id);
+            Toast.ShowSuccess("Item deleted.");
+            _allItems = await InventoryService.GetAllItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
     }
 
     private async Task SaveItem()

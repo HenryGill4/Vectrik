@@ -24,5 +24,6 @@ public interface IWorkOrderService
     // Comments
     Task<List<WorkOrderComment>> GetCommentsAsync(int workOrderId);
     Task<WorkOrderComment> AddCommentAsync(int workOrderId, string content, string authorName, int? authorUserId = null, int? parentCommentId = null);
+    Task<WorkOrderComment> UpdateCommentAsync(int commentId, string newContent);
     Task DeleteCommentAsync(int commentId);
 }

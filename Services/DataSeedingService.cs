@@ -23,6 +23,8 @@ public class DataSeedingService : IDataSeedingService
         await SeedOperatingShiftsAsync(tenantDb);
         await SeedSystemSettingsAsync(tenantDb);
         await SeedDefaultAdminUserAsync(tenantDb);
+        await SeedTestUsersAsync(tenantDb);
+        await SeedTestPartsAsync(tenantDb);
     }
 
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
@@ -291,6 +293,237 @@ public class DataSeedingService : IDataSeedingService
         };
 
         db.Users.Add(admin);
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SeedTestUsersAsync(TenantDbContext db)
+    {
+        // Only seed test users if we just have the single admin
+        if (await db.Users.CountAsync() > 1) return;
+
+        var testUsers = new List<User>
+        {
+            new()
+            {
+                Username = "operator1",
+                FullName = "Mike Johnson",
+                Email = "mike@testcompany.com",
+                PasswordHash = _authService.HashPassword("test123"),
+                Role = "Operator",
+                Department = "SLS",
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                Username = "operator2",
+                FullName = "Sarah Chen",
+                Email = "sarah@testcompany.com",
+                PasswordHash = _authService.HashPassword("test123"),
+                Role = "Operator",
+                Department = "Machining",
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                Username = "manager",
+                FullName = "Tom Bradley",
+                Email = "tom@testcompany.com",
+                PasswordHash = _authService.HashPassword("test123"),
+                Role = "Manager",
+                Department = "Operations",
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                Username = "qcinspector",
+                FullName = "Lisa Park",
+                Email = "lisa@testcompany.com",
+                PasswordHash = _authService.HashPassword("test123"),
+                Role = "QualityInspector",
+                Department = "Quality",
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            }
+        };
+
+        db.Users.AddRange(testUsers);
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedTestPartsAsync(TenantDbContext db)
+    {
+        if (await db.Parts.AnyAsync()) return;
+
+        // Get stage IDs for building stage requirements
+        var stages = await db.ProductionStages.ToListAsync();
+        var slsPrinting = stages.FirstOrDefault(s => s.StageSlug == "sls-printing");
+        var depowdering = stages.FirstOrDefault(s => s.StageSlug == "depowdering");
+        var heatTreatment = stages.FirstOrDefault(s => s.StageSlug == "heat-treatment");
+        var wireEdm = stages.FirstOrDefault(s => s.StageSlug == "wire-edm");
+        var cncMachining = stages.FirstOrDefault(s => s.StageSlug == "cnc-machining");
+        var laserEngraving = stages.FirstOrDefault(s => s.StageSlug == "laser-engraving");
+        var surfaceFinishing = stages.FirstOrDefault(s => s.StageSlug == "surface-finishing");
+        var qc = stages.FirstOrDefault(s => s.StageSlug == "qc");
+        var shipping = stages.FirstOrDefault(s => s.StageSlug == "shipping");
+
+        if (slsPrinting == null) return; // Stages not seeded yet
+
+        var parts = new List<Part>
+        {
+            new()
+            {
+                PartNumber = "TI-BRACKET-001",
+                Name = "Titanium Mounting Bracket",
+                Description = "SLS-printed titanium bracket for aerospace mounting application",
+                Material = "Ti-6Al-4V Grade 5",
+                ManufacturingApproach = "SLS/LPBF",
+                Revision = "A",
+                RevisionDate = DateTime.UtcNow,
+                EstimatedWeightKg = 0.45,
+                AllowStacking = true,
+                MaxStackCount = 2,
+                EnableDoubleStack = true,
+                PartsPerBuildSingle = 4,
+                PartsPerBuildDouble = 8,
+                SingleStackDurationHours = 6.0,
+                DoubleStackDurationHours = 10.0,
+                SlsBuildDurationHours = 6.0,
+                SlsPartsPerBuild = 4,
+                DepowderingDurationHours = 1.0,
+                DepowderingPartsPerBatch = 8,
+                HeatTreatmentDurationHours = 4.0,
+                HeatTreatmentPartsPerBatch = 16,
+                WireEdmDurationHours = 1.5,
+                WireEdmPartsPerSession = 2,
+                IsActive = true,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                PartNumber = "SS-HOUSING-002",
+                Name = "Stainless Steel Sensor Housing",
+                Description = "Precision sensor housing for industrial applications",
+                Material = "316L Stainless Steel",
+                ManufacturingApproach = "SLS/LPBF",
+                Revision = "B",
+                RevisionDate = DateTime.UtcNow.AddDays(-30),
+                EstimatedWeightKg = 0.82,
+                AllowStacking = false,
+                PartsPerBuildSingle = 2,
+                SlsBuildDurationHours = 8.0,
+                SlsPartsPerBuild = 2,
+                DepowderingDurationHours = 1.5,
+                DepowderingPartsPerBatch = 4,
+                HeatTreatmentDurationHours = 3.0,
+                HeatTreatmentPartsPerBatch = 8,
+                IsActive = true,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                PartNumber = "TI-IMPELLER-003",
+                Name = "Titanium Impeller",
+                Description = "High-performance impeller for turbomachinery, requires full routing",
+                Material = "Ti-6Al-4V Grade 5",
+                ManufacturingApproach = "SLS/LPBF + CNC Finish",
+                Revision = "C",
+                RevisionDate = DateTime.UtcNow.AddDays(-15),
+                EstimatedWeightKg = 1.2,
+                IsDefensePart = true,
+                AllowStacking = false,
+                PartsPerBuildSingle = 1,
+                SlsBuildDurationHours = 12.0,
+                SlsPartsPerBuild = 1,
+                DepowderingDurationHours = 2.0,
+                DepowderingPartsPerBatch = 2,
+                HeatTreatmentDurationHours = 6.0,
+                HeatTreatmentPartsPerBatch = 4,
+                WireEdmDurationHours = 3.0,
+                WireEdmPartsPerSession = 1,
+                IsActive = true,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                PartNumber = "CNC-PLATE-004",
+                Name = "Aluminum Adapter Plate",
+                Description = "CNC-only machined adapter plate, no SLS required",
+                Material = "AlSi10Mg",
+                ManufacturingApproach = "CNC Machining",
+                Revision = "A",
+                RevisionDate = DateTime.UtcNow,
+                EstimatedWeightKg = 0.35,
+                AllowStacking = false,
+                PartsPerBuildSingle = 1,
+                IsActive = true,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            }
+        };
+
+        db.Parts.AddRange(parts);
+        await db.SaveChangesAsync();
+
+        // Now add stage requirements for each part
+        var bracket = parts[0];
+        var housing = parts[1];
+        var impeller = parts[2];
+        var plate = parts[3];
+
+        var requirements = new List<PartStageRequirement>();
+
+        // TI-BRACKET-001: SLS → Depowder → Heat Treat → Wire EDM → Surface Finish → QC → Ship
+        requirements.AddRange(new[]
+        {
+            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 6.0, AssignedMachineId = "TI1", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = depowdering.Id, ExecutionOrder = 2, EstimatedHours = 1.0, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = heatTreatment.Id, ExecutionOrder = 3, EstimatedHours = 4.0, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = wireEdm.Id, ExecutionOrder = 4, EstimatedHours = 1.5, AssignedMachineId = "EDM1", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 5, EstimatedHours = 1.5, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = qc.Id, ExecutionOrder = 6, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = shipping.Id, ExecutionOrder = 7, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" }
+        });
+
+        // SS-HOUSING-002: SLS → Depowder → Heat Treat → Laser Engrave → QC → Ship
+        requirements.AddRange(new[]
+        {
+            new PartStageRequirement { PartId = housing.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 8.0, AssignedMachineId = "TI2", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = housing.Id, ProductionStageId = depowdering.Id, ExecutionOrder = 2, EstimatedHours = 1.5, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = housing.Id, ProductionStageId = heatTreatment.Id, ExecutionOrder = 3, EstimatedHours = 3.0, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = housing.Id, ProductionStageId = laserEngraving.Id, ExecutionOrder = 4, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = housing.Id, ProductionStageId = qc.Id, ExecutionOrder = 5, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = housing.Id, ProductionStageId = shipping.Id, ExecutionOrder = 6, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" }
+        });
+
+        // TI-IMPELLER-003: Full routing — SLS → Depowder → Heat Treat → Wire EDM → CNC → Laser Engrave → Surface Finish → QC → Ship
+        requirements.AddRange(new[]
+        {
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 12.0, AssignedMachineId = "TI1", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = depowdering.Id, ExecutionOrder = 2, EstimatedHours = 2.0, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = heatTreatment.Id, ExecutionOrder = 3, EstimatedHours = 6.0, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = wireEdm.Id, ExecutionOrder = 4, EstimatedHours = 3.0, AssignedMachineId = "EDM1", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = cncMachining.Id, ExecutionOrder = 5, EstimatedHours = 4.0, AssignedMachineId = "CNC1", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = laserEngraving.Id, ExecutionOrder = 6, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 7, EstimatedHours = 2.0, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = qc.Id, ExecutionOrder = 8, EstimatedHours = 1.0, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = shipping.Id, ExecutionOrder = 9, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" }
+        });
+
+        // CNC-PLATE-004: CNC only → QC → Ship
+        requirements.AddRange(new[]
+        {
+            new PartStageRequirement { PartId = plate.Id, ProductionStageId = cncMachining.Id, ExecutionOrder = 1, EstimatedHours = 2.0, AssignedMachineId = "CNC1", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = plate.Id, ProductionStageId = qc.Id, ExecutionOrder = 2, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = plate.Id, ProductionStageId = shipping.Id, ExecutionOrder = 3, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" }
+        });
+
+        db.PartStageRequirements.AddRange(requirements);
         await db.SaveChangesAsync();
     }
 }

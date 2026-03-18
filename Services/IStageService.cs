@@ -39,7 +39,11 @@ public interface IStageService
 
     // Scheduling
     Task<List<StageExecution>> GetScheduledExecutionsAsync(DateTime from, DateTime to);
+    Task<List<StageExecution>> GetUnscheduledExecutionsAsync();
     Task UpdateScheduleAsync(int executionId, DateTime start, DateTime end, int? machineId = null);
+
+    // Delay logging
+    Task<DelayLog> LogDelayAsync(int executionId, string reason, DelayCategory category, int delayMinutes, string loggedBy, string? notes = null);
 
     // Capacity
     Task<List<MachineCapacityInfo>> GetMachineCapacityAsync(DateTime from, DateTime to);

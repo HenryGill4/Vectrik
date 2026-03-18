@@ -22,7 +22,7 @@ else if (_data != null)
 {
     <!-- KPI Row -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; margin-bottom: 24px;">
-        <div class="card kpi-card">
+        <div class="card kpi-card clickable-row" @onclick="GoToSpc" title="View SPC Charts">
             <div class="kpi-label">First Pass Yield (30d)</div>
             <div class="kpi-value" style="color: @GetFpyColor()">@_data.FirstPassYieldPercent%</div>
         </div>
@@ -34,11 +34,11 @@ else if (_data != null)
             <div class="kpi-label">Passed</div>
             <div class="kpi-value" style="color: var(--success);">@_data.PassedInspections</div>
         </div>
-        <div class="card kpi-card" style="@(_data.OpenNcrCount > 0 ? "border-left: 4px solid var(--danger);" : "")">
+        <div class="card kpi-card clickable-row" style="@(_data.OpenNcrCount > 0 ? "border-left: 4px solid var(--danger);" : "")" @onclick="GoToNcr" title="View NCR Management">
             <div class="kpi-label">Open NCRs</div>
             <div class="kpi-value" style="@(_data.OpenNcrCount > 0 ? "color: var(--danger);" : "")">@_data.OpenNcrCount</div>
         </div>
-        <div class="card kpi-card" style="@(_data.OpenCapaCount > 0 ? "border-left: 4px solid var(--warning);" : "")">
+        <div class="card kpi-card clickable-row" style="@(_data.OpenCapaCount > 0 ? "border-left: 4px solid var(--warning);" : "")" @onclick="GoToCapa" title="View CAPA Board">
             <div class="kpi-label">Open CAPAs</div>
             <div class="kpi-value" style="@(_data.OpenCapaCount > 0 ? "color: var(--warning);" : "")">@_data.OpenCapaCount</div>
         </div>
@@ -134,6 +134,8 @@ else if (_data != null)
     }
 
     private void GoToNcr() => Nav.NavigateTo("/quality/ncr");
+    private void GoToCapa() => Nav.NavigateTo("/quality/capa");
+    private void GoToSpc() => Nav.NavigateTo("/quality/spc");
 
     private string GetFpyColor() => _data?.FirstPassYieldPercent switch
     {

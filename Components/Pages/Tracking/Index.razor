@@ -9,14 +9,22 @@
 </div>
 
 <div class="card" style="margin-bottom: 20px;">
-    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: end;">
         <select class="form-control" style="width: auto;" @bind="_searchType">
             <option value="wo">Work Order #</option>
             <option value="part">Part Number</option>
             <option value="serial">Serial Number</option>
         </select>
-        <input class="form-control" style="flex: 1; min-width: 200px;" placeholder="Search..." @bind="_searchTerm" @onkeypress="HandleKey" />
+        <div style="flex:1;min-width:200px;position:relative">
+            @if (_scanMode)
+            {
+                <label class="form-label" style="font-size:0.75rem;color:var(--accent)">🔫 Barcode Scan Mode — scan or type and press Enter</label>
+            }
+            <input id="trackingSearch" class="form-control" style="width:100%" placeholder="@(_scanMode ? "Scan barcode..." : "Search...")"
+                   @bind="_searchTerm" @onkeypress="HandleKey" @ref="_searchInput" />
+        </div>
         <button class="btn btn-primary" @onclick="Search">Search</button>
+        <button class="btn btn-sm @(_scanMode ? "btn-accent" : "btn-secondary")" @onclick="ToggleScanMode" title="Toggle barcode scan mode">🔫</button>
     </div>
 </div>
 
@@ -90,6 +98,8 @@
     private PartTrackerResult? _result;
     private PartInstanceTrack? _serialResult;
     private bool _searched;
+    private bool _scanMode;
+    private ElementReference _searchInput;
 
     private async Task HandleKey(KeyboardEventArgs e) { if (e.Key == "Enter") await Search(); }
 
@@ -103,5 +113,12 @@
             case "part": _result = await TrackerService.TrackByPartNumberAsync(_searchTerm.Trim()); break;
             case "serial": _serialResult = await TrackerService.TrackBySerialNumberAsync(_searchTerm.Trim()); break;
         }
+        if (_scanMode) { _searchTerm = ""; }
+    }
+
+    private async Task ToggleScanMode()
+    {
+        _scanMode = !_scanMode;
+        if (_scanMode) { _searchType = "serial"; }
     }
 }

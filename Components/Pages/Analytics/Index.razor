@@ -9,6 +9,7 @@
 <div class="page-header">
     <h1 class="page-title">Analytics Dashboard</h1>
     <div class="page-actions">
+        <button class="btn btn-secondary" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
         <select class="form-control" style="width:180px;display:inline-block" @onchange="OnRangeChanged">
             <option value="7">Last 7 Days</option>
             <option value="30" selected>Last 30 Days</option>
@@ -181,4 +182,12 @@ else
     private void GoToOtd() => Nav.NavigateTo("/analytics/on-time-delivery");
     private void GoToQuality() => Nav.NavigateTo("/analytics/quality");
     private void GoToOee() => Nav.NavigateTo("/analytics/oee");
+
+    private void ExportCsv()
+    {
+        if (_utilizations == null || !_utilizations.Any()) return;
+        var csv = "Machine,Utilization%,ScheduledHrs,ActualHrs\n" +
+            string.Join("\n", _utilizations.Select(m => $"{m.MachineName},{m.UtilizationPercent:F1},{m.TotalScheduledHours:F1},{m.TotalActualHours:F1}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+    }
 }

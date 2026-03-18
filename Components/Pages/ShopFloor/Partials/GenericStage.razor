@@ -47,11 +47,14 @@
     }
 </div>
 
+<LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
+
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
 
     private List<CustomFieldDefinition>? _fields;
+    private string _operatorName => Execution?.OperatorName ?? "Operator";
 
     protected override void OnParametersSet()
     {

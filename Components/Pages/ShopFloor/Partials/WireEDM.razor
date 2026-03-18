@@ -3,15 +3,24 @@
 
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">⚡ Wire EDM Details</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+        <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
+        <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? Execution?.Job?.MachineId ?? "—")</div></div>
+    </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-        <div class="form-group"><label class="form-label">Cut Duration (min)</label><input class="form-control" type="number" inputmode="numeric" /></div>
-        <div class="form-group"><label class="form-label">Wire Used (m)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" /></div>
+        <div class="form-group"><label class="form-label">Cut Duration (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" /></div>
+        <div class="form-group"><label class="form-label">Wire Used (m)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" min="0" /></div>
         <div class="form-group"><label class="form-label">Wire Type</label>
             <select class="form-control"><option>Brass 0.25mm</option><option>Brass 0.20mm</option><option>Molybdenum</option></select>
         </div>
     </div>
 </div>
 
+<LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
+
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public ProductionStage? Stage { get; set; }
+
+    private string _operatorName => Execution?.OperatorName ?? "Operator";
 }

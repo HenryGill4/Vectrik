@@ -3,13 +3,22 @@
 
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">🧹 Depowdering Details</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+        <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
+        <div><span class="form-label">Material</span><div>@(Execution?.Job?.SlsMaterial ?? "—")</div></div>
+    </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
         <div class="form-group"><label class="form-label">Batch Quantity</label><input class="form-control" type="number" inputmode="numeric" min="1" /></div>
-        <div class="form-group"><label class="form-label">Powder Recovered (kg)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" /></div>
-        <div class="form-group"><label class="form-label">Duration (min)</label><input class="form-control" type="number" inputmode="numeric" /></div>
+        <div class="form-group"><label class="form-label">Powder Recovered (kg)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" min="0" /></div>
+        <div class="form-group"><label class="form-label">Duration (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" /></div>
     </div>
 </div>
 
+<LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
+
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public ProductionStage? Stage { get; set; }
+
+    private string _operatorName => Execution?.OperatorName ?? "Operator";
 }

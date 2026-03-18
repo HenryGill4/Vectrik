@@ -91,6 +91,7 @@ else
                             <th>Item</th>
                             <th style="text-align: right;">Suggested Qty</th>
                             <th>Reason</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -103,6 +104,9 @@ else
                                 </td>
                                 <td style="text-align: right; font-weight: 600;">@s.SuggestedOrderQty</td>
                                 <td><span class="badge @(s.Reason == "Out of stock" ? "badge-danger" : "badge-warning")">@s.Reason</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary" @onclick="() => CreateRequestFromSuggestion(s)" title="Create material request">📋 Request</button>
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -205,6 +209,12 @@ else
     }
 
     private void GoToLedger(int itemId) => Nav.NavigateTo($"/inventory/items/{itemId}/ledger");
+
+    private void CreateRequestFromSuggestion(ReorderSuggestion suggestion)
+    {
+        Toast.ShowSuccess($"Reorder {suggestion.ItemNumber}: {suggestion.SuggestedOrderQty} units needed — navigating to item.");
+        Nav.NavigateTo($"/inventory/items/{suggestion.ItemId}/ledger");
+    }
 
     private static string GetTxBadge(TransactionType type) => type switch
     {

@@ -66,6 +66,7 @@ else
                             @if (rfq.Status == "New" || rfq.Status == "Reviewed")
                             {
                                 <button class="btn btn-sm btn-primary" @onclick="() => ConvertToQuote(rfq)">→ Quote</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => ShowDecline(rfq)">Decline</button>
                             }
                         </td>
                     </tr>
@@ -95,6 +96,13 @@ else
                 <label class="form-label">Description</label>
                 <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 12px; color: var(--text-secondary); white-space: pre-wrap;">@_selectedRfq.Description</div>
             </div>
+            @if (_selectedRfq.Status == "Declined" && !string.IsNullOrEmpty(_selectedRfq.DeclineReason))
+            {
+                <div class="form-group" style="margin-top: 12px;">
+                    <label class="form-label" style="color: var(--danger);">Decline Reason</label>
+                    <div style="background: rgba(239, 68, 68, 0.08); border-radius: 6px; padding: 12px; color: var(--text-secondary); white-space: pre-wrap;">@_selectedRfq.DeclineReason</div>
+                </div>
+            }
         }
     </ChildContent>
     <Footer>
@@ -103,6 +111,23 @@ else
         {
             <button class="btn btn-primary" @onclick="() => ConvertToQuote(_selectedRfq!)">Convert to Quote</button>
         }
+    </Footer>
+</AppModal>
+
+<!-- Decline RFQ Modal -->
+<AppModal Visible="_showDecline" VisibleChanged="v => _showDecline = v" Title="Decline RFQ" Size="sm">
+    <ChildContent>
+        <p style="color: var(--text-secondary); margin-bottom: 12px;">
+            Decline RFQ from <strong>@(_declineRfq?.CompanyName ?? "")</strong>?
+        </p>
+        <div class="form-group">
+            <label class="form-label">Reason <span style="color:var(--danger)">*</span></label>
+            <textarea class="form-control" @bind="_declineReason" rows="3" placeholder="Explain why this RFQ is being declined..."></textarea>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showDecline = false">Cancel</button>
+        <button class="btn btn-danger" @onclick="ConfirmDecline" disabled="@string.IsNullOrWhiteSpace(_declineReason)">Decline RFQ</button>
     </Footer>
 </AppModal>
 
@@ -116,6 +141,11 @@ else
     private RfqRequest? _selectedRfq;
     private bool _showDetail;
     private ConfirmDialog _confirm = null!;
+
+    // Decline
+    private bool _showDecline;
+    private RfqRequest? _declineRfq;
+    private string _declineReason = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -146,6 +176,30 @@ else
             var quote = await QuoteService.ConvertRfqToQuoteAsync(rfq.Id, "System");
             Toast.ShowSuccess("Quote created from RFQ");
             Nav.NavigateTo($"/quotes/{quote.Id}/edit");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private void ShowDecline(RfqRequest rfq)
+    {
+        _declineRfq = rfq;
+        _declineReason = string.Empty;
+        _showDecline = true;
+    }
+
+    private async Task ConfirmDecline()
+    {
+        if (_declineRfq == null || string.IsNullOrWhiteSpace(_declineReason)) return;
+        try
+        {
+            await QuoteService.DeclineRfqAsync(_declineRfq.Id, _declineReason, "System");
+            _showDecline = false;
+            _allRfqs = await QuoteService.GetRfqRequestsAsync();
+            Filter(_filter);
+            Toast.ShowSuccess("RFQ declined");
         }
         catch (Exception ex)
         {

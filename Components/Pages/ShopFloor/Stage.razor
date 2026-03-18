@@ -68,6 +68,14 @@ else
                     <div class="card-header">@exec.Job?.Part?.PartNumber — Job #@exec.JobId</div>
                     <div style="margin-bottom: 12px;">
                         <span class="form-label">Operator: @exec.OperatorName</span> | Started: @exec.StartedAt?.ToString("HH:mm")
+                        @if (exec.EstimatedHours.HasValue && exec.StartedAt.HasValue)
+                        {
+                            var elapsed = (DateTime.UtcNow - exec.StartedAt.Value).TotalHours;
+                            if (elapsed > exec.EstimatedHours.Value)
+                            {
+                                <span style="color: var(--danger); font-weight: 600; margin-left: 8px;">⚠️ Over estimate by @((elapsed - exec.EstimatedHours.Value).ToString("F1"))h — consider logging a delay</span>
+                            }
+                        }
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <button class="btn btn-success" @onclick="() => CompleteWork(exec.Id)">Complete</button>
@@ -122,7 +130,8 @@ else
 
     private async Task LoadData()
     {
-        _queue = await StageService.GetQueueForStageAsync(_stage!.Id);
+        var queue = await StageService.GetQueueForStageAsync(_stage!.Id);
+        _queue = queue.OrderByDescending(e => e.Job?.Priority).ThenBy(e => e.Job?.ScheduledEnd).ToList();
         _active = await StageService.GetActiveWorkForStageAsync(_stage.Id);
         _history = await StageService.GetRecentCompletionsAsync(_stage.Id, 20);
     }

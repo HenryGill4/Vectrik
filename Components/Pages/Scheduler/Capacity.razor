@@ -13,8 +13,8 @@
 </div>
 
 @* ── Date Range ── *@
-<div class="card" style="margin-bottom: 16px;">
-    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
+<div class="sched-controls">
+    <div class="sched-controls-left">
         <div class="form-group" style="margin-bottom: 0;">
             <label class="form-label">From</label>
             <input class="form-control" type="date" @bind="_dateFrom" />
@@ -23,7 +23,15 @@
             <label class="form-label">To</label>
             <input class="form-control" type="date" @bind="_dateTo" />
         </div>
-        <button class="btn btn-primary btn-sm" @onclick="LoadData" style="height: 38px;">Apply</button>
+        <div class="sched-range-btns">
+            <button class="btn btn-sm @(_rangeLabel == "1W" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(7, "1W")'>1W</button>
+            <button class="btn btn-sm @(_rangeLabel == "2W" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(14, "2W")'>2W</button>
+            <button class="btn btn-sm @(_rangeLabel == "1M" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(30, "1M")'>1M</button>
+            <button class="btn btn-sm @(_rangeLabel == "3M" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(90, "3M")'>3M</button>
+        </div>
+    </div>
+    <div class="sched-controls-right">
+        <button class="btn btn-primary btn-sm" @onclick="LoadData" style="height: 38px;">🔄 Refresh</button>
     </div>
 </div>
 
@@ -36,9 +44,9 @@ else
     @* ── OEE Summary ── *@
     <div class="card" style="margin-bottom: 16px;">
         <div class="card-header">📈 OEE Summary</div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
             <div class="stat-card">
-                <div class="stat-value">@_overallOee.Oee%</div>
+                <div class="stat-value" style="color: @GetOeeColor(_overallOee.Oee);">@_overallOee.Oee%</div>
                 <div class="stat-label">Overall OEE</div>
             </div>
             <div class="stat-card">
@@ -53,111 +61,186 @@ else
                 <div class="stat-value">@_overallOee.Quality%</div>
                 <div class="stat-label">Quality</div>
             </div>
+            <div class="stat-card">
+                <div class="stat-value">@_capacity.Count</div>
+                <div class="stat-label">Active Machines</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@(_capacity.Any() ? Math.Round(_capacity.Average(c => c.UtilizationPct), 1) : 0)%</div>
+                <div class="stat-label">Avg Utilization</div>
+            </div>
         </div>
     </div>
 
     @* ── Capacity by Machine (visual bars) ── *@
     <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">🏭 Machine Capacity</div>
+        <div class="card-header">🏭 Machine Utilization</div>
         @if (!_capacity.Any())
         {
             <div class="empty-state"><div class="empty-state-text">No machines available for scheduling</div></div>
         }
         else
         {
-            @foreach (var m in _capacity)
-            {
-                var barColor = m.UtilizationPct switch
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                @foreach (var m in _capacity)
                 {
-                    > 100 => "var(--danger)",
-                    > 80 => "var(--warning)",
-                    _ => "var(--success)"
-                };
-                var barWidth = Math.Min(m.UtilizationPct, 100);
-                <div style="margin-bottom: 16px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <span style="font-weight: 600;">@m.MachineName <span style="color: var(--text-muted); font-weight: 400;">(@m.MachineType)</span></span>
-                        <span style="font-weight: 600; color: @barColor;">@m.UtilizationPct%</span>
+                    var barColor = m.UtilizationPct switch
+                    {
+                        > 100 => "var(--danger)",
+                        > 85 => "var(--warning)",
+                        > 40 => "var(--success)",
+                        _ => "var(--accent)"
+                    };
+                    var barWidth = Math.Min(m.UtilizationPct, 100);
+                    var openHrs = Math.Max(m.AvailableHours - m.LoadedHours, 0);
+                    <div style="cursor: pointer; padding: 8px; border-radius: 8px; transition: background 0.15s;"
+                         class="@(m.UtilizationPct > 100 ? "sched-row-warn" : "")"
+                         @onclick="() => DrillDown(m.MachineId, m.MachineName)">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px; align-items: baseline;">
+                            <span style="font-weight: 600; font-size: 0.9rem;">
+                                @m.MachineName
+                                <span style="color: var(--text-muted); font-weight: 400; font-size: 0.8rem; margin-left: 4px;">@m.MachineType</span>
+                            </span>
+                            <span style="font-weight: 700; color: @barColor; font-size: 0.9rem;">@m.UtilizationPct%</span>
+                        </div>
+                        <div style="background: var(--bg-tertiary); border-radius: 6px; height: 20px; overflow: hidden; position: relative;">
+                            <div style="background: @barColor; height: 100%; width: @(barWidth)%; border-radius: 6px; transition: width 0.4s ease;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+                            <span>@m.LoadedHours hrs loaded / @m.AvailableHours hrs available</span>
+                            <span>@Math.Round(openHrs, 1) hrs open · click for details</span>
+                        </div>
                     </div>
-                    <div style="background: var(--bg-tertiary); border-radius: 6px; height: 24px; overflow: hidden; position: relative;">
-                        <div style="background: @barColor; height: 100%; width: @(barWidth)%; border-radius: 6px; transition: width 0.3s;"></div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; font-size: 0.8em; color: var(--text-muted); margin-top: 2px;">
-                        <span>@m.LoadedHours hrs loaded</span>
-                        <span>@m.AvailableHours hrs available</span>
-                    </div>
-                </div>
-            }
+                }
+            </div>
         }
     </div>
 
     @* ── Capacity Table ── *@
-    <div class="card">
+    <div class="card" style="margin-bottom: 16px;">
         <div class="card-header">📋 Detailed Capacity</div>
-        <table class="data-table">
-            <thead>
-                <tr><th>Machine</th><th>Type</th><th>Available Hrs</th><th>Loaded Hrs</th><th>Open Capacity</th><th>Utilization</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var m in _capacity)
-                {
-                    var openHrs = Math.Max(m.AvailableHours - m.LoadedHours, 0);
-                    <tr>
-                        <td style="font-weight: 600;">@m.MachineName</td>
-                        <td>@m.MachineType</td>
-                        <td>@m.AvailableHours</td>
-                        <td>@m.LoadedHours</td>
-                        <td>@Math.Round(openHrs, 1)</td>
-                        <td>
-                            @{
-                                var badgeClass = m.UtilizationPct switch
-                                {
-                                    > 100 => "badge-danger",
-                                    > 80 => "badge-warning",
-                                    _ => "badge-success"
-                                };
-                            }
-                            <span class="badge @badgeClass">@m.UtilizationPct%</span>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-
-    @* ── Per-Machine OEE ── *@
-    @if (_machineOee.Any())
-    {
-        <div class="card" style="margin-top: 16px;">
-            <div class="card-header">⚡ OEE by Machine</div>
+        <div style="overflow-x: auto;">
             <table class="data-table">
                 <thead>
-                    <tr><th>Machine</th><th>Availability</th><th>Performance</th><th>Quality</th><th>OEE</th></tr>
+                    <tr><th>Machine</th><th>Type</th><th>Available</th><th>Loaded</th><th>Open</th><th>Utilization</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var o in _machineOee)
+                    @foreach (var m in _capacity)
                     {
+                        var openHrs = Math.Max(m.AvailableHours - m.LoadedHours, 0);
                         <tr>
-                            <td style="font-weight: 600;">@o.MachineName</td>
-                            <td>@o.Availability%</td>
-                            <td>@o.Performance%</td>
-                            <td>@o.Quality%</td>
-                            <td><span class="badge @(o.Oee >= 85 ? "badge-success" : o.Oee >= 60 ? "badge-warning" : "badge-danger")">@o.Oee%</span></td>
+                            <td style="font-weight: 600;">@m.MachineName</td>
+                            <td>@m.MachineType</td>
+                            <td>@m.AvailableHours h</td>
+                            <td>@m.LoadedHours h</td>
+                            <td>@Math.Round(openHrs, 1) h</td>
+                            <td>
+                                @{
+                                    var badgeClass = m.UtilizationPct switch
+                                    {
+                                        > 100 => "badge-danger",
+                                        > 85 => "badge-warning",
+                                        _ => "badge-success"
+                                    };
+                                }
+                                <span class="badge @badgeClass">@m.UtilizationPct%</span>
+                            </td>
                         </tr>
                     }
                 </tbody>
             </table>
         </div>
+    </div>
+
+    @* ── Per-Machine OEE ── *@
+    @if (_machineOee.Any())
+    {
+        <div class="card">
+            <div class="card-header">⚡ OEE by Machine</div>
+            <div style="overflow-x: auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Machine</th><th>Availability</th><th>Performance</th><th>Quality</th><th>OEE</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var o in _machineOee)
+                        {
+                            <tr>
+                                <td style="font-weight: 600;">@o.MachineName</td>
+                                <td>@o.Availability%</td>
+                                <td>@o.Performance%</td>
+                                <td>@o.Quality%</td>
+                                <td><span class="badge @(o.Oee >= 85 ? "badge-success" : o.Oee >= 60 ? "badge-warning" : "badge-danger")">@o.Oee%</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
     }
+}
+
+@* ── Drill-Down: Jobs for Machine ── *@
+@if (_drillDownJobs != null)
+{
+    <div class="modal-overlay" @onclick="CloseDrillDown">
+        <div class="modal-content" style="max-width: 750px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">📋 Scheduled Work — @_drillDownMachineName</span>
+                <button class="modal-close" @onclick="CloseDrillDown">&times;</button>
+            </div>
+            @if (!_drillDownJobs.Any())
+            {
+                <div class="empty-state"><div class="empty-state-text">No scheduled jobs for this machine in the selected period.</div></div>
+            }
+            else
+            {
+                <div style="overflow-x: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Stage</th><th>Part</th><th>Start</th><th>End</th><th>Hours</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in _drillDownJobs)
+                            {
+                                <tr>
+                                    <td>
+                                        @if (e.ProductionStage != null)
+                                        {
+                                            <span style="display:inline-flex;align-items:center;gap:4px;">
+                                                <span style="width:8px;height:8px;border-radius:50%;background:@(e.ProductionStage.StageColor);display:inline-block;"></span>
+                                                @e.ProductionStage.Name
+                                            </span>
+                                        }
+                                        else { <span>—</span> }
+                                    </td>
+                                    <td style="font-weight: 600;">@(e.Job?.Part?.PartNumber ?? "—")</td>
+                                    <td>@(e.ScheduledStartAt?.ToString("MM/dd HH:mm") ?? "—")</td>
+                                    <td>@(e.ScheduledEndAt?.ToString("MM/dd HH:mm") ?? "—")</td>
+                                    <td>@(e.EstimatedHours?.ToString("F1") ?? "—")</td>
+                                    <td><span class="badge badge-@e.Status.ToString().ToLower()">@e.Status</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
 }
 
 @code {
     private bool _loading = true;
     private DateTime _dateFrom = DateTime.UtcNow.Date;
     private DateTime _dateTo = DateTime.UtcNow.Date.AddDays(28);
+    private string _rangeLabel = "1M";
     private List<MachineCapacityInfo> _capacity = new();
     private OeeData _overallOee = new(0, "Overall", 0, 0, 0, 0);
     private List<OeeData> _machineOee = new();
+
+    // Drill-down
+    private List<StageExecution>? _drillDownJobs;
+    private string _drillDownMachineName = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -182,4 +265,34 @@ else
 
         _loading = false;
     }
+
+    private void SetRange(int days, string label)
+    {
+        _rangeLabel = label;
+        _dateTo = _dateFrom.AddDays(days);
+        _ = LoadData();
+    }
+
+    private string GetOeeColor(decimal oee) => oee switch
+    {
+        >= 85 => "var(--success)",
+        >= 60 => "var(--warning)",
+        _ => "var(--danger)"
+    };
+
+    private async Task DrillDown(int machineId, string machineName)
+    {
+        _drillDownMachineName = machineName;
+        try
+        {
+            var all = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
+            _drillDownJobs = all.Where(e => e.MachineId == machineId).OrderBy(e => e.ScheduledStartAt).ToList();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+    }
+
+    private void CloseDrillDown() => _drillDownJobs = null;
 }

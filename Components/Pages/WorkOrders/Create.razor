@@ -8,6 +8,7 @@
 @inject ToastService Toast
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.WebUtilities
 
 <PageTitle>New Work Order - OpCentrix</PageTitle>
 
@@ -158,11 +159,12 @@
     <ChildContent>
         <div class="form-group">
             <label class="form-label">Part</label>
+            <input class="form-control" placeholder="Search parts..." @bind="_partSearch" @bind:event="oninput" style="margin-bottom: 6px;" />
             <select class="form-control" @bind="_linePartId">
                 <option value="0">Select part...</option>
                 @if (_parts != null)
                 {
-                    @foreach (var p in _parts)
+                    @foreach (var p in _parts.Where(p => string.IsNullOrEmpty(_partSearch) || p.PartNumber!.Contains(_partSearch, StringComparison.OrdinalIgnoreCase) || p.Name!.Contains(_partSearch, StringComparison.OrdinalIgnoreCase)))
                     {
                         <option value="@p.Id">@p.PartNumber — @p.Name</option>
                     }
@@ -203,12 +205,37 @@
     private int _linePartId;
     private int _lineQty = 1;
     private string? _lineNotes;
+    private string _partSearch = "";
     private bool _saving;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
         _parts = await PartService.GetAllPartsAsync();
+
+        // Pre-populate from quote if quoteId query parameter is present
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("quoteId", out var quoteIdStr) && int.TryParse(quoteIdStr, out var quoteId))
+        {
+            var quote = await QuoteService.GetQuoteDetailAsync(quoteId);
+            if (quote != null)
+            {
+                _wo.CustomerName = quote.CustomerName;
+                _wo.CustomerEmail = quote.CustomerEmail;
+                _wo.CustomerPhone = quote.CustomerPhone;
+                _wo.ContractNumber = quote.ContractNumber;
+                _wo.IsDefenseContract = quote.IsDefenseContract;
+                _wo.QuoteId = quote.Id;
+                _wo.Notes = $"Created from quote {quote.QuoteNumber}";
+                if (quote.Lines != null)
+                {
+                    foreach (var ql in quote.Lines)
+                    {
+                        _lines.Add(new WorkOrderLineDto { PartId = ql.PartId, Quantity = ql.Quantity, Notes = ql.Notes });
+                    }
+                }
+            }
+        }
     }
 
     private void AddLine()
@@ -218,6 +245,7 @@
         _linePartId = 0;
         _lineQty = 1;
         _lineNotes = null;
+        _partSearch = "";
         _showAddLine = false;
     }
 

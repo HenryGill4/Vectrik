@@ -143,10 +143,34 @@ else
                 {
                     <div class="comment-item">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                            <strong style="font-size: 0.85rem;">@comment.AuthorName</strong>
-                            <span style="color: var(--text-muted); font-size: 0.75rem;">@comment.CreatedDate.ToString("MMM dd, yyyy HH:mm")</span>
+                            <div>
+                                <strong style="font-size: 0.85rem;">@comment.AuthorName</strong>
+                                @if (comment.EditedDate.HasValue)
+                                {
+                                    <span style="color: var(--text-muted); font-size: 0.7rem; margin-left: 6px;">(edited)</span>
+                                }
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <span style="color: var(--text-muted); font-size: 0.75rem;">@comment.CreatedDate.ToString("MMM dd, yyyy HH:mm")</span>
+                                @if (_editingCommentId != comment.Id)
+                                {
+                                    <button class="btn btn-sm btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;" @onclick="() => StartEditComment(comment)">✏️</button>
+                                    <button class="btn btn-sm btn-danger" style="padding: 2px 6px; font-size: 0.7rem;" @onclick="() => DeleteComment(comment.Id)">✕</button>
+                                }
+                            </div>
                         </div>
-                        <div style="color: var(--text-secondary); font-size: 0.9rem; white-space: pre-wrap;">@comment.Content</div>
+                        @if (_editingCommentId == comment.Id)
+                        {
+                            <div style="display: flex; gap: 8px; margin-top: 4px;">
+                                <input class="form-control" @bind="_editingCommentText" style="flex: 1; font-size: 0.9rem;" />
+                                <button class="btn btn-sm btn-primary" @onclick="SaveEditComment">Save</button>
+                                <button class="btn btn-sm btn-secondary" @onclick="CancelEditComment">Cancel</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="color: var(--text-secondary); font-size: 0.9rem; white-space: pre-wrap;">@comment.Content</div>
+                        }
                         @if (comment.Replies != null && comment.Replies.Any())
                         {
                             <div style="margin-left: 20px; margin-top: 8px; border-left: 2px solid var(--border); padding-left: 12px;">
@@ -250,6 +274,10 @@ else
     private int _lineQty = 1;
     private ConfirmDialog _confirm = null!;
 
+    // Comment editing
+    private int? _editingCommentId;
+    private string _editingCommentText = string.Empty;
+
     protected override async Task OnInitializedAsync()
     {
         await LoadOrder();
@@ -268,14 +296,22 @@ else
         try
         {
             await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, "System");
-            Toast.ShowSuccess("Work order released — jobs generated");
             await LoadOrder();
+            var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
+            Toast.ShowSuccess($"Work order released — {jobCount} job(s) generated from routing");
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task SetStatus(WorkOrderStatus status)
     {
+        var message = status switch
+        {
+            WorkOrderStatus.OnHold => "Put this work order on hold?",
+            WorkOrderStatus.Released => "Resume this work order?",
+            _ => $"Change status to {status}?"
+        };
+        if (!await _confirm.ShowAsync(message)) return;
         try
         {
             await WorkOrderService.UpdateStatusAsync(Id, status, "System");
@@ -335,6 +371,44 @@ else
             await WorkOrderService.AddCommentAsync(Id, _newComment, "System");
             _newComment = "";
             await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private void StartEditComment(WorkOrderComment comment)
+    {
+        _editingCommentId = comment.Id;
+        _editingCommentText = comment.Content;
+    }
+
+    private void CancelEditComment()
+    {
+        _editingCommentId = null;
+        _editingCommentText = string.Empty;
+    }
+
+    private async Task SaveEditComment()
+    {
+        if (_editingCommentId == null || string.IsNullOrWhiteSpace(_editingCommentText)) return;
+        try
+        {
+            await WorkOrderService.UpdateCommentAsync(_editingCommentId.Value, _editingCommentText);
+            _editingCommentId = null;
+            _editingCommentText = string.Empty;
+            await LoadOrder();
+            Toast.ShowSuccess("Comment updated");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task DeleteComment(int commentId)
+    {
+        if (!await _confirm.ShowAsync("Delete this comment?")) return;
+        try
+        {
+            await WorkOrderService.DeleteCommentAsync(commentId);
+            await LoadOrder();
+            Toast.ShowSuccess("Comment deleted");
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }

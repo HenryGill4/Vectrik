@@ -337,4 +337,16 @@ public class QuoteService : IQuoteService
 
         return quote;
     }
+
+    public async Task DeclineRfqAsync(int rfqId, string reason, string declinedBy)
+    {
+        var rfq = await _db.RfqRequests.FindAsync(rfqId)
+            ?? throw new InvalidOperationException("RFQ not found.");
+
+        rfq.Status = "Declined";
+        rfq.DeclineReason = reason;
+        rfq.ReviewedBy = declinedBy;
+        rfq.ReviewedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
 }

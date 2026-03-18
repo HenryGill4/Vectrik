@@ -1,8 +1,10 @@
 @page "/quality/ncr"
 @rendermode InteractiveServer
 @inject IQualityService QualityService
+@inject IPartService PartService
 @inject NavigationManager Nav
 @inject ToastService Toast
+@using System.Security.Claims
 
 <PageTitle>NCR Management - OpCentrix</PageTitle>
 
@@ -78,11 +80,15 @@ else
                             <td><span class="badge badge-secondary">@ncr.Type</span></td>
                             <td><span class="badge @GetSeverityBadge(ncr.Severity)">@ncr.Severity</span></td>
                             <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@ncr.Description</td>
-                            <td>@ncr.Disposition</td>
+                            <td><span class="badge @GetDispositionBadge(ncr.Disposition)">@ncr.Disposition</span></td>
                             <td><span class="badge @GetStatusBadge(ncr.Status)">@ncr.Status</span></td>
                             <td>@((int)(DateTime.UtcNow - ncr.ReportedAt).TotalDays)</td>
-                            <td>
+                            <td style="white-space: nowrap;">
                                 <button class="btn btn-sm btn-secondary" @onclick="() => ShowEdit(ncr)">Edit</button>
+                                @if (ncr.CorrectiveActionId == null && ncr.Status != NcrStatus.Closed)
+                                {
+                                    <button class="btn btn-sm btn-primary" style="margin-left: 4px;" @onclick="() => CreateCapaFromNcr(ncr)" title="Create CAPA from this NCR">+ CAPA</button>
+                                }
                             </td>
                         </tr>
                     }
@@ -95,7 +101,7 @@ else
 @if (_showForm && _edit != null)
 {
     <div class="modal-overlay" @onclick="() => _showForm = false">
-        <div class="modal-content" style="max-width: 700px;" @onclick:stopPropagation>
+        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
             <div class="modal-header">
                 <span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") NCR</span>
                 <button class="modal-close" @onclick="() => _showForm = false">&times;</button>
@@ -103,7 +109,21 @@ else
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                 <div class="form-group">
-                    <label class="form-label">Type</label>
+                    <label class="form-label">Part *</label>
+                    <select class="form-control" @bind="_edit.PartId">
+                        <option value="">— Select Part —</option>
+                        @foreach (var p in _parts)
+                        {
+                            <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Job ID</label>
+                    <input class="form-control" type="number" @bind="_edit.JobId" placeholder="Optional" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type *</label>
                     <select class="form-control" @bind="_edit.Type">
                         @foreach (var t in Enum.GetValues<NcrType>())
                         {
@@ -112,7 +132,7 @@ else
                     </select>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Severity</label>
+                    <label class="form-label">Severity *</label>
                     <select class="form-control" @bind="_edit.Severity">
                         @foreach (var s in Enum.GetValues<NcrSeverity>())
                         {
@@ -122,7 +142,7 @@ else
                 </div>
                 <div class="form-group">
                     <label class="form-label">Disposition</label>
-                    <select class="form-control" @bind="_edit.Disposition">
+                    <select class="form-control" @bind="_pendingDisposition">
                         @foreach (var d in Enum.GetValues<NcrDisposition>())
                         {
                             <option value="@d">@d</option>
@@ -142,14 +162,6 @@ else
                     <label class="form-label">Quantity Affected</label>
                     <input class="form-control" @bind="_edit.QuantityAffected" />
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Part ID</label>
-                    <input class="form-control" type="number" @bind="_edit.PartId" />
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Job ID</label>
-                    <input class="form-control" type="number" @bind="_edit.JobId" />
-                </div>
             </div>
 
             <div class="form-group">
@@ -168,8 +180,11 @@ else
 <ConfirmDialog @ref="_confirm" />
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
     private bool _loading = true;
     private List<NonConformanceReport> _ncrs = new();
+    private List<Part> _parts = new();
     private NonConformanceReport? _edit;
     private bool _showForm;
     private string _search = string.Empty;
@@ -177,6 +192,8 @@ else
     private string _filterSeverity = string.Empty;
     private string _filterType = string.Empty;
     private ConfirmDialog _confirm = null!;
+    private NcrDisposition _pendingDisposition;
+    private string _currentUserId = "System";
 
     private List<NonConformanceReport> FilteredNcrs => _ncrs
         .Where(n => string.IsNullOrEmpty(_filterStatus) || n.Status.ToString() == _filterStatus)
@@ -190,19 +207,28 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUserId = state.User.FindFirst("UserId")?.Value ?? "System";
+        }
+
         _ncrs = await QualityService.GetAllNcrsAsync();
+        _parts = await PartService.GetAllPartsAsync(activeOnly: true);
         _loading = false;
     }
 
     private void ShowCreate()
     {
-        _edit = new NonConformanceReport { ReportedByUserId = "System" };
+        _edit = new NonConformanceReport { ReportedByUserId = _currentUserId };
+        _pendingDisposition = NcrDisposition.PendingReview;
         _showForm = true;
     }
 
     private void ShowEdit(NonConformanceReport ncr)
     {
         _edit = ncr;
+        _pendingDisposition = ncr.Disposition;
         _showForm = true;
     }
 
@@ -215,6 +241,24 @@ else
             Toast.ShowError("Description is required.");
             return;
         }
+
+        if (_edit.PartId == null || _edit.PartId == 0)
+        {
+            Toast.ShowError("Part selection is required.");
+            return;
+        }
+
+        // Confirm disposition change if it changed to a destructive action
+        if (_edit.Id > 0 && _pendingDisposition != _edit.Disposition &&
+            _pendingDisposition != NcrDisposition.PendingReview)
+        {
+            var confirmed = await _confirm.ShowAsync(
+                $"Change disposition to \"{_pendingDisposition}\"? This action may affect inventory and production.",
+                "Confirm Disposition Change");
+            if (!confirmed) return;
+        }
+
+        _edit.Disposition = _pendingDisposition;
 
         try
         {
@@ -238,6 +282,36 @@ else
         }
     }
 
+    private async Task CreateCapaFromNcr(NonConformanceReport ncr)
+    {
+        var confirmed = await _confirm.ShowAsync(
+            $"Create a CAPA from NCR {ncr.NcrNumber}? This will link the CAPA to this NCR.",
+            "Create CAPA");
+        if (!confirmed) return;
+
+        try
+        {
+            var capa = new CorrectiveAction
+            {
+                Type = CapaType.Corrective,
+                ProblemStatement = $"[From NCR {ncr.NcrNumber}] {ncr.Description}",
+                OwnerId = _currentUserId,
+                DueDate = DateTime.UtcNow.AddDays(30)
+            };
+
+            var created = await QualityService.CreateCapaAsync(capa);
+            ncr.CorrectiveActionId = created.Id;
+            await QualityService.UpdateNcrAsync(ncr);
+
+            Toast.ShowSuccess($"CAPA {created.CapaNumber} created and linked to NCR {ncr.NcrNumber}.");
+            _ncrs = await QualityService.GetAllNcrsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
     private static string GetSeverityBadge(NcrSeverity s) => s switch
     {
         NcrSeverity.Critical => "badge-danger",
@@ -251,6 +325,16 @@ else
         NcrStatus.InReview => "badge-warning",
         NcrStatus.Dispositioned => "badge-info",
         NcrStatus.Closed => "badge-success",
+        _ => "badge-secondary"
+    };
+
+    private static string GetDispositionBadge(NcrDisposition d) => d switch
+    {
+        NcrDisposition.PendingReview => "badge-warning",
+        NcrDisposition.Scrap => "badge-danger",
+        NcrDisposition.Rework => "badge-info",
+        NcrDisposition.UseAsIs => "badge-success",
+        NcrDisposition.ReturnToVendor => "badge-secondary",
         _ => "badge-secondary"
     };
 }

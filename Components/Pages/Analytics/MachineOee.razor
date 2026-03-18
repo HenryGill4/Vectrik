@@ -1,6 +1,7 @@
 @page "/analytics/oee"
 @inject IOeeService OeeService
 @inject IAnalyticsService AnalyticsService
+@inject NavigationManager Nav
 @rendermode InteractiveServer
 
 <PageTitle>OEE Dashboard - OpCentrix</PageTitle>
@@ -13,6 +14,7 @@
             <option value="30" selected>Last 30 Days</option>
             <option value="90">Last 90 Days</option>
         </select>
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
     </div>
 </div>
 
@@ -143,4 +145,12 @@ else
 
     private static string OeeColor(decimal oee) =>
         oee >= 85 ? "var(--success)" : oee >= 60 ? "var(--warning)" : "var(--danger)";
+
+    private void ExportCsv()
+    {
+        if (!_machineOees.Any()) return;
+        var csv = "Machine,Availability%,Performance%,Quality%,OEE%\n" +
+            string.Join("\n", _machineOees.Select(m => $"{m.MachineName},{m.Availability:F1},{m.Performance:F1},{m.Quality:F1},{m.Oee:F1}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+    }
 }

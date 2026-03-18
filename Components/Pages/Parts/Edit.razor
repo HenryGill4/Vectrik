@@ -66,11 +66,8 @@
             <div class="tab-bar" style="margin-bottom: 16px;">
                 <button class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>Part Info</button>
                 <button class="tab @(_tab == "pdm" ? "active" : "")" @onclick='() => _tab = "pdm"'>Drawing & Revision</button>
-                @if (!_isNew)
-                {
-                    <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_stageReqs?.Count ?? 0))</button>
-                    <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM / Materials (@(_bomItems?.Count ?? 0))</button>
-                }
+                <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_stageReqs?.Count ?? 0))</button>
+                <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM / Materials (@(_bomItems?.Count ?? 0))</button>
                 @if (_showSlsFeatures)
                 {
                     <button class="tab @(_tab == "stacking" ? "active" : "")" @onclick='() => _tab = "stacking"'>Stacking</button>
@@ -183,8 +180,18 @@
             }
 
             <!-- Routing / Stage Requirements Tab -->
-            @if (_tab == "routing" && !_isNew)
+            @if (_tab == "routing")
             {
+                @if (_isNew)
+                {
+                    <div class="card" style="text-align: center; padding: 40px;">
+                        <div style="font-size: 2rem; margin-bottom: 8px;">⚙️</div>
+                        <p style="color: var(--text-muted); font-size: 1.05rem;">Save the part first to add routing stages.</p>
+                        <p style="color: var(--text-muted); font-size: 0.85rem;">Click <strong>"Create Part"</strong> on the Part Info tab, then you can define the production routing here.</p>
+                    </div>
+                }
+                else
+                {
                 <div class="card">
                     <h3 class="card-title">Stage Routing</h3>
                     <p style="color: var(--text-muted); margin-bottom: 12px;">Define the production stages this part goes through, in order. Each stage gets its own execution entry when a work order is created.</p>
@@ -272,11 +279,22 @@
                         </div>
                     }
                 </div>
+                }
             }
 
             <!-- BOM / Materials Tab -->
-            @if (_tab == "bom" && !_isNew)
+            @if (_tab == "bom")
             {
+                @if (_isNew)
+                {
+                    <div class="card" style="text-align: center; padding: 40px;">
+                        <div style="font-size: 2rem; margin-bottom: 8px;">📦</div>
+                        <p style="color: var(--text-muted); font-size: 1.05rem;">Save the part first to add BOM items.</p>
+                        <p style="color: var(--text-muted); font-size: 0.85rem;">Click <strong>"Create Part"</strong> on the Part Info tab, then you can define materials and components here.</p>
+                    </div>
+                }
+                else
+                {
                 <div class="card">
                     <h3 class="card-title">Bill of Materials</h3>
                     <p style="color: var(--text-muted); margin-bottom: 12px;">Define raw materials and inventory items required to produce one unit of this part.</p>
@@ -342,6 +360,7 @@
                         </div>
                     }
                 </div>
+                }
             }
 
             <!-- Stacking Tab (SLS feature-flagged) -->

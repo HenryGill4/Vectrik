@@ -164,6 +164,18 @@ else
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_edit.OwnerId))
+        {
+            Toast.ShowError("Owner is required.");
+            return;
+        }
+
+        if (_edit.Status == CapaStatus.Closed && string.IsNullOrWhiteSpace(_edit.EffectivenessVerification))
+        {
+            Toast.ShowError("Effectiveness verification is required before closing a CAPA.");
+            return;
+        }
+
         try
         {
             if (_edit.Id == 0)

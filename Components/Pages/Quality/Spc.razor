@@ -4,8 +4,6 @@
 @inject ISpcService SpcService
 @inject NavigationManager Nav
 @inject ToastService Toast
-@using Microsoft.EntityFrameworkCore
-@inject Opcentrix_V3.Data.TenantDbContext Db
 
 <PageTitle>SPC Charts - OpCentrix</PageTitle>
 
@@ -176,7 +174,7 @@ else if (!_loading && _selectedPartId > 0 && !string.IsNullOrEmpty(_selectedChar
 
     protected override async Task OnInitializedAsync()
     {
-        _parts = await Db.Parts.Where(p => p.IsActive).OrderBy(p => p.PartNumber).ToListAsync();
+        _parts = await SpcService.GetActivePartsWithSpcDataAsync();
     }
 
     private async Task OnPartChanged()
@@ -188,12 +186,7 @@ else if (!_loading && _selectedPartId > 0 && !string.IsNullOrEmpty(_selectedChar
 
         if (_selectedPartId > 0)
         {
-            _characteristics = await Db.SpcDataPoints
-                .Where(d => d.PartId == _selectedPartId)
-                .Select(d => d.CharacteristicName)
-                .Distinct()
-                .OrderBy(c => c)
-                .ToListAsync();
+            _characteristics = await SpcService.GetCharacteristicsForPartAsync(_selectedPartId);
         }
     }
 
@@ -208,12 +201,7 @@ else if (!_loading && _selectedPartId > 0 && !string.IsNullOrEmpty(_selectedChar
 
         _loading = true;
 
-        _dataPoints = await Db.SpcDataPoints
-            .Where(d => d.PartId == _selectedPartId && d.CharacteristicName == _selectedCharacteristic)
-            .OrderByDescending(d => d.RecordedAt)
-            .Take(_sampleCount)
-            .OrderBy(d => d.RecordedAt)
-            .ToListAsync();
+        _dataPoints = await SpcService.GetDataPointsAsync(_selectedPartId, _selectedCharacteristic, _sampleCount);
 
         if (_dataPoints.Count >= 2)
         {

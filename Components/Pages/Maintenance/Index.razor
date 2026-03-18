@@ -1,20 +1,37 @@
 @page "/maintenance"
 @inject IMaintenanceService MaintenanceService
+@inject NavigationManager Nav
+@inject ToastService Toast
 @rendermode InteractiveServer
 
 <PageTitle>Maintenance Dashboard - OpCentrix</PageTitle>
 
+<ConfirmDialog @ref="_confirmDialog" />
+
 <div class="page-header">
     <h1 class="page-title">Maintenance Dashboard</h1>
+    <div class="page-actions">
+        <button class="btn btn-primary" @onclick='() => Nav.NavigateTo("/maintenance/workorders")'>Work Orders</button>
+        <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/maintenance/rules")'>Rules</button>
+    </div>
 </div>
 
 @if (_alerts == null) { <div class="loading"><span class="spinner"></span></div> }
 else
 {
-    <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color: var(--danger)">@_alerts.Count(a => a.IsOverdue)</div></div>
-        <div class="kpi-card"><div class="kpi-label">Warnings</div><div class="kpi-value" style="color: var(--warning)">@_alerts.Count(a => !a.IsOverdue)</div></div>
-        <div class="kpi-card"><div class="kpi-label">Open WOs</div><div class="kpi-value">@_openWorkOrders</div></div>
+    <div class="kpi-grid" style="margin-bottom:1rem">
+        <div class="kpi-card" style="@(_overdueCount > 0 ? "border-color:var(--danger)" : "")">
+            <div class="kpi-label">Overdue</div>
+            <div class="kpi-value" style="color: var(--danger)">@_overdueCount</div>
+        </div>
+        <div class="kpi-card" style="@(_warningCount > 0 ? "border-color:var(--warning)" : "")">
+            <div class="kpi-label">Warnings</div>
+            <div class="kpi-value" style="color: var(--warning)">@_warningCount</div>
+        </div>
+        <div class="kpi-card" @onclick='() => Nav.NavigateTo("/maintenance/workorders")' style="cursor:pointer">
+            <div class="kpi-label">Open WOs</div>
+            <div class="kpi-value">@_openWorkOrders</div>
+        </div>
     </div>
 
     @if (_alerts.Any())
@@ -22,17 +39,21 @@ else
         <div class="card">
             <div class="card-header">Maintenance Alerts</div>
             <table class="data-table">
-                <thead><tr><th>Machine</th><th>Component</th><th>Rule</th><th>Severity</th><th>Usage</th><th>Status</th></tr></thead>
+                <thead><tr><th>Machine</th><th>Component</th><th>Rule</th><th>Severity</th><th>Usage</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                     @foreach (var alert in _alerts)
                     {
-                        <tr>
+                        <tr style="@(alert.IsOverdue ? "background:rgba(var(--danger-rgb, 239,68,68),0.08)" : "")">
                             <td>@alert.MachineName</td>
                             <td>@alert.ComponentName</td>
                             <td>@alert.RuleName</td>
                             <td><span class="badge badge-@alert.Severity.ToString().ToLower()">@alert.Severity</span></td>
                             <td>@alert.PercentUsed.ToString("F0")%</td>
-                            <td><span class="badge @(alert.IsOverdue ? "badge-overdue" : "badge-warning")">@(alert.IsOverdue ? "Overdue" : "Due Soon")</span></td>
+                            <td><span class="badge @(alert.IsOverdue ? "badge-danger" : "badge-warning")">@(alert.IsOverdue ? "OVERDUE" : "Due Soon")</span></td>
+                            <td style="white-space:nowrap">
+                                <button class="btn btn-sm btn-primary" @onclick="() => CreateWoFromAlert(alert)" title="Create Work Order">🔧 Schedule</button>
+                                <button class="btn btn-sm btn-success" @onclick="() => AcknowledgeAlert(alert)" title="Acknowledge">✓</button>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -41,19 +62,27 @@ else
     }
     else
     {
-        <div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-text">No maintenance alerts</div></div>
+        <div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-text">All maintenance rules within limits. No alerts at this time.</div></div>
     }
 }
 
 @code {
     private List<MaintenanceAlert>? _alerts;
-    private int _openWorkOrders;
+    private int _openWorkOrders, _overdueCount, _warningCount;
+    private ConfirmDialog _confirmDialog = null!;
 
     protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
     {
         try
         {
             _alerts = await MaintenanceService.EvaluateMaintenanceRulesAsync();
+            _overdueCount = _alerts.Count(a => a.IsOverdue);
+            _warningCount = _alerts.Count(a => !a.IsOverdue);
             var openWOs = await MaintenanceService.GetWorkOrdersAsync(Models.Enums.MaintenanceWorkOrderStatus.Open);
             var inProgressWOs = await MaintenanceService.GetWorkOrdersAsync(Models.Enums.MaintenanceWorkOrderStatus.InProgress);
             _openWorkOrders = openWOs.Count + inProgressWOs.Count;
@@ -62,5 +91,49 @@ else
         {
             _alerts = new();
         }
+    }
+
+    private async Task CreateWoFromAlert(MaintenanceAlert alert)
+    {
+        var confirmed = await _confirmDialog.ShowAsync(
+            $"Create a maintenance work order for \"{alert.RuleName}\" on {alert.MachineName}?",
+            "Create Work Order");
+        if (!confirmed) return;
+        try
+        {
+            await MaintenanceService.CreateWorkOrderAsync(new Models.Maintenance.MaintenanceWorkOrder
+            {
+                MachineId = alert.MachineId,
+                MaintenanceRuleId = alert.RuleId,
+                Type = Models.Enums.MaintenanceWorkOrderType.Preventive,
+                Title = $"{alert.RuleName} — {alert.ComponentName}",
+                Description = $"Auto-created from maintenance alert. Usage at {alert.PercentUsed:F0}%.",
+                Priority = alert.Severity == Models.Enums.MaintenanceSeverity.Critical
+                    ? Models.Enums.MaintenanceWorkOrderPriority.Critical
+                    : Models.Enums.MaintenanceWorkOrderPriority.Normal,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            });
+            Toast.ShowSuccess("Work order created.");
+            Nav.NavigateTo("/maintenance/workorders");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task AcknowledgeAlert(MaintenanceAlert alert)
+    {
+        try
+        {
+            await MaintenanceService.LogMaintenanceActionAsync(new Models.Maintenance.MaintenanceActionLog
+            {
+                MachineId = alert.MachineId,
+                MaintenanceRuleId = alert.RuleId,
+                Action = "Acknowledged maintenance alert",
+                PerformedBy = "System"
+            });
+            Toast.ShowSuccess($"Alert acknowledged for {alert.MachineName}.");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
     }
 }

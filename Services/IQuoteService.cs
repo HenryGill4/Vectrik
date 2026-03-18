@@ -25,4 +25,5 @@ public interface IQuoteService
     Task<RfqRequest?> GetRfqByIdAsync(int id);
     Task<RfqRequest> SubmitRfqAsync(RfqRequest rfq);
     Task<Quote> ConvertRfqToQuoteAsync(int rfqId, string createdBy);
+    Task DeclineRfqAsync(int rfqId, string reason, string declinedBy);
 }

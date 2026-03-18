@@ -35,6 +35,9 @@ public class RfqRequest
 
     public int? ConvertedQuoteId { get; set; }
 
+    [MaxLength(500)]
+    public string? DeclineReason { get; set; }
+
     public DateTime SubmittedDate { get; set; } = DateTime.UtcNow;
 
     [MaxLength(100)]

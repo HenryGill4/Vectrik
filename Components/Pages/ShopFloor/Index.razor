@@ -1,5 +1,6 @@
 @page "/shopfloor"
 @rendermode InteractiveServer
+@implements IDisposable
 @inject IStageService StageService
 @inject ToastService Toast
 @using System.Security.Claims
@@ -69,7 +70,44 @@
                             <button class="btn btn-warning" @onclick="() => ShowPauseDialog(_currentExecution.Id)" style="min-height: 44px;">⏸ Pause</button>
                         }
                         <button class="btn btn-danger btn-sm" @onclick="() => ShowFailDialog(_currentExecution.Id)" style="min-height: 44px;">✗ Fail / NCR</button>
+                        <button class="btn btn-sm btn-secondary" style="min-height: 44px;" disabled>📖 Work Instructions</button>
                     </div>
+
+                    @* Stage-Specific Partial *@
+                    @{ var stageSlug = _currentExecution.ProductionStage?.StageSlug?.ToLower(); }
+                    @switch (stageSlug)
+                    {
+                        case "sls-printing":
+                            <ShopFloor.Partials.SLSPrinting Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "cnc-machining":
+                            <ShopFloor.Partials.CNCMachining Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "quality-control":
+                            <ShopFloor.Partials.QualityControl Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "shipping":
+                            <ShopFloor.Partials.Shipping Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "wire-edm":
+                            <ShopFloor.Partials.WireEDM Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "heat-treatment":
+                            <ShopFloor.Partials.HeatTreatment Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "surface-finishing":
+                            <ShopFloor.Partials.SurfaceFinishing Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "depowdering":
+                            <ShopFloor.Partials.Depowdering Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "laser-engraving":
+                            <ShopFloor.Partials.LaserEngraving Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        default:
+                            <ShopFloor.Partials.GenericStage Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                    }
                 </div>
             }
 
@@ -200,6 +238,8 @@
     </Authorized>
 </AuthorizeView>
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     private bool _loading = true;
     private int _currentUserId;
@@ -207,6 +247,7 @@
     private StageExecution? _currentExecution;
     private List<StageExecution> _myQueue = new();
     private List<StageExecution> _availableWork = new();
+    private System.Threading.Timer? _elapsedTimer;
 
     // Dialog state
     private bool _showPauseDialog, _showCompleteDialog, _showFailDialog;
@@ -215,6 +256,7 @@
     private DelayCategory _pauseCategory = DelayCategory.Other;
     private string _completeNotes = "";
     private string _failReason = "";
+    private ConfirmDialog _confirm = null!;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -222,6 +264,7 @@
         {
             await LoadData();
             _loading = false;
+            _elapsedTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
             StateHasChanged();
         }
     }
@@ -287,6 +330,7 @@
     private void ShowCompleteDialog(int executionId) { _dialogExecutionId = executionId; _completeNotes = ""; _showCompleteDialog = true; }
     private async Task ConfirmComplete()
     {
+        if (!await _confirm.ShowAsync("Mark this stage as complete?")) return;
         try
         {
             await StageService.CompleteStageExecutionAsync(_dialogExecutionId, notes: _completeNotes);
@@ -301,6 +345,7 @@
     private void ShowFailDialog(int executionId) { _dialogExecutionId = executionId; _failReason = ""; _showFailDialog = true; }
     private async Task ConfirmFail()
     {
+        if (!await _confirm.ShowAsync("Report this stage as failed? An NCR may be created.")) return;
         try
         {
             await StageService.FailStageExecutionAsync(_dialogExecutionId, _failReason);
@@ -316,5 +361,10 @@
         if (!start.HasValue) return "";
         var elapsed = DateTime.UtcNow - start.Value;
         return $"({elapsed.Hours}h {elapsed.Minutes}m ago)";
+    }
+
+    public void Dispose()
+    {
+        _elapsedTimer?.Dispose();
     }
 }

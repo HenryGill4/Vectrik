@@ -1,32 +1,115 @@
 @page "/builds"
 @inject IBuildPlanningService BuildPlanningService
+@inject IMachineService MachineService
+@inject IPartService PartService
+@inject ToastService Toast
 @rendermode InteractiveServer
 
 <PageTitle>Build Planning - OpCentrix</PageTitle>
 
+<ConfirmDialog @ref="_confirmDialog" />
+
 <div class="page-header">
     <h1 class="page-title">Build Planning</h1>
-    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Build Package</button>
+    <div class="page-actions">
+        <select class="form-control" style="width:160px;display:inline-block" @bind="_statusFilter" @bind:after="LoadPackages">
+            <option value="">All Statuses</option>
+            @foreach (var s in Enum.GetValues<BuildPackageStatus>()) { <option value="@s">@s</option> }
+        </select>
+        <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="ShowCreate">+ New Build Package</button>
+    </div>
 </div>
 
 @if (_packages == null) { <div class="loading"><span class="spinner"></span></div> }
+else if (!_filteredPackages.Any())
+{
+    <div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-text">No build packages found. Create one to start planning SLS builds.</div></div>
+}
 else
 {
-    @foreach (var pkg in _packages)
+    @foreach (var pkg in _filteredPackages)
     {
-        <div class="card">
+        <div class="card" style="margin-bottom:1rem">
             <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <span>@pkg.Name</span>
-                <span class="badge badge-@pkg.Status.ToString().ToLower()">@pkg.Status</span>
+                <div style="display:flex;gap:0.5rem;align-items:center">
+                    <span class="badge badge-@pkg.Status.ToString().ToLower()">@pkg.Status</span>
+                    @if (pkg.Status == BuildPackageStatus.Draft)
+                    {
+                        <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Ready)" title="Mark Ready">✓ Ready</button>
+                    }
+                    else if (pkg.Status == BuildPackageStatus.Ready)
+                    {
+                        <button class="btn btn-sm btn-primary" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Scheduled)" title="Schedule">📅 Schedule</button>
+                    }
+                    else if (pkg.Status == BuildPackageStatus.Scheduled)
+                    {
+                        <button class="btn btn-sm btn-warning" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.InProgress)" title="Start Build">▶️ Start</button>
+                    }
+                    else if (pkg.Status == BuildPackageStatus.InProgress)
+                    {
+                        <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Completed)" title="Complete">✅ Complete</button>
+                    }
+                    @if (pkg.Status != BuildPackageStatus.Completed && pkg.Status != BuildPackageStatus.Cancelled)
+                    {
+                        <button class="btn btn-sm btn-danger" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Cancelled)" title="Cancel">❌</button>
+                    }
+                </div>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
-                <div><span class="form-label">Machine</span><div>@pkg.MachineId</div></div>
+                <div><span class="form-label">Machine</span><div>@(_machineNames.GetValueOrDefault(pkg.MachineId, pkg.MachineId))</div></div>
                 <div><span class="form-label">Parts</span><div>@pkg.TotalPartCount (@pkg.UniquePartCount unique)</div></div>
                 <div><span class="form-label">Est. Duration</span><div>@(pkg.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div></div>
             </div>
+
+            @if (pkg.Parts.Any())
+            {
+                <div style="margin-bottom:12px">
+                    <table class="data-table">
+                        <thead><tr><th>Part</th><th>Qty</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var pp in pkg.Parts)
+                            {
+                                <tr>
+                                    <td>@(pp.Part?.PartNumber ?? $"Part #{pp.PartId}") @(pp.Part?.Name != null ? $"— {pp.Part.Name}" : "")</td>
+                                    <td>@pp.Quantity</td>
+                                    <td>
+                                        @if (pkg.Status == BuildPackageStatus.Draft)
+                                        {
+                                            <button class="btn btn-sm btn-danger" @onclick="() => RemovePart(pp.Id)">🗑️</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            @if (pkg.Status == BuildPackageStatus.Draft)
+            {
+                <div style="display:flex;gap:0.5rem;align-items:end;margin-bottom:12px">
+                    <div style="flex:1">
+                        <label class="form-label" style="font-size:0.8rem">Add Part</label>
+                        <select class="form-control" @bind="_addPartId">
+                            <option value="0">Select part...</option>
+                            @if (_parts != null)
+                            {
+                                @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber — @p.Name</option> }
+                            }
+                        </select>
+                    </div>
+                    <div style="width:80px">
+                        <label class="form-label" style="font-size:0.8rem">Qty</label>
+                        <input class="form-control" type="number" min="1" @bind="_addPartQty" />
+                    </div>
+                    <button class="btn btn-sm btn-primary" style="height:36px" @onclick="() => AddPartToPackage(pkg.Id)">Add</button>
+                </div>
+            }
+
             @if (pkg.BuildFileInfo != null)
             {
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px;">
                     <div class="form-label">Build File Info</div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
                         <div>Layers: @pkg.BuildFileInfo.LayerCount</div>
@@ -35,10 +118,6 @@ else
                         <div>Powder: @pkg.BuildFileInfo.EstimatedPowderKg kg</div>
                     </div>
                 </div>
-            }
-            else
-            {
-                <button class="btn btn-sm btn-secondary" @onclick="() => GenerateSpoof(pkg.Id)">Generate Spoof Build Data</button>
             }
         </div>
     }
@@ -49,8 +128,20 @@ else
     <div class="modal-overlay" @onclick="() => _showCreate = false">
         <div class="modal-content" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">New Build Package</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
-            <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_newName" /></div>
-            <div class="form-group"><label class="form-label">Machine ID</label><input class="form-control" @bind="_newMachine" /></div>
+            <div class="form-group"><label class="form-label">Name *</label><input class="form-control" @bind="_newName" /></div>
+            <div class="form-group">
+                <label class="form-label">Machine *</label>
+                <select class="form-control" @bind="_newMachineId">
+                    <option value="">Select machine...</option>
+                    @if (_machines != null)
+                    {
+                        @foreach (var m in _machines) { <option value="@m.MachineId">@m.Name (@m.MachineId)</option> }
+                    }
+                </select>
+            </div>
+            <div class="form-group"><label class="form-label">Material</label><input class="form-control" @bind="_newMaterial" placeholder="e.g. Nylon PA12" /></div>
+            <div class="form-group"><label class="form-label">Est. Duration (hours)</label><input class="form-control" type="number" step="0.5" min="0" @bind="_newDuration" /></div>
+            <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" @bind="_newNotes"></textarea></div>
             <button class="btn btn-primary" @onclick="Create">Create</button>
         </div>
     </div>
@@ -58,17 +149,111 @@ else
 
 @code {
     private List<BuildPackage>? _packages;
+    private List<Machine>? _machines;
+    private List<Part>? _parts;
+    private Dictionary<string, string> _machineNames = new();
     private bool _showCreate;
-    private string _newName = "", _newMachine = "";
+    private string _newName = "", _newMachineId = "", _newMaterial = "", _newNotes = "";
+    private double? _newDuration;
+    private string _statusFilter = "";
+    private int _addPartId;
+    private int _addPartQty = 1;
+    private ConfirmDialog _confirmDialog = null!;
 
-    protected override async Task OnInitializedAsync() => _packages = await BuildPlanningService.GetAllPackagesAsync();
+    private IEnumerable<BuildPackage> _filteredPackages =>
+        _packages?.Where(p => string.IsNullOrEmpty(_statusFilter) || p.Status.ToString() == _statusFilter) ?? Enumerable.Empty<BuildPackage>();
 
-    private async Task Create()
+    protected override async Task OnInitializedAsync()
     {
-        await BuildPlanningService.CreatePackageAsync(new BuildPackage { Name = _newName, MachineId = _newMachine, CreatedBy = "System", LastModifiedBy = "System" });
-        _showCreate = false;
+        _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+        _machineNames = _machines.ToDictionary(m => m.MachineId, m => m.Name);
+        _parts = await PartService.GetAllPartsAsync(activeOnly: true);
+        await LoadPackages();
+    }
+
+    private async Task LoadPackages()
+    {
         _packages = await BuildPlanningService.GetAllPackagesAsync();
     }
 
-    private async Task GenerateSpoof(int id) { await BuildPlanningService.GenerateSpoofBuildFileAsync(id, "System"); _packages = await BuildPlanningService.GetAllPackagesAsync(); }
+    private async Task ShowCreate()
+    {
+        _newName = ""; _newMachineId = ""; _newMaterial = ""; _newNotes = ""; _newDuration = null;
+        _showCreate = true;
+    }
+
+    private async Task Create()
+    {
+        if (string.IsNullOrWhiteSpace(_newName)) { Toast.ShowError("Package name is required."); return; }
+        if (string.IsNullOrWhiteSpace(_newMachineId)) { Toast.ShowError("Machine is required."); return; }
+        try
+        {
+            await BuildPlanningService.CreatePackageAsync(new BuildPackage
+            {
+                Name = _newName,
+                MachineId = _newMachineId,
+                Material = _newMaterial,
+                EstimatedDurationHours = _newDuration,
+                Notes = _newNotes,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            });
+            _showCreate = false;
+            Toast.ShowSuccess("Build package created.");
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task AddPartToPackage(int packageId)
+    {
+        if (_addPartId <= 0) { Toast.ShowError("Select a part to add."); return; }
+        if (_addPartQty < 1) { Toast.ShowError("Quantity must be at least 1."); return; }
+        try
+        {
+            await BuildPlanningService.AddPartToPackageAsync(packageId, _addPartId, _addPartQty);
+            _addPartId = 0; _addPartQty = 1;
+            Toast.ShowSuccess("Part added to package.");
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task RemovePart(int packagePartId)
+    {
+        try
+        {
+            await BuildPlanningService.RemovePartFromPackageAsync(packagePartId);
+            Toast.ShowSuccess("Part removed.");
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task ChangeStatus(BuildPackage pkg, BuildPackageStatus newStatus)
+    {
+        if (newStatus == BuildPackageStatus.Ready && !pkg.Parts.Any())
+        {
+            Toast.ShowError("Add at least one part before marking as Ready.");
+            return;
+        }
+        var label = newStatus switch
+        {
+            BuildPackageStatus.Cancelled => "cancel",
+            BuildPackageStatus.Completed => "complete",
+            _ => $"change to {newStatus}"
+        };
+        var confirmed = await _confirmDialog.ShowAsync($"Are you sure you want to {label} \"{pkg.Name}\"?", "Confirm Status Change");
+        if (!confirmed) return;
+        try
+        {
+            pkg.Status = newStatus;
+            pkg.LastModifiedBy = "System";
+            pkg.LastModifiedDate = DateTime.UtcNow;
+            await BuildPlanningService.UpdatePackageAsync(pkg);
+            Toast.ShowSuccess($"Package → {newStatus}");
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
 }

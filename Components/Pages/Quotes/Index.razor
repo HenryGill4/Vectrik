@@ -9,7 +9,20 @@
 
 <div class="page-header">
     <h1 class="page-title">Quotes</h1>
-    <button class="btn btn-primary" @onclick="GoToNewQuote">+ New Quote</button>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        @if (_selectedIds.Count > 0)
+        {
+            <button class="btn btn-sm btn-warning" @onclick="ArchiveSelected">📦 Archive @_selectedIds.Count Selected</button>
+        }
+        @{
+            var expiredCount = _allQuotes.Count(q => q.Status == QuoteStatus.Expired);
+        }
+        @if (expiredCount > 0)
+        {
+            <button class="btn btn-sm btn-secondary" @onclick="ArchiveAllExpired">Archive @expiredCount Expired</button>
+        }
+        <button class="btn btn-primary" @onclick="GoToNewQuote">+ New Quote</button>
+    </div>
 </div>
 
 <!-- Status Filter Tabs -->
@@ -44,6 +57,7 @@ else
         <table class="data-table">
             <thead>
                 <tr>
+                    <th style="width:36px;"><input type="checkbox" @onchange="ToggleSelectAll" /></th>
                     <th>Quote #</th>
                     <th>Customer</th>
                     <th>Rev</th>
@@ -56,9 +70,10 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var q in _filteredQuotes)
+                @foreach (var q in _pagedQuotes)
                 {
                     <tr class="clickable-row" @onclick="() => ViewQuote(q.Id)">
+                        <td @onclick:stopPropagation><input type="checkbox" checked="@_selectedIds.Contains(q.Id)" @onchange="() => ToggleSelect(q.Id)" /></td>
                         <td><strong>@q.QuoteNumber</strong></td>
                         <td>@q.CustomerName</td>
                         <td>R@q.RevisionNumber</td>
@@ -84,9 +99,9 @@ else
         </table>
     </div>
 
-    @if (_filteredQuotes.Count > 25)
+    @if (_filteredQuotes.Count > _pageSize)
     {
-        <Pagination CurrentPage="_currentPage" TotalItems="_filteredQuotes.Count" PageSize="25" OnPageChanged="p => _currentPage = p" />
+        <Pagination CurrentPage="_currentPage" TotalItems="_filteredQuotes.Count" PageSize="_pageSize" OnPageChanged="p => _currentPage = p" />
     }
 }
 
@@ -96,6 +111,12 @@ else
     private List<Quote> _filteredQuotes = new();
     private QuoteStatus? _statusFilter;
     private int _currentPage = 1;
+    private int _pageSize = 25;
+
+    private List<Quote> _pagedQuotes => _filteredQuotes
+        .Skip((_currentPage - 1) * _pageSize)
+        .Take(_pageSize)
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -115,6 +136,46 @@ else
 
     private void ViewQuote(int id) => Nav.NavigateTo($"/quotes/{id}");
     private void GoToNewQuote() => Nav.NavigateTo("/quotes/new");
+
+    private HashSet<int> _selectedIds = new();
+
+    private void ToggleSelect(int id)
+    {
+        if (!_selectedIds.Remove(id))
+            _selectedIds.Add(id);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        if ((bool)(e.Value ?? false))
+            _selectedIds = _pagedQuotes.Select(q => q.Id).ToHashSet();
+        else
+            _selectedIds.Clear();
+    }
+
+    private async Task ArchiveSelected()
+    {
+        foreach (var id in _selectedIds.ToList())
+        {
+            try { await QuoteService.UpdateStatusAsync(id, QuoteStatus.Expired); } catch { }
+        }
+        _selectedIds.Clear();
+        _allQuotes = await QuoteService.GetAllQuotesAsync();
+        FilterByStatus(_statusFilter);
+        Toast.ShowSuccess("Selected quotes archived");
+    }
+
+    private async Task ArchiveAllExpired()
+    {
+        var expired = _allQuotes.Where(q => q.Status == QuoteStatus.Expired && q.ExpirationDate < DateTime.UtcNow).ToList();
+        foreach (var q in expired)
+        {
+            try { await QuoteService.UpdateStatusAsync(q.Id, QuoteStatus.Expired); } catch { }
+        }
+        _allQuotes = await QuoteService.GetAllQuotesAsync();
+        FilterByStatus(_statusFilter);
+        Toast.ShowSuccess($"{expired.Count} expired quotes archived");
+    }
 
     private static string GetStatusBadge(QuoteStatus status) => status switch
     {

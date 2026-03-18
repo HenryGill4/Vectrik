@@ -7,6 +7,7 @@
 @inject ITenantFeatureService Features
 @inject NavigationManager Nav
 @inject ToastService Toast
+@using Microsoft.AspNetCore.Components.Routing
 
 <PageTitle>@(_isNew ? "New Quote" : "Edit Quote") - OpCentrix</PageTitle>
 
@@ -210,6 +211,7 @@ else
 </AppModal>
 
 <ConfirmDialog @ref="_confirm" />
+<NavigationLock OnBeforeInternalNavigation="OnBeforeNavigation" ConfirmExternalNavigation="_hasChanges" />
 
 @code {
     [Parameter] public int Id { get; set; }
@@ -231,6 +233,10 @@ else
     // Revision
     private bool _showRevisionModal;
     private string _revisionNotes = string.Empty;
+
+    // Unsaved changes tracking
+    private bool _hasChanges;
+    private string _originalCustomerName = string.Empty;
 
     private decimal ComputedMarginPct => _quote.QuotedPrice > 0
         ? (_quote.QuotedPrice.Value - _quote.TotalEstimatedCost) / _quote.QuotedPrice.Value * 100
@@ -256,6 +262,7 @@ else
                 ExpirationDate = DateTime.UtcNow.AddDays(30)
             };
         }
+        _originalCustomerName = _quote.CustomerName ?? "";
         _loading = false;
     }
 
@@ -286,6 +293,21 @@ else
     private async Task AddLine()
     {
         if (_linePartId == 0) return;
+        if (_lineQty <= 0)
+        {
+            Toast.ShowError("Quantity must be greater than 0.");
+            return;
+        }
+        if (_lineQty > 999999)
+        {
+            Toast.ShowError("Quantity exceeds maximum allowed (999,999).");
+            return;
+        }
+        if (_linePrice < 0)
+        {
+            Toast.ShowError("Quoted price cannot be negative.");
+            return;
+        }
         try
         {
             await QuoteService.AddLineAsync(_quote.Id > 0 ? _quote.Id : 0, _linePartId, _lineQty, _linePrice);
@@ -297,6 +319,7 @@ else
             }
             _quote = await QuoteService.GetQuoteByIdAsync(_quote.Id) ?? _quote;
             _showAddLine = false;
+            _hasChanges = true;
             Toast.ShowSuccess("Line added");
         }
         catch (Exception ex)
@@ -321,18 +344,26 @@ else
             return;
         }
 
+        if (!_isNew && !_quote.Lines.Any())
+        {
+            Toast.ShowError("At least one line item is required.");
+            return;
+        }
+
         try
         {
             if (_isNew)
             {
                 _quote = await QuoteService.CreateQuoteAsync(_quote);
                 _isNew = false;
+                _hasChanges = false;
                 Toast.ShowSuccess("Quote created");
                 Nav.NavigateTo($"/quotes/{_quote.Id}/edit", replace: true);
             }
             else
             {
                 _quote = await QuoteService.UpdateQuoteAsync(_quote);
+                _hasChanges = false;
                 Toast.ShowSuccess("Quote saved");
             }
         }
@@ -365,4 +396,14 @@ else
     }
 
     private void GoBack() => Nav.NavigateTo("/quotes");
+
+    private async Task OnBeforeNavigation(LocationChangingContext context)
+    {
+        if (_hasChanges || _quote.CustomerName != _originalCustomerName)
+        {
+            var confirmed = await _confirm.ShowAsync("You have unsaved changes. Leave this page?");
+            if (!confirmed)
+                context.PreventNavigation();
+        }
+    }
 }

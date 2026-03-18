@@ -1,6 +1,7 @@
 @page "/workorders/{WoId:int}/jobs/{JobId:int}"
 @rendermode InteractiveServer
 @inject IWorkOrderService WorkOrderService
+@inject IStageService StageService
 @inject NavigationManager Nav
 @inject ToastService Toast
 
@@ -104,6 +105,16 @@ else
                                     </span>
                                 </div>
                             }
+                            @if (stage.ScheduledStartAt.HasValue || stage.ScheduledEndAt.HasValue)
+                            {
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                                    Scheduled: @(stage.ScheduledStartAt?.ToString("MMM dd HH:mm") ?? "—") → @(stage.ScheduledEndAt?.ToString("MMM dd HH:mm") ?? "—")
+                                </div>
+                            }
+                            @if (stage.Status != StageExecutionStatus.Completed && stage.Status != StageExecutionStatus.Skipped)
+                            {
+                                <button class="btn btn-sm btn-secondary" style="margin-top: 6px; font-size: 0.75rem; padding: 2px 8px;" @onclick="() => ShowReschedule(stage)">📅 Reschedule</button>
+                            }
                         </div>
                     </div>
                 }
@@ -132,7 +143,73 @@ else
             }
         </div>
     }
+
+    <!-- Delay Logs -->
+    @if (_job.DelayLogs.Any())
+    {
+        <div class="card" style="margin-top: 16px;">
+            <h3 class="card-title">⏱️ Delay Log (@_job.DelayLogs.Count)</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Reason</th>
+                        <th>Duration</th>
+                        <th>Logged By</th>
+                        <th>When</th>
+                        <th>Resolution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var delay in _job.DelayLogs.OrderByDescending(d => d.LoggedAt))
+                    {
+                        <tr>
+                            <td><span class="badge badge-warning">@delay.Category</span></td>
+                            <td>@delay.Reason</td>
+                            <td style="white-space: nowrap;">
+                                @if (delay.DelayMinutes >= 60)
+                                {
+                                    <text>@(delay.DelayMinutes / 60)h @(delay.DelayMinutes % 60)m</text>
+                                }
+                                else
+                                {
+                                    <text>@(delay.DelayMinutes)m</text>
+                                }
+                            </td>
+                            <td>@delay.LoggedBy</td>
+                            <td style="white-space: nowrap; font-size: 0.8rem;">@delay.LoggedAt.ToString("MMM dd HH:mm")</td>
+                            <td style="color: var(--text-muted); font-size: 0.85rem;">@(delay.Resolution ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
+
+<!-- Reschedule Modal -->
+<AppModal Visible="_showReschedule" VisibleChanged="v => _showReschedule = v" Title="Reschedule Stage" Size="sm">
+    <ChildContent>
+        @if (_rescheduleStage != null)
+        {
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">
+                @(_rescheduleStage.ProductionStage?.Name ?? $"Stage #{_rescheduleStage.ProductionStageId}")
+            </p>
+            <div class="form-group">
+                <label class="form-label">Start Date/Time</label>
+                <input class="form-control" type="datetime-local" @bind="_rescheduleStart" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">End Date/Time</label>
+                <input class="form-control" type="datetime-local" @bind="_rescheduleEnd" />
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showReschedule = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="SaveReschedule">Save</button>
+    </Footer>
+</AppModal>
 
 @code {
     [Parameter] public int WoId { get; set; }
@@ -141,10 +218,42 @@ else
     private Job? _job;
     private bool _loading = true;
 
+    // Reschedule
+    private bool _showReschedule;
+    private StageExecution? _rescheduleStage;
+    private DateTime _rescheduleStart;
+    private DateTime _rescheduleEnd;
+
     protected override async Task OnInitializedAsync()
     {
         _job = await WorkOrderService.GetJobDetailAsync(JobId);
         _loading = false;
+    }
+
+    private void ShowReschedule(StageExecution stage)
+    {
+        _rescheduleStage = stage;
+        _rescheduleStart = stage.ScheduledStartAt ?? DateTime.UtcNow;
+        _rescheduleEnd = stage.ScheduledEndAt ?? DateTime.UtcNow.AddHours(stage.EstimatedHours ?? 1);
+        _showReschedule = true;
+    }
+
+    private async Task SaveReschedule()
+    {
+        if (_rescheduleStage == null) return;
+        if (_rescheduleEnd <= _rescheduleStart)
+        {
+            Toast.ShowError("End date must be after start date.");
+            return;
+        }
+        try
+        {
+            await StageService.UpdateScheduleAsync(_rescheduleStage.Id, _rescheduleStart, _rescheduleEnd);
+            Toast.ShowSuccess("Stage rescheduled");
+            _showReschedule = false;
+            _job = await WorkOrderService.GetJobDetailAsync(JobId);
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private static string GetJobBadge(JobStatus status) => status switch

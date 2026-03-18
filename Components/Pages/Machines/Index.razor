@@ -1,22 +1,31 @@
 @page "/machines"
-@inject Opcentrix_V3.Data.TenantDbContext Db
-@using Microsoft.EntityFrameworkCore
+@inject IMachineService MachineService
+@inject NavigationManager Nav
+@inject ToastService Toast
 @rendermode InteractiveServer
+@implements IDisposable
 
 <PageTitle>Machine Status - OpCentrix</PageTitle>
 
 <div class="page-header">
     <h1 class="page-title">Machine Status</h1>
-    <button class="btn btn-secondary btn-sm" @onclick="LoadMachines">Refresh</button>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary btn-sm" @onclick="LoadMachines">🔄 Refresh</button>
+        <a href="admin/machines" class="btn btn-secondary btn-sm">⚙️ Manage Machines</a>
+    </div>
 </div>
 
 @if (_machines == null) { <div class="loading"><span class="spinner"></span></div> }
+else if (!_machines.Any())
+{
+    <div class="empty-state"><div class="empty-state-text">No active machines configured. <a href="admin/machines">Add machines</a></div></div>
+}
 else
 {
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
         @foreach (var m in _machines)
         {
-            <div class="card">
+            <div class="card" style="cursor: pointer;" @onclick="() => NavigateToAdmin()">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <div>
                         <div style="font-weight: 600; font-size: 1rem;">@m.Name</div>
@@ -32,8 +41,19 @@ else
                 </div>
                 @if (m.HoursSinceLastMaintenance / m.MaintenanceIntervalHours > 0.8)
                 {
-                    <div class="alert alert-warning" style="margin-top: 10px; margin-bottom: 0;">Maintenance due soon</div>
+                    <div class="alert alert-warning" style="margin-top: 10px; margin-bottom: 0;">⚠️ Maintenance due soon</div>
                 }
+                @if (m.Status == MachineStatus.Error)
+                {
+                    <div class="alert alert-danger" style="margin-top: 10px; margin-bottom: 0;">
+                        🚨 Machine error
+                        <button class="btn btn-danger btn-sm" style="margin-left: 8px;" @onclick:stopPropagation @onclick="() => AcknowledgeAlarm(m)">Acknowledge</button>
+                    </div>
+                }
+                <div style="margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap;">
+                    <a href="scheduler" class="btn btn-secondary btn-sm" @onclick:stopPropagation>📅 Schedule</a>
+                    <a href="maintenance" class="btn btn-secondary btn-sm" @onclick:stopPropagation>🔧 Maintenance</a>
+                </div>
             </div>
         }
     </div>
@@ -41,6 +61,54 @@ else
 
 @code {
     private List<Machine>? _machines;
-    protected override async Task OnInitializedAsync() => await LoadMachines();
-    private async Task LoadMachines() => _machines = await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.MachineId).ToListAsync();
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMachines();
+
+        // Auto-refresh every 15 seconds for live status updates
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadMachines();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+    }
+
+    private async Task LoadMachines()
+    {
+        try
+        {
+            _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading machines: {ex.Message}");
+            _machines ??= new();
+        }
+    }
+
+    private void NavigateToAdmin() => Nav.NavigateTo("admin/machines");
+
+    private async Task AcknowledgeAlarm(Machine machine)
+    {
+        try
+        {
+            machine.Status = MachineStatus.Idle;
+            await MachineService.UpdateMachineAsync(machine);
+            Toast.ShowSuccess($"Alarm acknowledged for {machine.Name}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
 }

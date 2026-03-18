@@ -2,24 +2,31 @@
 @inject IStageService StageService
 @inject IJobService JobService
 @inject IPartService PartService
+@inject IMachineService MachineService
+@inject ISchedulingService Scheduler
 @inject ToastService Toast
-@inject Opcentrix_V3.Data.TenantDbContext Db
-@using Microsoft.EntityFrameworkCore
 @rendermode InteractiveServer
 
 <PageTitle>Production Scheduler - OpCentrix</PageTitle>
 
 <div class="page-header">
     <h1 class="page-title">📅 Production Scheduler</h1>
-    <div style="display: flex; gap: 8px;">
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
         <a href="scheduler/capacity" class="btn btn-secondary">📊 Capacity</a>
+        @if (_unscheduled.Any())
+        {
+            <button class="btn btn-warning" @onclick="AutoScheduleAll" disabled="@_scheduling">
+                @if (_scheduling) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                ⚡ Auto-Schedule (@_unscheduled.Count)
+            </button>
+        }
         <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Job</button>
     </div>
 </div>
 
-@* ── Controls ── *@
-<div class="card" style="margin-bottom: 16px;">
-    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
+@* ── Controls Bar ── *@
+<div class="sched-controls">
+    <div class="sched-controls-left">
         <div class="form-group" style="margin-bottom: 0;">
             <label class="form-label">From</label>
             <input class="form-control" type="date" @bind="_dateFrom" @bind:event="onchange" />
@@ -28,14 +35,18 @@
             <label class="form-label">To</label>
             <input class="form-control" type="date" @bind="_dateTo" @bind:event="onchange" />
         </div>
-        <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label">View</label>
-            <select class="form-control" @bind="_viewMode">
-                <option value="table">📋 Table</option>
-                <option value="gantt">📊 Gantt</option>
-            </select>
+        <div class="sched-range-btns">
+            <button class="btn btn-sm @(_rangeLabel == "1W" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(7, "1W")'>1W</button>
+            <button class="btn btn-sm @(_rangeLabel == "2W" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(14, "2W")'>2W</button>
+            <button class="btn btn-sm @(_rangeLabel == "1M" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(30, "1M")'>1M</button>
         </div>
-        <button class="btn btn-secondary btn-sm" @onclick="LoadData" style="height: 38px;">🔄 Refresh</button>
+    </div>
+    <div class="sched-controls-right">
+        <div class="sched-view-toggle">
+            <button class="btn btn-sm @(_viewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "gantt"'>📊 Gantt</button>
+            <button class="btn btn-sm @(_viewMode == "table" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "table"'>📋 Table</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" @onclick="LoadData">🔄</button>
     </div>
 </div>
 
@@ -45,87 +56,139 @@
 }
 else if (_viewMode == "gantt")
 {
-    @* ── Gantt View ── *@
-    <div class="card" style="overflow-x: auto;">
-        <div class="card-header">Gantt — By Machine</div>
-        @if (!_machines.Any())
-        {
-            <div class="empty-state"><div class="empty-state-text">No machines configured</div></div>
-        }
-        else
-        {
-            <div class="gantt-container">
-                @* Header row with dates *@
-                <div class="gantt-header">
-                    <div class="gantt-resource-label" style="font-weight: 600;">Machine</div>
-                    @foreach (var day in _ganttDays)
-                    {
-                        <div class="gantt-day-header @(day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday ? "gantt-weekend" : "")">
-                            @day.ToString("ddd M/d")
-                        </div>
-                    }
-                </div>
-
-                @* Row per machine *@
-                @foreach (var machine in _machines)
+    <div class="sched-layout">
+        @* ── Gantt Chart ── *@
+        <div class="sched-gantt-panel">
+            <div class="card sched-gantt-card">
+                @if (!_machines.Any())
                 {
-                    var machineExecs = _executions.Where(e => e.MachineId == machine.Id).ToList();
-                    <div class="gantt-row">
-                        <div class="gantt-resource-label">
-                            <span class="badge badge-@machine.Status.ToString().ToLower()" style="margin-right: 4px;">●</span>
-                            @machine.Name
-                        </div>
-                        <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
-                            @foreach (var exec in machineExecs)
+                    <div class="empty-state"><div class="empty-state-text">No machines configured for scheduling</div></div>
+                }
+                else
+                {
+                    <div class="gantt-container" style="--gantt-cols: @_ganttDays.Count;">
+                        @* ── Header: day columns ── *@
+                        <div class="gantt-header">
+                            <div class="gantt-resource-label gantt-corner">Machine</div>
+                            @foreach (var day in _ganttDays)
                             {
-                                var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
-                                var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
-                                var leftPct = GetGanttPosition(start);
-                                var widthPct = GetGanttWidth(start, end);
-                                var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
-                                var isOverlap = HasOverlap(machine.Id, exec, machineExecs);
-                                <div class="gantt-bar gantt-bar-@priorityClass @(isOverlap ? "gantt-bar-conflict" : "")"
-                                     style="left: @(leftPct)%; width: @(widthPct)%;"
-                                     title="@(exec.Job?.Part?.PartNumber ?? "?") — @(exec.ProductionStage?.Name ?? "Stage") | @start.ToString("MM/dd HH:mm") - @end.ToString("MM/dd HH:mm")">
-                                    <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? "#@exec.JobId") · @(exec.ProductionStage?.Name ?? "")</span>
+                                var isToday = day.Date == DateTime.UtcNow.Date;
+                                var isWeekend = day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+                                <div class="gantt-day-header @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")">
+                                    <span class="gantt-day-name">@day.ToString("ddd")</span>
+                                    <span class="gantt-day-date">@day.ToString("M/d")</span>
                                 </div>
                             }
                         </div>
+
+                        @* ── Machine rows ── *@
+                        @foreach (var machine in _machines.Where(m => m.IsAvailableForScheduling))
+                        {
+                            var machineExecs = _executions.Where(e => e.MachineId == machine.Id).ToList();
+                            <div class="gantt-row">
+                                <div class="gantt-resource-label">
+                                    <span class="gantt-machine-status gantt-status-@machine.Status.ToString().ToLower()"></span>
+                                    <div class="gantt-machine-info">
+                                        <span class="gantt-machine-name">@machine.Name</span>
+                                        <span class="gantt-machine-type">@machine.MachineType</span>
+                                    </div>
+                                </div>
+                                <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
+                                    @* Today marker *@
+                                    @{ var todayPct = GetGanttPosition(DateTime.UtcNow); }
+                                    @if (todayPct > 0 && todayPct < 100)
+                                    {
+                                        <div class="gantt-today-line" style="left: @(todayPct)%;"></div>
+                                    }
+                                    @* Execution bars *@
+                                    @foreach (var exec in machineExecs)
+                                    {
+                                        var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
+                                        var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                        var leftPct = GetGanttPosition(start);
+                                        var widthPct = GetGanttWidth(start, end);
+                                        var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
+                                        var stageColor = exec.ProductionStage?.StageColor ?? "";
+                                        var isConflict = HasOverlap(machine.Id, exec, machineExecs);
+                                        <div class="gantt-bar gantt-bar-@priorityClass @(isConflict ? "gantt-bar-conflict" : "")"
+                                             style="left: @(leftPct)%; width: @(widthPct)%; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};")"
+                                             title="@(exec.Job?.Part?.PartNumber ?? "?") — @(exec.ProductionStage?.Name ?? "Stage")&#10;@start.ToString("MM/dd HH:mm") → @end.ToString("MM/dd HH:mm")&#10;Est: @(exec.EstimatedHours?.ToString("F1") ?? "?")h | Priority: @(exec.Job?.Priority)"
+                                             @onclick="() => ShowReschedule(exec)">
+                                            <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? $"J{exec.JobId}") · @(exec.ProductionStage?.Name ?? "")</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @* ── Unassigned row ── *@
+                        @{
+                            var unassignedScheduled = _executions.Where(e => e.MachineId == null && e.ScheduledStartAt != null).ToList();
+                        }
+                        @if (unassignedScheduled.Any())
+                        {
+                            <div class="gantt-row gantt-row-unassigned">
+                                <div class="gantt-resource-label">
+                                    <span class="gantt-machine-status" style="background: var(--warning);"></span>
+                                    <div class="gantt-machine-info">
+                                        <span class="gantt-machine-name">Unassigned</span>
+                                        <span class="gantt-machine-type">@unassignedScheduled.Count tasks</span>
+                                    </div>
+                                </div>
+                                <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
+                                    @foreach (var exec in unassignedScheduled)
+                                    {
+                                        var start = exec.ScheduledStartAt ?? _dateFrom;
+                                        var end = exec.ScheduledEndAt ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                        <div class="gantt-bar gantt-bar-unassigned" style="left: @(GetGanttPosition(start))%; width: @(GetGanttWidth(start, end))%;"
+                                             title="UNASSIGNED — @(exec.Job?.Part?.PartNumber ?? "?") · @(exec.ProductionStage?.Name ?? "")"
+                                             @onclick="() => ShowReschedule(exec)">
+                                            <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? $"J{exec.JobId}") · @(exec.ProductionStage?.Name ?? "")</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
                     </div>
-                }
 
-                @* Unassigned row *@
-                @{
-                    var unassigned = _executions.Where(e => e.MachineId == null).ToList();
-                }
-                @if (unassigned.Any())
-                {
-                    <div class="gantt-row">
-                        <div class="gantt-resource-label" style="color: var(--text-muted);">⚠ Unassigned</div>
-                        <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
-                            @foreach (var exec in unassigned)
-                            {
-                                var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
-                                var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
-                                var leftPct = GetGanttPosition(start);
-                                var widthPct = GetGanttWidth(start, end);
-                                <div class="gantt-bar gantt-bar-unassigned" style="left: @(leftPct)%; width: @(widthPct)%;"
-                                     title="@(exec.Job?.Part?.PartNumber ?? "#@exec.JobId") — UNASSIGNED">
-                                    <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? "#@exec.JobId")</span>
-                                </div>
-                            }
-                        </div>
+                    @* Legend *@
+                    <div class="gantt-legend">
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-emergency"></span> Emergency</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-rush"></span> Rush</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-high"></span> High</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-normal"></span> Normal</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-low"></span> Low</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-conflict"></span> Conflict</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-unassigned"></span> Unassigned</span>
                     </div>
                 }
             </div>
+        </div>
 
-            @* Legend *@
-            <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 0.85em; color: var(--text-muted);">
-                <span><span class="gantt-bar gantt-bar-rush" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> Rush/Emergency</span>
-                <span><span class="gantt-bar gantt-bar-high" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> High</span>
-                <span><span class="gantt-bar gantt-bar-normal" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> Normal</span>
-                <span><span class="gantt-bar gantt-bar-low" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> Low</span>
-                <span><span class="gantt-bar gantt-bar-conflict" style="display: inline-block; width: 14px; height: 14px; border-radius: 3px;"></span> Conflict</span>
+        @* ── Sidebar: Unscheduled Work ── *@
+        @if (_unscheduled.Any())
+        {
+            <div class="sched-sidebar">
+                <div class="card">
+                    <div class="card-header sched-sidebar-header">
+                        📋 Unscheduled (@_unscheduled.Count)
+                    </div>
+                    <div class="sched-sidebar-list">
+                        @foreach (var exec in _unscheduled)
+                        {
+                            var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
+                            <div class="sched-sidebar-item" @onclick="() => AutoScheduleSingle(exec.Id)">
+                                <div class="sched-sidebar-priority sched-priority-@priorityClass"></div>
+                                <div class="sched-sidebar-info">
+                                    <span class="sched-sidebar-part">@(exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}")</span>
+                                    <span class="sched-sidebar-stage">@(exec.ProductionStage?.Name ?? "—")</span>
+                                    <span class="sched-sidebar-est">@(exec.EstimatedHours?.ToString("F1") ?? "?")h est</span>
+                                </div>
+                                <span class="sched-sidebar-action" title="Auto-schedule this task">⚡</span>
+                            </div>
+                        }
+                    </div>
+                </div>
             </div>
         }
     </div>
@@ -134,39 +197,73 @@ else
 {
     @* ── Table View ── *@
     <div class="card">
-        <div class="card-header">Stage Executions — @_executions.Count scheduled</div>
-        @if (!_executions.Any())
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Stage Executions — @_executions.Count scheduled</span>
+            @if (_unscheduled.Any())
+            {
+                <span class="badge badge-warning">@_unscheduled.Count unscheduled</span>
+            }
+        </div>
+        @if (!_executions.Any() && !_unscheduled.Any())
         {
-            <div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No stage executions in this period</div></div>
+            <div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No stage executions found</div></div>
         }
         else
         {
-            <table class="data-table">
-                <thead>
-                    <tr><th>Part</th><th>Stage</th><th>Machine</th><th>Operator</th><th>Start</th><th>End</th><th>Status</th><th>Priority</th><th></th></tr>
-                </thead>
-                <tbody>
-                    @foreach (var exec in _executions)
-                    {
+            <div style="overflow-x: auto;">
+                <table class="data-table">
+                    <thead>
                         <tr>
-                            <td>@(exec.Job?.Part?.PartNumber ?? "—")</td>
-                            <td>@(exec.ProductionStage?.Name ?? "—")</td>
-                            <td>@(exec.Machine?.Name ?? "—")</td>
-                            <td>@(exec.OperatorName ?? "—")</td>
-                            <td>@((exec.ScheduledStartAt ?? exec.Job?.ScheduledStart)?.ToString("MM/dd HH:mm") ?? "—")</td>
-                            <td>@((exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd)?.ToString("MM/dd HH:mm") ?? "—")</td>
-                            <td><span class="badge badge-@exec.Status.ToString().ToLower()">@exec.Status</span></td>
-                            <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@exec.Job?.Priority</span></td>
-                            <td>
-                                @if (exec.Status == StageExecutionStatus.NotStarted)
-                                {
-                                    <button class="btn btn-sm btn-secondary" @onclick="() => ShowReschedule(exec)">📅</button>
-                                }
-                            </td>
+                            <th>Priority</th>
+                            <th>Part</th>
+                            <th>Stage</th>
+                            <th>Machine</th>
+                            <th>Start</th>
+                            <th>End</th>
+                            <th>Est. Hrs</th>
+                            <th>Status</th>
+                            <th></th>
                         </tr>
-                    }
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        @foreach (var exec in _executions.Concat(_unscheduled))
+                        {
+                            var isMissing = exec.MachineId == null || exec.ScheduledStartAt == null;
+                            <tr class="@(isMissing ? "sched-row-warn" : "")">
+                                <td>
+                                    <span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority ?? JobPriority.Normal)</span>
+                                </td>
+                                <td style="font-weight: 600;">@(exec.Job?.Part?.PartNumber ?? "—")</td>
+                                <td>
+                                    @if (exec.ProductionStage != null)
+                                    {
+                                        <span style="display:inline-flex;align-items:center;gap:4px;">
+                                            <span style="width:8px;height:8px;border-radius:50%;background:@(exec.ProductionStage.StageColor);display:inline-block;"></span>
+                                            @exec.ProductionStage.Name
+                                        </span>
+                                    }
+                                    else { <span>—</span> }
+                                </td>
+                                <td>@(exec.Machine?.Name ?? "<span style='color:var(--warning)'>Unassigned</span>")</td>
+                                <td>@((exec.ScheduledStartAt ?? exec.Job?.ScheduledStart)?.ToString("MM/dd HH:mm") ?? "—")</td>
+                                <td>@((exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd)?.ToString("MM/dd HH:mm") ?? "—")</td>
+                                <td>@(exec.EstimatedHours?.ToString("F1") ?? "—")</td>
+                                <td><span class="badge badge-@exec.Status.ToString().ToLower()">@exec.Status</span></td>
+                                <td style="display:flex;gap:4px;">
+                                    @if (exec.Status == StageExecutionStatus.NotStarted)
+                                    {
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => ShowReschedule(exec)" title="Reschedule">📅</button>
+                                        @if (exec.MachineId == null)
+                                        {
+                                            <button class="btn btn-sm btn-warning" @onclick="() => AutoScheduleSingle(exec.Id)" title="Auto-schedule">⚡</button>
+                                        }
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
         }
     </div>
 }
@@ -175,18 +272,33 @@ else
 @if (_showReschedule && _rescheduleExec != null)
 {
     <div class="modal-overlay" @onclick="() => _showReschedule = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">📅 Reschedule</span><button class="modal-close" @onclick="() => _showReschedule = false">&times;</button></div>
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 500px;">
+            <div class="modal-header">
+                <span class="modal-title">📅 Reschedule Execution</span>
+                <button class="modal-close" @onclick="() => _showReschedule = false">&times;</button>
+            </div>
+            <div style="padding: 4px 0 12px; color: var(--text-muted); font-size: 0.85rem;">
+                @(_rescheduleExec.Job?.Part?.PartNumber ?? "—") · @(_rescheduleExec.ProductionStage?.Name ?? "Stage")
+                · Est: @(_rescheduleExec.EstimatedHours?.ToString("F1") ?? "?")h
+            </div>
             <div class="form-group">
                 <label class="form-label">Machine</label>
                 <select class="form-control" @bind="_rescheduleMachineId">
                     <option value="">Unassigned</option>
-                    @foreach (var m in _machines) { <option value="@m.Id">@m.Name</option> }
+                    @foreach (var m in _machines.Where(m => m.IsAvailableForScheduling))
+                    {
+                        <option value="@m.Id">@m.Name (@m.MachineType)</option>
+                    }
                 </select>
             </div>
-            <div class="form-group"><label class="form-label">Start</label><input class="form-control" type="datetime-local" @bind="_rescheduleStart" /></div>
-            <div class="form-group"><label class="form-label">End</label><input class="form-control" type="datetime-local" @bind="_rescheduleEnd" /></div>
-            <button class="btn btn-primary" @onclick="ConfirmReschedule">Save Schedule</button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Start</label><input class="form-control" type="datetime-local" @bind="_rescheduleStart" /></div>
+                <div class="form-group"><label class="form-label">End</label><input class="form-control" type="datetime-local" @bind="_rescheduleEnd" /></div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <button class="btn btn-primary" @onclick="ConfirmReschedule">💾 Save</button>
+                <button class="btn btn-warning" @onclick="AutoScheduleFromModal">⚡ Auto-Schedule</button>
+            </div>
         </div>
     </div>
 }
@@ -195,42 +307,84 @@ else
 @if (_showCreate)
 {
     <div class="modal-overlay" @onclick="() => _showCreate = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">New Job</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 520px;">
+            <div class="modal-header">
+                <span class="modal-title">New Job</span>
+                <button class="modal-close" @onclick="() => _showCreate = false">&times;</button>
+            </div>
             @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
-            <div class="form-group"><label class="form-label">Part</label>
-                <select class="form-control" @bind="_newJob.PartId">
+            <div class="form-group">
+                <label class="form-label">Part <span style="color:var(--danger);">*</span></label>
+                <select class="form-control" @bind="_newJob.PartId" @bind:after="OnPartSelected">
                     <option value="0">Select part...</option>
-                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber - @p.Name</option> } }
+                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber — @p.Name</option> } }
                 </select>
             </div>
-            <div class="form-group"><label class="form-label">Machine</label>
-                <select class="form-control" @bind="_newJob.MachineId">
-                    <option value="">Select machine...</option>
-                    @foreach (var m in _machines) { <option value="@m.MachineId">@m.Name</option> }
-                </select>
+            @if (_selectedPartRouting.Any())
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 0.82rem;">
+                    <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">📋 Routing Preview</div>
+                    @foreach (var r in _selectedPartRouting)
+                    {
+                        <div style="display: flex; gap: 8px; padding: 2px 0; align-items: center;">
+                            <span style="width:8px;height:8px;border-radius:50%;background:@(r.ProductionStage?.StageColor ?? "var(--accent)");display:inline-block;flex-shrink:0;"></span>
+                            <span style="flex:1;">@(r.ProductionStage?.Name ?? "Stage")</span>
+                            <span style="color:var(--text-muted);">@((r.EstimatedHours ?? r.ProductionStage?.DefaultDurationHours ?? 1).ToString("F1"))h</span>
+                            <span style="color:var(--text-muted);">@(r.AssignedMachineId ?? r.ProductionStage?.DefaultMachineId ?? "Auto")</span>
+                        </div>
+                    }
+                    <div style="margin-top: 6px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 6px;">
+                        Total est: @_selectedPartRouting.Sum(r => r.EstimatedHours ?? r.ProductionStage?.DefaultDurationHours ?? 1).ToString("F1")h
+                        · Machines will be auto-assigned for optimal scheduling
+                    </div>
+                </div>
+            }
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Quantity <span style="color:var(--danger);">*</span></label>
+                    <input class="form-control" type="number" @bind="_newJob.Quantity" min="1" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Priority</label>
+                    <select class="form-control" @bind="_newJob.Priority">
+                        @foreach (var p in Enum.GetValues<JobPriority>()) { <option value="@p">@p</option> }
+                    </select>
+                </div>
             </div>
-            <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" @bind="_newJob.Quantity" min="1" /></div>
-            <div class="form-group"><label class="form-label">Scheduled Start</label><input class="form-control" type="datetime-local" @bind="_newJob.ScheduledStart" /></div>
-            <div class="form-group"><label class="form-label">Estimated Hours</label><input class="form-control" type="number" step="0.5" @bind="_newJob.EstimatedHours" /></div>
-            <button class="btn btn-primary" @onclick="CreateJob">Create Job</button>
+            <div class="form-group">
+                <label class="form-label">Earliest Start</label>
+                <input class="form-control" type="datetime-local" @bind="_newJob.ScheduledStart" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" @bind="_newJob.Notes" rows="2" placeholder="Optional notes..."></textarea>
+            </div>
+            <button class="btn btn-primary" @onclick="CreateJob" disabled="@(_creatingJob)">
+                @if (_creatingJob) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                Create & Auto-Schedule
+            </button>
         </div>
     </div>
 }
 
 @code {
     private bool _loading = true;
+    private bool _scheduling;
+    private bool _creatingJob;
     private List<StageExecution> _executions = new();
+    private List<StageExecution> _unscheduled = new();
     private List<Machine> _machines = new();
     private List<Part>? _parts;
     private List<DateTime> _ganttDays = new();
     private DateTime _dateFrom = DateTime.UtcNow.Date;
     private DateTime _dateTo = DateTime.UtcNow.Date.AddDays(14);
     private string _viewMode = "gantt";
+    private string _rangeLabel = "2W";
 
     // Create job
     private bool _showCreate;
-    private Job _newJob = new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1 };
+    private Job _newJob = new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1, Priority = JobPriority.Normal };
+    private List<PartStageRequirement> _selectedPartRouting = new();
     private string? _error;
 
     // Reschedule
@@ -243,16 +397,25 @@ else
     protected override async Task OnInitializedAsync()
     {
         _parts = await PartService.GetAllPartsAsync();
-        _machines = await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync();
+        _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
         await LoadData();
     }
 
     private async Task LoadData()
     {
         _loading = true;
+        StateHasChanged();
         _executions = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
+        _unscheduled = await StageService.GetUnscheduledExecutionsAsync();
         BuildGanttDays();
         _loading = false;
+    }
+
+    private void SetRange(int days, string label)
+    {
+        _rangeLabel = label;
+        _dateTo = _dateFrom.AddDays(days);
+        _ = LoadData();
     }
 
     private void BuildGanttDays()
@@ -262,11 +425,11 @@ else
             _ganttDays.Add(d);
     }
 
-    private double GetGanttPosition(DateTime start)
+    private double GetGanttPosition(DateTime dt)
     {
         var totalSpan = (_dateTo - _dateFrom).TotalHours;
         if (totalSpan <= 0) return 0;
-        var offset = (start - _dateFrom).TotalHours;
+        var offset = (dt - _dateFrom).TotalHours;
         return Math.Clamp(offset / totalSpan * 100, 0, 100);
     }
 
@@ -275,20 +438,22 @@ else
         var totalSpan = (_dateTo - _dateFrom).TotalHours;
         if (totalSpan <= 0) return 1;
         var width = (end - start).TotalHours / totalSpan * 100;
-        return Math.Clamp(width, 0.5, 100);
+        return Math.Clamp(width, 0.3, 100);
     }
 
     private bool HasOverlap(int machineId, StageExecution current, List<StageExecution> machineExecs)
     {
-        var cStart = current.ScheduledStartAt ?? current.Job?.ScheduledStart;
-        var cEnd = current.ScheduledEndAt ?? current.Job?.ScheduledEnd;
+        var cStart = current.ScheduledStartAt;
+        var cEnd = current.ScheduledEndAt;
         if (cStart == null || cEnd == null) return false;
 
         return machineExecs.Any(e =>
             e.Id != current.Id &&
-            (e.ScheduledStartAt ?? e.Job?.ScheduledStart) < cEnd &&
-            (e.ScheduledEndAt ?? e.Job?.ScheduledEnd) > cStart);
+            e.ScheduledStartAt < cEnd &&
+            e.ScheduledEndAt > cStart);
     }
+
+    // ── Reschedule ──
 
     private void ShowReschedule(StageExecution exec)
     {
@@ -313,19 +478,82 @@ else
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
+    private async Task AutoScheduleFromModal()
+    {
+        if (_rescheduleExec == null) return;
+        try
+        {
+            await Scheduler.AutoScheduleExecutionAsync(_rescheduleExec.Id);
+            Toast.ShowSuccess("Auto-scheduled successfully");
+            _showReschedule = false;
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    // ── Auto-schedule ──
+
+    private async Task AutoScheduleSingle(int executionId)
+    {
+        try
+        {
+            await Scheduler.AutoScheduleExecutionAsync(executionId);
+            Toast.ShowSuccess("Task auto-scheduled");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task AutoScheduleAll()
+    {
+        _scheduling = true;
+        StateHasChanged();
+        try
+        {
+            var count = await Scheduler.AutoScheduleAllAsync();
+            Toast.ShowSuccess($"Auto-scheduled {count} job(s)");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _scheduling = false; }
+    }
+
+    // ── Create Job ──
+
+    private async Task OnPartSelected()
+    {
+        _selectedPartRouting = new();
+        if (_newJob.PartId > 0)
+        {
+            var part = _parts?.FirstOrDefault(p => p.Id == _newJob.PartId);
+            if (part != null)
+            {
+                _selectedPartRouting = await PartService.GetStageRequirementsAsync(part.Id);
+                _newJob.EstimatedHours = _selectedPartRouting.Sum(r => r.EstimatedHours ?? r.ProductionStage?.DefaultDurationHours ?? 1);
+            }
+        }
+    }
+
     private async Task CreateJob()
     {
         _error = null;
+        if (_newJob.PartId <= 0) { _error = "Please select a part."; return; }
+
+        _creatingJob = true;
+        StateHasChanged();
         try
         {
             _newJob.ScheduledEnd = _newJob.ScheduledStart.AddHours(_newJob.EstimatedHours);
             _newJob.CreatedBy = "System";
             _newJob.LastModifiedBy = "System";
             await JobService.CreateJobAsync(_newJob);
+            Toast.ShowSuccess("Job created and auto-scheduled");
             _showCreate = false;
-            _newJob = new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1 };
+            _newJob = new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1, Priority = JobPriority.Normal };
+            _selectedPartRouting = new();
             await LoadData();
         }
         catch (Exception ex) { _error = ex.Message; }
+        finally { _creatingJob = false; }
     }
 }

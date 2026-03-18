@@ -2,8 +2,11 @@
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
 @inject IQuoteService QuoteService
+@inject IWebHostEnvironment Env
 @inject NavigationManager Nav
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Text.Json
 
 <PageTitle>Request for Quote - OpCentrix</PageTitle>
 
@@ -69,6 +72,11 @@
                 </div>
             </div>
 
+            <div class="form-group" style="margin-top: 12px;">
+                <label class="form-label">Attachments (drawings, specs, etc.)</label>
+                <FileUpload Accept=".pdf,.dxf,.step,.stp,.png,.jpg,.jpeg,.xlsx,.docx" MaxSizeMB="25" OnFilesChanged="OnFilesSelected" />
+            </div>
+
             <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
                 <button class="btn btn-primary" @onclick="Submit" disabled="@_submitting">
                     @if (_submitting)
@@ -87,10 +95,24 @@
     private bool _submitted;
     private bool _submitting;
     private string? _error;
+    private IReadOnlyList<IBrowserFile>? _attachments;
+    private DateTime? _lastSubmittedAt;
+
+    private void OnFilesSelected(IReadOnlyList<IBrowserFile> files)
+    {
+        _attachments = files;
+    }
 
     private async Task Submit()
     {
         _error = null;
+
+        // Rate limiting: prevent rapid re-submissions
+        if (_lastSubmittedAt.HasValue && (DateTime.UtcNow - _lastSubmittedAt.Value).TotalSeconds < 30)
+        {
+            _error = "Please wait at least 30 seconds before submitting another request.";
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(_rfq.CompanyName) ||
             string.IsNullOrWhiteSpace(_rfq.ContactName) ||
@@ -104,8 +126,26 @@
         _submitting = true;
         try
         {
+            // Save uploaded files
+            if (_attachments != null && _attachments.Count > 0)
+            {
+                var uploadDir = Path.Combine(Env.WebRootPath, "uploads", "rfq", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(uploadDir);
+                var paths = new List<string>();
+                foreach (var file in _attachments)
+                {
+                    var safeName = Path.GetFileName(file.Name);
+                    var filePath = Path.Combine(uploadDir, safeName);
+                    await using var fs = new FileStream(filePath, FileMode.Create);
+                    await file.OpenReadStream(25 * 1024 * 1024).CopyToAsync(fs);
+                    paths.Add($"uploads/rfq/{Path.GetFileName(uploadDir)}/{safeName}");
+                }
+                _rfq.AttachmentPaths = JsonSerializer.Serialize(paths);
+            }
+
             await QuoteService.SubmitRfqAsync(_rfq);
             _submitted = true;
+            _lastSubmittedAt = DateTime.UtcNow;
         }
         catch (Exception ex)
         {
@@ -122,5 +162,6 @@
         _rfq = new RfqRequest();
         _submitted = false;
         _error = null;
+        _attachments = null;
     }
 }

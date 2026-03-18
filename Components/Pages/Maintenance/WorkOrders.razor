@@ -1,31 +1,72 @@
 @page "/maintenance/workorders"
 @inject IMaintenanceService MaintenanceService
-@rendermode InteractiveServer
+@inject IMachineService MachineService
+@inject ToastService Toast
+@inject NavigationManager Nav
 @using Opcentrix_V3.Models.Maintenance
+@rendermode InteractiveServer
 
 <PageTitle>Maintenance Work Orders - OpCentrix</PageTitle>
 
+<ConfirmDialog @ref="_confirmDialog" />
+
 <div class="page-header">
     <h1 class="page-title">Maintenance Work Orders</h1>
-    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New</button>
+    <div class="page-actions">
+        <select class="form-control" style="width:160px;display:inline-block" @bind="_statusFilter" @bind:after="LoadWorkOrders">
+            <option value="">All Statuses</option>
+            @foreach (var s in Enum.GetValues<MaintenanceWorkOrderStatus>()) { <option value="@s">@s</option> }
+        </select>
+        <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="ShowCreate">+ New</button>
+    </div>
 </div>
 
 @if (_workOrders == null) { <div class="loading"><span class="spinner"></span></div> }
+else if (!_workOrders.Any())
+{
+    <div class="empty-state"><div class="empty-state-icon">🔧</div><div class="empty-state-text">No maintenance work orders found.</div></div>
+}
 else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>#</th><th>Machine</th><th>Type</th><th>Status</th><th>Priority</th><th>Assigned</th></tr></thead>
+            <thead><tr><th>#</th><th>Title</th><th>Machine</th><th>Type</th><th>Status</th><th>Priority</th><th>Created</th><th>Actions</th></tr></thead>
             <tbody>
                 @foreach (var wo in _workOrders)
                 {
                     <tr>
                         <td>@wo.Id</td>
+                        <td>@wo.Title</td>
                         <td>@wo.MachineId</td>
                         <td>@wo.Type</td>
                         <td><span class="badge badge-@wo.Status.ToString().ToLower()">@wo.Status</span></td>
                         <td><span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span></td>
-                        <td>@(wo.AssignedTechnicianUserId?.ToString() ?? "Unassigned")</td>
+                        <td>@wo.CreatedDate.ToString("yyyy-MM-dd")</td>
+                        <td style="white-space:nowrap">
+                            @if (wo.Status == MaintenanceWorkOrderStatus.Open)
+                            {
+                                <button class="btn btn-sm btn-primary" @onclick="() => ChangeStatus(wo, MaintenanceWorkOrderStatus.Assigned)" title="Assign">📋</button>
+                                <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(wo, MaintenanceWorkOrderStatus.InProgress)" title="Start">▶️</button>
+                            }
+                            else if (wo.Status == MaintenanceWorkOrderStatus.Assigned)
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(wo, MaintenanceWorkOrderStatus.InProgress)" title="Start">▶️</button>
+                            }
+                            else if (wo.Status == MaintenanceWorkOrderStatus.InProgress)
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(wo, MaintenanceWorkOrderStatus.Completed)" title="Complete">✅</button>
+                                <button class="btn btn-sm btn-warning" @onclick="() => ChangeStatus(wo, MaintenanceWorkOrderStatus.OnHold)" title="Hold">⏸️</button>
+                            }
+                            else if (wo.Status == MaintenanceWorkOrderStatus.OnHold || wo.Status == MaintenanceWorkOrderStatus.WaitingForParts)
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(wo, MaintenanceWorkOrderStatus.InProgress)" title="Resume">▶️</button>
+                            }
+                            @if (wo.Status != MaintenanceWorkOrderStatus.Completed && wo.Status != MaintenanceWorkOrderStatus.Cancelled)
+                            {
+                                <button class="btn btn-sm btn-danger" @onclick="() => ChangeStatus(wo, MaintenanceWorkOrderStatus.Cancelled)" title="Cancel">❌</button>
+                            }
+                            <button class="btn btn-sm" @onclick="() => ShowDetail(wo)" title="Details">📝</button>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -37,32 +78,174 @@ else
 {
     <div class="modal-overlay" @onclick="() => _showCreate = false">
         <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">New Maintenance WO</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
-            <div class="form-group"><label class="form-label">Machine ID</label><input class="form-control" @bind="_machineId" /></div>
-            <div class="form-group"><label class="form-label">Type</label>
-                <select class="form-control" @bind="_type">
-                    @foreach (var t in Enum.GetValues<MaintenanceWorkOrderType>()) { <option value="@t">@t</option> }
+            <div class="modal-header"><span class="modal-title">New Maintenance Work Order</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
+            <div class="form-group">
+                <label class="form-label">Machine *</label>
+                <select class="form-control" @bind="_machineId">
+                    <option value="">Select machine...</option>
+                    @if (_machines != null)
+                    {
+                        @foreach (var m in _machines) { <option value="@m.MachineId">@m.Name (@m.MachineId)</option> }
+                    }
                 </select>
             </div>
-            <div class="form-group"><label class="form-label">Title</label><input class="form-control" @bind="_title" /></div>
+            <div class="form-group"><label class="form-label">Title *</label><input class="form-control" @bind="_title" /></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Type</label>
+                    <select class="form-control" @bind="_type">
+                        @foreach (var t in Enum.GetValues<MaintenanceWorkOrderType>()) { <option value="@t">@t</option> }
+                    </select>
+                </div>
+                <div class="form-group"><label class="form-label">Priority</label>
+                    <select class="form-control" @bind="_priority">
+                        @foreach (var p in Enum.GetValues<MaintenanceWorkOrderPriority>()) { <option value="@p">@p</option> }
+                    </select>
+                </div>
+            </div>
+            <div class="form-group"><label class="form-label">Scheduled Date</label><input class="form-control" type="date" @bind="_scheduledDate" /></div>
             <div class="form-group"><label class="form-label">Description</label><textarea class="form-control" @bind="_description"></textarea></div>
             <button class="btn btn-primary" @onclick="Create">Create</button>
         </div>
     </div>
 }
 
+@if (_showDetail && _detailWo != null)
+{
+    <div class="modal-overlay" @onclick="() => _showDetail = false">
+        <div class="modal-content" style="max-width:600px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">WO #@_detailWo.Id — @_detailWo.Title</span>
+                <button class="modal-close" @onclick="() => _showDetail = false">&times;</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1rem;font-size:0.9rem">
+                <div><strong>Machine:</strong> @_detailWo.MachineId</div>
+                <div><strong>Type:</strong> @_detailWo.Type</div>
+                <div><strong>Status:</strong> <span class="badge badge-@_detailWo.Status.ToString().ToLower()">@_detailWo.Status</span></div>
+                <div><strong>Priority:</strong> <span class="badge badge-@_detailWo.Priority.ToString().ToLower()">@_detailWo.Priority</span></div>
+                <div><strong>Created:</strong> @_detailWo.CreatedDate.ToString("yyyy-MM-dd HH:mm")</div>
+                <div><strong>Scheduled:</strong> @(_detailWo.ScheduledDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+            </div>
+            @if (!string.IsNullOrEmpty(_detailWo.Description))
+            {
+                <div style="margin-bottom:1rem"><strong>Description:</strong><br/>@_detailWo.Description</div>
+            }
+            <div class="card-header" style="margin-bottom:0.5rem">Log Action</div>
+            <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+                <input class="form-control" style="flex:1" placeholder="What was done..." @bind="_actionNote" />
+                <button class="btn btn-primary" @onclick="LogAction" disabled="@string.IsNullOrWhiteSpace(_actionNote)">Log</button>
+            </div>
+            @if (_detailWo.WorkPerformed != null)
+            {
+                <div style="font-size:0.85rem;color:var(--text-secondary);white-space:pre-line;background:var(--bg-tertiary);padding:0.75rem;border-radius:6px;max-height:200px;overflow-y:auto">@_detailWo.WorkPerformed</div>
+            }
+        </div>
+    </div>
+}
+
 @code {
     private List<MaintenanceWorkOrder>? _workOrders;
-    private bool _showCreate;
+    private List<Machine>? _machines;
+    private bool _showCreate, _showDetail;
     private string _machineId = "", _description = "", _title = "";
     private MaintenanceWorkOrderType _type = MaintenanceWorkOrderType.Preventive;
+    private MaintenanceWorkOrderPriority _priority = MaintenanceWorkOrderPriority.Normal;
+    private DateTime? _scheduledDate;
+    private string _statusFilter = "";
+    private MaintenanceWorkOrder? _detailWo;
+    private string _actionNote = "";
+    private ConfirmDialog _confirmDialog = null!;
 
-    protected override async Task OnInitializedAsync() => _workOrders = await MaintenanceService.GetWorkOrdersAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+        await LoadWorkOrders();
+    }
+
+    private async Task LoadWorkOrders()
+    {
+        MaintenanceWorkOrderStatus? filter = null;
+        if (Enum.TryParse<MaintenanceWorkOrderStatus>(_statusFilter, out var s)) filter = s;
+        _workOrders = await MaintenanceService.GetWorkOrdersAsync(filter);
+    }
+
+    private async Task ShowCreate()
+    {
+        _machineId = ""; _title = ""; _description = "";
+        _type = MaintenanceWorkOrderType.Preventive;
+        _priority = MaintenanceWorkOrderPriority.Normal;
+        _scheduledDate = null;
+        _showCreate = true;
+    }
 
     private async Task Create()
     {
-        await MaintenanceService.CreateWorkOrderAsync(new MaintenanceWorkOrder { MachineId = _machineId, Type = _type, Title = _title, Description = _description, CreatedBy = "System", LastModifiedBy = "System" });
-        _showCreate = false;
-        _workOrders = await MaintenanceService.GetWorkOrdersAsync();
+        if (string.IsNullOrWhiteSpace(_machineId)) { Toast.ShowError("Machine is required."); return; }
+        if (string.IsNullOrWhiteSpace(_title)) { Toast.ShowError("Title is required."); return; }
+        try
+        {
+            await MaintenanceService.CreateWorkOrderAsync(new MaintenanceWorkOrder
+            {
+                MachineId = _machineId, Type = _type, Title = _title,
+                Description = _description, Priority = _priority,
+                ScheduledDate = _scheduledDate,
+                CreatedBy = "System", LastModifiedBy = "System"
+            });
+            _showCreate = false;
+            Toast.ShowSuccess("Work order created.");
+            await LoadWorkOrders();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to create: {ex.Message}"); }
+    }
+
+    private async Task ChangeStatus(MaintenanceWorkOrder wo, MaintenanceWorkOrderStatus newStatus)
+    {
+        var label = newStatus switch
+        {
+            MaintenanceWorkOrderStatus.Completed => "complete",
+            MaintenanceWorkOrderStatus.Cancelled => "cancel",
+            MaintenanceWorkOrderStatus.InProgress => "start",
+            MaintenanceWorkOrderStatus.Assigned => "assign",
+            MaintenanceWorkOrderStatus.OnHold => "put on hold",
+            _ => $"change to {newStatus}"
+        };
+        var confirmed = await _confirmDialog.ShowAsync($"Are you sure you want to {label} WO #{wo.Id}?", "Confirm Status Change");
+        if (!confirmed) return;
+        try
+        {
+            await MaintenanceService.UpdateStatusAsync(wo.Id, newStatus, "System");
+            Toast.ShowSuccess($"WO #{wo.Id} → {newStatus}");
+            await LoadWorkOrders();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private void ShowDetail(MaintenanceWorkOrder wo)
+    {
+        _detailWo = wo;
+        _actionNote = "";
+        _showDetail = true;
+    }
+
+    private async Task LogAction()
+    {
+        if (_detailWo == null || string.IsNullOrWhiteSpace(_actionNote)) return;
+        try
+        {
+            await MaintenanceService.LogMaintenanceActionAsync(new MaintenanceActionLog
+            {
+                MachineId = _detailWo.MachineId,
+                MachineComponentId = _detailWo.MachineComponentId,
+                Action = _actionNote.Trim(),
+                PerformedBy = "System",
+                Notes = $"From WO #{_detailWo.Id}"
+            });
+            _detailWo.WorkPerformed = string.IsNullOrEmpty(_detailWo.WorkPerformed)
+                ? $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm}] {_actionNote.Trim()}"
+                : $"{_detailWo.WorkPerformed}\n[{DateTime.UtcNow:yyyy-MM-dd HH:mm}] {_actionNote.Trim()}";
+            await MaintenanceService.UpdateWorkOrderAsync(_detailWo);
+            _actionNote = "";
+            Toast.ShowSuccess("Action logged.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
     }
 }

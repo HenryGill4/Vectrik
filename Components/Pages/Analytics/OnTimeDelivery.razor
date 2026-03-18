@@ -1,5 +1,6 @@
 @page "/analytics/on-time-delivery"
 @inject IAnalyticsService AnalyticsService
+@inject NavigationManager Nav
 @rendermode InteractiveServer
 
 <PageTitle>On-Time Delivery - OpCentrix</PageTitle>
@@ -16,6 +17,7 @@
         <input type="text" class="form-control" style="width:200px;display:inline-block;margin-left:0.5rem"
                placeholder="Filter by customer..." @bind="_customerFilter" @bind:event="oninput" @onkeydown="HandleKeyDown" />
         <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="LoadDataAsync">Apply</button>
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
     </div>
 </div>
 
@@ -121,5 +123,13 @@ else
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter") await LoadDataAsync();
+    }
+
+    private void ExportCsv()
+    {
+        if (!_rows.Any()) return;
+        var csv = "WO#,Customer,DueDate,CompletedDate,DeltaDays,OnTime\n" +
+            string.Join("\n", _rows.Select(r => $"{r.OrderNumber},{r.CustomerName},{r.DueDate:yyyy-MM-dd},{r.CompletedDate:yyyy-MM-dd},{r.DeltaDays},{r.IsOnTime}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
     }
 }

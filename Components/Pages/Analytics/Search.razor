@@ -15,11 +15,17 @@
                @bind="_query" @bind:event="oninput" @onkeydown="HandleKeyDown" />
         <button class="btn btn-primary" @onclick="DoSearch">Search</button>
     </div>
+    <div style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-muted)">
+        🔍 Searches across: Work Orders, Parts, Jobs, NCRs, Quotes, Customers
+    </div>
 </div>
 
 @if (_searching) { <div class="loading"><span class="spinner"></span> Searching...</div> }
 else if (_hasSearched)
 {
+    <div style="margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-secondary)">
+        Found <strong>@_results.Count</strong> result@(_results.Count != 1 ? "s" : "") for "<strong>@_query</strong>"
+    </div>
     @if (_results.Count == 0)
     {
         <div class="card" style="padding:2rem;text-align:center;color:var(--text-muted)">

@@ -1,7 +1,45 @@
+using Microsoft.EntityFrameworkCore;
+using Opcentrix_V3.Data;
+using Opcentrix_V3.Models;
+
 namespace Opcentrix_V3.Services;
 
 public class SpcService : ISpcService
 {
+    private readonly TenantDbContext _db;
+
+    public SpcService(TenantDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<List<Part>> GetActivePartsWithSpcDataAsync()
+    {
+        var partIds = await _db.SpcDataPoints.Select(d => d.PartId).Distinct().ToListAsync();
+        return await _db.Parts.Where(p => p.IsActive && partIds.Contains(p.Id))
+            .OrderBy(p => p.PartNumber).ToListAsync();
+    }
+
+    public async Task<List<string>> GetCharacteristicsForPartAsync(int partId)
+    {
+        return await _db.SpcDataPoints
+            .Where(d => d.PartId == partId)
+            .Select(d => d.CharacteristicName)
+            .Distinct()
+            .OrderBy(c => c)
+            .ToListAsync();
+    }
+
+    public async Task<List<SpcDataPoint>> GetDataPointsAsync(int partId, string characteristic, int count)
+    {
+        return await _db.SpcDataPoints
+            .Where(d => d.PartId == partId && d.CharacteristicName == characteristic)
+            .OrderByDescending(d => d.RecordedAt)
+            .Take(count)
+            .OrderBy(d => d.RecordedAt)
+            .ToListAsync();
+    }
+
     public SpcCalculationResult Calculate(List<decimal> values, decimal nominal, decimal tolerancePlus, decimal toleranceMinus)
     {
         if (values.Count < 2)
