@@ -4,6 +4,7 @@
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @inject ToastService Toast
 @using Microsoft.EntityFrameworkCore
+@using System.Text.RegularExpressions
 
 <PageTitle>Company Branding - Admin - OpCentrix</PageTitle>
 
@@ -34,7 +35,8 @@ else
                 @if (!string.IsNullOrWhiteSpace(_logoUrl))
                 {
                     <div style="margin-top: 8px;">
-                        <img src="@_logoUrl" alt="Company Logo" style="max-height: 60px; border: 1px solid var(--border); border-radius: 4px; padding: 4px;" />
+                        <img src="@_logoUrl" alt="Company Logo" style="max-height: 60px; border: 1px solid var(--border); border-radius: 4px; padding: 4px;"
+                             onerror="this.style.display='none'" />
                     </div>
                 }
             </div>
@@ -47,33 +49,40 @@ else
             <div style="display: flex; gap: 16px; flex-wrap: wrap;">
                 <div class="form-group" style="flex: 1; min-width: 200px;">
                     <label class="form-label">CAGE Code</label>
-                    <input class="form-control" @bind="_cageCode" maxlength="5" placeholder="5-character code" />
+                    <input class="form-control @(_validationErrors.ContainsKey("cage") ? "is-invalid" : "")"
+                           @bind="_cageCode" maxlength="5" placeholder="5 alphanumeric characters" />
+                    @if (_validationErrors.ContainsKey("cage")) { <small style="color:var(--danger);">@_validationErrors["cage"]</small> }
                 </div>
                 <div class="form-group" style="flex: 1; min-width: 200px;">
                     <label class="form-label">DoDAAC</label>
-                    <input class="form-control" @bind="_dodaac" maxlength="6" placeholder="DoD Activity Address Code" />
+                    <input class="form-control @(_validationErrors.ContainsKey("dodaac") ? "is-invalid" : "")"
+                           @bind="_dodaac" maxlength="6" placeholder="6 characters" />
+                    @if (_validationErrors.ContainsKey("dodaac")) { <small style="color:var(--danger);">@_validationErrors["dodaac"]</small> }
                 </div>
                 <div class="form-group" style="flex: 1; min-width: 200px;">
                     <label class="form-label">DUNS / SAM UEI</label>
-                    <input class="form-control" @bind="_duns" placeholder="Unique Entity Identifier" />
+                    <input class="form-control @(_validationErrors.ContainsKey("duns") ? "is-invalid" : "")"
+                           @bind="_duns" placeholder="Unique Entity Identifier" />
+                    @if (_validationErrors.ContainsKey("duns")) { <small style="color:var(--danger);">@_validationErrors["duns"]</small> }
                 </div>
             </div>
         </div>
     </div>
 
     <div style="margin-top: 16px;">
-        <button class="btn btn-primary" @onclick="Save">Save</button>
+        <button class="btn btn-primary" @onclick="Save" disabled="@_saving">@(_saving ? "Saving..." : "Save")</button>
     </div>
 }
 
 @code {
-    private bool _loading = true;
+    private bool _loading = true, _saving;
     private string _companyName = "";
     private string _companyAddress = "";
     private string _logoUrl = "";
     private string _cageCode = "";
     private string _dodaac = "";
     private string _duns = "";
+    private Dictionary<string, string> _validationErrors = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -90,17 +99,37 @@ else
         _loading = false;
     }
 
+    private bool Validate()
+    {
+        _validationErrors.Clear();
+        if (!string.IsNullOrWhiteSpace(_cageCode) && !Regex.IsMatch(_cageCode, @"^[A-Z0-9]{5}$"))
+            _validationErrors["cage"] = "CAGE code must be exactly 5 alphanumeric characters (uppercase).";
+        if (!string.IsNullOrWhiteSpace(_dodaac) && !Regex.IsMatch(_dodaac, @"^[A-Z0-9]{6}$"))
+            _validationErrors["dodaac"] = "DoDAAC must be exactly 6 alphanumeric characters.";
+        if (!string.IsNullOrWhiteSpace(_duns) && !Regex.IsMatch(_duns, @"^\d{9,13}$"))
+            _validationErrors["duns"] = "DUNS/UEI should be 9-13 digits.";
+        return _validationErrors.Count == 0;
+    }
+
     private async Task Save()
     {
-        await UpsertSetting("company.name", _companyName, "Branding", "Company name on all documents");
-        await UpsertSetting("company.address", _companyAddress, "Branding", "Address for documents");
-        await UpsertSetting("company.logo_url", _logoUrl, "Branding", "Logo for reports/packing lists");
-        await UpsertSetting("company.cage_code", _cageCode, "Defense", "CAGE code for DLMS transactions");
-        await UpsertSetting("company.dodaac", _dodaac, "Defense", "DoD Activity Address Code");
-        await UpsertSetting("company.duns", _duns, "Defense", "DUNS/SAM UEI number");
+        if (!Validate()) return;
 
-        await Db.SaveChangesAsync();
-        Toast.ShowSuccess("Branding saved.");
+        _saving = true;
+        try
+        {
+            await UpsertSetting("company.name", _companyName, "Branding", "Company name on all documents");
+            await UpsertSetting("company.address", _companyAddress, "Branding", "Address for documents");
+            await UpsertSetting("company.logo_url", _logoUrl, "Branding", "Logo for reports/packing lists");
+            await UpsertSetting("company.cage_code", _cageCode.ToUpperInvariant(), "Defense", "CAGE code for DLMS transactions");
+            await UpsertSetting("company.dodaac", _dodaac.ToUpperInvariant(), "Defense", "DoD Activity Address Code");
+            await UpsertSetting("company.duns", _duns, "Defense", "DUNS/SAM UEI number");
+
+            await Db.SaveChangesAsync();
+            Toast.ShowSuccess("Branding saved.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Save failed: {ex.Message}"); }
+        finally { _saving = false; }
     }
 
     private async Task UpsertSetting(string key, string value, string category, string description)

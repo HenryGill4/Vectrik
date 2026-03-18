@@ -1,6 +1,8 @@
 @page "/admin/materials"
-@inject IMaterialService MaterialService
 @rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
+@inject IMaterialService MaterialService
+@inject ToastService Toast
 
 <PageTitle>Materials - Admin - OpCentrix</PageTitle>
 
@@ -9,7 +11,16 @@
     <button class="btn btn-primary" @onclick="NewMaterial">+ New Material</button>
 </div>
 
-@if (_materials == null) { <div class="loading"><span class="spinner"></span></div> }
+@if (_materials == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!_materials.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-text">No materials defined. Click "+ New Material" to add one.</div>
+    </div>
+}
 else
 {
     <div class="card">
@@ -25,7 +36,10 @@ else
                         <td>$@m.CostPerKg.ToString("N2")</td>
                         <td>@(m.Supplier ?? "—")</td>
                         <td><span class="badge @(m.IsActive ? "badge-active" : "badge-cancelled")">@(m.IsActive ? "Yes" : "No")</span></td>
-                        <td><button class="btn btn-sm btn-secondary" @onclick="() => { _edit = m; _showForm = true; }">Edit</button></td>
+                        <td style="white-space: nowrap;">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditMaterial(m)">Edit</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(m)">Delete</button>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -39,54 +53,105 @@ else
         <div class="modal-content" style="max-width: 600px;" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") Material</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
             @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
-            <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
+            <div class="form-group">
+                <label class="form-label">Name <span style="color:var(--danger);">*</span></label>
+                <input class="form-control @(_validationErrors.ContainsKey("Name") ? "is-invalid" : "")" @bind="_edit.Name" />
+                @if (_validationErrors.ContainsKey("Name")) { <small style="color:var(--danger);">@_validationErrors["Name"]</small> }
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div class="form-group"><label class="form-label">Category</label>
+                <div class="form-group"><label class="form-label">Category <span style="color:var(--danger);">*</span></label>
                     <select class="form-control" @bind="_edit.Category">
-                        <option>Metal Powder</option><option>Wire</option><option>Gas</option><option>Other</option>
+                        <option>Metal Powder</option><option>Wire</option><option>Gas</option><option>Bar Stock</option><option>Sheet</option><option>Other</option>
                     </select>
                 </div>
-                <div class="form-group"><label class="form-label">Cost/Kg ($)</label><input class="form-control" type="number" step="0.01" @bind="_edit.CostPerKg" /></div>
-                <div class="form-group"><label class="form-label">Density (g/cm³)</label><input class="form-control" type="number" step="0.01" @bind="_edit.Density" /></div>
+                <div class="form-group"><label class="form-label">Cost/Kg ($)</label><input class="form-control" type="number" step="0.01" min="0" @bind="_edit.CostPerKg" /></div>
+                <div class="form-group"><label class="form-label">Density (g/cm³)</label><input class="form-control" type="number" step="0.01" min="0" @bind="_edit.Density" /></div>
                 <div class="form-group"><label class="form-label">Supplier</label><input class="form-control" @bind="_edit.Supplier" /></div>
             </div>
-            <div class="form-group"><label class="form-label">Compatible Materials (comma-separated IDs)</label><input class="form-control" @bind="_edit.CompatibleMaterials" placeholder="e.g. 1,3,4" /></div>
             <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" @bind="_edit.Notes" rows="3"></textarea></div>
             <div class="form-group">
                 <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
             </div>
             <div style="display: flex; gap: 8px; margin-top: 12px;">
-                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-primary" @onclick="Save" disabled="@_saving">@(_saving ? "Saving..." : "Save")</button>
                 <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
             </div>
         </div>
     </div>
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     private List<Material>? _materials;
     private Material? _edit;
-    private bool _showForm;
+    private bool _showForm, _saving;
     private string? _error;
+    private Dictionary<string, string> _validationErrors = new();
+    private ConfirmDialog _confirm = null!;
 
     protected override async Task OnInitializedAsync() => _materials = await MaterialService.GetAllMaterialsAsync();
 
     private void NewMaterial()
     {
         _edit = new Material { Category = "Metal Powder", CreatedBy = "System", LastModifiedBy = "System" };
+        _error = null;
+        _validationErrors.Clear();
         _showForm = true;
+    }
+
+    private void EditMaterial(Material m)
+    {
+        _edit = m;
+        _error = null;
+        _validationErrors.Clear();
+        _showForm = true;
+    }
+
+    private bool Validate()
+    {
+        _validationErrors.Clear();
+        if (string.IsNullOrWhiteSpace(_edit!.Name))
+            _validationErrors["Name"] = "Name is required.";
+        return _validationErrors.Count == 0;
     }
 
     private async Task Save()
     {
         _error = null;
+        if (!Validate()) return;
+
+        _saving = true;
         try
         {
-            if (_edit!.Id == 0) await MaterialService.CreateMaterialAsync(_edit);
-            else await MaterialService.UpdateMaterialAsync(_edit);
+            if (_edit!.Id == 0)
+            {
+                await MaterialService.CreateMaterialAsync(_edit);
+                Toast.ShowSuccess($"Material '{_edit.Name}' created.");
+            }
+            else
+            {
+                await MaterialService.UpdateMaterialAsync(_edit);
+                Toast.ShowSuccess($"Material '{_edit.Name}' updated.");
+            }
             _showForm = false;
             _materials = await MaterialService.GetAllMaterialsAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task ConfirmDelete(Material m)
+    {
+        if (await _confirm.ShowAsync($"Delete material '{m.Name}'? This cannot be undone.", "Delete Material"))
+        {
+            try
+            {
+                await MaterialService.DeleteMaterialAsync(m.Id);
+                Toast.ShowSuccess($"Material '{m.Name}' deleted.");
+                _materials = await MaterialService.GetAllMaterialsAsync();
+            }
+            catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        }
     }
 }

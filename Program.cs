@@ -71,6 +71,7 @@ builder.Services.AddScoped<ILearningService, LearningService>();
 builder.Services.AddScoped<IMaintenanceService, MaintenanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
+builder.Services.AddScoped<IMachineService, MachineService>();
 builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
 
 // Customization Foundation (Stage 0.5)

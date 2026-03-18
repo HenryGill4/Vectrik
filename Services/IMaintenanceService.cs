@@ -9,6 +9,7 @@ public interface IMaintenanceService
     Task<List<MachineComponent>> GetComponentsByMachineAsync(string machineId);
     Task<MachineComponent> CreateComponentAsync(MachineComponent component);
     Task<MachineComponent> UpdateComponentAsync(MachineComponent component);
+    Task DeleteComponentAsync(int componentId);
 
     // Rules
     Task<List<MaintenanceRule>> GetRulesForComponentAsync(int componentId);

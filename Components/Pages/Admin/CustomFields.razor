@@ -136,6 +136,8 @@ else
     }
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     private static readonly string[] _entityTypes = ["WorkOrder", "Quote", "Part", "Inventory", "Inspection", "PurchaseOrder", "Vendor", "Shipment"];
 
@@ -145,6 +147,7 @@ else
     private bool _showForm;
     private int? _editIndex;
     private CustomFieldDefinition _editField = new();
+    private ConfirmDialog _confirm = null!;
 
     private string _formTitle => (_editIndex.HasValue ? "Edit" : "Add") + " Custom Field";
 
@@ -219,8 +222,12 @@ else
 
     private async Task RemoveField(int index)
     {
-        _fields.RemoveAt(index);
-        await CustomFieldService.SaveConfigAsync(_selectedEntity, _fields, "Admin");
-        Toast.ShowSuccess("Field removed.");
+        var field = _fields[index];
+        if (await _confirm.ShowAsync($"Remove custom field '{field.Label}'? Existing data for this field will be hidden.", "Remove Field"))
+        {
+            _fields.RemoveAt(index);
+            await CustomFieldService.SaveConfigAsync(_selectedEntity, _fields, "Admin");
+            Toast.ShowSuccess("Field removed.");
+        }
     }
 }

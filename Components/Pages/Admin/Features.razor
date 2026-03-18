@@ -46,9 +46,24 @@ else
     </div>
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     private bool _loading = true;
     private List<(string Key, bool Enabled)> _features = new();
+    private ConfirmDialog _confirm = null!;
+
+    private static readonly HashSet<string> _criticalFeatures = new()
+    {
+        "module.shopfloor", "module.workorders", "module.quoting"
+    };
+
+    private static readonly Dictionary<string, string[]> _featureDependencies = new()
+    {
+        ["module.inventory"] = new[] { "module.purchasing" },
+        ["module.quality"] = new[] { "advanced.spc" },
+        ["dlms"] = new[] { "dlms.iuid", "dlms.wawf", "dlms.gfm", "dlms.cdrl" },
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -58,7 +73,25 @@ else
 
     private async Task ToggleFeature(string key, bool enabled)
     {
+        if (!enabled && _criticalFeatures.Contains(key))
+        {
+            var confirmed = await _confirm.ShowAsync(
+                $"Disabling '{GetDescription(key)}' will hide this module for all users. Are you sure?",
+                "Disable Module");
+            if (!confirmed) return;
+        }
+
         await FeatureService.SetFeatureAsync(key, enabled);
+
+        // If disabling a parent feature, also disable dependents
+        if (!enabled && _featureDependencies.TryGetValue(key, out var dependents))
+        {
+            foreach (var dep in dependents)
+            {
+                await FeatureService.SetFeatureAsync(dep, false);
+            }
+        }
+
         _features = await FeatureService.GetAllFeaturesAsync();
         Toast.ShowSuccess($"{key} {(enabled ? "enabled" : "disabled")}");
     }

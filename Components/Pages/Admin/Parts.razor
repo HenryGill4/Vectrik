@@ -1,7 +1,9 @@
 @page "/admin/parts"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
 @inject IPartService PartService
 @inject IStageService StageService
-@rendermode InteractiveServer
+@inject ToastService Toast
 
 <PageTitle>Parts - Admin - OpCentrix</PageTitle>
 
@@ -10,7 +12,16 @@
     <button class="btn btn-primary" @onclick="NewPart">+ New Part</button>
 </div>
 
-@if (_parts == null) { <div class="loading"><span class="spinner"></span></div> }
+@if (_parts == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!_parts.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-text">No parts configured yet. Click "+ New Part" to add your first part.</div>
+    </div>
+}
 else
 {
     <div class="card">
@@ -41,7 +52,6 @@ else
             <div class="modal-header"><span class="modal-title">@(_editPart.Id == 0 ? "New Part" : "Edit Part")</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
             @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
 
-            @* ---- Tab bar ---- *@
             <div class="tab-bar" style="margin-bottom: 16px;">
                 <button class="tab @(_tab == "basic" ? "active" : "")" @onclick='() => _tab = "basic"'>Basic Info</button>
                 <button class="tab @(_tab == "stacking" ? "active" : "")" @onclick='() => _tab = "stacking"'>Stacking</button>
@@ -52,12 +62,19 @@ else
                 }
             </div>
 
-            @* ---- Basic Info Tab ---- *@
             @if (_tab == "basic")
             {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="form-group"><label class="form-label">Part Number</label><input class="form-control" @bind="_editPart.PartNumber" /></div>
-                    <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_editPart.Name" /></div>
+                    <div class="form-group">
+                        <label class="form-label">Part Number <span style="color:var(--danger);">*</span></label>
+                        <input class="form-control @(_validationErrors.ContainsKey("PartNumber") ? "is-invalid" : "")" @bind="_editPart.PartNumber" />
+                        @if (_validationErrors.ContainsKey("PartNumber")) { <small style="color:var(--danger);">@_validationErrors["PartNumber"]</small> }
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Name <span style="color:var(--danger);">*</span></label>
+                        <input class="form-control @(_validationErrors.ContainsKey("Name") ? "is-invalid" : "")" @bind="_editPart.Name" />
+                        @if (_validationErrors.ContainsKey("Name")) { <small style="color:var(--danger);">@_validationErrors["Name"]</small> }
+                    </div>
                     <div class="form-group" style="grid-column: span 2;"><label class="form-label">Description</label><input class="form-control" @bind="_editPart.Description" /></div>
                     <div class="form-group"><label class="form-label">Material</label><input class="form-control" @bind="_editPart.Material" /></div>
                     <div class="form-group"><label class="form-label">Approach</label><input class="form-control" @bind="_editPart.ManufacturingApproach" /></div>
@@ -67,16 +84,18 @@ else
                 </div>
             }
 
-            @* ---- Stacking Tab ---- *@
             @if (_tab == "stacking")
             {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div class="form-group">
                         <label class="form-label"><input type="checkbox" @bind="_editPart.AllowStacking" style="margin-right: 6px;" />Allow Stacking</label>
                     </div>
-                    <div class="form-group"><label class="form-label">Max Stack Count</label><input class="form-control" type="number" min="1" max="10" @bind="_editPart.MaxStackCount" /></div>
+                    <div class="form-group">
+                        <label class="form-label">Max Stack Count</label>
+                        <input class="form-control" type="number" min="1" max="10" @bind="_editPart.MaxStackCount" />
+                    </div>
                     <div class="form-group"><label class="form-label">Parts/Build (Single)</label><input class="form-control" type="number" min="1" @bind="_editPart.PartsPerBuildSingle" /></div>
-                    <div class="form-group"><label class="form-label">Single Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_editPart.SingleStackDurationHours" /></div>
+                    <div class="form-group"><label class="form-label">Single Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" min="0" @bind="_editPart.SingleStackDurationHours" /></div>
 
                     <div class="form-group" style="grid-column: span 2;">
                         <label class="form-label"><input type="checkbox" @bind="_editPart.EnableDoubleStack" style="margin-right: 6px;" />Enable Double Stack</label>
@@ -84,7 +103,7 @@ else
                     @if (_editPart.EnableDoubleStack)
                     {
                         <div class="form-group"><label class="form-label">Parts/Build (Double)</label><input class="form-control" type="number" min="1" @bind="_editPart.PartsPerBuildDouble" /></div>
-                        <div class="form-group"><label class="form-label">Double Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_editPart.DoubleStackDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Double Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" min="0" @bind="_editPart.DoubleStackDurationHours" /></div>
                     }
 
                     <div class="form-group" style="grid-column: span 2;">
@@ -93,27 +112,25 @@ else
                     @if (_editPart.EnableTripleStack)
                     {
                         <div class="form-group"><label class="form-label">Parts/Build (Triple)</label><input class="form-control" type="number" min="1" @bind="_editPart.PartsPerBuildTriple" /></div>
-                        <div class="form-group"><label class="form-label">Triple Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_editPart.TripleStackDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Triple Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" min="0" @bind="_editPart.TripleStackDurationHours" /></div>
                     }
                 </div>
             }
 
-            @* ---- Batch Durations Tab ---- *@
             @if (_tab == "batch")
             {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="form-group"><label class="form-label">SLS Build Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_editPart.SlsBuildDurationHours" /></div>
-                    <div class="form-group"><label class="form-label">SLS Parts/Build</label><input class="form-control" type="number" @bind="_editPart.SlsPartsPerBuild" /></div>
-                    <div class="form-group"><label class="form-label">Depowdering Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_editPart.DepowderingDurationHours" /></div>
-                    <div class="form-group"><label class="form-label">Depowdering Parts/Batch</label><input class="form-control" type="number" @bind="_editPart.DepowderingPartsPerBatch" /></div>
-                    <div class="form-group"><label class="form-label">Heat Treatment Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_editPart.HeatTreatmentDurationHours" /></div>
-                    <div class="form-group"><label class="form-label">Heat Treatment Parts/Batch</label><input class="form-control" type="number" @bind="_editPart.HeatTreatmentPartsPerBatch" /></div>
-                    <div class="form-group"><label class="form-label">Wire EDM Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_editPart.WireEdmDurationHours" /></div>
-                    <div class="form-group"><label class="form-label">Wire EDM Parts/Session</label><input class="form-control" type="number" @bind="_editPart.WireEdmPartsPerSession" /></div>
+                    <div class="form-group"><label class="form-label">SLS Build Duration (hrs)</label><input class="form-control" type="number" step="0.1" min="0" @bind="_editPart.SlsBuildDurationHours" /></div>
+                    <div class="form-group"><label class="form-label">SLS Parts/Build</label><input class="form-control" type="number" min="0" @bind="_editPart.SlsPartsPerBuild" /></div>
+                    <div class="form-group"><label class="form-label">Depowdering Duration (hrs)</label><input class="form-control" type="number" step="0.1" min="0" @bind="_editPart.DepowderingDurationHours" /></div>
+                    <div class="form-group"><label class="form-label">Depowdering Parts/Batch</label><input class="form-control" type="number" min="0" @bind="_editPart.DepowderingPartsPerBatch" /></div>
+                    <div class="form-group"><label class="form-label">Heat Treatment Duration (hrs)</label><input class="form-control" type="number" step="0.1" min="0" @bind="_editPart.HeatTreatmentDurationHours" /></div>
+                    <div class="form-group"><label class="form-label">Heat Treatment Parts/Batch</label><input class="form-control" type="number" min="0" @bind="_editPart.HeatTreatmentPartsPerBatch" /></div>
+                    <div class="form-group"><label class="form-label">Wire EDM Duration (hrs)</label><input class="form-control" type="number" step="0.1" min="0" @bind="_editPart.WireEdmDurationHours" /></div>
+                    <div class="form-group"><label class="form-label">Wire EDM Parts/Session</label><input class="form-control" type="number" min="0" @bind="_editPart.WireEdmPartsPerSession" /></div>
                 </div>
             }
 
-            @* ---- Stage Requirements Tab ---- *@
             @if (_tab == "stages" && _editPart.Id > 0)
             {
                 <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
@@ -140,9 +157,9 @@ else
                                 <tr>
                                     <td><input class="form-control" type="number" min="1" style="width: 70px;" value="@r.ExecutionOrder" @onchange="e => UpdateReqOrder(r, e)" /></td>
                                     <td>@(r.ProductionStage?.Name ?? $"Stage #{r.ProductionStageId}")</td>
-                                    <td><input class="form-control" type="number" step="0.1" style="width: 100px;" value="@r.EstimatedHours" @onchange="e => UpdateReqHours(r, e)" /></td>
+                                    <td><input class="form-control" type="number" step="0.1" min="0" style="width: 100px;" value="@r.EstimatedHours" @onchange="e => UpdateReqHours(r, e)" /></td>
                                     <td><input type="checkbox" checked="@r.IsRequired" @onchange="e => UpdateReqRequired(r, e)" /></td>
-                                    <td><button class="btn btn-sm btn-danger" @onclick="() => RemoveStageReq(r.Id)">✕</button></td>
+                                    <td><button class="btn btn-sm btn-danger" @onclick="() => ConfirmRemoveStage(r)">✕</button></td>
                                 </tr>
                             }
                         </tbody>
@@ -155,22 +172,26 @@ else
             }
 
             <div style="display: flex; gap: 8px; margin-top: 16px;">
-                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-primary" @onclick="Save" disabled="@_saving">@(_saving ? "Saving..." : "Save")</button>
                 <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
             </div>
         </div>
     </div>
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     private List<Part>? _parts;
     private List<ProductionStage>? _allStages;
     private List<PartStageRequirement>? _stageReqs;
     private Part? _editPart;
-    private bool _showForm;
+    private bool _showForm, _saving;
     private string? _error;
     private string _tab = "basic";
     private int _addStageId;
+    private Dictionary<string, string> _validationErrors = new();
+    private ConfirmDialog _confirm = null!;
 
     protected override async Task OnInitializedAsync()
     {
@@ -182,6 +203,8 @@ else
     {
         _editPart = p;
         _tab = "basic";
+        _error = null;
+        _validationErrors.Clear();
         _stageReqs = await PartService.GetStageRequirementsAsync(p.Id);
         _showForm = true;
     }
@@ -200,56 +223,95 @@ else
         };
         _tab = "basic";
         _stageReqs = null;
+        _error = null;
+        _validationErrors.Clear();
         _showForm = true;
+    }
+
+    private bool Validate()
+    {
+        _validationErrors.Clear();
+        if (string.IsNullOrWhiteSpace(_editPart!.PartNumber))
+            _validationErrors["PartNumber"] = "Part Number is required.";
+        if (string.IsNullOrWhiteSpace(_editPart.Name))
+            _validationErrors["Name"] = "Name is required.";
+        return _validationErrors.Count == 0;
     }
 
     private async Task Save()
     {
         _error = null;
+        if (!Validate()) return;
+
+        _saving = true;
         try
         {
             if (_editPart!.Id == 0)
+            {
                 _editPart = await PartService.CreatePartAsync(_editPart);
+                Toast.ShowSuccess($"Part '{_editPart.PartNumber}' created.");
+            }
             else
+            {
                 await PartService.UpdatePartAsync(_editPart);
+                Toast.ShowSuccess($"Part '{_editPart.PartNumber}' updated.");
+            }
             _showForm = false;
             _parts = await PartService.GetAllPartsAsync(activeOnly: false);
         }
         catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
     }
 
     private async Task AddStageReq()
     {
         if (_addStageId == 0 || _editPart?.Id == 0) return;
-        var nextOrder = (_stageReqs?.Any() == true) ? _stageReqs.Max(r => r.ExecutionOrder) + 1 : 1;
-        var stage = _allStages?.FirstOrDefault(s => s.Id == _addStageId);
-        await PartService.AddStageRequirementAsync(new PartStageRequirement
+        try
         {
-            PartId = _editPart!.Id,
-            ProductionStageId = _addStageId,
-            ExecutionOrder = nextOrder,
-            EstimatedHours = stage?.DefaultDurationHours ?? 1.0,
-            CreatedBy = "System",
-            LastModifiedBy = "System"
-        });
-        _stageReqs = await PartService.GetStageRequirementsAsync(_editPart.Id);
-        _addStageId = 0;
+            var nextOrder = (_stageReqs?.Any() == true) ? _stageReqs.Max(r => r.ExecutionOrder) + 1 : 1;
+            var stage = _allStages?.FirstOrDefault(s => s.Id == _addStageId);
+            await PartService.AddStageRequirementAsync(new PartStageRequirement
+            {
+                PartId = _editPart!.Id,
+                ProductionStageId = _addStageId,
+                ExecutionOrder = nextOrder,
+                EstimatedHours = stage?.DefaultDurationHours ?? 1.0,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            });
+            _stageReqs = await PartService.GetStageRequirementsAsync(_editPart.Id);
+            _addStageId = 0;
+            Toast.ShowSuccess("Stage added to routing.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
     }
 
-    private async Task RemoveStageReq(int id)
+    private async Task ConfirmRemoveStage(PartStageRequirement r)
     {
-        await PartService.RemoveStageRequirementAsync(id);
-        _stageReqs = await PartService.GetStageRequirementsAsync(_editPart!.Id);
+        var stageName = r.ProductionStage?.Name ?? $"Stage #{r.ProductionStageId}";
+        if (await _confirm.ShowAsync($"Remove '{stageName}' from routing?", "Remove Stage"))
+        {
+            await PartService.RemoveStageRequirementAsync(r.Id);
+            _stageReqs = await PartService.GetStageRequirementsAsync(_editPart!.Id);
+        }
     }
 
     private async Task UpdateReqOrder(PartStageRequirement r, ChangeEventArgs e)
     {
-        if (int.TryParse(e.Value?.ToString(), out var val)) { r.ExecutionOrder = val; await PartService.UpdateStageRequirementAsync(r); }
+        if (int.TryParse(e.Value?.ToString(), out var val) && val >= 1)
+        {
+            r.ExecutionOrder = val;
+            await PartService.UpdateStageRequirementAsync(r);
+        }
     }
 
     private async Task UpdateReqHours(PartStageRequirement r, ChangeEventArgs e)
     {
-        if (double.TryParse(e.Value?.ToString(), out var val)) { r.EstimatedHours = val; await PartService.UpdateStageRequirementAsync(r); }
+        if (double.TryParse(e.Value?.ToString(), out var val) && val >= 0)
+        {
+            r.EstimatedHours = val;
+            await PartService.UpdateStageRequirementAsync(r);
+        }
     }
 
     private async Task UpdateReqRequired(PartStageRequirement r, ChangeEventArgs e)

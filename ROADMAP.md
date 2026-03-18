@@ -59,7 +59,7 @@ part of the product:
 
 ```
 PHASE 1A — HARDENING (Production-readiness for existing code)
-├── Stage H1: Admin Pages Hardening                    [NOT STARTED]
+├── Stage H1: Admin Pages Hardening                    [COMPLETE]
 ├── Stage H2: Core Workflow Hardening (Quotes/WOs)     [NOT STARTED]
 ├── Stage H3: Shop Floor & Scheduling Hardening        [NOT STARTED]
 ├── Stage H4: Quality & Inventory Hardening            [NOT STARTED]
@@ -112,51 +112,51 @@ Every admin page needs: form validation, confirmation dialogs, error handling,
 toast feedback, proper service layer usage (no direct DbContext).
 
 #### Admin/Machines.razor
-- [ ] H1.1 — Replace direct `DbContext` injection with `IMachineService` (create if needed)
-- [ ] H1.2 — Add required field validation (Name, Type required)
-- [ ] H1.3 — Add `ConfirmDialog` before machine deletion
-- [ ] H1.4 — Add numeric range validation for build volume fields
-- [ ] H1.5 — Add edit/delete for machine components (currently add-only)
-- [ ] H1.6 — Add try-catch with `Toast.ShowError()` around all save operations
-- [ ] H1.7 — Add empty state ("No machines configured yet")
+- [x] H1.1 — Replace direct `DbContext` injection with `IMachineService` (create if needed)
+- [x] H1.2 — Add required field validation (Name, Type required)
+- [x] H1.3 — Add `ConfirmDialog` before machine deletion
+- [x] H1.4 — Add numeric range validation for build volume fields
+- [x] H1.5 — Add edit/delete for machine components (currently add-only)
+- [x] H1.6 — Add try-catch with `Toast.ShowError()` around all save operations
+- [x] H1.7 — Add empty state ("No machines configured yet")
 
 #### Admin/Parts.razor
-- [ ] H1.8 — Add required field validation (Part Number, Name)
-- [ ] H1.9 — Add `ConfirmDialog` before deleting stage requirements
-- [ ] H1.10 — Add numeric validation for stack counts (min 1, max reasonable)
+- [x] H1.8 — Add required field validation (Part Number, Name)
+- [x] H1.9 — Add `ConfirmDialog` before deleting stage requirements
+- [x] H1.10 — Add numeric validation for stack counts (min 1, max reasonable)
 - [ ] H1.11 — Validate stacking config (at least one stack type enabled if SLS)
 - [ ] H1.12 — Add duplicate part number check on create
 
 #### Admin/Users.razor
-- [ ] H1.13 — Add password strength validation (min 8 chars, mixed case)
-- [ ] H1.14 — Add `ConfirmDialog` before user deletion
-- [ ] H1.15 — Prevent deletion of last admin user
+- [x] H1.13 — Add password strength validation (min 8 chars, mixed case)
+- [x] H1.14 — Add `ConfirmDialog` before user deletion
+- [x] H1.15 — Prevent deletion of last admin user
 - [ ] H1.16 — Add visual feedback for stage assignment toggles
-- [ ] H1.17 — Validate email format
+- [x] H1.17 — Validate email format
 
 #### Admin/Materials.razor
-- [ ] H1.18 — Add required field validation (Name, Category)
-- [ ] H1.19 — Add `ConfirmDialog` before deletion
+- [x] H1.18 — Add required field validation (Name, Category)
+- [x] H1.19 — Add `ConfirmDialog` before deletion
 - [ ] H1.20 — Replace raw ID input for compatible materials with searchable dropdown
-- [ ] H1.21 — Add try-catch error handling
+- [x] H1.21 — Add try-catch error handling
 
 #### Admin/Settings.razor
-- [ ] H1.22 — Add key format validation (lowercase, dots, no spaces)
-- [ ] H1.23 — Add setting descriptions/tooltips explaining each setting
-- [ ] H1.24 — Add `ConfirmDialog` before deletion
-- [ ] H1.25 — Add type-aware value editing (toggle for booleans, number input for numerics)
+- [x] H1.22 — Add key format validation (lowercase, dots, no spaces)
+- [x] H1.23 — Add setting descriptions/tooltips explaining each setting
+- [x] H1.24 — Add `ConfirmDialog` before deletion
+- [x] H1.25 — Add type-aware value editing (toggle for booleans, number input for numerics)
 
 #### Admin/Features.razor
-- [ ] H1.26 — Add `ConfirmDialog` before disabling a feature ("This will hide X module for all users")
-- [ ] H1.27 — Show dependent features (disabling inventory should warn about purchasing)
+- [x] H1.26 — Add `ConfirmDialog` before disabling a feature ("This will hide X module for all users")
+- [x] H1.27 — Show dependent features (disabling inventory should warn about purchasing)
 
 #### Admin/CustomFields.razor
 - [ ] H1.28 — Add field preview (show how the field will render)
-- [ ] H1.29 — Add `ConfirmDialog` before deleting a field ("Existing data for this field will be hidden")
+- [x] H1.29 — Add `ConfirmDialog` before deleting a field ("Existing data for this field will be hidden")
 
 #### Admin/Numbering.razor
-- [ ] H1.30 — Add validation that counter value doesn't exceed digit capacity
-- [ ] H1.31 — Hide numbering configs for entities that don't exist yet (PurchaseOrder, Vendor, Shipment) — gate behind feature flags
+- [x] H1.30 — Add validation that counter value doesn't exceed digit capacity
+- [x] H1.31 — Hide numbering configs for entities that don't exist yet (PurchaseOrder, Vendor, Shipment) — gate behind feature flags
 - [ ] H1.32 — Add warning when changing prefix on existing sequences
 
 #### Admin/Branding.razor

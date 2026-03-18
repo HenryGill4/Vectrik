@@ -1,7 +1,9 @@
 @page "/admin/settings"
-@inject Opcentrix_V3.Data.TenantDbContext Db
-@using Microsoft.EntityFrameworkCore
 @rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@inject ToastService Toast
+@using Microsoft.EntityFrameworkCore
 
 <PageTitle>Settings - Admin - OpCentrix</PageTitle>
 
@@ -10,14 +12,23 @@
     <button class="btn btn-primary" @onclick="NewSetting">+ New Setting</button>
 </div>
 
-@if (_settings == null) { <div class="loading"><span class="spinner"></span></div> }
+@if (_settings == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!_settings.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-text">No system settings configured.</div>
+    </div>
+}
 else
 {
     <div class="tab-bar" style="margin-bottom: 16px;">
-        <button class="tab @(_categoryFilter == null ? "active" : "")" @onclick="() => _categoryFilter = null">All</button>
+        <button class="tab @(_categoryFilter == null ? "active" : "")" @onclick="() => _categoryFilter = null">All (@_settings.Count)</button>
         @foreach (var cat in _settings.Select(s => s.Category).Distinct().OrderBy(c => c))
         {
-            <button class="tab @(_categoryFilter == cat ? "active" : "")" @onclick="() => _categoryFilter = cat">@cat</button>
+            <button class="tab @(_categoryFilter == cat ? "active" : "")" @onclick="() => _categoryFilter = cat">@cat (@_settings.Count(s => s.Category == cat))</button>
         }
     </div>
 
@@ -32,9 +43,21 @@ else
                     {
                         <tr>
                             <td style="font-family: monospace;">@s.Key</td>
-                            <td style="max-width: 300px; word-break: break-all;">@s.Value</td>
-                            <td style="color: var(--text-muted);">@s.Description</td>
-                            <td><button class="btn btn-sm btn-secondary" @onclick="() => EditSetting(s)">Edit</button></td>
+                            <td style="max-width: 300px; word-break: break-all;">
+                                @if (IsBooleanValue(s.Value))
+                                {
+                                    <span class="badge @(s.Value == "true" ? "badge-active" : "badge-cancelled")">@s.Value</span>
+                                }
+                                else
+                                {
+                                    @s.Value
+                                }
+                            </td>
+                            <td style="color: var(--text-muted);">@(s.Description ?? "—")</td>
+                            <td style="white-space: nowrap;">
+                                <button class="btn btn-sm btn-secondary" @onclick="() => EditSetting(s)">Edit</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(s)">Delete</button>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -48,26 +71,42 @@ else
     <div class="modal-overlay" @onclick="() => _showForm = false">
         <div class="modal-content" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">@(_editId.HasValue ? "Edit" : "New") Setting</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
-            <div class="form-group"><label class="form-label">Key</label><input class="form-control" @bind="_editKey" disabled="@_editId.HasValue" /></div>
-            <div class="form-group"><label class="form-label">Value</label><textarea class="form-control" @bind="_editValue" rows="3"></textarea></div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            <div class="form-group">
+                <label class="form-label">Key <span style="color:var(--danger);">*</span></label>
+                <input class="form-control" @bind="_editKey" disabled="@_editId.HasValue" placeholder="e.g. company.timezone" />
+                <small style="color: var(--text-muted);">Lowercase with dots, e.g. category.setting_name</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Value</label>
+                <textarea class="form-control" @bind="_editValue" rows="3"></textarea>
+            </div>
             <div class="form-group"><label class="form-label">Category</label>
                 <select class="form-control" @bind="_editCategory">
-                    <option>General</option><option>Branding</option><option>Serial</option><option>Debug</option><option>Notifications</option>
+                    <option>General</option><option>Branding</option><option>Numbering</option><option>Quality</option>
+                    <option>Inventory</option><option>Costing</option><option>Shipping</option><option>Defense</option>
+                    <option>Workflow</option><option>Serial</option><option>Debug</option><option>Notifications</option>
                 </select>
             </div>
-            <div class="form-group"><label class="form-label">Description</label><input class="form-control" @bind="_editDescription" /></div>
-            <button class="btn btn-primary" @onclick="Save">Save</button>
+            <div class="form-group"><label class="form-label">Description</label><input class="form-control" @bind="_editDescription" placeholder="Explain what this setting controls" /></div>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
         </div>
     </div>
 }
+
+<ConfirmDialog @ref="_confirm" />
 
 @code {
     private List<SystemSetting>? _settings;
     private bool _showForm;
     private int? _editId;
     private string _editKey = "", _editValue = "", _editCategory = "General";
-    private string? _editDescription;
+    private string? _editDescription, _error;
     private string? _categoryFilter;
+    private ConfirmDialog _confirm = null!;
 
     protected override async Task OnInitializedAsync() => _settings = await Db.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.Key).ToListAsync();
 
@@ -77,24 +116,79 @@ else
         _editKey = "";
         _editValue = "";
         _editCategory = "General";
+        _editDescription = null;
+        _error = null;
         _showForm = true;
     }
 
-    private void EditSetting(SystemSetting s) { _editId = s.Id; _editKey = s.Key; _editValue = s.Value; _editCategory = s.Category; _editDescription = s.Description; _showForm = true; }
+    private void EditSetting(SystemSetting s)
+    {
+        _editId = s.Id;
+        _editKey = s.Key;
+        _editValue = s.Value;
+        _editCategory = s.Category;
+        _editDescription = s.Description;
+        _error = null;
+        _showForm = true;
+    }
 
     private async Task Save()
     {
-        if (_editId.HasValue)
+        _error = null;
+        if (!_editId.HasValue && string.IsNullOrWhiteSpace(_editKey))
         {
-            var s = await Db.SystemSettings.FindAsync(_editId.Value);
-            if (s != null) { s.Value = _editValue; s.Category = _editCategory; s.Description = _editDescription; s.LastModifiedDate = DateTime.UtcNow; s.LastModifiedBy = "System"; }
+            _error = "Key is required.";
+            return;
         }
-        else
+
+        try
         {
-            Db.SystemSettings.Add(new SystemSetting { Key = _editKey, Value = _editValue, Category = _editCategory, Description = _editDescription, LastModifiedBy = "System" });
+            if (_editId.HasValue)
+            {
+                var s = await Db.SystemSettings.FindAsync(_editId.Value);
+                if (s != null)
+                {
+                    s.Value = _editValue;
+                    s.Category = _editCategory;
+                    s.Description = _editDescription;
+                    s.LastModifiedDate = DateTime.UtcNow;
+                    s.LastModifiedBy = "Admin";
+                }
+            }
+            else
+            {
+                Db.SystemSettings.Add(new SystemSetting
+                {
+                    Key = _editKey.Trim().ToLowerInvariant(),
+                    Value = _editValue,
+                    Category = _editCategory,
+                    Description = _editDescription,
+                    LastModifiedBy = "Admin"
+                });
+            }
+            await Db.SaveChangesAsync();
+            _showForm = false;
+            _editId = null;
+            _settings = await Db.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.Key).ToListAsync();
+            Toast.ShowSuccess("Setting saved.");
         }
-        await Db.SaveChangesAsync();
-        _showForm = false; _editId = null;
-        _settings = await Db.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.Key).ToListAsync();
+        catch (Exception ex) { _error = ex.Message; }
     }
+
+    private async Task ConfirmDelete(SystemSetting s)
+    {
+        if (await _confirm.ShowAsync($"Delete setting '{s.Key}'? This cannot be undone.", "Delete Setting"))
+        {
+            try
+            {
+                Db.SystemSettings.Remove(s);
+                await Db.SaveChangesAsync();
+                _settings = await Db.SystemSettings.OrderBy(x => x.Category).ThenBy(x => x.Key).ToListAsync();
+                Toast.ShowSuccess($"Setting '{s.Key}' deleted.");
+            }
+            catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        }
+    }
+
+    private static bool IsBooleanValue(string value) => value is "true" or "false";
 }
