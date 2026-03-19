@@ -8,10 +8,12 @@ namespace Opcentrix_V3.Services;
 public class StageService : IStageService
 {
     private readonly TenantDbContext _db;
+    private readonly IBuildPlanningService _buildPlanning;
 
-    public StageService(TenantDbContext db)
+    public StageService(TenantDbContext db, IBuildPlanningService buildPlanning)
     {
         _db = db;
+        _buildPlanning = buildPlanning;
     }
 
     // ── Stage CRUD ──────────────────────────────────────────────
@@ -216,6 +218,17 @@ public class StageService : IStageService
         }
 
         await _db.SaveChangesAsync();
+
+        // If this was the Wire EDM build-level stage completing, spawn per-part jobs
+        if (execution.BuildPackageId.HasValue
+            && execution.ProductionStage.IsBuildLevelStage
+            && execution.ProductionStage.StageSlug == "wire-edm")
+        {
+            await _buildPlanning.CreatePartStageExecutionsAsync(
+                execution.BuildPackageId.Value,
+                execution.OperatorName ?? execution.CreatedBy ?? "System");
+        }
+
         return execution;
     }
 
@@ -459,6 +472,7 @@ public class StageService : IStageService
             .Include(e => e.ProductionStage)
             .Include(e => e.Operator)
             .Include(e => e.Machine)
+            .Include(e => e.BuildPackage)
             .Where(e => e.Status != StageExecutionStatus.Completed
                 && e.Status != StageExecutionStatus.Skipped
                 && e.Status != StageExecutionStatus.Failed

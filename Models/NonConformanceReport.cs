@@ -39,4 +39,6 @@ public class NonConformanceReport
 
     public int? CorrectiveActionId { get; set; }
     public CorrectiveAction? CorrectiveAction { get; set; }
+
+    public string? CustomFieldValues { get; set; }
 }

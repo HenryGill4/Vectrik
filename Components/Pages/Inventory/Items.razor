@@ -4,8 +4,13 @@
 @inject IMaterialService MaterialService
 @inject NavigationManager Nav
 @inject ToastService Toast
+@inject ITenantFeatureService Features
+@inject ICustomFieldService CustomFieldService
+@using System.Text.Json
 
 <PageTitle>Inventory Items - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.inventory" ModuleName="Inventory Management">
 
 <div class="page-header">
     <h1 class="page-title">📦 Inventory Items</h1>
@@ -172,6 +177,16 @@ else
                     </label>
                 </div>
             </div>
+
+            @if (_customFieldDefs.Count > 0)
+            {
+                <div style="margin-top: 12px;">
+                    <label class="form-label" style="font-weight: 600;">Custom Fields</label>
+                    <CustomFieldsEditor FieldDefinitions="_customFieldDefs" Values="_customFieldValues"
+                                        ValuesChanged="OnCustomFieldsChanged" />
+                </div>
+            }
+
             <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
                 <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
                 <button class="btn btn-primary" @onclick="SaveItem">@(_editItem.Id == 0 ? "Create" : "Save")</button>
@@ -182,6 +197,8 @@ else
 
 <ConfirmDialog @ref="_confirm" />
 
+</FeatureGate>
+
 @code {
     private bool _loading = true;
     private bool _showForm;
@@ -191,6 +208,10 @@ else
     private string _searchTerm = string.Empty;
     private InventoryItem _editItem = new();
     private ConfirmDialog _confirm = null!;
+
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
 
     private IEnumerable<InventoryItem> FilteredItems
     {
@@ -216,6 +237,7 @@ else
     {
         _allItems = await InventoryService.GetAllItemsAsync();
         _materials = await MaterialService.GetAllMaterialsAsync();
+        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("InventoryItem");
         _loading = false;
     }
 
@@ -226,12 +248,19 @@ else
     private void ShowCreate()
     {
         _editItem = new InventoryItem();
+        _customFieldValues = new();
         _showForm = true;
     }
 
     private void ShowEdit(InventoryItem item)
     {
         _editItem = item;
+        _customFieldValues = new();
+        if (!string.IsNullOrEmpty(item.CustomFieldValues))
+        {
+            try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(item.CustomFieldValues) ?? new(); }
+            catch { _customFieldValues = new(); }
+        }
         _showForm = true;
     }
 
@@ -264,6 +293,9 @@ else
 
         try
         {
+            if (_customFieldValues.Count > 0)
+                _editItem.CustomFieldValues = JsonSerializer.Serialize(_customFieldValues);
+
             if (_editItem.Id == 0)
             {
                 await InventoryService.CreateItemAsync(_editItem);
@@ -283,4 +315,6 @@ else
             Toast.ShowError(ex.Message);
         }
     }
+
+    private void OnCustomFieldsChanged(Dictionary<string, string> values) => _customFieldValues = values;
 }

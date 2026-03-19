@@ -8,6 +8,7 @@
 @inject ToastService Toast
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
+@using System.Text.Json
 
 <PageTitle>@(_part?.Name ?? "Part Detail") - OpCentrix</PageTitle>
 
@@ -97,6 +98,20 @@ else
                     <div class="detail-label">Modified By</div><div class="detail-value">@_part.LastModifiedBy</div>
                 </div>
             </div>
+
+            @if (_customFieldDefs.Count > 0 && _customFieldValues.Any())
+            {
+                <div class="card" style="grid-column: span 2;">
+                    <h3 class="card-title">Custom Fields</h3>
+                    <div class="detail-grid">
+                        @foreach (var def in _customFieldDefs)
+                        {
+                            <div class="detail-label">@def.Label</div>
+                            <div class="detail-value">@(_customFieldValues.TryGetValue(def.Name, out var v) ? v : "—")</div>
+                        }
+                    </div>
+                </div>
+            }
         </div>
     }
 
@@ -528,13 +543,23 @@ else
     private string _clonePartNumber = string.Empty;
     private string? _cloneError;
 
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
+
     protected override async Task OnInitializedAsync()
     {
         _showDlms = Features.IsEnabled("dlms");
         _part = await PartService.GetPartDetailAsync(Id);
+        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Part");
         if (_part != null)
         {
             _drawings = await FileService.GetDrawingsAsync(Id);
+            if (!string.IsNullOrEmpty(_part.CustomFieldValues))
+            {
+                try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_part.CustomFieldValues) ?? new(); }
+                catch { _customFieldValues = new(); }
+            }
         }
         _loading = false;
     }

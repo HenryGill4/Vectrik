@@ -28,6 +28,12 @@ public interface IPartService
     // Usage & Cloning
     Task<PartUsageSummary> GetPartUsageSummaryAsync(int partId);
     Task<Part> ClonePartAsync(int sourcePartId, string newPartNumber, string createdBy);
+
+    // BOM
+    Task<List<PartBomItem>> GetBomItemsAsync(int partId);
+    Task<PartBomItem> AddBomItemAsync(PartBomItem item);
+    Task<PartBomItem> UpdateBomItemAsync(PartBomItem item);
+    Task RemoveBomItemAsync(int itemId);
 }
 
 public class PartUsageSummary

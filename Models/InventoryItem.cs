@@ -53,6 +53,8 @@ public class InventoryItem
     [MaxLength(100)]
     public string CreatedBy { get; set; } = string.Empty;
 
+    public string? CustomFieldValues { get; set; }
+
     public ICollection<InventoryTransaction> Transactions { get; set; } = new List<InventoryTransaction>();
     public ICollection<InventoryLot> Lots { get; set; } = new List<InventoryLot>();
 }

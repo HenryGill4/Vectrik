@@ -93,4 +93,8 @@ public class StageExecution
     public virtual User? Operator { get; set; }
     public virtual Machine? Machine { get; set; }
     public virtual ICollection<DelayLog> DelayLogs { get; set; } = new List<DelayLog>();
+
+    // Build plate link (nullable — only set for build-level stage executions)
+    public int? BuildPackageId { get; set; }
+    public virtual BuildPackage? BuildPackage { get; set; }
 }

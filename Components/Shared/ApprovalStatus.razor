@@ -1,0 +1,69 @@
+@inject IWorkflowEngine WorkflowEngine
+@inject ToastService Toast
+
+@if (Instance != null)
+{
+    <div class="card" style="border-left: 4px solid var(--accent); margin-bottom: 16px; padding: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin: 0;">⏳ Pending Approval</h3>
+            <span class="badge badge-warning" style="font-size: 0.85rem;">@Instance.Status</span>
+        </div>
+
+        @if (Instance.WorkflowDefinition != null)
+        {
+            var steps = Instance.WorkflowDefinition.Steps.OrderBy(s => s.StepOrder).ToList();
+            <div style="margin-bottom: 12px;">
+                @foreach (var step in steps)
+                {
+                    var isCurrent = step.StepOrder == Instance.CurrentStepOrder;
+                    var isCompleted = step.StepOrder < Instance.CurrentStepOrder;
+                    var icon = isCompleted ? "✅" : isCurrent ? "👉" : "⬜";
+                    var style = isCurrent ? "font-weight: 600; color: var(--accent);" : isCompleted ? "color: var(--text-muted); text-decoration: line-through;" : "color: var(--text-muted);";
+
+                    <div style="@style padding: 4px 0;">
+                        @icon Step @step.StepOrder — @(step.AssignToRole ?? "Assigned User")
+                        @if (step.ActionType != "RequireApproval")
+                        {
+                            <span style="font-size: 0.8rem;">(@step.ActionType)</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-success" @onclick="Approve">✅ Approve</button>
+            <button class="btn btn-danger" @onclick="Reject">❌ Reject</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public WorkflowInstance? Instance { get; set; }
+    [Parameter] public EventCallback<WorkflowInstance> OnApproved { get; set; }
+    [Parameter] public EventCallback<WorkflowInstance> OnRejected { get; set; }
+
+    private async Task Approve()
+    {
+        if (Instance == null) return;
+        try
+        {
+            var result = await WorkflowEngine.ApproveAsync(Instance.Id, "System");
+            if (result != null)
+                await OnApproved.InvokeAsync(result);
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task Reject()
+    {
+        if (Instance == null) return;
+        try
+        {
+            var result = await WorkflowEngine.RejectAsync(Instance.Id, "System");
+            if (result != null)
+                await OnRejected.InvokeAsync(result);
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+}

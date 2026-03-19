@@ -1,0 +1,243 @@
+@page "/shopfloor/instructions/{Id:int}"
+@rendermode InteractiveServer
+@inject IWorkInstructionService InstructionService
+@inject ToastService Toast
+
+<PageTitle>Work Instructions - OpCentrix</PageTitle>
+
+@if (_instruction == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading instructions...</div>
+}
+else
+{
+    <div class="page-header">
+        <h1 class="page-title">📋 @_instruction.Title</h1>
+        <span class="badge badge-active">Rev @_instruction.RevisionNumber</span>
+    </div>
+
+    <div style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;">
+        @(_instruction.Part?.PartNumber ?? "—") — @(_instruction.ProductionStage?.Name ?? "—")
+        @if (!string.IsNullOrEmpty(_instruction.Description))
+        {
+            <span style="margin-left: 12px;">@_instruction.Description</span>
+        }
+    </div>
+
+    @if (!_instruction.Steps.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon">📝</div>
+            <div class="empty-state-text">No steps defined for this instruction.</div>
+        </div>
+    }
+    else
+    {
+        @* ── Step Counter ── *@
+        <div class="wi-step-counter">
+            Step @(_currentStepIndex + 1) of @_instruction.Steps.Count
+        </div>
+
+        <div class="wi-step-card" style="min-height: 300px;">
+            <h2 style="margin: 0 0 12px 0; font-size: 1.4rem;">@CurrentStep.Title</h2>
+
+            @* ── Warning Banner ── *@
+            @if (!string.IsNullOrEmpty(CurrentStep.WarningText))
+            {
+                <div class="wi-warning">
+                    <strong>⚠️ Warning:</strong> @CurrentStep.WarningText
+                </div>
+            }
+
+            @* ── Body ── *@
+            <div style="font-size: 1.1rem; line-height: 1.7; margin: 16px 0; white-space: pre-wrap;">@CurrentStep.Body</div>
+
+            @* ── Tip Banner ── *@
+            @if (!string.IsNullOrEmpty(CurrentStep.TipText))
+            {
+                <div class="wi-tip">
+                    <strong>💡 Tip:</strong> @CurrentStep.TipText
+                </div>
+            }
+
+            @* ── Media ── *@
+            @if (CurrentStep.Media.Any())
+            {
+                <div style="margin-top: 16px;">
+                    @foreach (var media in CurrentStep.Media.OrderBy(m => m.DisplayOrder))
+                    {
+                        @if (media.MediaType == MediaType.Image)
+                        {
+                            <div style="margin-bottom: 12px;">
+                                <img src="@media.FileUrl" alt="@(media.AltText ?? media.FileName)"
+                                     style="max-width: 100%; border-radius: 8px; cursor: pointer; @(_expandedMediaId == media.Id ? "" : "max-height: 400px; object-fit: contain;")"
+                                     @onclick="() => ToggleMediaExpand(media.Id)" />
+                            </div>
+                        }
+                        else if (media.MediaType == MediaType.Video)
+                        {
+                            <div style="margin-bottom: 12px;">
+                                <video controls style="max-width: 100%; border-radius: 8px;">
+                                    <source src="@media.FileUrl" />
+                                </video>
+                            </div>
+                        }
+                        else if (media.MediaType == MediaType.PDF)
+                        {
+                            <div style="margin-bottom: 12px;">
+                                <a href="@media.FileUrl" target="_blank" class="btn btn-secondary">
+                                    📄 View @media.FileName
+                                </a>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @* ── Signoff ── *@
+            @if (CurrentStep.RequiresOperatorSignoff)
+            {
+                <div style="margin-top: 20px; padding: 16px; background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--accent);">
+                    @if (_signedOffSteps.Contains(CurrentStep.Id))
+                    {
+                        <span style="color: var(--success); font-weight: 600; font-size: 1.1rem;">✅ Signed off</span>
+                    }
+                    else
+                    {
+                        <button class="btn btn-primary" style="font-size: 1.1rem; padding: 12px 24px;" @onclick="() => SignOff(CurrentStep.Id)">
+                            ✍️ Sign Off on This Step
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+
+        @* ── Navigation Buttons ── *@
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+            <button class="btn btn-secondary" style="font-size: 1.1rem; padding: 12px 24px;"
+                    disabled="@(_currentStepIndex == 0)" @onclick="PreviousStep">
+                ← Previous
+            </button>
+
+            <button class="btn btn-sm btn-secondary" @onclick="() => _showFeedback = true" title="Flag this step">
+                🚩 Flag this step
+            </button>
+
+            <button class="btn btn-primary" style="font-size: 1.1rem; padding: 12px 24px;"
+                    disabled="@(_currentStepIndex >= _instruction.Steps.Count - 1)" @onclick="NextStep">
+                Next →
+            </button>
+        </div>
+    }
+}
+
+@* ── Feedback Modal ── *@
+@if (_showFeedback)
+{
+    <div class="modal-overlay" @onclick="() => _showFeedback = false">
+        <div class="modal-content" style="max-width: 450px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">🚩 Flag This Step</span>
+                <button class="modal-close" @onclick="() => _showFeedback = false">&times;</button>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Feedback Type *</label>
+                @foreach (var ft in Enum.GetValues<FeedbackType>())
+                {
+                    <label style="display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer;">
+                        <input type="radio" name="feedbackType" checked="@(_feedbackType == ft)" @onchange="() => _feedbackType = ft" />
+                        @ft
+                    </label>
+                }
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Comment</label>
+                <textarea class="form-control" @bind="_feedbackComment" rows="3" placeholder="Describe the issue..."></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="() => _showFeedback = false">Cancel</button>
+                <button class="btn btn-primary" @onclick="SubmitFeedback" disabled="@_submittingFeedback">
+                    @(_submittingFeedback ? "Submitting..." : "Submit Feedback")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private WorkInstruction? _instruction;
+    private List<WorkInstructionStep> _orderedSteps = new();
+    private int _currentStepIndex;
+    private HashSet<int> _signedOffSteps = new();
+    private int? _expandedMediaId;
+
+    private WorkInstructionStep CurrentStep => _orderedSteps[_currentStepIndex];
+
+    // Feedback
+    private bool _showFeedback;
+    private bool _submittingFeedback;
+    private FeedbackType _feedbackType = FeedbackType.Confusing;
+    private string? _feedbackComment;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _instruction = await InstructionService.GetByIdAsync(Id);
+        if (_instruction != null)
+            _orderedSteps = _instruction.Steps.OrderBy(s => s.StepOrder).ToList();
+    }
+
+    private void NextStep()
+    {
+        if (_currentStepIndex < _orderedSteps.Count - 1)
+            _currentStepIndex++;
+    }
+
+    private void PreviousStep()
+    {
+        if (_currentStepIndex > 0)
+            _currentStepIndex--;
+    }
+
+    private void SignOff(int stepId)
+    {
+        _signedOffSteps.Add(stepId);
+        Toast.ShowSuccess("Step signed off.");
+    }
+
+    private void ToggleMediaExpand(int mediaId)
+    {
+        _expandedMediaId = _expandedMediaId == mediaId ? null : mediaId;
+    }
+
+    private async Task SubmitFeedback()
+    {
+        if (_instruction == null || !_orderedSteps.Any()) return;
+
+        _submittingFeedback = true;
+        try
+        {
+            var feedback = new OperatorFeedback
+            {
+                WorkInstructionStepId = _orderedSteps[_currentStepIndex].Id,
+                FeedbackType = _feedbackType,
+                Comment = _feedbackComment?.Trim(),
+                OperatorUserId = "Operator" // TODO: Get from auth context
+            };
+
+            await InstructionService.SubmitFeedbackAsync(feedback);
+            _showFeedback = false;
+            _feedbackComment = null;
+            Toast.ShowSuccess("Feedback submitted. Thank you!");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+        _submittingFeedback = false;
+    }
+}

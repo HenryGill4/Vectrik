@@ -5,9 +5,11 @@
 @inject IPartService PartService
 @inject IPricingEngineService PricingEngine
 @inject ITenantFeatureService Features
+@inject ICustomFieldService CustomFieldService
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using Microsoft.AspNetCore.Components.Routing
+@using System.Text.Json
 
 <PageTitle>@(_isNew ? "New Quote" : "Edit Quote") - OpCentrix</PageTitle>
 
@@ -152,6 +154,15 @@ else
             </div>
         </div>
     </div>
+
+    @if (_customFieldDefs.Count > 0)
+    {
+        <div class="card" style="margin-top: 16px;">
+            <h3 class="card-title">Custom Fields</h3>
+            <CustomFieldsEditor FieldDefinitions="_customFieldDefs" Values="_customFieldValues"
+                                ValuesChanged="OnCustomFieldsChanged" />
+        </div>
+    }
 }
 
 <!-- Add Line Modal -->
@@ -223,6 +234,10 @@ else
     private List<Part> _parts = new();
     private ConfirmDialog _confirm = null!;
 
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
+
     // Add line
     private bool _showAddLine;
     private int _linePartId;
@@ -262,6 +277,13 @@ else
                 ExpirationDate = DateTime.UtcNow.AddDays(30)
             };
         }
+        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Quote");
+        if (!string.IsNullOrEmpty(_quote.CustomFieldValues))
+        {
+            try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_quote.CustomFieldValues) ?? new(); }
+            catch { _customFieldValues = new(); }
+        }
+
         _originalCustomerName = _quote.CustomerName ?? "";
         _loading = false;
     }
@@ -350,6 +372,9 @@ else
             return;
         }
 
+        if (_customFieldValues.Count > 0)
+            _quote.CustomFieldValues = JsonSerializer.Serialize(_customFieldValues);
+
         try
         {
             if (_isNew)
@@ -394,6 +419,8 @@ else
             Toast.ShowError(ex.Message);
         }
     }
+
+    private void OnCustomFieldsChanged(Dictionary<string, string> values) => _customFieldValues = values;
 
     private void GoBack() => Nav.NavigateTo("/quotes");
 

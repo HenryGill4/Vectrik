@@ -119,4 +119,67 @@ public class WorkflowEngine : IWorkflowEngine
             .OrderBy(w => w.Name)
             .ToListAsync();
     }
+
+    public async Task<List<WorkflowDefinition>> GetAllDefinitionsAsync()
+    {
+        return await _db.WorkflowDefinitions
+            .Include(w => w.Steps.OrderBy(s => s.StepOrder))
+            .OrderBy(w => w.EntityType)
+            .ThenBy(w => w.Name)
+            .ToListAsync();
+    }
+
+    public async Task<bool> HasWorkflowAsync(string entityType)
+    {
+        return await _db.WorkflowDefinitions
+            .AnyAsync(w => w.EntityType == entityType && w.IsActive);
+    }
+
+    public async Task<WorkflowDefinition> SaveDefinitionAsync(WorkflowDefinition definition)
+    {
+        if (definition.Id == 0)
+        {
+            _db.WorkflowDefinitions.Add(definition);
+        }
+        else
+        {
+            var existing = await _db.WorkflowDefinitions
+                .Include(w => w.Steps)
+                .FirstOrDefaultAsync(w => w.Id == definition.Id);
+
+            if (existing == null)
+                throw new InvalidOperationException("Workflow definition not found.");
+
+            existing.Name = definition.Name;
+            existing.EntityType = definition.EntityType;
+            existing.TriggerEvent = definition.TriggerEvent;
+            existing.IsActive = definition.IsActive;
+            existing.ConditionsJson = definition.ConditionsJson;
+
+            // Remove old steps and replace
+            _db.WorkflowSteps.RemoveRange(existing.Steps);
+            foreach (var step in definition.Steps)
+            {
+                step.Id = 0;
+                step.WorkflowDefinitionId = existing.Id;
+                existing.Steps.Add(step);
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return definition;
+    }
+
+    public async Task DeleteDefinitionAsync(int definitionId)
+    {
+        var definition = await _db.WorkflowDefinitions
+            .Include(w => w.Steps)
+            .FirstOrDefaultAsync(w => w.Id == definitionId);
+
+        if (definition == null) return;
+
+        _db.WorkflowSteps.RemoveRange(definition.Steps);
+        _db.WorkflowDefinitions.Remove(definition);
+        await _db.SaveChangesAsync();
+    }
 }

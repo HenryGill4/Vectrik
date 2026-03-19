@@ -101,7 +101,36 @@ else if (_viewMode == "gantt")
                                         <div class="gantt-today-line" style="left: @(todayPct)%;"></div>
                                     }
                                     @* Execution bars *@
-                                    @foreach (var exec in machineExecs)
+                                    @{
+                                        // Group build-level executions into single bars by BuildPackageId
+                                        var buildGroups = machineExecs
+                                            .Where(e => e.BuildPackageId != null && e.ProductionStage?.IsBuildLevelStage == true)
+                                            .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId })
+                                            .ToList();
+                                        var buildGroupExecIds = buildGroups.SelectMany(g => g.Select(e => e.Id)).ToHashSet();
+                                        var individualExecs = machineExecs.Where(e => !buildGroupExecIds.Contains(e.Id)).ToList();
+                                    }
+                                    @* Build-level bars (one per build+stage) *@
+                                    @foreach (var group in buildGroups)
+                                    {
+                                        var first = group.OrderBy(e => e.ScheduledStartAt ?? DateTime.MaxValue).First();
+                                        var last = group.OrderByDescending(e => e.ScheduledEndAt ?? DateTime.MinValue).First();
+                                        var start = first.ScheduledStartAt ?? first.Job?.ScheduledStart ?? _dateFrom;
+                                        var end = last.ScheduledEndAt ?? last.Job?.ScheduledEnd ?? start.AddHours(first.EstimatedHours ?? 4);
+                                        var leftPct = GetGanttPosition(start);
+                                        var widthPct = GetGanttWidth(start, end);
+                                        var stageColor = first.ProductionStage?.StageColor ?? "";
+                                        var partList = string.Join(", ", group.Select(e => e.Job?.Part?.PartNumber ?? "?").Distinct());
+                                        var pkgName = first.BuildPackage?.Name ?? $"Build #{first.BuildPackageId}";
+                                        <div class="gantt-bar gantt-bar-normal"
+                                             style="left: @(leftPct)%; width: @(widthPct)%; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};") border: 2px solid var(--accent);"
+                                             title="📦 @pkgName — @(first.ProductionStage?.Name ?? "Stage")&#10;Parts: @partList&#10;@start.ToString("MM/dd HH:mm") → @end.ToString("MM/dd HH:mm")&#10;Est: @(first.EstimatedHours?.ToString("F1") ?? "?")h"
+                                             @onclick="() => ShowReschedule(first)">
+                                            <span class="gantt-bar-text">📦 @pkgName · @(first.ProductionStage?.Name ?? "")</span>
+                                        </div>
+                                    }
+                                    @* Individual bars (non-build-level) *@
+                                    @foreach (var exec in individualExecs)
                                     {
                                         var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
                                         var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
@@ -233,7 +262,16 @@ else
                                 <td>
                                     <span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority ?? JobPriority.Normal)</span>
                                 </td>
-                                <td style="font-weight: 600;">@(exec.Job?.Part?.PartNumber ?? "—")</td>
+                                <td style="font-weight: 600;">
+                                    @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                    {
+                                        <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
+                                    }
+                                    else
+                                    {
+                                        @(exec.Job?.Part?.PartNumber ?? "—")
+                                    }
+                                </td>
                                 <td>
                                     @if (exec.ProductionStage != null)
                                     {

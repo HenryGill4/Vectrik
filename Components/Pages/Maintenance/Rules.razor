@@ -2,10 +2,13 @@
 @inject IMaintenanceService MaintenanceService
 @inject IMachineService MachineService
 @inject ToastService Toast
+@inject ITenantFeatureService Features
 @using Opcentrix_V3.Models.Maintenance
 @rendermode InteractiveServer
 
 <PageTitle>Maintenance Rules - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.maintenance" ModuleName="Maintenance Management">
 
 <ConfirmDialog @ref="_confirmDialog" />
 
@@ -107,6 +110,8 @@ else
         </div>
     </div>
 }
+
+</FeatureGate>
 
 @code {
     private List<Machine>? _machines;

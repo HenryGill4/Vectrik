@@ -349,4 +349,42 @@ public class PartService : IPartService
         await _db.SaveChangesAsync();
         return clone;
     }
+
+    // BOM
+
+    public async Task<List<PartBomItem>> GetBomItemsAsync(int partId)
+    {
+        return await _db.PartBomItems
+            .Include(b => b.Material)
+            .Include(b => b.InventoryItem)
+            .Where(b => b.PartId == partId && b.IsActive)
+            .OrderBy(b => b.SortOrder)
+            .ToListAsync();
+    }
+
+    public async Task<PartBomItem> AddBomItemAsync(PartBomItem item)
+    {
+        item.CreatedDate = DateTime.UtcNow;
+        item.LastModifiedDate = DateTime.UtcNow;
+        _db.PartBomItems.Add(item);
+        await _db.SaveChangesAsync();
+        return item;
+    }
+
+    public async Task<PartBomItem> UpdateBomItemAsync(PartBomItem item)
+    {
+        item.LastModifiedDate = DateTime.UtcNow;
+        _db.PartBomItems.Update(item);
+        await _db.SaveChangesAsync();
+        return item;
+    }
+
+    public async Task RemoveBomItemAsync(int itemId)
+    {
+        var item = await _db.PartBomItems.FindAsync(itemId);
+        if (item == null) throw new InvalidOperationException("BOM item not found.");
+        item.IsActive = false;
+        item.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
 }

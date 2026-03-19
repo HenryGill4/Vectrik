@@ -8,6 +8,9 @@ public class Job
 {
     public int Id { get; set; }
 
+    [MaxLength(50)]
+    public string? JobNumber { get; set; }
+
     public int PartId { get; set; }
 
     [MaxLength(50)]

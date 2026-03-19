@@ -3,8 +3,13 @@
 @inject IWorkOrderService WorkOrderService
 @inject IPartService PartService
 @inject ITenantFeatureService Features
+@inject ICustomFieldService CustomFieldService
+@inject IDocumentTemplateService TemplateService
+@inject IJSRuntime JS
+@inject IWorkflowEngine WorkflowEngine
 @inject NavigationManager Nav
 @inject ToastService Toast
+@using System.Text.Json
 
 <PageTitle>Work Order Details - OpCentrix</PageTitle>
 
@@ -40,9 +45,15 @@ else
             {
                 <button class="btn btn-danger" @onclick="Cancel">✕ Cancel</button>
             }
+            <button class="btn btn-secondary" @onclick="PrintTraveler">🖨️ Print Traveler</button>
             <span class="badge @GetBadge(_order.Status)" style="font-size: 0.9rem; padding: 6px 14px;">@_order.Status</span>
         </div>
     </div>
+
+    @if (_pendingApproval != null)
+    {
+        <ApprovalStatus Instance="_pendingApproval" OnApproved="HandleApproved" OnRejected="HandleRejected" />
+    }
 
     <!-- Info Cards -->
     <div class="kpi-grid" style="margin-bottom: 16px;">
@@ -228,6 +239,20 @@ else
                     <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 12px; color: var(--text-secondary); white-space: pre-wrap;">@_order.Notes</div>
                 </div>
             }
+
+            @if (_customFieldDefs.Count > 0 && _customFieldValues.Any())
+            {
+                <div style="margin-top: 16px;">
+                    <h4 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 8px;">Custom Fields</h4>
+                    <div class="detail-grid">
+                        @foreach (var def in _customFieldDefs)
+                        {
+                            <div class="detail-label">@def.Label</div>
+                            <div class="detail-value">@(_customFieldValues.TryGetValue(def.Name, out var v) ? v : "—")</div>
+                        }
+                    </div>
+                </div>
+            }
         </div>
     }
 }
@@ -274,6 +299,13 @@ else
     private int _lineQty = 1;
     private ConfirmDialog _confirm = null!;
 
+    // Workflow
+    private WorkflowInstance? _pendingApproval;
+
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
+
     // Comment editing
     private int? _editingCommentId;
     private string _editingCommentText = string.Empty;
@@ -282,6 +314,14 @@ else
     {
         await LoadOrder();
         _parts = await PartService.GetAllPartsAsync();
+        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("WorkOrder");
+        if (_order != null && !string.IsNullOrEmpty(_order.CustomFieldValues))
+        {
+            try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_order.CustomFieldValues) ?? new(); }
+            catch { _customFieldValues = new(); }
+        }
+        if (_order != null)
+            _pendingApproval = await WorkflowEngine.GetPendingAsync("WorkOrder", _order.Id);
         _loading = false;
     }
 
@@ -295,12 +335,44 @@ else
         if (!await _confirm.ShowAsync("Release this work order? Jobs will be auto-generated from part routing.")) return;
         try
         {
+            var instance = await WorkflowEngine.StartAsync("WorkOrder", Id);
+            if (instance != null)
+            {
+                _pendingApproval = instance;
+                Toast.ShowInfo("Release requires approval. Workflow started.");
+                return;
+            }
+
             await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, "System");
             await LoadOrder();
             var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
             Toast.ShowSuccess($"Work order released — {jobCount} job(s) generated from routing");
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task HandleApproved(WorkflowInstance result)
+    {
+        if (result.Status == "Approved")
+        {
+            await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, result.LastActionBy ?? "System");
+            await LoadOrder();
+            _pendingApproval = null;
+            var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
+            Toast.ShowSuccess($"Approved! Work order released — {jobCount} job(s) generated.");
+        }
+        else
+        {
+            _pendingApproval = result;
+            Toast.ShowSuccess("Step approved. Awaiting next approval.");
+        }
+    }
+
+    private async Task HandleRejected(WorkflowInstance result)
+    {
+        _pendingApproval = null;
+        await LoadOrder();
+        Toast.ShowWarning("Workflow rejected. Release cancelled.");
     }
 
     private async Task SetStatus(WorkOrderStatus status)
@@ -411,6 +483,55 @@ else
             Toast.ShowSuccess("Comment deleted");
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task PrintTraveler()
+    {
+        if (_order == null) return;
+        var template = await TemplateService.GetDefaultTemplateAsync("WorkOrder");
+        if (template == null)
+        {
+            Toast.ShowError("No default traveler template configured. Go to Admin → Document Templates.");
+            return;
+        }
+
+        var linesHtml = "<table><thead><tr><th>Part</th><th>Qty</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead><tbody>";
+        foreach (var l in _order.Lines)
+        {
+            linesHtml += $"<tr><td>{l.Part?.PartNumber ?? "—"} — {l.Part?.Name ?? ""}</td><td>{l.Quantity}</td><td>{l.ProducedQuantity}</td><td>{l.ShippedQuantity}</td><td>{l.Status}</td></tr>";
+        }
+        linesHtml += "</tbody></table>";
+
+        var routingHtml = "<table><thead><tr><th>#</th><th>Stage</th><th>Status</th><th>Operator</th><th>Date</th><th>Sign-off</th></tr></thead><tbody>";
+        var stageNum = 1;
+        foreach (var line in _order.Lines)
+        {
+            foreach (var job in line.Jobs.OrderBy(j => j.Id))
+            {
+                foreach (var stage in job.Stages.OrderBy(s => s.SortOrder))
+                {
+                    routingHtml += $"<tr><td>{stageNum++}</td><td>{stage.ProductionStage?.Name ?? "—"}</td><td>{stage.Status}</td><td>{stage.OperatorName ?? ""}</td><td>{stage.CompletedAt?.ToString("yyyy-MM-dd") ?? ""}</td><td><span class='sign-line'></span></td></tr>";
+                }
+            }
+        }
+        routingHtml += "</tbody></table>";
+
+        var fields = new Dictionary<string, string>
+        {
+            ["OrderNumber"] = _order.OrderNumber,
+            ["CustomerName"] = _order.CustomerName,
+            ["CustomerPO"] = _order.CustomerPO ?? "—",
+            ["OrderDate"] = _order.OrderDate.ToString("yyyy-MM-dd"),
+            ["DueDate"] = _order.DueDate.ToString("yyyy-MM-dd"),
+            ["Priority"] = _order.Priority.ToString(),
+            ["Status"] = _order.Status.ToString(),
+            ["Notes"] = _order.Notes ?? "",
+            ["LinesTable"] = linesHtml,
+            ["RoutingTable"] = routingHtml
+        };
+
+        var html = TemplateService.RenderHtml(template, fields);
+        await JS.InvokeVoidAsync("opcentrix.printHtml", html, $"Traveler {_order.OrderNumber}");
     }
 
     private static string GetBadge(WorkOrderStatus status) => status switch

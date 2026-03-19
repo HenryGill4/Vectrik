@@ -3,9 +3,12 @@
 @inject IMachineService MachineService
 @inject IPartService PartService
 @inject ToastService Toast
+@inject ITenantFeatureService Features
 @rendermode InteractiveServer
 
 <PageTitle>Build Planning - OpCentrix</PageTitle>
+
+<FeatureGate Feature="sls" ModuleName="SLS Build Planning">
 
 <ConfirmDialog @ref="_confirmDialog" />
 
@@ -109,7 +112,7 @@ else
 
             @if (pkg.BuildFileInfo != null)
             {
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px;">
+                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; margin-bottom: 12px;">
                     <div class="form-label">Build File Info</div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
                         <div>Layers: @pkg.BuildFileInfo.LayerCount</div>
@@ -118,6 +121,42 @@ else
                         <div>Powder: @pkg.BuildFileInfo.EstimatedPowderKg kg</div>
                     </div>
                 </div>
+            }
+
+            @* ── Revision History ── *@
+            <div style="margin-bottom: 4px;">
+                <button class="btn btn-sm btn-secondary" @onclick="() => ToggleRevisions(pkg.Id)">
+                    @(_expandedRevisions.Contains(pkg.Id) ? "▾" : "▸") Revisions (@(pkg.CurrentRevision ?? 0))
+                </button>
+            </div>
+            @if (_expandedRevisions.Contains(pkg.Id))
+            {
+                var revisions = _revisionCache.GetValueOrDefault(pkg.Id);
+                @if (revisions == null)
+                {
+                    <div class="loading"><span class="spinner"></span></div>
+                }
+                else if (!revisions.Any())
+                {
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); padding: 8px 0;">No revisions recorded.</div>
+                }
+                else
+                {
+                    <table class="data-table" style="font-size: 0.85rem;">
+                        <thead><tr><th>Rev</th><th>Date</th><th>By</th><th>Notes</th></tr></thead>
+                        <tbody>
+                            @foreach (var rev in revisions)
+                            {
+                                <tr>
+                                    <td>@rev.RevisionNumber</td>
+                                    <td>@rev.RevisionDate.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td>@rev.ChangedBy</td>
+                                    <td>@(rev.ChangeNotes ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
             }
         </div>
     }
@@ -147,6 +186,8 @@ else
     </div>
 }
 
+</FeatureGate>
+
 @code {
     private List<BuildPackage>? _packages;
     private List<Machine>? _machines;
@@ -159,6 +200,8 @@ else
     private int _addPartId;
     private int _addPartQty = 1;
     private ConfirmDialog _confirmDialog = null!;
+    private HashSet<int> _expandedRevisions = new();
+    private Dictionary<int, List<BuildPackageRevision>> _revisionCache = new();
 
     private IEnumerable<BuildPackage> _filteredPackages =>
         _packages?.Where(p => string.IsNullOrEmpty(_statusFilter) || p.Status.ToString() == _statusFilter) ?? Enumerable.Empty<BuildPackage>();
@@ -255,5 +298,17 @@ else
             await LoadPackages();
         }
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task ToggleRevisions(int packageId)
+    {
+        if (_expandedRevisions.Contains(packageId))
+        {
+            _expandedRevisions.Remove(packageId);
+            return;
+        }
+        _expandedRevisions.Add(packageId);
+        if (!_revisionCache.ContainsKey(packageId))
+            _revisionCache[packageId] = await BuildPlanningService.GetRevisionsAsync(packageId);
     }
 }

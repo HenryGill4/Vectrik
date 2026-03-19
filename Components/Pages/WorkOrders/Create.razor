@@ -4,11 +4,13 @@
 @inject IPartService PartService
 @inject IQuoteService QuoteService
 @inject ITenantFeatureService Features
+@inject ICustomFieldService CustomFieldService
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.WebUtilities
+@using System.Text.Json
 
 <PageTitle>New Work Order - OpCentrix</PageTitle>
 
@@ -141,6 +143,15 @@
     <textarea class="form-control" @bind="_wo.Notes" rows="3"></textarea>
 </div>
 
+@if (_customFieldDefs.Count > 0)
+{
+    <div class="card" style="margin-top: 16px;">
+        <h3 class="card-title">Custom Fields</h3>
+        <CustomFieldsEditor FieldDefinitions="_customFieldDefs" Values="_customFieldValues"
+                            ValuesChanged="OnCustomFieldsChanged" />
+    </div>
+}
+
 @if (!string.IsNullOrEmpty(_error))
 {
     <div class="alert alert-danger" style="margin-top: 12px;">@_error</div>
@@ -209,9 +220,14 @@
     private bool _saving;
     private string? _error;
 
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
+
     protected override async Task OnInitializedAsync()
     {
         _parts = await PartService.GetAllPartsAsync();
+        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("WorkOrder");
 
         // Pre-populate from quote if quoteId query parameter is present
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
@@ -268,6 +284,8 @@
         {
             _wo.CreatedBy = _currentUser;
             _wo.LastModifiedBy = _currentUser;
+            if (_customFieldValues.Count > 0)
+                _wo.CustomFieldValues = JsonSerializer.Serialize(_customFieldValues);
             var wo = await WorkOrderService.CreateWorkOrderAsync(_wo);
             foreach (var line in _lines)
             {
@@ -285,6 +303,8 @@
             _saving = false;
         }
     }
+
+    private void OnCustomFieldsChanged(Dictionary<string, string> values) => _customFieldValues = values;
 
     private class WorkOrderLineDto
     {

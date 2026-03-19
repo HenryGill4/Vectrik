@@ -30,6 +30,12 @@ public class BuildPackage
 
     public string? Notes { get; set; }
 
+    // Build plate revision tracking
+    public int? CurrentRevision { get; set; }
+
+    // JSON for build-level params (layer thickness, laser power, etc.)
+    public string? BuildParameters { get; set; }
+
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
 
@@ -41,6 +47,7 @@ public class BuildPackage
 
     // Navigation
     public virtual ICollection<BuildPackagePart> Parts { get; set; } = new List<BuildPackagePart>();
+    public virtual ICollection<BuildPackageRevision> Revisions { get; set; } = new List<BuildPackageRevision>();
     public virtual BuildFileInfo? BuildFileInfo { get; set; }
     public virtual Job? ScheduledJob { get; set; }
 

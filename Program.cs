@@ -104,6 +104,9 @@ builder.Services.AddScoped<IMaterialPlanningService, MaterialPlanningService>();
 builder.Services.AddScoped<IQualityService, QualityService>();
 builder.Services.AddScoped<ISpcService, SpcService>();
 
+// Visual Work Instructions (Module 03)
+builder.Services.AddScoped<IWorkInstructionService, WorkInstructionService>();
+
 // Machine providers + SignalR notifier
 builder.Services.AddScoped<MachineProviderFactory>();
 builder.Services.AddSingleton<IMachineStateNotifier, MachineStateNotifier>();
@@ -148,15 +151,15 @@ using (var scope = app.Services.CreateScope())
             "module.tools", "module.maintenance", "module.purchasing",
             "module.timeclock", "module.documents", "module.shipping",
             "module.crm", "module.compliance", "module.training",
-            "advanced.spc", "advanced.workflows", "advanced.custom_fields",
+            "sls", "advanced.spc", "advanced.workflows", "advanced.custom_fields",
             "dlms", "dlms.iuid", "dlms.wawf", "dlms.gfm", "dlms.cdrl"
         };
         var enabledByDefault = new HashSet<string>
         {
             "module.quoting", "module.workorders", "module.shopfloor",
             "module.quality", "module.inventory", "module.analytics",
-            "module.pdm", "module.maintenance", "advanced.workflows",
-            "advanced.custom_fields"
+            "module.pdm", "module.maintenance", "sls",
+            "advanced.spc", "advanced.workflows", "advanced.custom_fields"
         };
         foreach (var key in coreFlags)
         {

@@ -146,3 +146,18 @@ public enum CapaStatus
 {
     Open, InProgress, PendingVerification, Closed
 }
+
+public enum MediaType
+{
+    Image, Video, PDF, Model3D
+}
+
+public enum FeedbackType
+{
+    Confusing, IncorrectInfo, SafetyConcern, Suggestion, Typo
+}
+
+public enum FeedbackStatus
+{
+    New, Acknowledged, Resolved, WontFix
+}

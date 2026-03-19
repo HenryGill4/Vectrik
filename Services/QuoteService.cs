@@ -9,11 +9,13 @@ public class QuoteService : IQuoteService
 {
     private readonly TenantDbContext _db;
     private readonly IWorkOrderService _workOrderService;
+    private readonly INumberSequenceService _numberSeq;
 
-    public QuoteService(TenantDbContext db, IWorkOrderService workOrderService)
+    public QuoteService(TenantDbContext db, IWorkOrderService workOrderService, INumberSequenceService numberSeq)
     {
         _db = db;
         _workOrderService = workOrderService;
+        _numberSeq = numberSeq;
     }
 
     public async Task<List<Quote>> GetAllQuotesAsync(QuoteStatus? statusFilter = null)
@@ -191,23 +193,7 @@ public class QuoteService : IQuoteService
 
     public async Task<string> GenerateQuoteNumberAsync()
     {
-        var year = DateTime.UtcNow.Year;
-        var prefix = $"Q-{year}-";
-
-        var lastQuote = await _db.Quotes
-            .Where(q => q.QuoteNumber.StartsWith(prefix))
-            .OrderByDescending(q => q.QuoteNumber)
-            .FirstOrDefaultAsync();
-
-        var nextNumber = 1;
-        if (lastQuote != null)
-        {
-            var suffix = lastQuote.QuoteNumber.Replace(prefix, "");
-            if (int.TryParse(suffix, out var lastNum))
-                nextNumber = lastNum + 1;
-        }
-
-        return $"{prefix}{nextNumber:D4}";
+        return await _numberSeq.NextAsync("Quote");
     }
 
     public async Task<QuoteLine> UpdateLineAsync(QuoteLine line)

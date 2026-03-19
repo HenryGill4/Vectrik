@@ -61,6 +61,7 @@ public class ProductionStage
 
     public double DefaultDurationHours { get; set; } = 1.0;
     public bool IsBatchStage { get; set; }
+    public bool IsBuildLevelStage { get; set; }
     public bool IsActive { get; set; } = true;
 
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;

@@ -214,7 +214,16 @@ else
                                         }
                                         else { <span>—</span> }
                                     </td>
-                                    <td style="font-weight: 600;">@(e.Job?.Part?.PartNumber ?? "—")</td>
+                                    <td style="font-weight: 600;">
+                                        @if (e.BuildPackageId != null && e.ProductionStage?.IsBuildLevelStage == true)
+                                        {
+                                            <span>📦 @(e.BuildPackage?.Name ?? $"Build #{e.BuildPackageId}")</span>
+                                        }
+                                        else
+                                        {
+                                            @(e.Job?.Part?.PartNumber ?? "—")
+                                        }
+                                    </td>
                                     <td>@(e.ScheduledStartAt?.ToString("MM/dd HH:mm") ?? "—")</td>
                                     <td>@(e.ScheduledEndAt?.ToString("MM/dd HH:mm") ?? "—")</td>
                                     <td>@(e.EstimatedHours?.ToString("F1") ?? "—")</td>

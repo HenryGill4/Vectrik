@@ -2,9 +2,14 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @inject IStageService StageService
+@inject IBuildPlanningService BuildPlanningService
+@inject ISerialNumberService SerialNumberService
+@inject IQualityService QualityService
+@inject INumberSequenceService NumberSequenceService
 @inject ToastService Toast
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
+@using Opcentrix_V3.Models.Enums
 
 <PageTitle>Shop Floor - OpCentrix</PageTitle>
 
@@ -239,6 +244,7 @@
 </AuthorizeView>
 
 <ConfirmDialog @ref="_confirm" />
+<PartSeparationDialog @ref="_separationDialog" OnConfirmed="HandlePartSeparation" />
 
 @code {
     private bool _loading = true;
@@ -257,6 +263,7 @@
     private string _completeNotes = "";
     private string _failReason = "";
     private ConfirmDialog _confirm = null!;
+    private PartSeparationDialog _separationDialog = null!;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -334,11 +341,86 @@
         try
         {
             await StageService.CompleteStageExecutionAsync(_dialogExecutionId, notes: _completeNotes);
-            Toast.ShowSuccess("Stage completed!");
             _showCompleteDialog = false;
+
+            // If this was the Wire EDM build-level stage, show the part separation dialog
+            if (_currentExecution?.BuildPackageId != null
+                && _currentExecution.ProductionStage?.StageSlug == "wire-edm")
+            {
+                var package = await BuildPlanningService.GetPackageByIdAsync(_currentExecution.BuildPackageId.Value);
+                if (package != null)
+                {
+                    Toast.ShowSuccess("EDM complete — confirm part separation");
+                    await _separationDialog.ShowAsync(package);
+                    await LoadData();
+                    return;
+                }
+            }
+
+            // Build-level stage toast with context
+            if (_currentExecution?.BuildPackageId != null && _currentExecution.ProductionStage?.IsBuildLevelStage == true)
+            {
+                var nextStage = _currentExecution.ProductionStage.StageSlug switch
+                {
+                    "sls-printing" => "Depowdering",
+                    "depowdering" => "Wire EDM",
+                    _ => "next stage"
+                };
+                Toast.ShowSuccess($"Build advanced to {nextStage}");
+            }
+            else
+            {
+                Toast.ShowSuccess("Stage completed!");
+            }
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    // Part separation after EDM
+    private async Task HandlePartSeparation(PartSeparationResult result)
+    {
+        try
+        {
+            // Create PartInstance records for OK parts
+            foreach (var ok in result.OkParts)
+            {
+                if (ok.WorkOrderLineId.HasValue)
+                {
+                    await SerialNumberService.AssignSerialNumbersAsync(
+                        ok.WorkOrderLineId.Value, ok.PartId, ok.Quantity, _currentUserName);
+                }
+            }
+
+            // Create NCRs for damaged parts
+            foreach (var damaged in result.DamagedParts)
+            {
+                var ncrNumber = await NumberSequenceService.NextAsync("NCR");
+                await QualityService.CreateNcrAsync(new NonConformanceReport
+                {
+                    NcrNumber = ncrNumber,
+                    PartId = damaged.PartId,
+                    Type = NcrType.InProcess,
+                    Description = $"Part damaged during EDM separation: {damaged.Reason}",
+                    QuantityAffected = damaged.Quantity.ToString(),
+                    Severity = NcrSeverity.Major,
+                    Disposition = NcrDisposition.Scrap,
+                    Status = NcrStatus.Open,
+                    ReportedByUserId = _currentUserName,
+                    ReportedAt = DateTime.UtcNow
+                });
+            }
+
+            var okCount = result.OkParts.Sum(p => p.Quantity);
+            var damagedCount = result.DamagedParts.Sum(p => p.Quantity);
+            var msg = $"Separation complete: {okCount} part(s) OK";
+            if (damagedCount > 0)
+                msg += $", {damagedCount} damaged (NCR created)";
+
+            Toast.ShowSuccess(msg);
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Separation failed: {ex.Message}"); }
     }
 
     // Fail

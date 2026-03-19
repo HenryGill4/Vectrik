@@ -34,4 +34,24 @@ public interface IWorkflowEngine
     /// Gets all workflow definitions for an entity type.
     /// </summary>
     Task<List<WorkflowDefinition>> GetDefinitionsAsync(string entityType);
+
+    /// <summary>
+    /// Gets all workflow definitions across all entity types.
+    /// </summary>
+    Task<List<WorkflowDefinition>> GetAllDefinitionsAsync();
+
+    /// <summary>
+    /// Returns true if an active workflow definition exists for the given entity type.
+    /// </summary>
+    Task<bool> HasWorkflowAsync(string entityType);
+
+    /// <summary>
+    /// Creates or updates a workflow definition.
+    /// </summary>
+    Task<WorkflowDefinition> SaveDefinitionAsync(WorkflowDefinition definition);
+
+    /// <summary>
+    /// Deletes a workflow definition and its steps.
+    /// </summary>
+    Task DeleteDefinitionAsync(int definitionId);
 }

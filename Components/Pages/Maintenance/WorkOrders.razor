@@ -3,10 +3,13 @@
 @inject IMachineService MachineService
 @inject ToastService Toast
 @inject NavigationManager Nav
+@inject ITenantFeatureService Features
 @using Opcentrix_V3.Models.Maintenance
 @rendermode InteractiveServer
 
 <PageTitle>Maintenance Work Orders - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.maintenance" ModuleName="Maintenance Management">
 
 <ConfirmDialog @ref="_confirmDialog" />
 
@@ -141,6 +144,8 @@ else
         </div>
     </div>
 }
+
+</FeatureGate>
 
 @code {
     private List<MaintenanceWorkOrder>? _workOrders;

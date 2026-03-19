@@ -184,6 +184,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("BuildParameters")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -191,6 +194,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("CurrentRevision")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
@@ -271,6 +277,44 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("WorkOrderLineId");
 
                     b.ToTable("BuildPackageParts");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildPackageRevision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BuildPackageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ChangeNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ParametersSnapshotJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PartsSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("RevisionDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BuildPackageId");
+
+                    b.ToTable("BuildPackageRevisions");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.CorrectiveAction", b =>
@@ -656,6 +700,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<decimal>("CurrentStockQty")
                         .HasColumnType("decimal(18,4)");
 
+                    b.Property<string>("CustomFieldValues")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
@@ -855,6 +902,10 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
                     b.Property<double>("EstimatedHours")
                         .HasColumnType("REAL");
+
+                    b.Property<string>("JobNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("LastModifiedBy")
                         .IsRequired()
@@ -1561,6 +1612,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int?>("CorrectiveActionId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CustomFieldValues")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -1651,6 +1705,43 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasKey("Id");
 
                     b.ToTable("OperatingShifts");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.OperatorFeedback", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FeedbackType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OperatorUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("WorkInstructionStepId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkInstructionStepId");
+
+                    b.ToTable("OperatorFeedback");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.Part", b =>
@@ -2286,6 +2377,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<bool>("IsBatchStage")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsBuildLevelStage")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsOptional")
                         .HasColumnType("INTEGER");
 
@@ -2827,6 +2921,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("BuildPackageId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("TEXT");
 
@@ -2925,6 +3022,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BuildPackageId");
 
                     b.HasIndex("JobId");
 
@@ -3109,6 +3208,170 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .IsUnique();
 
                     b.ToTable("UserSettings");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstruction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ProductionStageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductionStageId");
+
+                    b.HasIndex("PartId", "ProductionStageId")
+                        .IsUnique();
+
+                    b.ToTable("WorkInstructions");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstructionMedia", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AltText")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MediaType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("WorkInstructionStepId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkInstructionStepId");
+
+                    b.ToTable("WorkInstructionMedia");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstructionRevision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ChangeNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("WorkInstructionId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkInstructionId");
+
+                    b.ToTable("WorkInstructionRevisions");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstructionStep", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("RequiresOperatorSignoff")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StepOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TipText")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WarningText")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("WorkInstructionId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkInstructionId");
+
+                    b.ToTable("WorkInstructionSteps");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkOrder", b =>
@@ -3507,6 +3770,17 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkOrderLine");
                 });
 
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildPackageRevision", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.BuildPackage", "BuildPackage")
+                        .WithMany("Revisions")
+                        .HasForeignKey("BuildPackageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BuildPackage");
+                });
+
             modelBuilder.Entity("Opcentrix_V3.Models.DelayLog", b =>
                 {
                     b.HasOne("Opcentrix_V3.Models.BuildJob", "BuildJob")
@@ -3762,6 +4036,17 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("PartInstance");
                 });
 
+            modelBuilder.Entity("Opcentrix_V3.Models.OperatorFeedback", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.WorkInstructionStep", "Step")
+                        .WithMany("Feedback")
+                        .HasForeignKey("WorkInstructionStepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Step");
+                });
+
             modelBuilder.Entity("Opcentrix_V3.Models.Part", b =>
                 {
                     b.HasOne("Opcentrix_V3.Models.Material", "MaterialEntity")
@@ -4006,6 +4291,10 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
             modelBuilder.Entity("Opcentrix_V3.Models.StageExecution", b =>
                 {
+                    b.HasOne("Opcentrix_V3.Models.BuildPackage", "BuildPackage")
+                        .WithMany()
+                        .HasForeignKey("BuildPackageId");
+
                     b.HasOne("Opcentrix_V3.Models.Job", "Job")
                         .WithMany("Stages")
                         .HasForeignKey("JobId");
@@ -4023,6 +4312,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasForeignKey("ProductionStageId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("BuildPackage");
 
                     b.Navigation("Job");
 
@@ -4042,6 +4333,58 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstruction", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Opcentrix_V3.Models.ProductionStage", "ProductionStage")
+                        .WithMany()
+                        .HasForeignKey("ProductionStageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Part");
+
+                    b.Navigation("ProductionStage");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstructionMedia", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.WorkInstructionStep", "Step")
+                        .WithMany("Media")
+                        .HasForeignKey("WorkInstructionStepId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Step");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstructionRevision", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.WorkInstruction", "WorkInstruction")
+                        .WithMany("Revisions")
+                        .HasForeignKey("WorkInstructionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("WorkInstruction");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstructionStep", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.WorkInstruction", "WorkInstruction")
+                        .WithMany("Steps")
+                        .HasForeignKey("WorkInstructionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("WorkInstruction");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkOrder", b =>
@@ -4135,6 +4478,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("BuildFileInfo");
 
                     b.Navigation("Parts");
+
+                    b.Navigation("Revisions");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.InspectionPlan", b =>
@@ -4221,6 +4566,20 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
             modelBuilder.Entity("Opcentrix_V3.Models.User", b =>
                 {
                     b.Navigation("Settings");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstruction", b =>
+                {
+                    b.Navigation("Revisions");
+
+                    b.Navigation("Steps");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.WorkInstructionStep", b =>
+                {
+                    b.Navigation("Feedback");
+
+                    b.Navigation("Media");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkOrder", b =>

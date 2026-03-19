@@ -1,0 +1,270 @@
+Using launch settings from C:\Users\Henry\source\repos\HenryGill4\Opcentrix-V3\Properties\launchSettings.json...
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (32ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      PRAGMA journal_mode = 'wal';
+info: Microsoft.EntityFrameworkCore.Migrations[20411]
+      Acquiring an exclusive lock for migration application. See https://aka.ms/efcore-docs-migrations-lock for more information if this takes too long.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsLock' AND "type" = 'table';
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE TABLE IF NOT EXISTS "__EFMigrationsLock" (
+          "Id" INTEGER NOT NULL CONSTRAINT "PK___EFMigrationsLock" PRIMARY KEY,
+          "Timestamp" TEXT NOT NULL
+      );
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      INSERT OR IGNORE INTO "__EFMigrationsLock"("Id", "Timestamp") VALUES(1, '2026-03-18 23:10:46.9916569+00:00');
+      SELECT changes();
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+          "MigrationId" TEXT NOT NULL CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY,
+          "ProductVersion" TEXT NOT NULL
+      );
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT "MigrationId", "ProductVersion"
+      FROM "__EFMigrationsHistory"
+      ORDER BY "MigrationId";
+info: Microsoft.EntityFrameworkCore.Migrations[20402]
+      Applying migration '20260317170638_InitialCreate'.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE TABLE "PlatformUsers" (
+          "Id" INTEGER NOT NULL CONSTRAINT "PK_PlatformUsers" PRIMARY KEY AUTOINCREMENT,
+          "Username" TEXT NOT NULL,
+          "PasswordHash" TEXT NOT NULL,
+          "Role" TEXT NOT NULL
+      );
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE TABLE "Tenants" (
+          "Id" INTEGER NOT NULL CONSTRAINT "PK_Tenants" PRIMARY KEY AUTOINCREMENT,
+          "Code" TEXT NOT NULL,
+          "CompanyName" TEXT NOT NULL,
+          "LogoUrl" TEXT NULL,
+          "PrimaryColor" TEXT NULL,
+          "IsActive" INTEGER NOT NULL,
+          "CreatedDate" TEXT NOT NULL,
+          "CreatedBy" TEXT NOT NULL,
+          "SubscriptionTier" TEXT NULL
+      );
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE UNIQUE INDEX "IX_PlatformUsers_Username" ON "PlatformUsers" ("Username");
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE UNIQUE INDEX "IX_Tenants_Code" ON "Tenants" ("Code");
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+      VALUES ('20260317170638_InitialCreate', '10.0.4');
+info: Microsoft.EntityFrameworkCore.Migrations[20402]
+      Applying migration '20260317202527_AddFeatureFlags'.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE TABLE "TenantFeatureFlags" (
+          "Id" INTEGER NOT NULL CONSTRAINT "PK_TenantFeatureFlags" PRIMARY KEY AUTOINCREMENT,
+          "TenantCode" TEXT NOT NULL,
+          "FeatureKey" TEXT NOT NULL,
+          "IsEnabled" INTEGER NOT NULL,
+          "EnabledAt" TEXT NULL,
+          "CreatedDate" TEXT NOT NULL
+      );
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE UNIQUE INDEX "IX_TenantFeatureFlags_TenantCode_FeatureKey" ON "TenantFeatureFlags" ("TenantCode", "FeatureKey");
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+      VALUES ('20260317202527_AddFeatureFlags', '10.0.4');
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      DELETE FROM "__EFMigrationsLock";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "PlatformUsers" AS "p")
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 64), @p1='?' (Size = 10), @p2='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "PlatformUsers" ("PasswordHash", "Role", "Username")
+      VALUES (@p0, @p1, @p2)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Tenants" AS "t")
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@normalizedCode='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Tenants" AS "t"
+          WHERE "t"."Code" = @normalizedCode)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 4), @p1='?' (Size = 18), @p2='?' (Size = 6), @p3='?' (DbType = DateTime), @p4='?' (DbType = Boolean), @p5='?', @p6='?', @p7='?'], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "Tenants" ("Code", "CompanyName", "CreatedBy", "CreatedDate", "IsActive", "LogoUrl", "PrimaryColor", "SubscriptionTier")
+      VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "TenantFeatureFlags" AS "t"
+          WHERE "t"."TenantCode" = 'demo')
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 14), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 17), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 19), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 16), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 14), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 16), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 16), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 10), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 14), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 12), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 18), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 17), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 16), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 16), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 15), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 10), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 17), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 15), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 3), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 12), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 18), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 22), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 4), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 9), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 9), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 8), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = DateTime), @p1='?' (DbType = DateTime), @p2='?' (Size = 9), @p3='?' (DbType = Boolean), @p4='?' (Size = 4)], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "TenantFeatureFlags" ("CreatedDate", "EnabledAt", "FeatureKey", "IsEnabled", "TenantCode")
+      VALUES (@p0, @p1, @p2, @p3, @p4)
+      RETURNING "Id";
+info: Opcentrix_V3.Services.MachineProviders.MachineSyncService[0]
+      MachineSyncService started.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT "t"."Id", "t"."Code", "t"."CompanyName", "t"."CreatedBy", "t"."CreatedDate", "t"."IsActive", "t"."LogoUrl", "t"."PrimaryColor", "t"."SubscriptionTier"
+      FROM "Tenants" AS "t"
+      WHERE "t"."IsActive"
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5064
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\Henry\source\repos\HenryGill4\Opcentrix-V3

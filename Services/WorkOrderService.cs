@@ -9,11 +9,13 @@ public class WorkOrderService : IWorkOrderService
 {
     private readonly TenantDbContext _db;
     private readonly ISchedulingService _scheduler;
+    private readonly INumberSequenceService _numberSeq;
 
-    public WorkOrderService(TenantDbContext db, ISchedulingService scheduler)
+    public WorkOrderService(TenantDbContext db, ISchedulingService scheduler, INumberSequenceService numberSeq)
     {
         _db = db;
         _scheduler = scheduler;
+        _numberSeq = numberSeq;
     }
 
     public async Task<List<WorkOrder>> GetAllWorkOrdersAsync(WorkOrderStatus? statusFilter = null)
@@ -178,23 +180,7 @@ public class WorkOrderService : IWorkOrderService
 
     public async Task<string> GenerateOrderNumberAsync()
     {
-        var year = DateTime.UtcNow.Year;
-        var prefix = $"WO-{year}-";
-
-        var lastOrder = await _db.WorkOrders
-            .Where(w => w.OrderNumber.StartsWith(prefix))
-            .OrderByDescending(w => w.OrderNumber)
-            .FirstOrDefaultAsync();
-
-        var nextNumber = 1;
-        if (lastOrder != null)
-        {
-            var suffix = lastOrder.OrderNumber.Replace(prefix, "");
-            if (int.TryParse(suffix, out var lastNum))
-                nextNumber = lastNum + 1;
-        }
-
-        return $"{prefix}{nextNumber:D4}";
+        return await _numberSeq.NextAsync("WorkOrder");
     }
 
     // --- Job Generation from Part Routing ---
@@ -227,6 +213,7 @@ public class WorkOrderService : IWorkOrderService
             var estimatedHours = stage.EstimatedHours ?? stage.ProductionStage.DefaultDurationHours;
             var job = new Job
             {
+                JobNumber = await _numberSeq.NextAsync("Job"),
                 PartId = line.PartId,
                 WorkOrderLineId = line.Id,
                 PartNumber = line.Part.PartNumber,

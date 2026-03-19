@@ -1,5 +1,6 @@
 ﻿@inject IStageService StageService
 @inject IServiceProvider ServiceProvider
+@inject ITenantFeatureService Features
 @using Microsoft.AspNetCore.Components.Authorization
 
 <AuthorizeView>
@@ -36,9 +37,12 @@
                         <span class="nav-icon">📥</span> RFQ Inbox
                     </NavLink>
                 }
-                <NavLink class="nav-item" href="builds">
-                    <span class="nav-icon">🏗️</span> Build Planning
-                </NavLink>
+                @if (Features.IsEnabled("sls"))
+                {
+                    <NavLink class="nav-item" href="builds">
+                        <span class="nav-icon">🏗️</span> Build Planning
+                    </NavLink>
+                }
 
                 <div class="nav-section">PARTS</div>
                 <NavLink class="nav-item" href="parts">
@@ -91,41 +95,50 @@
                     <span class="nav-icon">🖥️</span> Machine Status
                 </NavLink>
 
-                <div class="nav-section">MAINTENANCE</div>
-                <NavLink class="nav-item" href="maintenance">
-                    <span class="nav-icon">🔧</span> Maintenance Dashboard
-                </NavLink>
-                <NavLink class="nav-item" href="maintenance/workorders">
-                    <span class="nav-icon">📝</span> Maintenance Work Orders
-                </NavLink>
-                <NavLink class="nav-item" href="maintenance/rules">
-                    <span class="nav-icon">📐</span> Maintenance Rules
-                </NavLink>
+                @if (Features.IsEnabled("module.maintenance"))
+                {
+                    <div class="nav-section">MAINTENANCE</div>
+                    <NavLink class="nav-item" href="maintenance">
+                        <span class="nav-icon">🔧</span> Maintenance Dashboard
+                    </NavLink>
+                    <NavLink class="nav-item" href="maintenance/workorders">
+                        <span class="nav-icon">📝</span> Maintenance Work Orders
+                    </NavLink>
+                    <NavLink class="nav-item" href="maintenance/rules">
+                        <span class="nav-icon">📐</span> Maintenance Rules
+                    </NavLink>
+                }
 
-                <div class="nav-section">INVENTORY</div>
-                <NavLink class="nav-item" href="inventory">
-                    <span class="nav-icon">📦</span> Inventory
-                </NavLink>
-                <NavLink class="nav-item" href="inventory/items">
-                    <span class="nav-icon">📋</span> Inventory Items
-                </NavLink>
-                <NavLink class="nav-item" href="inventory/receive">
-                    <span class="nav-icon">📥</span> Receive Stock
-                </NavLink>
+                @if (Features.IsEnabled("module.inventory"))
+                {
+                    <div class="nav-section">INVENTORY</div>
+                    <NavLink class="nav-item" href="inventory">
+                        <span class="nav-icon">📦</span> Inventory
+                    </NavLink>
+                    <NavLink class="nav-item" href="inventory/items">
+                        <span class="nav-icon">📋</span> Inventory Items
+                    </NavLink>
+                    <NavLink class="nav-item" href="inventory/receive">
+                        <span class="nav-icon">📥</span> Receive Stock
+                    </NavLink>
+                }
 
-                <div class="nav-section">QUALITY</div>
-                <NavLink class="nav-item" href="quality">
-                    <span class="nav-icon">🔍</span> Quality Dashboard
-                </NavLink>
-                <NavLink class="nav-item" href="quality/ncr">
-                    <span class="nav-icon">📋</span> NCR Management
-                </NavLink>
-                <NavLink class="nav-item" href="quality/capa">
-                    <span class="nav-icon">🔧</span> CAPA Board
-                </NavLink>
-                <NavLink class="nav-item" href="quality/spc">
-                    <span class="nav-icon">📈</span> SPC Charts
-                </NavLink>
+                @if (Features.IsEnabled("module.quality"))
+                {
+                    <div class="nav-section">QUALITY</div>
+                    <NavLink class="nav-item" href="quality">
+                        <span class="nav-icon">🔍</span> Quality Dashboard
+                    </NavLink>
+                    <NavLink class="nav-item" href="quality/ncr">
+                        <span class="nav-icon">📋</span> NCR Management
+                    </NavLink>
+                    <NavLink class="nav-item" href="quality/capa">
+                        <span class="nav-icon">🔧</span> CAPA Board
+                    </NavLink>
+                    <NavLink class="nav-item" href="quality/spc">
+                        <span class="nav-icon">📈</span> SPC Charts
+                    </NavLink>
+                }
             }
             else
             {
@@ -153,6 +166,12 @@
                     </NavLink>
                     <NavLink class="nav-item" href="admin/branding">
                         <span class="nav-icon">🏷️</span> Branding
+                    </NavLink>
+                    <NavLink class="nav-item" href="admin/workflows">
+                        <span class="nav-icon">🔄</span> Workflows
+                    </NavLink>
+                    <NavLink class="nav-item" href="admin/work-instructions">
+                        <span class="nav-icon">📋</span> Work Instructions
                     </NavLink>
                 }
             }

@@ -2,9 +2,12 @@
 @inject IMaintenanceService MaintenanceService
 @inject NavigationManager Nav
 @inject ToastService Toast
+@inject ITenantFeatureService Features
 @rendermode InteractiveServer
 
 <PageTitle>Maintenance Dashboard - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.maintenance" ModuleName="Maintenance Management">
 
 <ConfirmDialog @ref="_confirmDialog" />
 
@@ -65,6 +68,8 @@ else
         <div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-text">All maintenance rules within limits. No alerts at this time.</div></div>
     }
 }
+
+</FeatureGate>
 
 @code {
     private List<MaintenanceAlert>? _alerts;

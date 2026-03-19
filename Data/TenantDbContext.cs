@@ -41,6 +41,7 @@ public class TenantDbContext : DbContext
     public DbSet<BuildPackage> BuildPackages { get; set; }
     public DbSet<BuildPackagePart> BuildPackageParts { get; set; }
     public DbSet<BuildFileInfo> BuildFileInfos { get; set; }
+    public DbSet<BuildPackageRevision> BuildPackageRevisions { get; set; }
 
     // Quality
     public DbSet<QCInspection> QCInspections { get; set; }
@@ -103,6 +104,13 @@ public class TenantDbContext : DbContext
     // Reporting & Analytics (Module 07)
     public DbSet<DashboardLayout> DashboardLayouts { get; set; }
     public DbSet<SavedReport> SavedReports { get; set; }
+
+    // Visual Work Instructions (Module 03)
+    public DbSet<WorkInstruction> WorkInstructions { get; set; }
+    public DbSet<WorkInstructionStep> WorkInstructionSteps { get; set; }
+    public DbSet<WorkInstructionMedia> WorkInstructionMedia { get; set; }
+    public DbSet<WorkInstructionRevision> WorkInstructionRevisions { get; set; }
+    public DbSet<OperatorFeedback> OperatorFeedback { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -295,6 +303,9 @@ public class TenantDbContext : DbContext
             entity.HasMany(e => e.DelayLogs)
                 .WithOne(e => e.StageExecution)
                 .HasForeignKey(e => e.StageExecutionId);
+            entity.HasOne(e => e.BuildPackage)
+                .WithMany()
+                .HasForeignKey(e => e.BuildPackageId);
         });
 
         // JobNote
@@ -335,6 +346,14 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.ScheduledJob)
                 .WithMany()
                 .HasForeignKey(e => e.ScheduledJobId);
+        });
+
+        // BuildPackageRevision
+        modelBuilder.Entity<BuildPackageRevision>(entity =>
+        {
+            entity.HasOne(e => e.BuildPackage)
+                .WithMany(e => e.Revisions)
+                .HasForeignKey(e => e.BuildPackageId);
         });
 
         // BuildPackagePart
@@ -617,6 +636,46 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.PartId);
             entity.HasIndex(e => new { e.PartId, e.CharacteristicName });
+        });
+
+        // WorkInstruction
+        modelBuilder.Entity<WorkInstruction>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.ProductionStage)
+                .WithMany()
+                .HasForeignKey(e => e.ProductionStageId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(e => e.Steps)
+                .WithOne(s => s.WorkInstruction)
+                .HasForeignKey(s => s.WorkInstructionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.Revisions)
+                .WithOne(r => r.WorkInstruction)
+                .HasForeignKey(r => r.WorkInstructionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.PartId, e.ProductionStageId }).IsUnique();
+        });
+
+        // WorkInstructionStep
+        modelBuilder.Entity<WorkInstructionStep>(entity =>
+        {
+            entity.HasMany(e => e.Media)
+                .WithOne(m => m.Step)
+                .HasForeignKey(m => m.WorkInstructionStepId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.Feedback)
+                .WithOne(f => f.Step)
+                .HasForeignKey(f => f.WorkInstructionStepId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

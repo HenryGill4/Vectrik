@@ -1,10 +1,13 @@
 # OpCentrix V3 — Unified Implementation Roadmap
 
 > **Created**: 2026-03-17
-> **Updated**: 2026-03-18 — Added SLS Build Plate flow, Part System Integration,
-> ProShop competitive analysis. Consolidated all planning docs into this single file.
-> **Status**: IN PROGRESS — Phase 1 Hardening (H6 remaining), then Build Plate flow
+> **Updated**: 2026-03-19 — Added work-chunk execution system, collapsed completed stages.
+> **Status**: IN PROGRESS — Phase 1A H6 (Cross-Cutting Wiring) + Phase 1D (Part System & Build Plate)
 > **Purpose**: Single source of truth for ALL implementation work.
+>
+> **Execution system**: See `docs/chunks/QUEUE.md` for the ordered work queue.
+> Each chunk in `docs/chunks/CHUNK-XX-*.md` is a self-contained unit of work
+> sized to fit within a single AI agent session.
 >
 > **Supersedes**: `SPRINT_PLAN.md`, `OPCENTRIX_ARCHITECTURE_DECISIONS.md`,
 > `docs/STAGED-IMPLEMENTATION-PLAN.md`, `docs/PART-SYSTEM-INTEGRATION-PLAN.md`,
@@ -17,12 +20,14 @@
 
 ## How This Roadmap Works
 
-1. **AI agents**: Read this file first every session. Find the current phase,
-   find the first unchecked `[ ]` task — that's where to resume.
-2. After completing a task, mark it `[x]`.
-3. After completing a full stage, update the status badge in the Stage Map.
-4. Module-specific implementation details remain in `docs/phase-N/MODULE-XX-*.md`.
-   This file is the **master sequencer** — those files are the **detailed blueprints**.
+1. **AI agents**: Open `docs/chunks/QUEUE.md` — find the first unchecked `[ ]`
+   chunk. Open that chunk file for your assignment. Each chunk is self-contained
+   with files-to-read, tasks, and verification steps.
+2. After completing a chunk, mark it `[x]` in `QUEUE.md` and fill in the
+   "Files Modified" section at the bottom of the chunk file.
+3. After completing all chunks in a stage, update the status badge in the Stage Map below.
+4. This file is the **master sequencer**. Chunk files are the **detailed blueprints**.
+   Module-specific plans remain in `docs/phase-N/MODULE-XX-*.md` for reference.
 5. `docs/MASTER_CONTEXT.md` has the architecture patterns, model registry, service
    registry, and route registry. Keep it updated as you build.
 
@@ -119,246 +124,30 @@ PHASE 4 — TESTING & POLISH
 
 ---
 
-### Stage H1 — Admin Pages Hardening
-**Duration**: 2–3 days | **Prereqs**: None
+### Stage H1 — Admin Pages Hardening ✅
+**Status**: COMPLETE — All admin pages hardened with validation, confirmation dialogs,
+error handling, toast feedback, and service layer usage. Minor polish items (H1.11,
+H1.12, H1.16, H1.20, H1.28, H1.32–H1.38) deferred or pending verification.
 
-Every admin page needs: form validation, confirmation dialogs, error handling,
-toast feedback, proper service layer usage (no direct DbContext).
+### Stage H2 — Core Workflow Hardening ✅
+**Status**: COMPLETE — Quotes, work orders, RFQ inbox, and portal hardened.
+Cross-cutting wiring items (number sequences H2.6/H2.20, custom fields H2.8/H2.22,
+document templates H2.9/H2.13, workflows H2.25) deferred to H6 chunks.
 
-#### Admin/Machines.razor
-- [x] H1.1 — Replace direct `DbContext` injection with `IMachineService` (create if needed)
-- [x] H1.2 — Add required field validation (Name, Type required)
-- [x] H1.3 — Add `ConfirmDialog` before machine deletion
-- [x] H1.4 — Add numeric range validation for build volume fields
-- [x] H1.5 — Add edit/delete for machine components (currently add-only)
-- [x] H1.6 — Add try-catch with `Toast.ShowError()` around all save operations
-- [x] H1.7 — Add empty state ("No machines configured yet")
+### Stage H3 — Shop Floor & Scheduling Hardening ✅
+**Status**: COMPLETE — All shop floor pages, 10 stage partials, scheduler Gantt +
+capacity, and machine dashboard hardened. LogDelayPanel added to all partials.
+Direct DbContext removed from Machines/Index and Scheduler.
 
-#### Admin/Parts.razor
-- [x] H1.8 — Add required field validation (Part Number, Name)
-- [x] H1.9 — Add `ConfirmDialog` before deleting stage requirements
-- [x] H1.10 — Add numeric validation for stack counts (min 1, max reasonable)
-- [ ] H1.11 — Validate stacking config (at least one stack type enabled if SLS)
-- [ ] H1.12 — Add duplicate part number check on create
+### Stage H4 — Quality & Inventory Hardening ✅
+**Status**: COMPLETE — Quality dashboard, NCR, CAPA, SPC, inventory dashboard and
+items all hardened. Cross-cutting items (workflows H4.4, number sequences H4.6,
+feature flags H4.20) deferred to H6 chunks.
 
-#### Admin/Users.razor
-- [x] H1.13 — Add password strength validation (min 8 chars, mixed case)
-- [x] H1.14 — Add `ConfirmDialog` before user deletion
-- [x] H1.15 — Prevent deletion of last admin user
-- [ ] H1.16 — Add visual feedback for stage assignment toggles
-- [x] H1.17 — Validate email format
-
-#### Admin/Materials.razor
-- [x] H1.18 — Add required field validation (Name, Category)
-- [x] H1.19 — Add `ConfirmDialog` before deletion
-- [ ] H1.20 — Replace raw ID input for compatible materials with searchable dropdown
-- [x] H1.21 — Add try-catch error handling
-
-#### Admin/Settings.razor
-- [x] H1.22 — Add key format validation (lowercase, dots, no spaces)
-- [x] H1.23 — Add setting descriptions/tooltips explaining each setting
-- [x] H1.24 — Add `ConfirmDialog` before deletion
-- [x] H1.25 — Add type-aware value editing (toggle for booleans, number input for numerics)
-
-#### Admin/Features.razor
-- [x] H1.26 — Add `ConfirmDialog` before disabling a feature ("This will hide X module for all users")
-- [x] H1.27 — Show dependent features (disabling inventory should warn about purchasing)
-
-#### Admin/CustomFields.razor
-- [ ] H1.28 — Add field preview (show how the field will render)
-- [x] H1.29 — Add `ConfirmDialog` before deleting a field ("Existing data for this field will be hidden")
-
-#### Admin/Numbering.razor
-- [x] H1.30 — Add validation that counter value doesn't exceed digit capacity
-- [x] H1.31 — Hide numbering configs for entities that don't exist yet (PurchaseOrder, Vendor, Shipment) — gate behind feature flags
-- [ ] H1.32 — Add warning when changing prefix on existing sequences
-
-#### Admin/Branding.razor
-- [ ] H1.33 — Replace raw logo URL with file upload using `FileUpload` component
-- [ ] H1.34 — Add CAGE code validation (exactly 5 alphanumeric chars)
-- [ ] H1.35 — Add DoDAAC validation (6 chars)
-- [ ] H1.36 — Add DUNS validation (9 digits)
-
-#### Admin/Stages.razor (already PRODUCTION — verify only)
-- [ ] H1.37 — Verify deletion confirmation exists
-- [ ] H1.38 — Verify custom field JSON is validated before save
-
----
-
-### Stage H2 — Core Workflow Hardening (Quotes, Work Orders, Portal)
-**Duration**: 2–3 days | **Prereqs**: None
-
-#### Quotes/Index.razor (already PRODUCTION — verify only)
-- [x] H2.1 — Verify pagination works correctly with filters
-- [x] H2.2 — Add bulk status actions (multi-select for archiving expired quotes)
-
-#### Quotes/Edit.razor
-- [x] H2.3 — Add required field validation (Customer Name, at least one line item)
-- [x] H2.4 — Add numeric validation on quantities and costs (> 0, max reasonable value)
-- [x] H2.5 — Add unsaved changes warning on navigation away
-- [ ] H2.6 — Wire `INumberSequenceService` for auto-generated quote numbers → deferred to H6.11
-- [x] H2.7 — Wire `IPricingEngineService` for live cost recalculation on line item changes
-- [ ] H2.8 — Add `CustomFieldsEditor` integration for quote-level custom fields → deferred to H6.5
-- [ ] H2.9 — Wire `IDocumentTemplateService` for quote PDF generation → deferred to H6.15-16
-
-#### Quotes/Details.razor
-- [x] H2.10 — Add `ConfirmDialog` before "Accept & Convert to WO" (irreversible)
-- [x] H2.11 — Add `ConfirmDialog` before "Reject"
-- [x] H2.12 — Wire quote revision history display
-- [ ] H2.13 — Add print/export button using document template → deferred to H6.16
-
-#### Quotes/RfqInbox.razor
-- [x] H2.14 — Add "Convert to Quote" flow (pre-populate quote from RFQ data)
-- [x] H2.15 — Add "Decline with reason" modal
-- [x] H2.16 — Add RFQ detail view modal
-
-#### WorkOrders/Index.razor (already PRODUCTION — verify only)
-- [x] H2.17 — Verify Kanban drag-and-drop or status change works (read-only kanban, status changes on detail page)
-- [x] H2.18 — Verify fulfillment progress calculation is accurate
-
-#### WorkOrders/Create.razor
-- [x] H2.19 — Add required field validation (Customer, at least one line)
-- [ ] H2.20 — Wire `INumberSequenceService` for auto-generated WO numbers → deferred to H6.12
-- [x] H2.21 — Add part selection dropdown with search (not just ID)
-- [ ] H2.22 — Add `CustomFieldsEditor` integration → deferred to H6.6
-- [x] H2.23 — Add "Create from Quote" pre-population flow
-
-#### WorkOrders/Details.razor
-- [x] H2.24 — Add `ConfirmDialog` before status changes (Release, Cancel, Close)
-- [ ] H2.25 — Wire `IWorkflowEngine` for release approval workflow → deferred to H6.19
-- [x] H2.26 — Add comment CRUD (edit, delete own comments)
-- [x] H2.27 — Show job generation status after release
-- [ ] H2.28 — Wire material reservation display from inventory → deferred to Phase 2 (no reservation model yet)
-
-#### WorkOrders/JobDetail.razor
-- [x] H2.29 — Add stage timeline visualization (progress through routing)
-- [x] H2.30 — Add reschedule button per stage execution
-- [x] H2.31 — Wire delay log display
-
-#### Portal/Rfq.razor (already PRODUCTION — verify only)
-- [x] H2.32 — Verify file attachment works for drawings
-- [x] H2.33 — Add CAPTCHA or rate limiting for spam prevention
-
----
-
-### Stage H3 — Shop Floor & Scheduling Hardening
-**Duration**: 2–3 days | **Prereqs**: None
-
-#### ShopFloor/Index.razor
-- [x] H3.1 — Add `ConfirmDialog` before "Complete" and "Fail" actions
-- [x] H3.2 — Add reason/notes modal for "Fail" action (require failure reason) — already existed
-- [x] H3.3 — Add reason/notes modal for "Pause" action — already existed
-- [x] H3.4 — Wire elapsed time display to real-time updates (timer) — 30s refresh timer
-- [x] H3.5 — Add empty state ("No work assigned to you") — already existed
-- [x] H3.6 — Wire stage-specific partials to load based on stage type — switch on StageSlug
-- [x] H3.7 — Add "View Work Instructions" button (disabled placeholder until Module 03)
-
-#### ShopFloor/Stage.razor
-- [x] H3.8 — Add proper queue sorting (priority, then due date)
-- [x] H3.9 — Wire start/complete/fail buttons to `IStageService` — already wired
-- [x] H3.10 — Add delay logging UI when stage takes longer than estimated — over-estimate warning
-
-#### ShopFloor/Partials/*.razor (10 partials)
-- [x] H3.11 — Verify each partial binds to real stage execution data — all display part/job/machine info from Execution param
-- [x] H3.12 — SLSPrinting: Wire build package selection, layer tracking — displays machine, material, stack level, parts from Job
-- [x] H3.13 — CNCMachining: Wire setup/runtime fields, program number display — setup/runtime inputs added, job notes as program ref
-- [x] H3.14 — QualityControl: Wire inspection form to `IQualityService` — displays job/part context, QC required status, inspector notes bound
-- [x] H3.15 — Shipping: Wire packing/shipping form to work order fulfillment — displays WO#, customer, quantity context
-- [x] H3.16 — GenericStage: Ensure custom fields render via `CustomFieldsEditor` — already renders via Stage.GetCustomFields()
-- [x] H3.17 — All partials: Add "Log Delay" button with reason picker — LogDelayPanel.razor component added to all 10 partials
-
-#### Scheduler/Index.razor (already PRODUCTION — verify only)
-- [x] H3.18 — Verify Gantt renders from real job/stage data — uses StageService.GetScheduledExecutionsAsync ✅
-- [x] H3.19 — Verify reschedule drag-and-drop updates database — reschedule modal + UpdateScheduleAsync (no drag-drop, modal approach)
-- [x] H3.20 — Add conflict detection alert when double-booking a machine — HasOverlap + gantt-bar-conflict CSS ✅ + replaced direct DbContext with IMachineService
-
-#### Scheduler/Capacity.razor
-- [x] H3.21 — Verify capacity bars use real machine hours vs scheduled hours — uses StageService.GetMachineCapacityAsync ✅
-- [x] H3.22 — Add date range selector for capacity view — already existed with From/To + Apply button
-- [x] H3.23 — Add drill-down (click machine bar → see scheduled jobs) — modal with filtered executions by machine
-
-#### Machines/Index.razor
-- [x] H3.24 — Replace direct `DbContext` with service layer — now uses IMachineService
-- [x] H3.25 — Add click-through to machine detail or admin edit — card click navigates to admin/machines
-- [x] H3.26 — Wire SignalR state updates to live-refresh status badges — 15s auto-refresh timer (SignalR client package not available, timer fallback)
-- [x] H3.27 — Add machine action buttons (acknowledge alarm, view history) — error acknowledge, schedule link, maintenance link
-
----
-
-### Stage H4 — Quality & Inventory Hardening
-**Duration**: 2 days | **Prereqs**: None
-
-#### Quality/Dashboard.razor (already PRODUCTION — verify only)
-- [x] H4.1 — Verify KPIs calculate from real data — uses IQualityService.GetDashboardDataAsync ✅
-- [x] H4.2 — Add clickable KPIs (FPY → SPC, NCR count → NCR list, CAPA count → CAPA board)
-
-#### Quality/Ncr.razor
-- [x] H4.3 — Add NCR creation form with required fields (Part dropdown via IPartService, Type, Severity, Description required)
-- [ ] H4.4 — Wire disposition workflow using `IWorkflowEngine` → deferred to H6.21
-- [x] H4.5 — Add `ConfirmDialog` before disposition changes (confirms non-PendingReview dispositions)
-- [ ] H4.6 — Wire `INumberSequenceService` for auto-generated NCR numbers → deferred to H6.13
-- [ ] H4.7 — Add file attachment support (photos of defects) → deferred (needs model migration + storage)
-- [x] H4.8 — Add "Create CAPA" button from NCR — creates linked CAPA with ConfirmDialog, sets CorrectiveActionId
-
-#### Quality/Capa.razor
-- [x] H4.9 — Add CAPA creation form with required fields — Owner now required, effectiveness required before close
-- [x] H4.10 — Wire Kanban board (Open → In Progress → Verified → Closed) — already existed ✅
-- [x] H4.11 — Add due date tracking with overdue highlighting — already existed ✅
-- [x] H4.12 — Add effectiveness verification step — already existed ✅, now enforced on close
-
-#### Quality/Spc.razor
-- [x] H4.13 — Wire SPC chart rendering with real measurement data — replaced direct DbContext with ISpcService methods
-- [x] H4.14 — Add part/characteristic selector — already existed ✅
-- [x] H4.15 — Display Cp/Cpk calculations — already existed ✅
-- [x] H4.16 — Add out-of-control alerts (Nelson rules or Western Electric rules) — HasOutOfControl already displayed ✅
-
-#### Inventory/Dashboard.razor (already PRODUCTION — minor polish)
-- [x] H4.17 — Add clickable low-stock alerts → navigate to item detail — GoToLedger already existed ✅
-- [x] H4.18 — Add reorder suggestion → action button (navigates to item ledger with toast notification)
-
-#### Inventory/Items.razor (already PRODUCTION — verify)
-- [x] H4.19 — Verify delete has confirmation dialog — added edit/delete buttons with ConfirmDialog
-- [ ] H4.20 — Wire feature flags for DLMS fields (GFM/GFE) — N/A, no DLMS fields on InventoryItem model yet → deferred to H6.3
-
----
-
-### Stage H5 — Analytics, Builds, Tracking & Maintenance Hardening
-**Duration**: 2 days | **Prereqs**: None
-
-#### Analytics/* (mostly PRODUCTION — minor polish)
-- [x] H5.1 — Verify all analytics pages use date range consistently — all 5 analytics pages use date range selectors ✅
-- [x] H5.2 — Add export/download button for each report (CSV or PDF) — CSV export via data URI on all 5 pages
-- [x] H5.3 — Analytics/Search: Add search scope indicator and result count — scope hint + result count display
-
-#### Builds/Index.razor
-- [x] H5.4 — Remove "Generate Spoof Build Data" button (replace with real workflow) — removed, replaced with status workflow buttons
-- [x] H5.5 — Wire build creation to real `IBuildPlanningService` — machine dropdown, material, duration, notes
-- [x] H5.6 — Add build status workflow (Planning → Ready → Running → Complete) — Draft→Ready→Scheduled→InProgress→Completed with ConfirmDialog
-- [x] H5.7 — Add part assignment to build packages — add/remove parts via IPartService dropdown, per-package part table
-- [x] H5.8 — Add validation on build creation form (machine required, at least one part) — machine+name required, Ready requires parts
-- [ ] H5.9 — Wire stacking efficiency display from `PartService.CalculateStackEfficiency` → deferred (method not yet on IPartService)
-
-#### Tracking/Index.razor (already PRODUCTION — verify)
-- [x] H5.10 — Verify search returns real part instance data — uses IPartTrackerService ✅
-- [x] H5.11 — Add barcode scan input mode (focus on scan field) — scan mode toggle, auto-clear after search, serial type auto-select
-
-#### Maintenance/Index.razor
-- [x] H5.12 — Add drill-down from alert → create maintenance work order — "Schedule" button creates WO pre-populated from alert
-- [x] H5.13 — Add action buttons (Acknowledge, Schedule, Complete) — Schedule (→ WO) + Acknowledge (→ action log) buttons per alert row
-
-#### Maintenance/WorkOrders.razor
-- [x] H5.14 — Add work order creation form with required fields — machine dropdown, title required, priority, scheduled date
-- [x] H5.15 — Add status workflow (Open → Assigned → In Progress → Complete) — full status buttons per row with ConfirmDialog
-- [x] H5.16 — Wire action log (track what was done during maintenance) — detail modal with action log input → LogMaintenanceActionAsync
-
-#### Maintenance/Rules.razor
-- [x] H5.17 — Add `ConfirmDialog` before rule deletion — ConfirmDialog + **fixed architecture violation**: replaced direct TenantDbContext with IMachineService
-- [x] H5.18 — Add rule preview ("This will trigger every 500 hours or 30 days") — RulePreview() method, shown in table + create form
-
-#### Home.razor (Dashboard)
-- [x] H5.19 — Verify all KPI cards link to their respective detail pages — all 9 KPI cards now clickable with NavigateTo
-- [x] H5.20 — Add recent activity feed (last 10 actions across all modules) → replaced with Quick Navigation card (no RecentActivity model yet)
-- [x] H5.21 — Add quick-action buttons (New Quote, New WO, Clock In) — header buttons + Quick Navigation card
+### Stage H5 — Analytics, Builds, Tracking & Maintenance Hardening ✅
+**Status**: COMPLETE — Analytics export added, build workflow replaced spoof data,
+tracking scan mode added, maintenance WOs + rules hardened, home dashboard KPIs
+linked. Stacking efficiency (H5.9) deferred.
 
 ---
 
@@ -369,36 +158,36 @@ Wire the customization infrastructure (feature flags, custom fields, numbering,
 workflows, document templates) into all existing pages.
 
 #### Feature Flags
-- [ ] H6.1 — Wrap every nav section in `NavMenu.razor` with `ITenantFeatureService.IsEnabled()` checks
-- [ ] H6.2 — Add "Module not enabled" guard page for every feature area (Inventory, Quality, Builds, etc.)
-- [ ] H6.3 — Gate DLMS-specific UI fields behind `Features.IsEnabled("dlms")`
-- [ ] H6.4 — Gate SLS-specific features (Builds, stacking) behind `Features.IsEnabled("sls")`
+- [x] H6.1 — Wrap every nav section in `NavMenu.razor` with `ITenantFeatureService.IsEnabled()` checks
+- [x] H6.2 — Add "Module not enabled" guard page for every feature area (Inventory, Quality, Builds, etc.)
+- [x] H6.3 — Gate DLMS-specific UI fields behind `Features.IsEnabled("dlms")`
+- [x] H6.4 — Gate SLS-specific features (Builds, stacking) behind `Features.IsEnabled("sls")`
 
 #### Custom Fields
-- [ ] H6.5 — Add `CustomFieldsEditor` to Quote create/edit forms
-- [ ] H6.6 — Add `CustomFieldsEditor` to Work Order create/edit forms
-- [ ] H6.7 — Add `CustomFieldsEditor` to Part create/edit forms (admin)
-- [ ] H6.8 — Add `CustomFieldsEditor` to NCR create form
-- [ ] H6.9 — Add `CustomFieldsEditor` to Inventory Item create/edit form
-- [ ] H6.10 — Display custom field values on detail/read pages
+- [x] H6.5 — Add `CustomFieldsEditor` to Quote create/edit forms
+- [x] H6.6 — Add `CustomFieldsEditor` to Work Order create/edit forms
+- [x] H6.7 — Add `CustomFieldsEditor` to Part create/edit forms (admin)
+- [x] H6.8 — Add `CustomFieldsEditor` to NCR create form
+- [x] H6.9 — Add `CustomFieldsEditor` to Inventory Item create/edit form
+- [x] H6.10 — Display custom field values on detail/read pages
 
 #### Number Sequences
-- [ ] H6.11 — Wire `INumberSequenceService.NextAsync("Quote")` into quote creation
-- [ ] H6.12 — Wire `INumberSequenceService.NextAsync("WorkOrder")` into WO creation
-- [ ] H6.13 — Wire `INumberSequenceService.NextAsync("NCR")` into NCR creation
-- [ ] H6.14 — Wire `INumberSequenceService.NextAsync("Job")` into job generation
+- [x] H6.11 — Wire `INumberSequenceService.NextAsync("Quote")` into quote creation
+- [x] H6.12 — Wire `INumberSequenceService.NextAsync("WorkOrder")` into WO creation
+- [x] H6.13 — Wire `INumberSequenceService.NextAsync("NCR")` into NCR creation
+- [x] H6.14 — Wire `INumberSequenceService.NextAsync("Job")` into job generation
 
 #### Document Templates
-- [ ] H6.15 — Create default quote PDF template
-- [ ] H6.16 — Wire "Print/Export" button on quote detail page
-- [ ] H6.17 — Create default work order traveler template
-- [ ] H6.18 — Wire "Print Traveler" button on WO detail page
+- [x] H6.15 — Create default quote PDF template
+- [x] H6.16 — Wire "Print/Export" button on quote detail page
+- [x] H6.17 — Create default work order traveler template
+- [x] H6.18 — Wire "Print Traveler" button on WO detail page
 
 #### Workflow Engine
-- [ ] H6.19 — Wire WO release to workflow approval (when workflow defined)
-- [ ] H6.20 — Wire quote approval to workflow (when workflow defined)
-- [ ] H6.21 — Wire NCR disposition to workflow approval (when workflow defined)
-- [ ] H6.22 — Build `/admin/workflows` page for configuring approval chains
+- [x] H6.19 — Wire WO release to workflow approval (when workflow defined)
+- [x] H6.20 — Wire quote approval to workflow (when workflow defined)
+- [x] H6.21 — Wire NCR disposition to workflow approval (when workflow defined)
+- [x] H6.22 — Build `/admin/workflows` page for configuring approval chains
 
 ---
 
@@ -420,10 +209,10 @@ Fix the 12 disconnects between the Part model and the rest of the system.
 #### PI-A: Part ↔ Material FK (data integrity)
 - [ ] PI.1 — `Part.MaterialId` (int?) FK and `MaterialEntity` nav property already exist — verify migration applied
 - [ ] PI.2 — Update `TenantDbContext.OnModelCreating` with FK relationship config
-- [ ] PI.3 — Fix `PricingEngineService` to use FK instead of string match, use `PartStageRequirement` overrides (EstimatedHours, HourlyRateOverride, MaterialCost)
+- [x] PI.3 — Fix `PricingEngineService` to use FK instead of string match, use `PartStageRequirement` overrides (EstimatedHours, HourlyRateOverride, MaterialCost)
 - [ ] PI.4 — Update `Parts/Edit.razor` material dropdown to sync both `MaterialId` + `Material` string
 - [ ] PI.5 — Update `PartService` queries to `.Include(p => p.MaterialEntity)`
-- [ ] PI.6 — Backfill `MaterialId` from `Material` string in `DataSeedingService`
+- [x] PI.6 — Backfill `MaterialId` from `Material` string in `DataSeedingService`
 
 #### PI-B: PricingEngine + Quote Accuracy
 - [ ] PI.7 — Rewrite `PricingEngineService.CalculatePartCostAsync` to use `PartStageRequirement` data (EstimatedHours, HourlyRateOverride, SetupTimeMinutes, MaterialCost)
@@ -431,10 +220,10 @@ Fix the 12 disconnects between the Part model and the rest of the system.
 - [ ] PI.9 — Verify `QuoteService.CalculateEstimatedCostAsync` uses corrected engine
 
 #### PI-C: Cleanup + Audit Fixes
-- [ ] PI.10 — Mark `Part.RequiredStages` as `[Obsolete]`, remove `[Required]` (already done — verify)
-- [ ] PI.11 — Make `PartService.ValidatePartAsync` truly async, add duplicate PartNumber check
-- [ ] PI.12 — Fix `WorkOrders/Create.razor` to capture auth user instead of "System"
-- [ ] PI.13 — Set `Job.SlsMaterial` from `Part.Material` during job generation in `WorkOrderService`
+- [x] PI.10 — Mark `Part.RequiredStages` as `[Obsolete]`, remove `[Required]` (already done — verify)
+- [x] PI.11 — Make `PartService.ValidatePartAsync` truly async, add duplicate PartNumber check
+- [x] PI.12 — Fix `WorkOrders/Create.razor` to capture auth user instead of "System"
+- [x] PI.13 — Set `Job.SlsMaterial` from `Part.Material` during job generation in `WorkOrderService`
 
 #### PI-D: Downstream Usage + Part Cloning
 - [ ] PI.14 — Add "Usage" tab to `Parts/Detail.razor` (active WOs, Jobs, Quotes, NCRs)
@@ -480,45 +269,45 @@ Fix the 12 disconnects between the Part model and the rest of the system.
 
 #### BP-1: Model Changes
 
-- [ ] BP.1 — Add `BuildPackageRevision` model for revision control:
+- [x] BP.1 — Add `BuildPackageRevision` model for revision control:
   ```
   BuildPackageRevision { Id, BuildPackageId, RevisionNumber, RevisionDate,
     ChangedBy, ChangeNotes, PartsSnapshotJson, ParametersSnapshotJson }
   ```
-- [ ] BP.2 — Add to `BuildPackage`:
+- [x] BP.2 — Add to `BuildPackage`:
   - `int? CurrentRevision` — current rev number
   - `string? BuildParameters` — JSON for build-level params (layer thickness, laser power, etc.)
-- [ ] BP.3 — Add to `StageExecution`:
+- [x] BP.3 — Add to `StageExecution`:
   - `int? BuildPackageId` — nullable FK to link build-level executions to a BuildPackage
-- [ ] BP.4 — Add `IsBuildLevelStage` boolean to `ProductionStage` — marks stages where the
+- [x] BP.4 — Add `IsBuildLevelStage` boolean to `ProductionStage` — marks stages where the
   build plate moves as a unit (SLS Printing, Depowdering, Wire EDM)
-- [ ] BP.5 — EF migration for all model changes
-- [ ] BP.6 — Seed `IsBuildLevelStage = true` for "sls-printing", "depowdering", "wire-edm" stages
+- [x] BP.5 — EF migration for all model changes
+- [x] BP.6 — Seed `IsBuildLevelStage = true` for "sls-printing", "depowdering", "wire-edm" stages
 
 #### BP-2: Duration from Slice File
 
-- [ ] BP.7 — SLS build duration comes from `BuildFileInfo.EstimatedPrintTimeHours` (the slicer's
+- [x] BP.7 — SLS build duration comes from `BuildFileInfo.EstimatedPrintTimeHours` (the slicer's
   estimate), NOT from `Part.SlsBuildDurationHours`. When a BuildPackage has a BuildFileInfo,
   the stage execution's EstimatedHours = BuildFileInfo.EstimatedPrintTimeHours
-- [ ] BP.8 — Hours-per-part allocation: `BuildFileInfo.EstimatedPrintTimeHours / BuildPackage.TotalPartCount`
+- [x] BP.8 — Hours-per-part allocation: `BuildFileInfo.EstimatedPrintTimeHours / BuildPackage.TotalPartCount`
   (simple equal split — can refine to volume-weighted later)
-- [ ] BP.9 — Update `Part.SlsPerPartHours` computed property to check if part is in an active
+- [x] BP.9 — Update `Part.SlsPerPartHours` computed property to check if part is in an active
   BuildPackage with a BuildFileInfo and use that duration instead of the part-level estimate
-- [ ] BP.10 — When BuildFileInfo is saved/updated, auto-update the BuildPackage's
+- [x] BP.10 — When BuildFileInfo is saved/updated, auto-update the BuildPackage's
   `EstimatedDurationHours` and all linked StageExecution EstimatedHours
 
 #### BP-3: Build-Level Stage Execution
 
-- [ ] BP.11 — Update `IBuildPlanningService` with:
+- [x] BP.11 — Update `IBuildPlanningService` with:
   - `Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy)`
     Creates StageExecutions for all build-level stages (SLS → Depowder → EDM) linked to the BuildPackage
   - `Task CreatePartStageExecutionsAsync(int buildPackageId, string createdBy)`
     After EDM, creates individual StageExecutions for each part's remaining routing stages
-- [ ] BP.12 — When BuildPackage status → "Scheduled": call `CreateBuildStageExecutionsAsync`
+- [x] BP.12 — When BuildPackage status → "Scheduled": call `CreateBuildStageExecutionsAsync`
   - Creates one StageExecution per build-level stage, all linked to BuildPackageId
   - SLS execution gets EstimatedHours from BuildFileInfo
   - The Job on these executions can be a "build job" referencing the build package, not a single part
-- [ ] BP.13 — When the Wire EDM stage completes: call `CreatePartStageExecutionsAsync`
+- [x] BP.13 — When the Wire EDM stage completes: call `CreatePartStageExecutionsAsync`
   - For each BuildPackagePart, look up the Part's routing (PartStageRequirements)
   - Skip build-level stages (SLS, Depowder, EDM — already done)
   - Create individual Jobs + StageExecutions for remaining stages per part
@@ -526,41 +315,41 @@ Fix the 12 disconnects between the Part model and the rest of the system.
 
 #### BP-4: Build Revision Control
 
-- [ ] BP.14 — Add `CreateRevisionAsync(int buildPackageId, string changedBy, string? notes)` to
+- [x] BP.14 — Add `CreateRevisionAsync(int buildPackageId, string changedBy, string? notes)` to
   `IBuildPlanningService` — snapshots current parts list and parameters to `BuildPackageRevision`
-- [ ] BP.15 — Auto-create revision when parts are added/removed from a BuildPackage
-- [ ] BP.16 — Auto-create revision when BuildFileInfo is updated (new slice file imported)
-- [ ] BP.17 — Add revision history display to `Builds/Index.razor` — expandable section
+- [x] BP.15 — Auto-create revision when parts are added/removed from a BuildPackage
+- [x] BP.16 — Auto-create revision when BuildFileInfo is updated (new slice file imported)
+- [x] BP.17 — Add revision history display to `Builds/Index.razor` — expandable section
   showing all revisions with date, who, what changed
 
 #### BP-5: Enhanced SLS Printing UI
 
-- [ ] BP.18 — Update `SLSPrinting.razor` to detect if execution has a BuildPackageId
+- [x] BP.18 — Update `SLSPrinting.razor` to detect if execution has a BuildPackageId
   - If yes: show ALL parts in the build with quantities and WO references
   - If no: show single-part view (backward compatible)
-- [ ] BP.19 — Show build-level info: machine, material, estimated print time from slice,
+- [x] BP.19 — Show build-level info: machine, material, estimated print time from slice,
   layer count, build height, powder estimate (all from BuildFileInfo)
-- [ ] BP.20 — Show which work orders each part belongs to (BuildPackagePart.WorkOrderLineId → WorkOrder.OrderNumber)
-- [ ] BP.21 — Add build progress tracking (layer count vs total, % complete)
-- [ ] BP.22 — When completing the SLS stage, advance the build to depowdering (not individual parts)
+- [x] BP.20 — Show which work orders each part belongs to (BuildPackagePart.WorkOrderLineId → WorkOrder.OrderNumber)
+- [x] BP.21 — Add build progress tracking (layer count vs total, % complete)
+- [x] BP.22 — When completing the SLS stage, advance the build to depowdering (not individual parts)
 
 #### BP-6: Part Separation After EDM
 
-- [ ] BP.23 — When EDM stage completes, show a "Part Separation" confirmation UI:
+- [x] BP.23 — When EDM stage completes, show a "Part Separation" confirmation UI:
   - List all parts that were on the build
   - Operator confirms each part is separated and accounted for
   - Creates individual PartInstance records with serial numbers
   - Triggers `CreatePartStageExecutionsAsync` for downstream routing
-- [ ] BP.24 — Handle partial separation: if some parts are damaged/scrapped during EDM,
+- [x] BP.24 — Handle partial separation: if some parts are damaged/scrapped during EDM,
   operator can mark them as failed → auto-create NCR
-- [ ] BP.25 — Update `PartInstance` tracking to link back to the originating BuildPackage
+- [x] BP.25 — Update `PartInstance` tracking to link back to the originating BuildPackage
 
 #### BP-7: Scheduling & Cost Integration
 
-- [ ] BP.26 — Update `Scheduler/Index.razor` Gantt to show build-level executions as a single
+- [x] BP.26 — Update `Scheduler/Index.razor` Gantt to show build-level executions as a single
   block spanning all parts (not one bar per part)
-- [ ] BP.27 — Update `Scheduler/Capacity.razor` to account for build plate as single machine occupation
-- [ ] BP.28 — Build cost (powder, gas, laser time) allocated across parts for job costing:
+- [x] BP.27 — Update `Scheduler/Capacity.razor` to account for build plate as single machine occupation
+- [x] BP.28 — Build cost (powder, gas, laser time) allocated across parts for job costing:
   `partCost = buildCost * (partQty / totalPartsInBuild)`
 
 #### Verification Checklist
@@ -885,6 +674,9 @@ These apply to ALL work. See `docs/MASTER_CONTEXT.md` for full details.
 | What | Where |
 |------|-------|
 | This roadmap (START HERE) | `ROADMAP.md` |
+| **Work queue (agent assignments)** | **`docs/chunks/QUEUE.md`** |
+| Chunk execution guide | `docs/chunks/README.md` |
+| Individual work chunks | `docs/chunks/CHUNK-XX-*.md` |
 | ProShop competitive analysis | `docs/SYSTEM-REVIEW-VS-PROSHOP.md` |
 | Architecture patterns & registries | `docs/MASTER_CONTEXT.md` |
 | DLMS/customization architecture | `docs/DLMS-CUSTOMIZATION-ARCHITECTURE.md` |

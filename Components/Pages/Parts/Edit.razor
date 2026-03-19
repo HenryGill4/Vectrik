@@ -6,12 +6,11 @@
 @inject IMaterialService MaterialService
 @inject ICustomFieldService CustomFieldService
 @inject ITenantFeatureService Features
+@inject IMachineService MachineService
 @inject NavigationManager Nav
 @inject ToastService Toast
-@inject Opcentrix_V3.Data.TenantDbContext Db
 @using System.Security.Claims
 @using System.Text.Json
-@using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>@(_isNew ? "New Part" : $"Edit {_part?.PartNumber}") - OpCentrix</PageTitle>
@@ -182,16 +181,6 @@
             <!-- Routing / Stage Requirements Tab -->
             @if (_tab == "routing")
             {
-                @if (_isNew)
-                {
-                    <div class="card" style="text-align: center; padding: 40px;">
-                        <div style="font-size: 2rem; margin-bottom: 8px;">⚙️</div>
-                        <p style="color: var(--text-muted); font-size: 1.05rem;">Save the part first to add routing stages.</p>
-                        <p style="color: var(--text-muted); font-size: 0.85rem;">Click <strong>"Create Part"</strong> on the Part Info tab, then you can define the production routing here.</p>
-                    </div>
-                }
-                else
-                {
                 <div class="card">
                     <h3 class="card-title">Stage Routing</h3>
                     <p style="color: var(--text-muted); margin-bottom: 12px;">Define the production stages this part goes through, in order. Each stage gets its own execution entry when a work order is created.</p>
@@ -275,26 +264,15 @@
                     {
                         <div class="empty-state">
                             <div class="empty-state-icon">⚙</div>
-                            <div class="empty-state-text">No stages assigned. Add production stages to define the routing for this part.</div>
-                        </div>
-                    }
-                </div>
-                }
-            }
+                                        <div class="empty-state-text">No stages assigned. Add production stages to define the routing for this part.</div>
+                                        </div>
+                                    }
+                                </div>
+                            }
 
-            <!-- BOM / Materials Tab -->
+                            <!-- BOM / Materials Tab -->
             @if (_tab == "bom")
             {
-                @if (_isNew)
-                {
-                    <div class="card" style="text-align: center; padding: 40px;">
-                        <div style="font-size: 2rem; margin-bottom: 8px;">📦</div>
-                        <p style="color: var(--text-muted); font-size: 1.05rem;">Save the part first to add BOM items.</p>
-                        <p style="color: var(--text-muted); font-size: 0.85rem;">Click <strong>"Create Part"</strong> on the Part Info tab, then you can define materials and components here.</p>
-                    </div>
-                }
-                else
-                {
                 <div class="card">
                     <h3 class="card-title">Bill of Materials</h3>
                     <p style="color: var(--text-muted); margin-bottom: 12px;">Define raw materials and inventory items required to produce one unit of this part.</p>
@@ -345,7 +323,7 @@
                                         <td>@(item.Material?.Name ?? $"Material {item.MaterialId}")</td>
                                         <td>@item.QuantityRequired.ToString("F2")</td>
                                         <td>@item.UnitOfMeasure</td>
-                                        <td><input class="form-control" style="width: 150px;" value="@item.Notes" @onchange="async e => { item.Notes = e.Value?.ToString(); await SaveBomItem(item); }" placeholder="Notes..." /></td>
+                                        <td><input class="form-control" style="width: 150px;" value="@item.Notes" @onchange="async e => { item.Notes = e.Value?.ToString(); await UpdateBomNotes(item); }" placeholder="Notes..." /></td>
                                         <td><button class="btn btn-sm btn-danger" @onclick="() => RemoveBomItem(item)">✕</button></td>
                                     </tr>
                                 }
@@ -356,14 +334,13 @@
                     {
                         <div class="empty-state">
                             <div class="empty-state-icon">📦</div>
-                            <div class="empty-state-text">No BOM items. Add materials required to manufacture this part.</div>
-                        </div>
-                    }
-                </div>
-                }
-            }
+                                        <div class="empty-state-text">No BOM items. Add materials required to manufacture this part.</div>
+                                        </div>
+                                    }
+                                </div>
+                            }
 
-            <!-- Stacking Tab (SLS feature-flagged) -->
+                            <!-- Stacking Tab (SLS feature-flagged) -->
             @if (_tab == "stacking" && _showSlsFeatures)
             {
                 <div class="card">
@@ -516,6 +493,7 @@
         // Load reference data
         _materials = await MaterialService.GetAllMaterialsAsync();
         _allStages = await StageService.GetAllStagesAsync();
+        _machines = await MachineService.GetAllMachinesAsync(true);
 
         if (_isNew)
         {
@@ -530,6 +508,8 @@
                 CreatedBy = _currentUser,
                 LastModifiedBy = _currentUser
             };
+            _stageReqs = new();
+            _bomItems = new();
         }
         else
         {
@@ -537,12 +517,7 @@
             if (_part != null)
             {
                 _stageReqs = await PartService.GetStageRequirementsAsync(Id);
-                _bomItems = await Db.PartBomItems
-                    .Include(b => b.Material)
-                    .Include(b => b.InventoryItem)
-                    .Where(b => b.PartId == Id && b.IsActive)
-                    .OrderBy(b => b.SortOrder)
-                    .ToListAsync();
+                _bomItems = await PartService.GetBomItemsAsync(Id);
 
                 // Backfill MaterialId from Material string if not set
                 if (_part.MaterialId == null && !string.IsNullOrEmpty(_part.Material))
@@ -569,25 +544,6 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // Machines are loaded in OnAfterRenderAsync to ensure tenant context is ready
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender && _machines == null)
-        {
-            try
-            {
-                _machines = await GetMachinesAsync();
-                StateHasChanged();
-            }
-            catch { _machines = new(); }
-        }
-    }
-
-    private async Task<List<Machine>> GetMachinesAsync()
-    {
-        return await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync();
     }
 
     private void OnMaterialChanged(ChangeEventArgs e)
@@ -626,6 +582,20 @@
             {
                 _part.CreatedBy = _currentUser;
                 _part = await PartService.CreatePartAsync(_part);
+
+                // Persist in-memory routing
+                foreach (var req in _stageReqs ?? [])
+                {
+                    req.PartId = _part.Id;
+                    await PartService.AddStageRequirementAsync(req);
+                }
+                // Persist in-memory BOM
+                foreach (var item in (_bomItems ?? []).Where(b => b.IsActive))
+                {
+                    item.PartId = _part.Id;
+                    await PartService.AddBomItemAsync(item);
+                }
+
                 Toast.ShowSuccess("Part created successfully");
                 Nav.NavigateTo($"/parts/{_part.Id}/edit");
             }
@@ -642,28 +612,47 @@
     // Stage requirement CRUD
     private async Task AddStageReq()
     {
-        if (_addStageId == 0 || _part == null || _isNew) return;
+        if (_addStageId == 0 || _part == null) return;
         var nextOrder = (_stageReqs?.Any() == true) ? _stageReqs.Max(r => r.ExecutionOrder) + 1 : 1;
         var stage = _allStages?.FirstOrDefault(s => s.Id == _addStageId);
-        await PartService.AddStageRequirementAsync(new PartStageRequirement
+        var req = new PartStageRequirement
         {
             PartId = _part.Id,
             ProductionStageId = _addStageId,
+            ProductionStage = stage!,
             ExecutionOrder = nextOrder,
             EstimatedHours = stage?.DefaultDurationHours ?? 1.0,
             SetupTimeMinutes = stage?.DefaultSetupMinutes,
             IsRequired = true,
             CreatedBy = _currentUser,
             LastModifiedBy = _currentUser
-        });
-        _stageReqs = await PartService.GetStageRequirementsAsync(_part.Id);
+        };
+
+        if (_isNew)
+        {
+            _stageReqs ??= new();
+            _stageReqs.Add(req);
+        }
+        else
+        {
+            await PartService.AddStageRequirementAsync(req);
+            _stageReqs = await PartService.GetStageRequirementsAsync(_part.Id);
+        }
         _addStageId = 0;
     }
 
     private async Task RemoveStageReq(int id)
     {
-        await PartService.RemoveStageRequirementAsync(id);
-        _stageReqs = await PartService.GetStageRequirementsAsync(_part!.Id);
+        if (_isNew)
+        {
+            var item = _stageReqs?.FirstOrDefault(r => r.ProductionStageId == id || r.Id == id);
+            if (item != null) _stageReqs?.Remove(item);
+        }
+        else
+        {
+            await PartService.RemoveStageRequirementAsync(id);
+            _stageReqs = await PartService.GetStageRequirementsAsync(_part!.Id);
+        }
     }
 
     private async Task UpdateReqField(PartStageRequirement r, string field, ChangeEventArgs e)
@@ -688,21 +677,24 @@
                 break;
         }
         r.LastModifiedBy = _currentUser;
-        await PartService.UpdateStageRequirementAsync(r);
+        if (!_isNew)
+            await PartService.UpdateStageRequirementAsync(r);
     }
 
     private async Task UpdateReqMachine(PartStageRequirement r, ChangeEventArgs e)
     {
         r.AssignedMachineId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString();
         r.LastModifiedBy = _currentUser;
-        await PartService.UpdateStageRequirementAsync(r);
+        if (!_isNew)
+            await PartService.UpdateStageRequirementAsync(r);
     }
 
     private async Task UpdateReqRequired(PartStageRequirement r, ChangeEventArgs e)
     {
         r.IsRequired = (bool)(e.Value ?? true);
         r.LastModifiedBy = _currentUser;
-        await PartService.UpdateStageRequirementAsync(r);
+        if (!_isNew)
+            await PartService.UpdateStageRequirementAsync(r);
     }
 
     private void OnCustomFieldsChanged(Dictionary<string, string> values)
@@ -713,25 +705,30 @@
     // BOM CRUD
     private async Task AddBomItem()
     {
-        if (_bomMaterialId == 0 || _part == null || _isNew) return;
+        if (_bomMaterialId == 0 || _part == null) return;
         var nextOrder = (_bomItems?.Any() == true) ? _bomItems.Max(b => b.SortOrder) + 1 : 1;
+        var mat = _materials?.FirstOrDefault(m => m.Id == _bomMaterialId);
         var item = new PartBomItem
         {
             PartId = _part.Id,
             MaterialId = _bomMaterialId,
+            Material = mat,
             QuantityRequired = _bomQty,
             UnitOfMeasure = _bomUom,
             SortOrder = nextOrder,
             CreatedBy = _currentUser
         };
-        Db.PartBomItems.Add(item);
-        await Db.SaveChangesAsync();
-        _bomItems = await Db.PartBomItems
-            .Include(b => b.Material)
-            .Include(b => b.InventoryItem)
-            .Where(b => b.PartId == _part.Id && b.IsActive)
-            .OrderBy(b => b.SortOrder)
-            .ToListAsync();
+
+        if (_isNew)
+        {
+            _bomItems ??= new();
+            _bomItems.Add(item);
+        }
+        else
+        {
+            await PartService.AddBomItemAsync(item);
+            _bomItems = await PartService.GetBomItemsAsync(_part.Id);
+        }
         _bomMaterialId = 0;
         _bomQty = 1;
         _bomUom = "kg";
@@ -739,18 +736,26 @@
 
     private async Task RemoveBomItem(PartBomItem item)
     {
-        item.IsActive = false;
-        item.LastModifiedDate = DateTime.UtcNow;
-        Db.PartBomItems.Update(item);
-        await Db.SaveChangesAsync();
-        _bomItems?.Remove(item);
+        if (_isNew)
+        {
+            _bomItems?.Remove(item);
+        }
+        else
+        {
+            item.IsActive = false;
+            item.LastModifiedDate = DateTime.UtcNow;
+            await PartService.RemoveBomItemAsync(item.Id);
+            _bomItems?.Remove(item);
+        }
     }
 
-    private async Task SaveBomItem(PartBomItem item)
+    private async Task UpdateBomNotes(PartBomItem item)
     {
-        item.LastModifiedDate = DateTime.UtcNow;
-        Db.PartBomItems.Update(item);
-        await Db.SaveChangesAsync();
+        if (!_isNew)
+        {
+            item.LastModifiedDate = DateTime.UtcNow;
+            await PartService.UpdateBomItemAsync(item);
+        }
     }
 
     // Navigation

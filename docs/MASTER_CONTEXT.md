@@ -1,13 +1,13 @@
 # Opcentrix MES — Master Context & Architecture Reference
 
-> **For AI agents**: Start every session by reading **`ROADMAP.md`** (project root)
-> for current phase and next task. This file contains architecture patterns, model
-> registries, service registries, and route registries. The roadmap is the
-> **master sequencer** — this file is the **reference manual**.
+> **For AI agents**: Start every session by opening **`docs/chunks/QUEUE.md`** to
+> find your next assignment. Read the linked chunk file for detailed tasks.
+> This file contains architecture patterns, model registries, service registries,
+> and route registries. `ROADMAP.md` is the **master sequencer** — this file is
+> the **reference manual**.
 >
-> **Superseded plans**: `SPRINT_PLAN.md` and `OPCENTRIX_ARCHITECTURE_DECISIONS.md`
-> phase trackers are historical only. Do not follow them for planning. The unified
-> roadmap at `ROADMAP.md` is the single source of truth.
+> **Superseded plans**: Historical planning docs are in `archive/` only.
+> Do not follow them for planning.
 
 ---
 
@@ -45,12 +45,16 @@ Opcentrix-V3/
 ├── Middleware/           # TenantMiddleware
 ├── wwwroot/              # Static assets (CSS, JS, uploads, icons)
 ├── ROADMAP.md            # ★ UNIFIED ROADMAP — start here every session
-├── sprints/              # Historical sprint plans (superseded)
 ├── docs/                 # Module plans & architecture reference
 │   ├── MASTER_CONTEXT.md (this file — architecture patterns)
+│   ├── chunks/           # ★ WORK QUEUE — agent-sized execution units
+│   │   ├── QUEUE.md      #   Ordered task list (find next [ ] chunk here)
+│   │   ├── README.md     #   Agent execution guide
+│   │   └── CHUNK-XX-*.md #   Individual work chunks (14 total for Phase 1)
 │   ├── phase-1/          # Core Production Engine (Months 1–6)
 │   ├── phase-2/          # Operational Depth (Months 7–12)
 │   └── phase-3/          # Platform Maturity (Months 13–18)
+├── archive/              # Superseded planning docs (historical only)
 ├── Program.cs            # DI setup, middleware, seeding
 ├── appsettings.json
 └── Opcentrix-V3.csproj   # .NET 10.0 project
