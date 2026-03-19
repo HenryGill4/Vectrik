@@ -55,7 +55,9 @@ public class SchedulingService : ISchedulingService
 
         foreach (var exec in executions)
         {
-            var duration = exec.EstimatedHours ?? exec.ProductionStage?.DefaultDurationHours ?? 1.0;
+            if (exec.ProductionStage == null) continue;
+
+            var duration = exec.EstimatedHours ?? exec.ProductionStage.DefaultDurationHours;
             var setupHours = exec.SetupHours ?? 0;
             var totalDuration = duration + setupHours;
 
@@ -63,7 +65,7 @@ public class SchedulingService : ISchedulingService
             var requirement = routing.FirstOrDefault(r => r.ProductionStageId == exec.ProductionStageId);
 
             // Get capable machines, ordered by preference
-            var capableMachines = ResolveMachines(exec.ProductionStage!, requirement, allMachines);
+            var capableMachines = ResolveMachines(exec.ProductionStage, requirement, allMachines);
 
             if (!capableMachines.Any())
             {
@@ -220,8 +222,15 @@ public class SchedulingService : ISchedulingService
         int count = 0;
         foreach (var job in jobs)
         {
-            await AutoScheduleJobAsync(job.Id);
-            count++;
+            try
+            {
+                await AutoScheduleJobAsync(job.Id);
+                count++;
+            }
+            catch
+            {
+                // Skip jobs that fail to schedule; continue with remaining
+            }
         }
 
         return count;

@@ -76,14 +76,14 @@
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         @if (_currentExecution.Status == StageExecutionStatus.Paused)
                         {
-                            <button class="btn btn-primary" @onclick="ResumeCurrentWork" style="min-height: 44px;">▶ Resume</button>
+                            <button class="btn btn-primary" @onclick="ResumeCurrentWork" disabled="@_actionInProgress" style="min-height: 44px;">▶ Resume</button>
                         }
                         else
                         {
-                            <button class="btn btn-success" @onclick="() => ShowCompleteDialog(_currentExecution.Id)" style="min-height: 44px;">✓ Complete</button>
-                            <button class="btn btn-warning" @onclick="() => ShowPauseDialog(_currentExecution.Id)" style="min-height: 44px;">⏸ Pause</button>
+                            <button class="btn btn-success" @onclick="() => ShowCompleteDialog(_currentExecution.Id)" disabled="@_actionInProgress" style="min-height: 44px;">✓ Complete</button>
+                            <button class="btn btn-warning" @onclick="() => ShowPauseDialog(_currentExecution.Id)" disabled="@_actionInProgress" style="min-height: 44px;">⏸ Pause</button>
                         }
-                        <button class="btn btn-danger btn-sm" @onclick="() => ShowFailDialog(_currentExecution.Id)" style="min-height: 44px;">✗ Fail / NCR</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => ShowFailDialog(_currentExecution.Id)" disabled="@_actionInProgress" style="min-height: 44px;">✗ Fail / NCR</button>
                         <button class="btn btn-sm btn-secondary" style="min-height: 44px;" disabled>📖 Work Instructions</button>
                     </div>
 
@@ -159,7 +159,7 @@
                                     <td>
                                         @if (_currentExecution == null)
                                         {
-                                            <button class="btn btn-primary btn-sm" @onclick="() => StartWork(exec.Id)" style="min-height: 44px;">▶ Start</button>
+                                            <button class="btn btn-primary btn-sm" @onclick="() => StartWork(exec.Id)" disabled="@_actionInProgress" style="min-height: 44px;">▶ Start</button>
                                         }
                                     </td>
                                 </tr>
@@ -203,7 +203,7 @@
                                     <td>
                                         @if (_currentExecution == null)
                                         {
-                                            <button class="btn btn-primary btn-sm" @onclick="() => ClaimAndStart(exec.Id)" style="min-height: 44px;">🙋 Claim & Start</button>
+                                            <button class="btn btn-primary btn-sm" @onclick="() => ClaimAndStart(exec.Id)" disabled="@_actionInProgress" style="min-height: 44px;">🙋 Claim & Start</button>
                                         }
                                     </td>
                                 </tr>
@@ -289,6 +289,7 @@
     private DelayCategory _pauseCategory = DelayCategory.Other;
     private string _completeNotes = "";
     private string _failReason = "";
+    private bool _actionInProgress;
     private ConfirmDialog _confirm = null!;
     private PartSeparationDialog _separationDialog = null!;
 
@@ -296,10 +297,20 @@
     {
         if (firstRender && _currentUserId > 0)
         {
-            await LoadData();
-            _loading = false;
-            _elapsedTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
-            StateHasChanged();
+            try
+            {
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to load shop floor: {ex.Message}");
+            }
+            finally
+            {
+                _loading = false;
+                _elapsedTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+                StateHasChanged();
+            }
         }
     }
 
@@ -313,6 +324,8 @@
 
     private async Task StartWork(int executionId)
     {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.StartStageExecutionAsync(executionId, _currentUserId, _currentUserName);
@@ -320,10 +333,13 @@
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 
     private async Task ClaimAndStart(int executionId)
     {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.AssignOperatorAsync(executionId, _currentUserId);
@@ -332,11 +348,13 @@
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 
     private async Task ResumeCurrentWork()
     {
-        if (_currentExecution == null) return;
+        if (_currentExecution == null || _actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.ResumeStageExecutionAsync(_currentExecution.Id);
@@ -344,12 +362,15 @@
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 
     // Pause
     private void ShowPauseDialog(int executionId) { _dialogExecutionId = executionId; _pauseReason = ""; _pauseCategory = DelayCategory.Other; _showPauseDialog = true; }
     private async Task ConfirmPause()
     {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.PauseStageExecutionAsync(_dialogExecutionId, _pauseReason, _pauseCategory, _currentUserName);
@@ -358,6 +379,7 @@
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 
     // Complete
@@ -365,6 +387,8 @@
     private async Task ConfirmComplete()
     {
         if (!await _confirm.ShowAsync("Mark this stage as complete?")) return;
+        if (_actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.CompleteStageExecutionAsync(_dialogExecutionId, notes: _completeNotes);
@@ -402,6 +426,7 @@
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 
     // Part separation after EDM
@@ -456,6 +481,8 @@
     private async Task ConfirmFail()
     {
         if (!await _confirm.ShowAsync("Report this stage as failed? An NCR may be created.")) return;
+        if (_actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.FailStageExecutionAsync(_dialogExecutionId, _failReason);
@@ -464,6 +491,7 @@
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 
     private string GetElapsed(DateTime? start)

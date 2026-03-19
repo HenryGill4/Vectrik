@@ -149,9 +149,20 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _allRfqs = await QuoteService.GetRfqRequestsAsync();
-        _filtered = _allRfqs;
-        _loading = false;
+        try
+        {
+            _allRfqs = await QuoteService.GetRfqRequestsAsync();
+            _filtered = _allRfqs;
+        }
+        catch
+        {
+            _allRfqs = new();
+            _filtered = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private void Filter(string? status)

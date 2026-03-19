@@ -108,7 +108,17 @@ else
     private string? _categoryFilter;
     private ConfirmDialog _confirm = null!;
 
-    protected override async Task OnInitializedAsync() => _settings = await Db.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.Key).ToListAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _settings = await Db.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.Key).ToListAsync();
+        }
+        catch
+        {
+            _settings = new();
+        }
+    }
 
     private void NewSetting()
     {

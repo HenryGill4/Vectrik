@@ -79,11 +79,31 @@ public class BuildPlanningService : IBuildPlanningService
         if (package == null) throw new InvalidOperationException("Build package not found.");
         package.Status = BuildPackageStatus.Cancelled;
         package.LastModifiedDate = DateTime.UtcNow;
+
+        // Cancel outstanding stage executions tied to this build package
+        var activeExecutions = await _db.StageExecutions
+            .Where(e => e.BuildPackageId == id
+                && e.Status != StageExecutionStatus.Completed
+                && e.Status != StageExecutionStatus.Skipped
+                && e.Status != StageExecutionStatus.Failed)
+            .ToListAsync();
+
+        foreach (var exec in activeExecutions)
+        {
+            exec.Status = StageExecutionStatus.Skipped;
+            exec.Notes = "Auto-skipped: build package cancelled";
+            exec.CompletedAt = DateTime.UtcNow;
+            exec.ActualEndAt = DateTime.UtcNow;
+            exec.LastModifiedDate = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync();
     }
 
     public async Task<BuildPackagePart> AddPartToPackageAsync(int packageId, int partId, int quantity, int? workOrderLineId = null)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+
         var part = new BuildPackagePart
         {
             BuildPackageId = packageId,
@@ -251,12 +271,14 @@ public class BuildPlanningService : IBuildPlanningService
             var firstPart = await _db.BuildPackageParts
                 .Where(bp => bp.BuildPackageId == buildPackageId)
                 .Select(bp => bp.Part)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync()
+                ?? throw new InvalidOperationException(
+                    "Cannot create build executions — the package has no parts. Add at least one part first.");
 
             job = new Job
             {
                 JobNumber = await _numberSeq.NextAsync("Job"),
-                PartId = firstPart?.Id ?? 1,
+                PartId = firstPart.Id,
                 Quantity = package.TotalPartCount,
                 Status = JobStatus.Scheduled,
                 Priority = JobPriority.Normal,

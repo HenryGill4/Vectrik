@@ -320,16 +320,23 @@ else
             var state = await AuthState;
             _userName = state.User?.Identity?.Name ?? "System";
         }
-        await LoadOrder();
-        _parts = await PartService.GetAllPartsAsync();
-        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("WorkOrder");
-        if (_order != null && !string.IsNullOrEmpty(_order.CustomFieldValues))
+        try
         {
-            try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_order.CustomFieldValues) ?? new(); }
-            catch { _customFieldValues = new(); }
+            await LoadOrder();
+            _parts = await PartService.GetAllPartsAsync();
+            _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("WorkOrder");
+            if (_order != null && !string.IsNullOrEmpty(_order.CustomFieldValues))
+            {
+                try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_order.CustomFieldValues) ?? new(); }
+                catch { _customFieldValues = new(); }
+            }
+            if (_order != null)
+                _pendingApproval = await WorkflowEngine.GetPendingAsync("WorkOrder", _order.Id);
         }
-        if (_order != null)
-            _pendingApproval = await WorkflowEngine.GetPendingAsync("WorkOrder", _order.Id);
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load work order: {ex.Message}");
+        }
         _loading = false;
     }
 
@@ -421,6 +428,7 @@ else
     private async Task AddLine()
     {
         if (_linePartId == 0) return;
+        if (_lineQty < 1) _lineQty = 1;
         try
         {
             await WorkOrderService.AddLineAsync(Id, _linePartId, _lineQty);

@@ -71,6 +71,8 @@ public class QuoteService : IQuoteService
 
     public async Task<QuoteLine> AddLineAsync(int quoteId, int partId, int quantity, decimal quotedPricePerPart)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+
         var estimatedCost = await CalculateEstimatedCostAsync(partId);
 
         var line = new QuoteLine

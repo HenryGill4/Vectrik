@@ -125,8 +125,12 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        _stage = await StageService.GetStageBySlugAsync(Slug);
-        if (_stage != null) await LoadData();
+        try
+        {
+            _stage = await StageService.GetStageBySlugAsync(Slug);
+            if (_stage != null) await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to load stage: {ex.Message}"); }
     }
 
     private async Task LoadData()

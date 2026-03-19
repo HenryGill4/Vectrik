@@ -15,7 +15,11 @@ public class PartService : IPartService
 
     public async Task<List<Part>> GetAllPartsAsync(bool activeOnly = true)
     {
-        var query = _db.Parts.Include(p => p.MaterialEntity).AsQueryable();
+        var query = _db.Parts
+            .Include(p => p.MaterialEntity)
+            .Include(p => p.StageRequirements)
+            .Include(p => p.Drawings)
+            .AsQueryable();
         if (activeOnly)
             query = query.Where(p => p.IsActive);
         return await query.OrderBy(p => p.PartNumber).ToListAsync();
@@ -175,7 +179,11 @@ public class PartService : IPartService
 
     public async Task<List<Part>> SearchPartsAsync(string searchTerm, bool activeOnly = true)
     {
-        var query = _db.Parts.AsQueryable();
+        var query = _db.Parts
+            .Include(p => p.MaterialEntity)
+            .Include(p => p.StageRequirements)
+            .Include(p => p.Drawings)
+            .AsQueryable();
         if (activeOnly)
             query = query.Where(p => p.IsActive);
 

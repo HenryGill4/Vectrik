@@ -259,43 +259,61 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _showDlms = Features.IsEnabled("dlms");
-        _parts = await PartService.GetAllPartsAsync();
+        try
+        {
+            _showDlms = Features.IsEnabled("dlms");
+            _parts = await PartService.GetAllPartsAsync();
 
-        if (Id > 0)
-        {
-            _quote = await QuoteService.GetQuoteByIdAsync(Id) ?? new Quote();
-            _isNew = false;
-        }
-        else
-        {
-            _isNew = true;
-            _quote = new Quote
+            if (Id > 0)
             {
-                QuoteNumber = await QuoteService.GenerateQuoteNumberAsync(),
-                TargetMarginPct = 25,
-                ExpirationDate = DateTime.UtcNow.AddDays(30)
-            };
-        }
-        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Quote");
-        if (!string.IsNullOrEmpty(_quote.CustomFieldValues))
-        {
-            try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_quote.CustomFieldValues) ?? new(); }
-            catch { _customFieldValues = new(); }
-        }
+                _quote = await QuoteService.GetQuoteByIdAsync(Id) ?? new Quote();
+                _isNew = false;
+            }
+            else
+            {
+                _isNew = true;
+                _quote = new Quote
+                {
+                    QuoteNumber = await QuoteService.GenerateQuoteNumberAsync(),
+                    TargetMarginPct = 25,
+                    ExpirationDate = DateTime.UtcNow.AddDays(30)
+                };
+            }
+            _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Quote");
+            if (!string.IsNullOrEmpty(_quote.CustomFieldValues))
+            {
+                try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_quote.CustomFieldValues) ?? new(); }
+                catch { _customFieldValues = new(); }
+            }
 
-        _originalCustomerName = _quote.CustomerName ?? "";
-        _loading = false;
+            _originalCustomerName = _quote.CustomerName ?? "";
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task OnPartSelected()
     {
         if (_linePartId > 0)
         {
-            _lineBreakdown = await PricingEngine.CalculatePartCostAsync(_linePartId, _lineQty);
-            _linePrice = _lineBreakdown.TotalCost > 0
-                ? Math.Round(_lineBreakdown.TotalCost / (1 - _quote.TargetMarginPct / 100), 2)
-                : 0;
+            try
+            {
+                _lineBreakdown = await PricingEngine.CalculatePartCostAsync(_linePartId, _lineQty);
+                _linePrice = _lineBreakdown.TotalCost > 0 && _quote.TargetMarginPct < 100
+                    ? Math.Round(_lineBreakdown.TotalCost / (1 - _quote.TargetMarginPct / 100), 2)
+                    : 0;
+            }
+            catch
+            {
+                _lineBreakdown = null;
+                _linePrice = 0;
+            }
         }
         else
         {
@@ -353,9 +371,16 @@ else
     private async Task RemoveLine(int lineId)
     {
         if (!await _confirm.ShowAsync("Remove this line item?")) return;
-        await QuoteService.RemoveLineAsync(lineId);
-        _quote = await QuoteService.GetQuoteByIdAsync(_quote.Id) ?? _quote;
-        Toast.ShowSuccess("Line removed");
+        try
+        {
+            await QuoteService.RemoveLineAsync(lineId);
+            _quote = await QuoteService.GetQuoteByIdAsync(_quote.Id) ?? _quote;
+            Toast.ShowSuccess("Line removed");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
     }
 
     private async Task SaveQuote()

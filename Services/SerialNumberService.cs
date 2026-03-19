@@ -45,6 +45,8 @@ public class SerialNumberService : ISerialNumberService
 
     public async Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy, int? buildPackageId = null)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+
         var instances = new List<PartInstance>();
 
         for (int i = 0; i < quantity; i++)

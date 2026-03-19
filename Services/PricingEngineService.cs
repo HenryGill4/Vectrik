@@ -14,6 +14,8 @@ public class PricingEngineService : IPricingEngineService
 
     public async Task<PricingBreakdown> CalculatePartCostAsync(int partId, int quantity = 1)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+
         var breakdown = new PricingBreakdown();
 
         var requirements = await _db.PartStageRequirements

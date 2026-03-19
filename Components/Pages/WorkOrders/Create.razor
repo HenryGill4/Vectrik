@@ -226,8 +226,16 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _parts = await PartService.GetAllPartsAsync();
-        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("WorkOrder");
+        try
+        {
+            _parts = await PartService.GetAllPartsAsync();
+            _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("WorkOrder");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load: {ex.Message}";
+            return;
+        }
 
         // Pre-populate from quote if quoteId query parameter is present
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
@@ -257,6 +265,7 @@
     private void AddLine()
     {
         if (_linePartId == 0) return;
+        if (_lineQty < 1) _lineQty = 1;
         _lines.Add(new WorkOrderLineDto { PartId = _linePartId, Quantity = _lineQty, Notes = _lineNotes });
         _linePartId = 0;
         _lineQty = 1;

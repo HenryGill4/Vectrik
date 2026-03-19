@@ -153,8 +153,18 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadFields();
-        _loading = false;
+        try
+        {
+            await LoadFields();
+        }
+        catch
+        {
+            _fields = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task LoadFields()
@@ -166,8 +176,18 @@ else
     {
         _selectedEntity = entity;
         _loading = true;
-        await LoadFields();
-        _loading = false;
+        try
+        {
+            await LoadFields();
+        }
+        catch
+        {
+            _fields = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private void AddField()
@@ -205,19 +225,26 @@ else
             return;
         }
 
-        if (_editIndex.HasValue)
+        try
         {
-            _fields[_editIndex.Value] = _editField;
-        }
-        else
-        {
-            _fields.Add(_editField);
-        }
+            if (_editIndex.HasValue)
+            {
+                _fields[_editIndex.Value] = _editField;
+            }
+            else
+            {
+                _fields.Add(_editField);
+            }
 
-        await CustomFieldService.SaveConfigAsync(_selectedEntity, _fields, "Admin");
-        _showForm = false;
-        Toast.ShowSuccess("Custom field saved.");
-        await LoadFields();
+            await CustomFieldService.SaveConfigAsync(_selectedEntity, _fields, "Admin");
+            _showForm = false;
+            Toast.ShowSuccess("Custom field saved.");
+            await LoadFields();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
     }
 
     private async Task RemoveField(int index)
@@ -225,9 +252,17 @@ else
         var field = _fields[index];
         if (await _confirm.ShowAsync($"Remove custom field '{field.Label}'? Existing data for this field will be hidden.", "Remove Field"))
         {
-            _fields.RemoveAt(index);
-            await CustomFieldService.SaveConfigAsync(_selectedEntity, _fields, "Admin");
-            Toast.ShowSuccess("Field removed.");
+            try
+            {
+                _fields.RemoveAt(index);
+                await CustomFieldService.SaveConfigAsync(_selectedEntity, _fields, "Admin");
+                Toast.ShowSuccess("Field removed.");
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError(ex.Message);
+                await LoadFields();
+            }
         }
     }
 }

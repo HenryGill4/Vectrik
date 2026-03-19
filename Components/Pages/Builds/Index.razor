@@ -222,10 +222,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
-        _machineNames = _machines.ToDictionary(m => m.MachineId, m => m.Name);
-        _parts = await PartService.GetAllPartsAsync(activeOnly: true);
-        await LoadPackages();
+        try
+        {
+            _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+            _machineNames = _machines.ToDictionary(m => m.MachineId, m => m.Name);
+            _parts = await PartService.GetAllPartsAsync(activeOnly: true);
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to load build planning: {ex.Message}"); }
     }
 
     private async Task LoadPackages()
@@ -280,6 +284,7 @@ else
 
     private async Task RemovePart(int packagePartId)
     {
+        if (!await _confirmDialog.ShowAsync("Remove this part from the build package?", "Confirm Removal")) return;
         try
         {
             await BuildPlanningService.RemovePartFromPackageAsync(packagePartId);

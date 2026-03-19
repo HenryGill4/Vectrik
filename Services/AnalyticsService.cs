@@ -95,7 +95,7 @@ public class AnalyticsService : IAnalyticsService
             {
                 // Calculate: ActualHours × HourlyRate + MaterialCost
                 var hours = exec.ActualHours ?? exec.EstimatedHours ?? 0;
-                var rate = exec.ProductionStage.DefaultHourlyRate;
+                var rate = exec.ProductionStage?.DefaultHourlyRate ?? 0;
                 var materialCost = exec.MaterialCost ?? 0;
                 totalCost += (decimal)hours * rate + materialCost;
             }
@@ -334,6 +334,7 @@ public class AnalyticsService : IAnalyticsService
             .Include(j => j.Part)
             .Include(j => j.WorkOrderLine!)
                 .ThenInclude(l => l.WorkOrder)
+                    .ThenInclude(w => w!.Quote)
             .Where(j => j.Status == JobStatus.Completed && j.ActualEnd >= from && j.ActualEnd <= to);
 
         var jobs = await query.ToListAsync();

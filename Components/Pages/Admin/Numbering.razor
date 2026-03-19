@@ -80,26 +80,35 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        var settings = await Db.SystemSettings.Where(s => s.Category == "Numbering").ToListAsync();
-        _separator = settings.FirstOrDefault(s => s.Key == "numbering.separator")?.Value ?? "-";
+        try
+        {
+            var settings = await Db.SystemSettings.Where(s => s.Category == "Numbering").ToListAsync();
+            _separator = settings.FirstOrDefault(s => s.Key == "numbering.separator")?.Value ?? "-";
 
-        var enabledFeatures = await FeatureService.GetAllFeaturesAsync();
-        var enabledKeys = enabledFeatures.Where(f => f.Enabled).Select(f => f.Key).ToHashSet();
+            var enabledFeatures = await FeatureService.GetAllFeaturesAsync();
+            var enabledKeys = enabledFeatures.Where(f => f.Enabled).Select(f => f.Key).ToHashSet();
 
-        _sequences = _entityDefs
-            .Where(def => def.FeatureFlag == null || enabledKeys.Contains(def.FeatureFlag))
-            .Select(def => new SequenceConfig
-            {
-                EntityLabel = def.Label,
-                PrefixKey = def.PrefixKey,
-                DigitsKey = def.DigitsKey,
-                CounterKey = def.CounterKey,
-                Prefix = settings.FirstOrDefault(s => s.Key == def.PrefixKey)?.Value ?? def.DefaultPrefix,
-                Digits = int.TryParse(settings.FirstOrDefault(s => s.Key == def.DigitsKey)?.Value, out var d) ? d : def.DefaultDigits,
-                Counter = int.TryParse(settings.FirstOrDefault(s => s.Key == def.CounterKey)?.Value, out var c) ? c : 0
-            }).ToList();
-
-        _loading = false;
+            _sequences = _entityDefs
+                .Where(def => def.FeatureFlag == null || enabledKeys.Contains(def.FeatureFlag))
+                .Select(def => new SequenceConfig
+                {
+                    EntityLabel = def.Label,
+                    PrefixKey = def.PrefixKey,
+                    DigitsKey = def.DigitsKey,
+                    CounterKey = def.CounterKey,
+                    Prefix = settings.FirstOrDefault(s => s.Key == def.PrefixKey)?.Value ?? def.DefaultPrefix,
+                    Digits = int.TryParse(settings.FirstOrDefault(s => s.Key == def.DigitsKey)?.Value, out var d) ? d : def.DefaultDigits,
+                    Counter = int.TryParse(settings.FirstOrDefault(s => s.Key == def.CounterKey)?.Value, out var c) ? c : 0
+                }).ToList();
+        }
+        catch
+        {
+            _sequences = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task SaveAll()

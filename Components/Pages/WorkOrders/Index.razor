@@ -79,7 +79,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var wo in _filtered)
+                @foreach (var wo in _filtered.Skip((_page - 1) * _pageSize).Take(_pageSize))
                 {
                     var totalQty = wo.Lines.Sum(l => l.Quantity);
                     var producedQty = wo.Lines.Sum(l => l.ProducedQuantity);
@@ -122,10 +122,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _allOrders = await WorkOrderService.GetAllWorkOrdersAsync();
-        _statusCounts = _allOrders.GroupBy(o => o.Status).ToDictionary(g => g.Key, g => g.Count());
-        _filtered = _allOrders;
-        _loading = false;
+        try
+        {
+            _allOrders = await WorkOrderService.GetAllWorkOrdersAsync();
+            _statusCounts = _allOrders.GroupBy(o => o.Status).ToDictionary(g => g.Key, g => g.Count());
+            _filtered = _allOrders;
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to load work orders: {ex.Message}"); }
+        finally { _loading = false; }
     }
 
     private void FilterByStatus(WorkOrderStatus? status)

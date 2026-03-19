@@ -227,7 +227,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _job = await WorkOrderService.GetJobDetailAsync(JobId);
+        try
+        {
+            _job = await WorkOrderService.GetJobDetailAsync(JobId);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load job: {ex.Message}");
+        }
         _loading = false;
     }
 

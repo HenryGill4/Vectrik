@@ -830,10 +830,18 @@ else if (_viewMode == "table")
             var state = await AuthState;
             _userName = state.User?.Identity?.Name ?? "System";
         }
-        _parts = await PartService.GetAllPartsAsync();
-        _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
-        _stages = await StageService.GetAllStagesAsync(activeOnly: true);
-        await LoadData();
+        try
+        {
+            _parts = await PartService.GetAllPartsAsync();
+            _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+            _stages = await StageService.GetAllStagesAsync(activeOnly: true);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load scheduler: {ex.Message}");
+            _loading = false;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -849,10 +857,20 @@ else if (_viewMode == "table")
     {
         _loading = true;
         StateHasChanged();
-        _executions = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
-        _unscheduled = await StageService.GetUnscheduledExecutionsAsync();
-        BuildGanttSlots();
-        _loading = false;
+        try
+        {
+            _executions = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
+            _unscheduled = await StageService.GetUnscheduledExecutionsAsync();
+            BuildGanttSlots();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load schedule data: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     // ── Zoom Configuration ──
@@ -1121,6 +1139,11 @@ else if (_viewMode == "table")
     private async Task ConfirmReschedule()
     {
         if (_rescheduleExec == null) return;
+        if (_rescheduleEnd <= _rescheduleStart)
+        {
+            Toast.ShowError("End time must be after start time.");
+            return;
+        }
         try
         {
             int? machineId = int.TryParse(_rescheduleMachineId, out var mid) ? mid : null;
@@ -1192,6 +1215,7 @@ else if (_viewMode == "table")
     {
         _error = null;
         if (_newJob.PartId <= 0) { _error = "Please select a part."; return; }
+        if (_newJob.Quantity < 1) { _error = "Quantity must be at least 1."; return; }
 
         _creatingJob = true;
         StateHasChanged();

@@ -90,7 +90,17 @@ else
     private Dictionary<string, string> _validationErrors = new();
     private ConfirmDialog _confirm = null!;
 
-    protected override async Task OnInitializedAsync() => _materials = await MaterialService.GetAllMaterialsAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _materials = await MaterialService.GetAllMaterialsAsync();
+        }
+        catch
+        {
+            _materials = new();
+        }
+    }
 
     private void NewMaterial()
     {

@@ -84,7 +84,7 @@ public class PartTrackerService : IPartTrackerService
                 .OrderBy(sl => sl.StartedAt)
                 .Select(sl => new StageLogEntry
                 {
-                    StageName = sl.ProductionStage.Name,
+                    StageName = sl.ProductionStage?.Name ?? "Unknown",
                     StartedAt = sl.StartedAt,
                     CompletedAt = sl.CompletedAt,
                     OperatorName = sl.OperatorName,
@@ -146,7 +146,7 @@ public class PartTrackerService : IPartTrackerService
                     .OrderBy(sl => sl.StartedAt)
                     .Select(sl => new StageLogEntry
                     {
-                        StageName = sl.ProductionStage.Name,
+                        StageName = sl.ProductionStage?.Name ?? "Unknown",
                         StartedAt = sl.StartedAt,
                         CompletedAt = sl.CompletedAt,
                         OperatorName = sl.OperatorName,

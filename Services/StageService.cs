@@ -221,6 +221,7 @@ public class StageService : IStageService
 
         // If this was the Wire EDM build-level stage completing, spawn per-part jobs
         if (execution.BuildPackageId.HasValue
+            && execution.ProductionStage != null
             && execution.ProductionStage.IsBuildLevelStage
             && execution.ProductionStage.StageSlug == "wire-edm")
         {

@@ -120,9 +120,20 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _allQuotes = await QuoteService.GetAllQuotesAsync();
-        _filteredQuotes = _allQuotes;
-        _loading = false;
+        try
+        {
+            _allQuotes = await QuoteService.GetAllQuotesAsync();
+            _filteredQuotes = _allQuotes;
+        }
+        catch
+        {
+            _allQuotes = new();
+            _filteredQuotes = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private void FilterByStatus(QuoteStatus? status)

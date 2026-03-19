@@ -200,7 +200,14 @@ else
     protected override async Task OnInitializedAsync()
     {
         _showDefenseFilter = Features.IsEnabled("dlms");
-        await LoadParts();
+        try
+        {
+            await LoadParts();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load parts: {ex.Message}");
+        }
         _loading = false;
     }
 
@@ -274,17 +281,24 @@ else
             await InvokeAsync(async () =>
             {
                 if (_disposed) return;
-                if (!string.IsNullOrWhiteSpace(_searchTerm) && _searchTerm.Length >= 2)
+                try
                 {
-                    _allParts = await PartService.SearchPartsAsync(_searchTerm, activeOnly: false);
+                    if (!string.IsNullOrWhiteSpace(_searchTerm) && _searchTerm.Length >= 2)
+                    {
+                        _allParts = await PartService.SearchPartsAsync(_searchTerm, activeOnly: false);
+                    }
+                    else if (string.IsNullOrWhiteSpace(_searchTerm))
+                    {
+                        _allParts = await PartService.GetAllPartsAsync(activeOnly: false);
+                    }
+                    BuildFilterOptions();
+                    _currentPage = 1;
+                    ApplyFilters();
                 }
-                else if (string.IsNullOrWhiteSpace(_searchTerm))
+                catch (Exception ex)
                 {
-                    _allParts = await PartService.GetAllPartsAsync(activeOnly: false);
+                    Toast.ShowError($"Search failed: {ex.Message}");
                 }
-                BuildFilterOptions();
-                _currentPage = 1;
-                ApplyFilters();
                 StateHasChanged();
             });
         };

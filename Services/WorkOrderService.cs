@@ -92,6 +92,8 @@ public class WorkOrderService : IWorkOrderService
 
     public async Task<WorkOrderLine> AddLineAsync(int workOrderId, int partId, int quantity, string? notes = null)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+
         var line = new WorkOrderLine
         {
             WorkOrderId = workOrderId,
@@ -149,6 +151,9 @@ public class WorkOrderService : IWorkOrderService
 
     public async Task UpdateFulfillmentAsync(int workOrderLineId, int producedDelta, int shippedDelta)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(producedDelta);
+        ArgumentOutOfRangeException.ThrowIfNegative(shippedDelta);
+
         var line = await _db.WorkOrderLines
             .Include(l => l.WorkOrder)
             .FirstOrDefaultAsync(l => l.Id == workOrderLineId);

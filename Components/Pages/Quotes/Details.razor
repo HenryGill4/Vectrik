@@ -251,26 +251,43 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _quote = await QuoteService.GetQuoteDetailAsync(Id);
-        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Quote");
-        if (_quote != null && !string.IsNullOrEmpty(_quote.CustomFieldValues))
+        try
         {
-            try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_quote.CustomFieldValues) ?? new(); }
-            catch { _customFieldValues = new(); }
+            _quote = await QuoteService.GetQuoteDetailAsync(Id);
+            _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Quote");
+            if (_quote != null && !string.IsNullOrEmpty(_quote.CustomFieldValues))
+            {
+                try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_quote.CustomFieldValues) ?? new(); }
+                catch { _customFieldValues = new(); }
+            }
+            if (_quote != null)
+                _pendingApproval = await WorkflowEngine.GetPendingAsync("Quote", _quote.Id);
         }
-        if (_quote != null)
-            _pendingApproval = await WorkflowEngine.GetPendingAsync("Quote", _quote.Id);
-        _loading = false;
+        catch
+        {
+            _quote = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task MarkSent()
     {
         if (_quote == null) return;
-        _quote.SentAt = DateTime.UtcNow;
-        await QuoteService.UpdateQuoteAsync(_quote);
-        await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Sent);
-        _quote = await QuoteService.GetQuoteDetailAsync(Id);
-        Toast.ShowSuccess("Quote marked as sent");
+        try
+        {
+            _quote.SentAt = DateTime.UtcNow;
+            await QuoteService.UpdateQuoteAsync(_quote);
+            await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Sent);
+            _quote = await QuoteService.GetQuoteDetailAsync(Id);
+            Toast.ShowSuccess("Quote marked as sent");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
     }
 
     private async Task AcceptAndConvert()
@@ -332,9 +349,16 @@ else
     {
         if (_quote == null) return;
         if (!await _confirm.ShowAsync("Reject this quote?")) return;
-        await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Rejected);
-        _quote = await QuoteService.GetQuoteDetailAsync(Id);
-        Toast.ShowSuccess("Quote rejected");
+        try
+        {
+            await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Rejected);
+            _quote = await QuoteService.GetQuoteDetailAsync(Id);
+            Toast.ShowSuccess("Quote rejected");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
     }
 
     private async Task PrintQuote()

@@ -60,23 +60,22 @@ public class JobService : IJobService
         // Hydrate from Part if available
         if (job.PartId > 0)
         {
-            var part = await _db.Parts.FindAsync(job.PartId);
-            if (part != null)
+            var part = await _db.Parts.FindAsync(job.PartId)
+                ?? throw new InvalidOperationException($"Part with ID {job.PartId} not found.");
+
+            job.PartNumber = part.PartNumber;
+            job.SlsMaterial = part.Material;
+
+            // Hydrate stacking duration
+            if (job.StackLevel.HasValue)
             {
-                job.PartNumber = part.PartNumber;
-                job.SlsMaterial = part.Material;
+                var duration = part.GetStackDuration(job.StackLevel.Value);
+                if (duration.HasValue)
+                    job.PlannedStackDurationHours = duration.Value;
 
-                // Hydrate stacking duration
-                if (job.StackLevel.HasValue)
-                {
-                    var duration = part.GetStackDuration(job.StackLevel.Value);
-                    if (duration.HasValue)
-                        job.PlannedStackDurationHours = duration.Value;
-
-                    var ppb = part.GetPartsPerBuild(job.StackLevel.Value);
-                    if (ppb.HasValue)
-                        job.PartsPerBuild = ppb.Value;
-                }
+                var ppb = part.GetPartsPerBuild(job.StackLevel.Value);
+                if (ppb.HasValue)
+                    job.PartsPerBuild = ppb.Value;
             }
         }
 
@@ -167,6 +166,24 @@ public class JobService : IJobService
         job.Status = JobStatus.Cancelled;
         job.LastModifiedDate = DateTime.UtcNow;
         job.LastStatusChangeUtc = DateTime.UtcNow;
+
+        // Cancel outstanding stage executions so they don't remain in the scheduler
+        var activeStages = await _db.StageExecutions
+            .Where(s => s.JobId == id
+                && s.Status != StageExecutionStatus.Completed
+                && s.Status != StageExecutionStatus.Skipped
+                && s.Status != StageExecutionStatus.Failed)
+            .ToListAsync();
+
+        foreach (var stage in activeStages)
+        {
+            stage.Status = StageExecutionStatus.Skipped;
+            stage.Notes = "Auto-skipped: job cancelled";
+            stage.CompletedAt = DateTime.UtcNow;
+            stage.ActualEndAt = DateTime.UtcNow;
+            stage.LastModifiedDate = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync();
     }
 

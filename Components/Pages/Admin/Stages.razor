@@ -1,5 +1,6 @@
 @page "/admin/stages"
 @inject IStageService StageService
+@inject ToastService Toast
 @rendermode InteractiveServer
 @using System.Text.Json
 
@@ -137,7 +138,11 @@ else
     private string _tab = "info";
     private List<CustomFieldDefinition> _customFields = new();
 
-    protected override async Task OnInitializedAsync() => _stages = await StageService.GetAllStagesAsync(activeOnly: false);
+    protected override async Task OnInitializedAsync()
+    {
+        try { _stages = await StageService.GetAllStagesAsync(activeOnly: false); }
+        catch (Exception ex) { Toast.ShowError($"Failed to load stages: {ex.Message}"); _stages = new(); }
+    }
 
     private void NewStage()
     {

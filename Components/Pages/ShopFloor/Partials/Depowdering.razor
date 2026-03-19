@@ -67,7 +67,14 @@ else
     {
         if (Execution?.BuildPackageId != null)
         {
-            _buildPackage = await BuildPlanningService.GetPackageByIdAsync(Execution.BuildPackageId.Value);
+            try
+            {
+                _buildPackage = await BuildPlanningService.GetPackageByIdAsync(Execution.BuildPackageId.Value);
+            }
+            catch
+            {
+                _buildPackage = null;
+            }
         }
         else
         {
