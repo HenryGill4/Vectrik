@@ -1,0 +1,176 @@
+@page "/settings/display"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IUserSettingsService SettingsService
+@inject IJSRuntime JS
+@inject ToastService Toast
+
+<PageTitle>Display Settings - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Display Settings</h1>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="card" style="max-width: 600px;">
+        <div class="card-header">Theme</div>
+        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">
+            Choose how OpCentrix looks for your account. This setting is saved to your profile and applies on any device you sign in to.
+        </p>
+
+        <div class="theme-picker">
+            <button class="theme-option @(_selectedTheme == "dark" ? "theme-option-active" : "")"
+                    @onclick='() => SelectTheme("dark")'>
+                <div class="theme-preview theme-preview-dark">
+                    <div class="theme-preview-sidebar"></div>
+                    <div class="theme-preview-content">
+                        <div class="theme-preview-bar"></div>
+                        <div class="theme-preview-block"></div>
+                        <div class="theme-preview-block short"></div>
+                    </div>
+                </div>
+                <span class="theme-option-label">🌙 Dark</span>
+            </button>
+
+            <button class="theme-option @(_selectedTheme == "light" ? "theme-option-active" : "")"
+                    @onclick='() => SelectTheme("light")'>
+                <div class="theme-preview theme-preview-light">
+                    <div class="theme-preview-sidebar"></div>
+                    <div class="theme-preview-content">
+                        <div class="theme-preview-bar"></div>
+                        <div class="theme-preview-block"></div>
+                        <div class="theme-preview-block short"></div>
+                    </div>
+                </div>
+                <span class="theme-option-label">☀️ Light</span>
+            </button>
+
+            <button class="theme-option @(_selectedTheme == "system" ? "theme-option-active" : "")"
+                    @onclick='() => SelectTheme("system")'>
+                <div class="theme-preview theme-preview-system">
+                    <div class="theme-preview-half-dark">
+                        <div class="theme-preview-sidebar"></div>
+                        <div class="theme-preview-content">
+                            <div class="theme-preview-bar"></div>
+                            <div class="theme-preview-block"></div>
+                        </div>
+                    </div>
+                    <div class="theme-preview-half-light">
+                        <div class="theme-preview-sidebar"></div>
+                        <div class="theme-preview-content">
+                            <div class="theme-preview-bar"></div>
+                            <div class="theme-preview-block"></div>
+                        </div>
+                    </div>
+                </div>
+                <span class="theme-option-label">💻 System</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="card" style="max-width: 600px;">
+        <div class="card-header">Default Views</div>
+        <div class="form-group">
+            <label class="form-label">Default Scheduler View</label>
+            <select class="form-control" @bind="_defaultView">
+                <option value="">— Default —</option>
+                <option value="gantt">📊 Machine Gantt</option>
+                <option value="path">🔀 Part Path</option>
+                <option value="table">📋 Table</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notifications</label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.875rem;">
+                <input type="checkbox" @bind="_notificationsEnabled" style="width:18px; height:18px;" />
+                Enable toast notifications for job and schedule updates
+            </label>
+        </div>
+        <div style="display:flex; justify-content:flex-end; padding-top:8px;">
+            <button class="btn btn-primary" @onclick="SavePreferences" disabled="@_saving">
+                @(_saving ? "Saving…" : "Save Preferences")
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private int _userId;
+    private bool _loading = true;
+    private bool _saving;
+    private string _selectedTheme = "dark";
+    private string? _defaultView;
+    private bool _notificationsEnabled = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var userIdClaim = state.User.FindFirst("UserId")?.Value;
+            if (int.TryParse(userIdClaim, out var uid))
+                _userId = uid;
+        }
+
+        if (_userId > 0)
+        {
+            var settings = await SettingsService.GetSettingsAsync(_userId);
+            _selectedTheme = settings.Theme;
+            _defaultView = settings.DefaultView;
+            _notificationsEnabled = settings.NotificationsEnabled;
+        }
+
+        _loading = false;
+    }
+
+    private async Task SelectTheme(string theme)
+    {
+        _selectedTheme = theme;
+
+        // Apply immediately via JS
+        var effectiveTheme = theme == "system" ? "system" : theme;
+        await JS.InvokeVoidAsync("opcentrix.setTheme", effectiveTheme);
+
+        // Persist to DB
+        if (_userId > 0)
+        {
+            try
+            {
+                await SettingsService.SaveThemeAsync(_userId, theme);
+            }
+            catch { /* localStorage fallback already applied via JS */ }
+        }
+    }
+
+    private async Task SavePreferences()
+    {
+        if (_userId == 0) return;
+        _saving = true;
+
+        try
+        {
+            var settings = await SettingsService.GetSettingsAsync(_userId);
+            settings.DefaultView = _defaultView;
+            settings.NotificationsEnabled = _notificationsEnabled;
+            await SettingsService.SaveSettingsAsync(settings);
+            Toast.ShowSuccess("Display settings saved");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

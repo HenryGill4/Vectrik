@@ -18,7 +18,7 @@ public interface IWorkOrderService
     Task<string> GenerateOrderNumberAsync();
 
     // Job generation from routing
-    Task<List<Job>> GenerateJobsForLineAsync(int workOrderLineId, string createdBy);
+    Task<Job> GenerateJobForLineAsync(int workOrderLineId, string createdBy);
     Task<Job?> GetJobDetailAsync(int jobId);
 
     // Comments

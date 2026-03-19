@@ -1,4 +1,8 @@
 ﻿@inherits LayoutComponentBase
+@inject IJSRuntime JS
+@inject IUserSettingsService SettingsService
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 
 <div class="app-container @(_sidebarCollapsed ? "sidebar-collapsed" : "")">
     <aside class="sidebar">
@@ -40,9 +44,65 @@
 </div>
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
     private bool _sidebarCollapsed;
     private bool _darkMode = true;
+    private int _userId;
+    private bool _themeLoaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Try to load the user's saved theme from the database
+            if (AuthState is not null)
+            {
+                var state = await AuthState;
+                var userIdClaim = state.User.FindFirst("UserId")?.Value;
+                if (int.TryParse(userIdClaim, out var uid))
+                {
+                    _userId = uid;
+                    try
+                    {
+                        var settings = await SettingsService.GetSettingsAsync(uid);
+                        var theme = settings.Theme;
+                        await JS.InvokeVoidAsync("opcentrix.setTheme", theme);
+                        _darkMode = theme != "light" && theme != "system";
+                        if (theme == "system")
+                        {
+                            var resolved = await JS.InvokeAsync<string>("opcentrix.resolveSystemTheme");
+                            _darkMode = resolved != "light";
+                        }
+                        _themeLoaded = true;
+                        StateHasChanged();
+                        return;
+                    }
+                    catch { /* Fall back to localStorage via JS */ }
+                }
+            }
+
+            // Fallback: read from localStorage
+            var jsTheme = await JS.InvokeAsync<string>("opcentrix.getTheme");
+            _darkMode = jsTheme != "light";
+            _themeLoaded = true;
+            StateHasChanged();
+        }
+    }
 
     private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
-    private void ToggleDarkMode() => _darkMode = !_darkMode;
+
+    private async Task ToggleDarkMode()
+    {
+        _darkMode = !_darkMode;
+        var theme = _darkMode ? "dark" : "light";
+        await JS.InvokeVoidAsync("opcentrix.setTheme", theme);
+
+        // Persist to user's DB settings
+        if (_userId > 0)
+        {
+            try { await SettingsService.SaveThemeAsync(_userId, theme); } catch { }
+        }
+    }
 }

@@ -10,6 +10,7 @@
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using System.Text.Json
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>Work Order Details - OpCentrix</PageTitle>
 
@@ -288,10 +289,12 @@ else
 
 @code {
     [Parameter] public int Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
     private WorkOrder? _order;
     private List<Part>? _parts;
     private bool _loading = true;
+    private string _userName = "System";
     private string _tab = "lines";
     private string _newComment = "";
     private bool _showAddLine;
@@ -312,6 +315,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _userName = state.User?.Identity?.Name ?? "System";
+        }
         await LoadOrder();
         _parts = await PartService.GetAllPartsAsync();
         _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("WorkOrder");
@@ -343,7 +351,7 @@ else
                 return;
             }
 
-            await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, "System");
+            await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, _userName);
             await LoadOrder();
             var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
             Toast.ShowSuccess($"Work order released — {jobCount} job(s) generated from routing");
@@ -386,7 +394,7 @@ else
         if (!await _confirm.ShowAsync(message)) return;
         try
         {
-            await WorkOrderService.UpdateStatusAsync(Id, status, "System");
+            await WorkOrderService.UpdateStatusAsync(Id, status, _userName);
             Toast.ShowSuccess($"Status changed to {status}");
             await LoadOrder();
         }
@@ -403,8 +411,8 @@ else
     {
         try
         {
-            var jobs = await WorkOrderService.GenerateJobsForLineAsync(lineId, "System");
-            Toast.ShowSuccess($"{jobs.Count} job(s) generated from routing");
+            var job = await WorkOrderService.GenerateJobForLineAsync(lineId, _userName);
+            Toast.ShowSuccess($"Job {job.JobNumber} created with {job.Stages.Count} stage(s)");
             await LoadOrder();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }

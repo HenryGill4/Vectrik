@@ -6,6 +6,7 @@
 @inject ISchedulingService Scheduler
 @inject ToastService Toast
 @rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>Production Scheduler - OpCentrix</PageTitle>
 
@@ -43,7 +44,8 @@
     </div>
     <div class="sched-controls-right">
         <div class="sched-view-toggle">
-            <button class="btn btn-sm @(_viewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "gantt"'>📊 Gantt</button>
+            <button class="btn btn-sm @(_viewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "gantt"'>📊 Machines</button>
+            <button class="btn btn-sm @(_viewMode == "path" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "path"'>🔀 Part Path</button>
             <button class="btn btn-sm @(_viewMode == "table" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "table"'>📋 Table</button>
         </div>
         <button class="btn btn-secondary btn-sm" @onclick="LoadData">🔄</button>
@@ -189,6 +191,178 @@ else if (_viewMode == "gantt")
                         <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-low"></span> Low</span>
                         <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-conflict"></span> Conflict</span>
                         <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-unassigned"></span> Unassigned</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* ── Sidebar: Unscheduled Work ── *@
+        @if (_unscheduled.Any())
+        {
+            <div class="sched-sidebar">
+                <div class="card">
+                    <div class="card-header sched-sidebar-header">
+                        📋 Unscheduled (@_unscheduled.Count)
+                    </div>
+                    <div class="sched-sidebar-list">
+                        @foreach (var exec in _unscheduled)
+                        {
+                            var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
+                            <div class="sched-sidebar-item" @onclick="() => AutoScheduleSingle(exec.Id)">
+                                <div class="sched-sidebar-priority sched-priority-@priorityClass"></div>
+                                <div class="sched-sidebar-info">
+                                    <span class="sched-sidebar-part">@(exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}")</span>
+                                    <span class="sched-sidebar-stage">@(exec.ProductionStage?.Name ?? "—")</span>
+                                    <span class="sched-sidebar-est">@(exec.EstimatedHours?.ToString("F1") ?? "?")h est</span>
+                                </div>
+                                <span class="sched-sidebar-action" title="Auto-schedule this task">⚡</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else if (_viewMode == "path")
+{
+    @* ── Part Path View: rows = jobs, bars = stage executions colored by stage ── *@
+    <div class="sched-layout">
+        <div class="sched-gantt-panel">
+            @* Filter bar *@
+            <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                <select class="form-control" style="width:auto;" @bind="_pathFilterPartId" @bind:after="StateHasChanged">
+                    <option value="0">All Parts</option>
+                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber — @p.Name</option> } }
+                </select>
+                <select class="form-control" style="width:auto;" @bind="_pathFilterPriority" @bind:after="StateHasChanged">
+                    <option value="">All Priorities</option>
+                    @foreach (var p in Enum.GetValues<JobPriority>()) { <option value="@p">@p</option> }
+                </select>
+                <select class="form-control" style="width:auto;" @bind="_pathSortMode" @bind:after="StateHasChanged">
+                    <option value="schedule">Sort: Schedule</option>
+                    <option value="priority">Sort: Priority</option>
+                    <option value="part">Sort: Part Number</option>
+                </select>
+            </div>
+
+            <div class="card sched-gantt-card">
+                @{
+                    // Group executions by JobId for part-path rows
+                    var jobGroups = _executions
+                        .Where(e => e.JobId.HasValue)
+                        .GroupBy(e => e.JobId!.Value)
+                        .Select(g => new { JobId = g.Key, Job = g.First().Job, Execs = g.OrderBy(e => e.SortOrder).ToList() })
+                        .Where(g => g.Job != null)
+                        .ToList();
+
+                    // Apply filters
+                    if (_pathFilterPartId > 0)
+                        jobGroups = jobGroups.Where(g => g.Job!.PartId == _pathFilterPartId).ToList();
+                    if (!string.IsNullOrEmpty(_pathFilterPriority) && Enum.TryParse<JobPriority>(_pathFilterPriority, out var filterPri))
+                        jobGroups = jobGroups.Where(g => g.Job!.Priority == filterPri).ToList();
+
+                    // Apply sort
+                    jobGroups = _pathSortMode switch
+                    {
+                        "priority" => jobGroups.OrderByDescending(g => g.Job!.Priority).ThenBy(g => g.Job!.ScheduledStart).ToList(),
+                        "part" => jobGroups.OrderBy(g => g.Job!.PartNumber).ThenBy(g => g.Job!.ScheduledStart).ToList(),
+                        _ => jobGroups.OrderBy(g => g.Execs.Min(e => e.ScheduledStartAt ?? DateTime.MaxValue)).ToList()
+                    };
+                }
+
+                @if (!jobGroups.Any())
+                {
+                    <div class="empty-state"><div class="empty-state-icon">🔀</div><div class="empty-state-text">No scheduled jobs in this date range</div></div>
+                }
+                else
+                {
+                    <div class="gantt-container" style="--gantt-cols: @_ganttDays.Count;">
+                        @* ── Header: day columns ── *@
+                        <div class="gantt-header">
+                            <div class="gantt-resource-label gantt-corner">Job / Part</div>
+                            @foreach (var day in _ganttDays)
+                            {
+                                var isToday = day.Date == DateTime.UtcNow.Date;
+                                var isWeekend = day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+                                <div class="gantt-day-header @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")">
+                                    <span class="gantt-day-name">@day.ToString("ddd")</span>
+                                    <span class="gantt-day-date">@day.ToString("M/d")</span>
+                                </div>
+                            }
+                        </div>
+
+                        @* ── Job rows ── *@
+                        @foreach (var group in jobGroups)
+                        {
+                            var job = group.Job!;
+                            var isOverdue = job.IsOverdue;
+                            var woId = job.WorkOrderLineId.HasValue ? job.WorkOrderLine?.WorkOrderId : (int?)null;
+                            <div class="gantt-row @(isOverdue ? "gantt-row-overdue" : "")">
+                                <div class="gantt-path-label">
+                                    <span class="gantt-path-part">@(job.PartNumber ?? $"Part #{job.PartId}")</span>
+                                    @if (woId.HasValue)
+                                    {
+                                        <a class="gantt-path-job" href="/workorders/@woId/jobs/@job.Id">@(job.JobNumber ?? $"J#{job.Id}")</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="gantt-path-job" style="cursor:default;">@(job.JobNumber ?? $"J#{job.Id}")</span>
+                                    }
+                                    <span class="gantt-path-meta">
+                                        <span class="badge badge-@job.Priority.ToString().ToLower()" style="font-size:0.6rem;padding:1px 6px;">@job.Priority</span>
+                                        @(job.Quantity) qty
+                                    </span>
+                                </div>
+                                <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
+                                    @* Today marker *@
+                                    @{ var todayPct = GetGanttPosition(DateTime.UtcNow); }
+                                    @if (todayPct > 0 && todayPct < 100)
+                                    {
+                                        <div class="gantt-today-line" style="left: @(todayPct)%;"></div>
+                                    }
+                                    @* Stage execution bars *@
+                                    @foreach (var exec in group.Execs)
+                                    {
+                                        var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
+                                        var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                        var leftPct = GetGanttPosition(start);
+                                        var widthPct = GetGanttWidth(start, end);
+                                        var stageColor = exec.ProductionStage?.StageColor ?? "#3B82F6";
+                                        var statusClass = exec.Status switch
+                                        {
+                                            StageExecutionStatus.Completed => "gantt-bar-completed",
+                                            StageExecutionStatus.InProgress => "gantt-bar-inprogress",
+                                            StageExecutionStatus.Failed => "gantt-bar-failed",
+                                            StageExecutionStatus.NotStarted => "gantt-bar-notstarted",
+                                            _ => ""
+                                        };
+                                        var machineName = exec.Machine?.Name ?? "Unassigned";
+                                        var stageName = exec.ProductionStage?.Name ?? "Stage";
+                                        var tooltip = $"{stageName}\nMachine: {machineName}\n{start:MM/dd HH:mm} \u2192 {end:MM/dd HH:mm}\nEst: {exec.EstimatedHours?.ToString("F1") ?? "?"}h\nStatus: {exec.Status}";
+                                        if (exec.OperatorName != null) tooltip += $"\nOperator: {exec.OperatorName}";
+                                        <div class="gantt-bar gantt-bar-stage @statusClass"
+                                             style="left: @(leftPct)%; width: @(widthPct)%; --bar-accent: @stageColor;"
+                                             title="@tooltip"
+                                             @onclick="() => ShowReschedule(exec)">
+                                            <span class="gantt-bar-text">@stageName<span class="gantt-bar-machine">@machineName</span></span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    @* Stage color legend *@
+                    <div class="gantt-path-legend">
+                        @foreach (var stage in _executions
+                            .Where(e => e.ProductionStage != null)
+                            .Select(e => e.ProductionStage!)
+                            .DistinctBy(s => s.Id)
+                            .OrderBy(s => s.DisplayOrder))
+                        {
+                            <span class="gantt-legend-item"><span class="gantt-path-legend-swatch" style="background:@stage.StageColor;"></span> @stage.Name</span>
+                        }
                     </div>
                 }
             </div>
@@ -406,6 +580,8 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
     private bool _loading = true;
     private bool _scheduling;
     private bool _creatingJob;
@@ -418,6 +594,12 @@ else
     private DateTime _dateTo = DateTime.UtcNow.Date.AddDays(14);
     private string _viewMode = "gantt";
     private string _rangeLabel = "2W";
+    private string _userName = "System";
+
+    // Part Path filters
+    private int _pathFilterPartId;
+    private string? _pathFilterPriority;
+    private string _pathSortMode = "schedule";
 
     // Create job
     private bool _showCreate;
@@ -434,6 +616,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _userName = state.User?.Identity?.Name ?? "System";
+        }
         _parts = await PartService.GetAllPartsAsync();
         _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
         await LoadData();
@@ -582,8 +769,8 @@ else
         try
         {
             _newJob.ScheduledEnd = _newJob.ScheduledStart.AddHours(_newJob.EstimatedHours);
-            _newJob.CreatedBy = "System";
-            _newJob.LastModifiedBy = "System";
+            _newJob.CreatedBy = _userName;
+            _newJob.LastModifiedBy = _userName;
             await JobService.CreateJobAsync(_newJob);
             Toast.ShowSuccess("Job created and auto-scheduled");
             _showCreate = false;

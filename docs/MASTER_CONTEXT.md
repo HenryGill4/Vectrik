@@ -119,7 +119,7 @@ These items are fully implemented and do NOT need to be rebuilt:
 |---|--------|----------|----------|--------|-----------|
 | 01 | [Estimating & Quoting](#) | ERP | P1 | [x] Complete | [MODULE-01-estimating-quoting.md](phase-1/MODULE-01-estimating-quoting.md) |
 | 02 | [Sales & Work Order Management](#) | ERP | P1 | [x] Complete | [MODULE-02-work-order-management.md](phase-1/MODULE-02-work-order-management.md) |
-| 03 | [Visual Work Instructions](#) | MES | P1 | [ ] Not Started | [MODULE-03-visual-work-instructions.md](phase-1/MODULE-03-visual-work-instructions.md) |
+| 03 | [Visual Work Instructions](#) | MES | P1 | [x] Complete | [MODULE-03-visual-work-instructions.md](phase-1/MODULE-03-visual-work-instructions.md) |
 | 04 | [Shop Floor Management & Scheduling](#) | MES | P1 | [x] Complete | [MODULE-04-shop-floor-scheduling.md](phase-1/MODULE-04-shop-floor-scheduling.md) |
 | 05 | [Quality Systems & Inspection (QMS)](#) | QMS | P1 | [x] Complete | [MODULE-05-quality-systems.md](phase-1/MODULE-05-quality-systems.md) |
 | 06 | [Inventory Control & Material Planning](#) | ERP | P1 | [x] Complete | [MODULE-06-inventory-control.md](phase-1/MODULE-06-inventory-control.md) |
@@ -391,11 +391,11 @@ Track which have been added to `TenantDbContext.cs`:
 | `QuoteRevision` | M01 | [x] |
 | `RfqRequest` | M01 | [x] |
 | `WorkOrderComment` | M02 | [x] |
-| `WorkInstruction` | M03 | [ ] |
-| `WorkInstructionStep` | M03 | [ ] |
-| `WorkInstructionMedia` | M03 | [ ] |
-| `WorkInstructionRevision` | M03 | [ ] |
-| `OperatorFeedback` | M03 | [ ] |
+| `WorkInstruction` | M03 | [x] |
+| `WorkInstructionStep` | M03 | [x] |
+| `WorkInstructionMedia` | M03 | [x] |
+| `WorkInstructionRevision` | M03 | [x] |
+| `OperatorFeedback` | M03 | [x] |
 | `InspectionPlan` | M05 | [x] |
 | `InspectionPlanCharacteristic` | M05 | [x] |
 | `InspectionMeasurement` | M05 | [x] |
@@ -485,7 +485,7 @@ Track service registration in `Program.cs`:
 | Service | Module | Registered? |
 |---------|--------|------------|
 | `IPricingEngineService` | M01 | [x] |
-| `IWorkInstructionService` | M03 | [ ] |
+| `IWorkInstructionService` | M03 | [x] |
 | `IOeeService` | M04 | [x] |
 | `IQualityService` | M05 | [x] |
 | `ISpcService` | M05 | [x] |
@@ -626,11 +626,11 @@ These features we are building that ProShop does NOT have:
 |---------------|-------------|--------|
 | API-first REST architecture | Architecture (all modules) | [ ] |
 | Customer self-service portal | Module 16 (CRM) | [ ] |
-| SPC control charts with Cp/Cpk | Module 05 (Quality) | [ ] |
+| SPC control charts with Cp/Cpk | Module 05 (Quality) | [x] |
 | Operator tribal knowledge capture | Module 18 (Training/LMS) | [ ] |
-| Visual instruction operator feedback loop | Module 03 (Work Instructions) | [ ] |
-| Finite-capacity constraint-based scheduler | Module 04 (Shop Floor) | [ ] |
-| Barcode/camera scan for inventory receiving | Module 06 (Inventory) | [ ] |
+| Visual instruction operator feedback loop | Module 03 (Work Instructions) | [x] |
+| Finite-capacity constraint-based scheduler | Module 04 (Shop Floor) | [x] |
+| Barcode/camera scan for inventory receiving | Module 06 (Inventory) | [x] |
 | Integrated BOL + packing list + label in one flow | Module 15 (Shipping) | [ ] |
 | Multi-framework compliance engine (CMMC+AS9100+ISO) | Module 17 (Compliance) | [ ] |
 | Complete audit access log | Module 17 (Compliance) | [ ] |
@@ -639,15 +639,15 @@ These features we are building that ProShop does NOT have:
 | Vendor scorecards (quality + delivery + cost) | Module 12 (Purchasing) | [ ] |
 | Activity-based overhead allocation | Module 09 (Job Costing) | [ ] |
 | **DLMS transaction support (ASN, WAWF, IUID)** | **Modules 06/09/15 + DLMS Services** | **[ ]** |
-| **Per-tenant feature flags (module toggling)** | **Foundation (Stage 0.5)** | **[ ]** |
-| **No-code custom fields on all entities** | **Foundation (Stage 0.5)** | **[ ]** |
-| **Configurable approval workflows** | **Foundation (Stage 0.5)** | **[ ]** |
-| **Customer-branded document templates** | **Foundation (Stage 0.5)** | **[ ]** |
+| **Per-tenant feature flags (module toggling)** | **Foundation (Stage 0.5)** | **[x]** |
+| **No-code custom fields on all entities** | **Foundation (Stage 0.5)** | **[x]** |
+| **Configurable approval workflows** | **Foundation (Stage 0.5)** | **[x]** |
+| **Customer-branded document templates** | **Foundation (Stage 0.5)** | **[x]** |
 | **GFM/GFE government property tracking** | **Module 06 (Inventory) + DLMS** | **[ ]** |
 | **Structured AS9102 FAIR auto-generation** | **Module 05 (Quality) + DLMS** | **[ ]** |
 | **CDRL deliverable tracking & dashboards** | **Module 14 (Documents) + DLMS** | **[ ]** |
 | **IUID barcode marking & DoD registry** | **Module 15 (Shipping) + DLMS** | **[ ]** |
-| **Configurable number sequences per tenant** | **Foundation (Stage 0.5)** | **[ ]** |
+| **Configurable number sequences per tenant** | **Foundation (Stage 0.5)** | **[x]** |
 
 ---
 

@@ -60,6 +60,7 @@ builder.Services.AddSignalR();
 // Platform services
 builder.Services.AddScoped<ITenantService, TenantService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
 builder.Services.AddScoped<ToastService>();
 
 // Tenant services

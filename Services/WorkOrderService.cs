@@ -139,7 +139,7 @@ public class WorkOrderService : IWorkOrderService
             {
                 var hasJobs = await _db.Jobs.AnyAsync(j => j.WorkOrderLineId == line.Id);
                 if (!hasJobs)
-                    await GenerateJobsForLineAsync(line.Id, updatedBy);
+                    await GenerateJobForLineAsync(line.Id, updatedBy);
             }
         }
 
@@ -185,7 +185,7 @@ public class WorkOrderService : IWorkOrderService
 
     // --- Job Generation from Part Routing ---
 
-    public async Task<List<Job>> GenerateJobsForLineAsync(int workOrderLineId, string createdBy)
+    public async Task<Job> GenerateJobForLineAsync(int workOrderLineId, string createdBy)
     {
         var line = await _db.WorkOrderLines
             .Include(l => l.Part)
@@ -199,40 +199,40 @@ public class WorkOrderService : IWorkOrderService
             .ToListAsync();
 
         if (routing.Count == 0)
-            return new List<Job>();
+            throw new InvalidOperationException(
+                $"Part '{line.Part.PartNumber}' has no active routing. " +
+                "Add stage requirements in Parts → Edit before generating jobs.");
 
         // Build machine lookup: string MachineId → int Id
         var machineLookup = await _db.Machines
             .ToDictionaryAsync(m => m.MachineId, m => m.Id);
 
-        var jobs = new List<Job>();
-        Job? previousJob = null;
+        // Single job for the entire routing
+        var totalEstHours = routing.Sum(r =>
+            r.EstimatedHours ?? r.ProductionStage.DefaultDurationHours);
 
+        var job = new Job
+        {
+            JobNumber = await _numberSeq.NextAsync("Job"),
+            PartId = line.PartId,
+            WorkOrderLineId = line.Id,
+            PartNumber = line.Part.PartNumber,
+            SlsMaterial = line.Part.Material,
+            Quantity = line.Quantity,
+            EstimatedHours = totalEstHours,
+            Status = JobStatus.Draft,
+            Priority = JobPriority.Normal,
+            CreatedBy = createdBy,
+            LastModifiedBy = createdBy,
+            Notes = $"Auto-generated for {line.Part.PartNumber}"
+        };
+
+        _db.Jobs.Add(job);
+        await _db.SaveChangesAsync(); // Save to get job.Id
+
+        // Create all StageExecutions in one batch (no Save per iteration)
         foreach (var stage in routing)
         {
-            var estimatedHours = stage.EstimatedHours ?? stage.ProductionStage.DefaultDurationHours;
-            var job = new Job
-            {
-                JobNumber = await _numberSeq.NextAsync("Job"),
-                PartId = line.PartId,
-                WorkOrderLineId = line.Id,
-                PartNumber = line.Part.PartNumber,
-                SlsMaterial = line.Part.Material,
-                Quantity = line.Quantity,
-                EstimatedHours = estimatedHours,
-                MachineId = stage.AssignedMachineId,
-                Status = JobStatus.Draft,
-                Priority = JobPriority.Normal,
-                PredecessorJobId = previousJob?.Id,
-                CreatedBy = createdBy,
-                LastModifiedBy = createdBy,
-                Notes = $"Auto-generated for {line.Part.PartNumber} — Stage: {stage.ProductionStage.Name}"
-            };
-
-            _db.Jobs.Add(job);
-            await _db.SaveChangesAsync(); // Save to get Id for predecessor chain
-
-            // Resolve machine assignment
             int? machineIntId = null;
             if (!string.IsNullOrEmpty(stage.AssignedMachineId)
                 && machineLookup.TryGetValue(stage.AssignedMachineId, out var smid))
@@ -240,13 +240,12 @@ public class WorkOrderService : IWorkOrderService
                 machineIntId = smid;
             }
 
-            // Create stage execution for this job (no preset schedule — auto-scheduler assigns times)
-            var execution = new StageExecution
+            _db.StageExecutions.Add(new StageExecution
             {
                 JobId = job.Id,
                 ProductionStageId = stage.ProductionStageId,
                 SortOrder = stage.ExecutionOrder,
-                EstimatedHours = estimatedHours,
+                EstimatedHours = stage.EstimatedHours ?? stage.ProductionStage.DefaultDurationHours,
                 EstimatedCost = stage.EstimatedCost,
                 MaterialCost = stage.MaterialCost,
                 SetupHours = stage.SetupTimeMinutes.HasValue ? stage.SetupTimeMinutes.Value / 60.0 : null,
@@ -254,22 +253,18 @@ public class WorkOrderService : IWorkOrderService
                 MachineId = machineIntId,
                 CreatedBy = createdBy,
                 LastModifiedBy = createdBy
-            };
-
-            _db.StageExecutions.Add(execution);
-            await _db.SaveChangesAsync();
-
-            // Auto-schedule: assign optimal machine and non-overlapping time slot
-            await _scheduler.AutoScheduleJobAsync(job.Id, previousJob?.ScheduledEnd);
-
-            // Reload to get updated schedule times from auto-scheduler
-            await _db.Entry(job).ReloadAsync();
-
-            jobs.Add(job);
-            previousJob = job;
+            });
         }
 
-        return jobs;
+        await _db.SaveChangesAsync(); // Single batch save for all stages
+
+        // Auto-schedule: assign optimal machines and non-overlapping time slots
+        await _scheduler.AutoScheduleJobAsync(job.Id);
+
+        // Reload to get updated schedule times from auto-scheduler
+        await _db.Entry(job).ReloadAsync();
+
+        return job;
     }
 
     public async Task<Job?> GetJobDetailAsync(int jobId)

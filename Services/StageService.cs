@@ -526,7 +526,9 @@ public class StageService : IStageService
             .Where(e => e.MachineId != null
                 && e.Status != StageExecutionStatus.Completed
                 && e.Status != StageExecutionStatus.Skipped
-                && e.Status != StageExecutionStatus.Failed)
+                && e.Status != StageExecutionStatus.Failed
+                && e.ScheduledEndAt > from
+                && e.ScheduledStartAt < to)
             .ToListAsync();
 
         var totalDays = (to - from).TotalDays;
@@ -543,7 +545,9 @@ public class StageService : IStageService
                 {
                     if (shift.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
                     {
-                        availableHours += (shift.EndTime - shift.StartTime).TotalHours;
+                        var shiftHours = (shift.EndTime - shift.StartTime).TotalHours;
+                        if (shiftHours < 0) shiftHours += 24; // overnight shift
+                        availableHours += shiftHours;
                     }
                 }
             }

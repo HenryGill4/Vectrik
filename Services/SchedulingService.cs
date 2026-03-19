@@ -345,6 +345,8 @@ public class SchedulingService : ISchedulingService
             {
                 var shiftStart = checkDate + shift.StartTime;
                 var shiftEnd = checkDate + shift.EndTime;
+                if (shift.EndTime <= shift.StartTime)
+                    shiftEnd = shiftEnd.AddDays(1); // overnight shift
 
                 // If we're before this shift ends, we can use it
                 if (from <= shiftEnd)
@@ -381,6 +383,8 @@ public class SchedulingService : ISchedulingService
 
                 var shiftStart = checkDate + shift.StartTime;
                 var shiftEnd = checkDate + shift.EndTime;
+                if (shift.EndTime <= shift.StartTime)
+                    shiftEnd = shiftEnd.AddDays(1); // overnight shift
 
                 if (current >= shiftEnd) continue; // past this shift
 

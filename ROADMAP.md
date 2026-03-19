@@ -1,8 +1,8 @@
 # OpCentrix V3 — Unified Implementation Roadmap
 
 > **Created**: 2026-03-17
-> **Updated**: 2026-03-19 — Added work-chunk execution system, collapsed completed stages.
-> **Status**: IN PROGRESS — Phase 1A H6 (Cross-Cutting Wiring) + Phase 1D (Part System & Build Plate)
+> **Updated**: 2026-03-19 — Synced roadmap checkboxes with completed chunks 01-13.
+> **Status**: IN PROGRESS — Phase 1C (FAIR Forms, CHUNK-14 next)
 > **Purpose**: Single source of truth for ALL implementation work.
 >
 > **Execution system**: See `docs/chunks/QUEUE.md` for the ordered work queue.
@@ -76,21 +76,21 @@ PHASE 1A — HARDENING (Production-readiness for existing code)
 ├── Stage H3: Shop Floor & Scheduling Hardening        [COMPLETE]
 ├── Stage H4: Quality & Inventory Hardening            [COMPLETE]
 ├── Stage H5: Analytics, Builds & Tracking Hardening   [COMPLETE]
-├── Stage H6: Cross-Cutting Wiring (Feature flags,     [NOT STARTED]  ← RESUME HERE
+├── Stage H6: Cross-Cutting Wiring (Feature flags,     [COMPLETE]
 │             custom fields, numbering, workflows)
 
-PHASE 1D — PART SYSTEM & BUILD PLATE ★ NEW ★
-├── Stage PI: Part System Integration (Material FK,    [NOT STARTED]
+PHASE 1D — PART SYSTEM & BUILD PLATE
+├── Stage PI: Part System Integration (Material FK,    [COMPLETE]
 │             PricingEngine, BOM, cleanup)
-├── Stage BP: SLS Build Plate Multi-Part Flow          [NOT STARTED]
+├── Stage BP: SLS Build Plate Multi-Part Flow          [COMPLETE]
 │             (Build-level stages, revision control,
 │              slice-derived durations, part separation)
 
 PHASE 1B — MISSING PHASE 1 MODULE
-├── Stage 5:  Visual Work Instructions (Module 03)     [NOT STARTED]
+├── Stage 5:  Visual Work Instructions (Module 03)     [COMPLETE]
 
 PHASE 1C — FAIR & DLMS FOUNDATION
-├── Stage 6F: AS9102 FAIR Forms (Module 05 extension)  [NOT STARTED]
+├── Stage 6F: AS9102 FAIR Forms (Module 05 extension)  [NOT STARTED]  ← RESUME HERE
 
 PHASE 2 — OPERATIONAL DEPTH
 ├── Stage 9:  Job Costing & Financial (Module 09)      [NOT STARTED]
@@ -151,73 +151,39 @@ linked. Stacking efficiency (H5.9) deferred.
 
 ---
 
-### Stage H6 — Cross-Cutting Wiring
-**Duration**: 2–3 days | **Prereqs**: H1–H5
-
-Wire the customization infrastructure (feature flags, custom fields, numbering,
-workflows, document templates) into all existing pages.
-
-#### Feature Flags
-- [x] H6.1 — Wrap every nav section in `NavMenu.razor` with `ITenantFeatureService.IsEnabled()` checks
-- [x] H6.2 — Add "Module not enabled" guard page for every feature area (Inventory, Quality, Builds, etc.)
-- [x] H6.3 — Gate DLMS-specific UI fields behind `Features.IsEnabled("dlms")`
-- [x] H6.4 — Gate SLS-specific features (Builds, stacking) behind `Features.IsEnabled("sls")`
-
-#### Custom Fields
-- [x] H6.5 — Add `CustomFieldsEditor` to Quote create/edit forms
-- [x] H6.6 — Add `CustomFieldsEditor` to Work Order create/edit forms
-- [x] H6.7 — Add `CustomFieldsEditor` to Part create/edit forms (admin)
-- [x] H6.8 — Add `CustomFieldsEditor` to NCR create form
-- [x] H6.9 — Add `CustomFieldsEditor` to Inventory Item create/edit form
-- [x] H6.10 — Display custom field values on detail/read pages
-
-#### Number Sequences
-- [x] H6.11 — Wire `INumberSequenceService.NextAsync("Quote")` into quote creation
-- [x] H6.12 — Wire `INumberSequenceService.NextAsync("WorkOrder")` into WO creation
-- [x] H6.13 — Wire `INumberSequenceService.NextAsync("NCR")` into NCR creation
-- [x] H6.14 — Wire `INumberSequenceService.NextAsync("Job")` into job generation
-
-#### Document Templates
-- [x] H6.15 — Create default quote PDF template
-- [x] H6.16 — Wire "Print/Export" button on quote detail page
-- [x] H6.17 — Create default work order traveler template
-- [x] H6.18 — Wire "Print Traveler" button on WO detail page
-
-#### Workflow Engine
-- [x] H6.19 — Wire WO release to workflow approval (when workflow defined)
-- [x] H6.20 — Wire quote approval to workflow (when workflow defined)
-- [x] H6.21 — Wire NCR disposition to workflow approval (when workflow defined)
-- [x] H6.22 — Build `/admin/workflows` page for configuring approval chains
+### Stage H6 — Cross-Cutting Wiring ✅
+**Status**: COMPLETE — Feature flags, custom fields, number sequences, document
+templates, and workflow engine all wired into existing pages (Chunks 01-05).
 
 ---
 
 ## PHASE 1D: PART SYSTEM & BUILD PLATE FLOW
 
-> **Why now**: The Part model has 12 known disconnects (material FK, pricing engine,
+> **Why now**: The Part model had 12 known disconnects (material FK, pricing engine,
 > BOM) and the SLS build plate flow is the core differentiator vs ProShop ERP.
-> Fixing these before adding new modules prevents compounding technical debt.
+> These were fixed before adding new modules to prevent compounding technical debt.
 >
 > **Absorbed from**: `docs/PART-SYSTEM-INTEGRATION-PLAN.md` (Phases A-E)
 
 ---
 
-### Stage PI — Part System Integration
-**Duration**: 3–5 sessions | **Prereqs**: H1–H5 complete
+### Stage PI — Part System Integration ✅
+**Status**: COMPLETE — All 12 disconnects resolved (Chunks 06-07).
 
 Fix the 12 disconnects between the Part model and the rest of the system.
 
 #### PI-A: Part ↔ Material FK (data integrity)
-- [ ] PI.1 — `Part.MaterialId` (int?) FK and `MaterialEntity` nav property already exist — verify migration applied
-- [ ] PI.2 — Update `TenantDbContext.OnModelCreating` with FK relationship config
+- [x] PI.1 — `Part.MaterialId` (int?) FK and `MaterialEntity` nav property already exist — verify migration applied
+- [x] PI.2 — Update `TenantDbContext.OnModelCreating` with FK relationship config
 - [x] PI.3 — Fix `PricingEngineService` to use FK instead of string match, use `PartStageRequirement` overrides (EstimatedHours, HourlyRateOverride, MaterialCost)
-- [ ] PI.4 — Update `Parts/Edit.razor` material dropdown to sync both `MaterialId` + `Material` string
-- [ ] PI.5 — Update `PartService` queries to `.Include(p => p.MaterialEntity)`
+- [x] PI.4 — Update `Parts/Edit.razor` material dropdown to sync both `MaterialId` + `Material` string
+- [x] PI.5 — Update `PartService` queries to `.Include(p => p.MaterialEntity)`
 - [x] PI.6 — Backfill `MaterialId` from `Material` string in `DataSeedingService`
 
 #### PI-B: PricingEngine + Quote Accuracy
-- [ ] PI.7 — Rewrite `PricingEngineService.CalculatePartCostAsync` to use `PartStageRequirement` data (EstimatedHours, HourlyRateOverride, SetupTimeMinutes, MaterialCost)
-- [ ] PI.8 — Add `StageMaterialCost` + `SetupCost` fields to `PricingBreakdown`
-- [ ] PI.9 — Verify `QuoteService.CalculateEstimatedCostAsync` uses corrected engine
+- [x] PI.7 — Rewrite `PricingEngineService.CalculatePartCostAsync` to use `PartStageRequirement` data (EstimatedHours, HourlyRateOverride, SetupTimeMinutes, MaterialCost)
+- [x] PI.8 — Add `StageMaterialCost` + `SetupCost` fields to `PricingBreakdown`
+- [x] PI.9 — Verify `QuoteService.CalculateEstimatedCostAsync` uses corrected engine
 
 #### PI-C: Cleanup + Audit Fixes
 - [x] PI.10 — Mark `Part.RequiredStages` as `[Obsolete]`, remove `[Required]` (already done — verify)
@@ -226,20 +192,21 @@ Fix the 12 disconnects between the Part model and the rest of the system.
 - [x] PI.13 — Set `Job.SlsMaterial` from `Part.Material` during job generation in `WorkOrderService`
 
 #### PI-D: Downstream Usage + Part Cloning
-- [ ] PI.14 — Add "Usage" tab to `Parts/Detail.razor` (active WOs, Jobs, Quotes, NCRs)
-- [ ] PI.15 — Add `GetPartUsageSummaryAsync` to `IPartService` + `PartService`
-- [ ] PI.16 — Add `ClonePartAsync` to `IPartService` + `PartService` (deep-copy routing, not history)
-- [ ] PI.17 — Add Clone button + modal to `Parts/Detail.razor`
+- [x] PI.14 — Add "Usage" tab to `Parts/Detail.razor` (active WOs, Jobs, Quotes, NCRs)
+- [x] PI.15 — Add `GetPartUsageSummaryAsync` to `IPartService` + `PartService`
+- [x] PI.16 — Add `ClonePartAsync` to `IPartService` + `PartService` (deep-copy routing, not history)
+- [x] PI.17 — Add Clone button + modal to `Parts/Detail.razor`
 
 #### PI-E: Part ↔ Inventory BOM
-- [ ] PI.18 — `PartBomItem` model already exists — verify migration applied
-- [ ] PI.19 — Add BOM tab to `Parts/Edit.razor` (add inventory items/materials, qty per unit)
-- [ ] PI.20 — Update `MaterialPlanningService` to check BOM on WO release
+- [x] PI.18 — `PartBomItem` model already exists — verify migration applied
+- [x] PI.19 — Add BOM tab to `Parts/Edit.razor` (add inventory items/materials, qty per unit)
+- [x] PI.20 — Update `MaterialPlanningService` to check BOM on WO release
 
 ---
 
-### Stage BP — SLS Build Plate Multi-Part Flow
-**Duration**: 5–8 sessions | **Prereqs**: Stage PI complete
+### Stage BP — SLS Build Plate Multi-Part Flow ✅
+**Status**: COMPLETE — Build-level stages, revision control, slice-derived durations,
+part separation, scheduling/cost integration all implemented (Chunks 08-11).
 
 > **The manufacturing reality**: In SLS, multiple different parts from different
 > work orders are packed onto one build plate. The build plate moves as a unit
@@ -370,8 +337,9 @@ After Stage BP is complete, verify:
 
 ## PHASE 1B: MISSING PHASE 1 MODULE
 
-### Stage 5 — Visual Work Instructions (Module 03)
-**Duration**: 1–2 weeks | **Prereqs**: Stage H3 (Shop Floor hardened)
+### Stage 5 — Visual Work Instructions (Module 03) ✅
+**Status**: COMPLETE — Models, service, admin pages, operator viewer, feedback system,
+shop floor banners, and nav links all implemented (Chunks 12-13).
 **Plan file**: `docs/phase-1/MODULE-03-visual-work-instructions.md`
 
 | Step | Description |

@@ -5,8 +5,16 @@
 @inject ToastService Toast
 @inject ITenantFeatureService Features
 @rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>Build Planning - OpCentrix</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }
+    </Authorized>
+</AuthorizeView>
 
 <FeatureGate Feature="sls" ModuleName="SLS Build Planning">
 
@@ -189,6 +197,7 @@ else
 </FeatureGate>
 
 @code {
+    private string _currentUser = "System";
     private List<BuildPackage>? _packages;
     private List<Machine>? _machines;
     private List<Part>? _parts;
@@ -238,8 +247,8 @@ else
                 Material = _newMaterial,
                 EstimatedDurationHours = _newDuration,
                 Notes = _newNotes,
-                CreatedBy = "System",
-                LastModifiedBy = "System"
+                CreatedBy = _currentUser,
+                LastModifiedBy = _currentUser
             });
             _showCreate = false;
             Toast.ShowSuccess("Build package created.");
@@ -291,7 +300,7 @@ else
         try
         {
             pkg.Status = newStatus;
-            pkg.LastModifiedBy = "System";
+            pkg.LastModifiedBy = _currentUser;
             pkg.LastModifiedDate = DateTime.UtcNow;
             await BuildPlanningService.UpdatePackageAsync(pkg);
             Toast.ShowSuccess($"Package → {newStatus}");

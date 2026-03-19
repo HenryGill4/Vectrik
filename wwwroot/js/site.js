@@ -3,8 +3,42 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/js/service-worker.js').catch(() => { });
 }
 
-// Print rendered HTML in a new window
+// ── Theme management ──
 window.opcentrix = window.opcentrix || {};
+
+window.opcentrix.setTheme = function (theme) {
+    try { localStorage.setItem('opcentrix-theme', theme); } catch (e) { }
+    var effective = theme;
+    if (theme === 'system') {
+        effective = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', effective);
+};
+
+window.opcentrix.getTheme = function () {
+    try {
+        var saved = localStorage.getItem('opcentrix-theme');
+        if (saved) return saved;
+    } catch (e) { }
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+};
+
+window.opcentrix.resolveSystemTheme = function () {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+};
+
+// Listen for OS theme changes when set to "system"
+try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+        var saved = localStorage.getItem('opcentrix-theme');
+        if (saved === 'system') {
+            var effective = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', effective);
+        }
+    });
+} catch (e) { }
+
+// Print rendered HTML in a new window
 window.opcentrix.printHtml = function (html, title) {
     var win = window.open('', '_blank', 'width=900,height=700');
     win.document.write('<!DOCTYPE html><html><head><title>' + (title || 'Print') + '</title>');

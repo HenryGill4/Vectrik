@@ -362,7 +362,7 @@ public class BuildPlanningService : IBuildPlanningService
                     LastModifiedDate = DateTime.UtcNow
                 };
                 _db.Jobs.Add(job);
-                await _db.SaveChangesAsync();
+                await _db.SaveChangesAsync(); // Need ID for stage executions
 
                 var sortOrder = 0;
                 foreach (var req in partStages)

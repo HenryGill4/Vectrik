@@ -1,7 +1,17 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 
 <head>
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('opcentrix-theme');
+                if (!t) t = 'dark';
+                if (t === 'system') t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', t);
+            } catch (e) { }
+        })();
+    </script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
@@ -11,7 +21,8 @@
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Opcentrix-V3.styles.css"]" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#3B82F6" />
+    <meta name="theme-color" content="#2563EB" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#3B82F6" media="(prefers-color-scheme: dark)" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet />

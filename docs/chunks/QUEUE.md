@@ -43,11 +43,8 @@
 
 ## Notes
 
-- **H6 and PI/BP can run in parallel** — H6 is cross-cutting wiring for existing
-  pages, while PI/BP is new build plate functionality. Neither blocks the other.
-- **Chunks 01-05** wire infrastructure that already exists (services built) into
-  pages. These are mostly UI integration work.
-- **Chunk 06** is a prerequisite for the build plate work because it fixes the
-  Part editing foundation (removes DbContext violations, enables in-memory create).
-- **Phase 2+ chunks** will be created when Phase 1 is complete. The module plan
+- **Chunks 01–13 are COMPLETE** — do NOT re-read those chunk files unless
+  debugging a specific feature they built. They are historical records only.
+- **Phase 2+ chunks** will be created when Phase 1C is complete. The module plan
   files in `docs/phase-2/MODULE-XX-*.md` have the detail for those.
+- See `ROADMAP.md` for the full stage map and project status.
