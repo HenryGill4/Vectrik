@@ -9,6 +9,7 @@
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Text.Json
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>@(_part?.Name ?? "Part Detail") - OpCentrix</PageTitle>
 
@@ -510,11 +511,13 @@ else
 
 @code {
     [Parameter] public int Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
     private bool _loading = true;
     private Part? _part;
     private string _tab = "overview";
     private bool _showDlms;
+    private string _userName = "System";
     private ConfirmDialog _confirm = null!;
 
     // Drawings
@@ -549,6 +552,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _userName = state.User?.FindFirst("FullName")?.Value
+                ?? state.User?.Identity?.Name ?? "System";
+        }
         _showDlms = Features.IsEnabled("dlms");
         _part = await PartService.GetPartDetailAsync(Id);
         _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Part");
@@ -577,17 +586,18 @@ else
 
         try
         {
+            var uploadCount = _uploadFiles.Count;
             foreach (var file in _uploadFiles)
             {
                 using var stream = file.OpenReadStream(50 * 1024 * 1024);
-                await FileService.UploadDrawingAsync(_part.Id, file.Name, stream, file.Size, _part.LastModifiedBy, _uploadDescription, _uploadRevision);
+                await FileService.UploadDrawingAsync(_part.Id, file.Name, stream, file.Size, _userName, _uploadDescription, _uploadRevision);
             }
             _drawings = await FileService.GetDrawingsAsync(_part.Id);
             _showUpload = false;
             _uploadFiles = new List<Microsoft.AspNetCore.Components.Forms.IBrowserFile>();
             _uploadDescription = null;
             _uploadRevision = null;
-            Toast.ShowSuccess($"Uploaded {_uploadFiles.Count} file(s)");
+            Toast.ShowSuccess($"Uploaded {uploadCount} file(s)");
         }
         catch (Exception ex)
         {
@@ -627,7 +637,7 @@ else
         if (string.IsNullOrWhiteSpace(_newRevision) || _part == null) return;
         try
         {
-            await PartService.BumpRevisionAsync(_part.Id, _newRevision, _revisionDescription, _part.LastModifiedBy);
+            await PartService.BumpRevisionAsync(_part.Id, _newRevision, _revisionDescription, _userName);
             _part = await PartService.GetPartDetailAsync(Id);
             _showRevisionModal = false;
             Toast.ShowSuccess($"Revision bumped to {_newRevision}");
@@ -641,7 +651,7 @@ else
     // Note methods
     private void NewNote()
     {
-        _editNote = new PartNote { PartId = Id, CreatedBy = _part?.LastModifiedBy ?? "" };
+        _editNote = new PartNote { PartId = Id, CreatedBy = _userName };
         _showNoteModal = true;
     }
 
@@ -662,7 +672,7 @@ else
             }
             else
             {
-                _editNote.LastModifiedBy = _part?.LastModifiedBy;
+                _editNote.LastModifiedBy = _userName;
                 await PartService.UpdateNoteAsync(_editNote);
             }
             _part = await PartService.GetPartDetailAsync(Id);
@@ -715,7 +725,7 @@ else
         _cloning = true;
         try
         {
-            var cloned = await PartService.ClonePartAsync(_part.Id, _clonePartNumber, _part.LastModifiedBy);
+            var cloned = await PartService.ClonePartAsync(_part.Id, _clonePartNumber, _userName);
             _showCloneModal = false;
             Toast.ShowSuccess($"Part cloned as {cloned.PartNumber}");
             Nav.NavigateTo($"/parts/{cloned.Id}");

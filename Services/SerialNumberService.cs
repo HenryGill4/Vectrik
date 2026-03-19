@@ -43,7 +43,7 @@ public class SerialNumberService : ISerialNumberService
         return $"{pattern}{nextNumber:D5}";
     }
 
-    public async Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy)
+    public async Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy, int? buildPackageId = null)
     {
         var instances = new List<PartInstance>();
 
@@ -56,6 +56,7 @@ public class SerialNumberService : ISerialNumberService
                 SerialNumber = serialNumber,
                 WorkOrderLineId = workOrderLineId,
                 PartId = partId,
+                BuildPackageId = buildPackageId,
                 Status = PartInstanceStatus.InProcess,
                 CreatedDate = DateTime.UtcNow,
                 CreatedBy = createdBy,

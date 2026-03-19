@@ -1,14 +1,58 @@
-@* Wire EDM - Rich built-in stage partial *@
+@* Wire EDM - Rich built-in stage partial with build-level context *@
 @using Opcentrix_V3.Models
+@using Opcentrix_V3.Services
+@inject IBuildPlanningService BuildPlanningService
 
 <WorkInstructionBanner PartId="Execution?.Job?.Part?.Id" StageId="Stage?.Id" />
 
-<div class="card" style="margin-bottom: 16px;">
-    <div class="card-header">⚡ Wire EDM Details</div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
-        <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
-        <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? Execution?.Job?.MachineId ?? "—")</div></div>
+@if (_buildPackage != null)
+{
+    @* ── Build-Level Mode ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">📦 Build Plate: @_buildPackage.Name — Wire EDM</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? "—")</div></div>
+            <div><span class="form-label">Material</span><div>@(_buildPackage.Material ?? "—")</div></div>
+            <div><span class="form-label">Total Parts</span><div>@_buildPackage.TotalPartCount (@_buildPackage.UniquePartCount unique)</div></div>
+            <div><span class="form-label">Status</span><div>@_buildPackage.Status</div></div>
+        </div>
+
+        @* Parts to Separate *@
+        <div class="form-label" style="margin-bottom: 4px;">Parts on Build Plate</div>
+        <table class="data-table" style="font-size: 0.85rem; margin-bottom: 12px;">
+            <thead><tr><th>Part #</th><th>Name</th><th>Qty</th><th>WO #</th></tr></thead>
+            <tbody>
+                @foreach (var pp in _buildPackage.Parts)
+                {
+                    <tr>
+                        <td>@(pp.Part?.PartNumber ?? "—")</td>
+                        <td>@(pp.Part?.Name ?? "—")</td>
+                        <td>@pp.Quantity</td>
+                        <td>@(pp.WorkOrderLine?.WorkOrder?.OrderNumber ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="alert alert-info" style="margin-bottom: 0; font-size: 0.85rem;">
+            ✂️ When EDM is complete, use the <strong>Complete</strong> button above — you will be prompted to confirm part separation.
+        </div>
     </div>
+}
+else
+{
+    @* ── Single-Part Mode (backward compatible) ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">⚡ Wire EDM Details</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+            <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
+            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? Execution?.Job?.MachineId ?? "—")</div></div>
+        </div>
+    </div>
+}
+
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">⚡ EDM Parameters</div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
         <div class="form-group"><label class="form-label">Cut Duration (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" /></div>
         <div class="form-group"><label class="form-label">Wire Used (m)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" min="0" /></div>
@@ -24,5 +68,18 @@
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
 
+    private BuildPackage? _buildPackage;
     private string _operatorName => Execution?.OperatorName ?? "Operator";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Execution?.BuildPackageId != null)
+        {
+            _buildPackage = await BuildPlanningService.GetPackageByIdAsync(Execution.BuildPackageId.Value);
+        }
+        else
+        {
+            _buildPackage = null;
+        }
+    }
 }

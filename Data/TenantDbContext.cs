@@ -391,6 +391,9 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.CurrentStage)
                 .WithMany()
                 .HasForeignKey(e => e.CurrentStageId);
+            entity.HasOne(e => e.BuildPackage)
+                .WithMany()
+                .HasForeignKey(e => e.BuildPackageId);
         });
 
         // PartInstanceStageLog

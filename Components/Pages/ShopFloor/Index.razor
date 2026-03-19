@@ -45,7 +45,16 @@
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px;">
                         <div>
                             <span class="form-label">Part</span>
-                            <div style="font-weight: 600;">@(_currentExecution.Job?.Part?.PartNumber ?? "—")</div>
+                            <div style="font-weight: 600;">
+                                @if (_currentExecution.BuildPackageId != null && _currentExecution.ProductionStage?.IsBuildLevelStage == true)
+                                {
+                                    <span>📦 @(_currentExecution.BuildPackage?.Name ?? $"Build #{_currentExecution.BuildPackageId}")</span>
+                                }
+                                else
+                                {
+                                    @(_currentExecution.Job?.Part?.PartNumber ?? "—")
+                                }
+                            </div>
                         </div>
                         <div>
                             <span class="form-label">Stage</span>
@@ -133,7 +142,16 @@
                             @foreach (var exec in _myQueue)
                             {
                                 <tr>
-                                    <td>@(exec.Job?.Part?.PartNumber ?? "—")</td>
+                                    <td>
+                                        @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                        {
+                                            <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
+                                        }
+                                        else
+                                        {
+                                            @(exec.Job?.Part?.PartNumber ?? "—")
+                                        }
+                                    </td>
                                     <td>@(exec.ProductionStage?.Name ?? "—")</td>
                                     <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
                                     <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
@@ -168,7 +186,16 @@
                             @foreach (var exec in _availableWork)
                             {
                                 <tr>
-                                    <td>@(exec.Job?.Part?.PartNumber ?? "—")</td>
+                                    <td>
+                                        @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                        {
+                                            <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
+                                        }
+                                        else
+                                        {
+                                            @(exec.Job?.Part?.PartNumber ?? "—")
+                                        }
+                                    </td>
                                     <td>@(exec.ProductionStage?.Name ?? "—")</td>
                                     <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
                                     <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
@@ -388,7 +415,8 @@
                 if (ok.WorkOrderLineId.HasValue)
                 {
                     await SerialNumberService.AssignSerialNumbersAsync(
-                        ok.WorkOrderLineId.Value, ok.PartId, ok.Quantity, _currentUserName);
+                        ok.WorkOrderLineId.Value, ok.PartId, ok.Quantity, _currentUserName,
+                        buildPackageId: result.BuildPackageId);
                 }
             }
 
