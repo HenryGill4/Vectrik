@@ -1,6 +1,8 @@
 @page "/tracking"
 @inject IPartTrackerService TrackerService
+@inject ToastService Toast
 @rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>Part Tracker - OpCentrix</PageTitle>
 
@@ -23,12 +25,29 @@
             <input id="trackingSearch" class="form-control" style="width:100%" placeholder="@(_scanMode ? "Scan barcode..." : "Search...")"
                    @bind="_searchTerm" @onkeypress="HandleKey" @ref="_searchInput" />
         </div>
-        <button class="btn btn-primary" @onclick="Search">Search</button>
+        <button class="btn btn-primary" @onclick="Search" disabled="@_searching">
+            @if (_searching) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+            Search
+        </button>
+        @if (_searched)
+        {
+            <button class="btn btn-sm btn-secondary" @onclick="ClearResults">Clear</button>
+        }
         <button class="btn btn-sm @(_scanMode ? "btn-accent" : "btn-secondary")" @onclick="ToggleScanMode" title="Toggle barcode scan mode">🔫</button>
     </div>
 </div>
 
-@if (_result != null && _result.Lines.Any())
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger" style="margin-bottom: 16px;">@_error</div>
+}
+
+@if (_searching)
+{
+    <div class="loading"><span class="spinner"></span> Searching...</div>
+}
+
+@if (!_searching && _result != null && _result.Lines.Any())
 {
     @foreach (var line in _result.Lines)
     {
@@ -59,7 +78,7 @@
     }
 }
 
-@if (_serialResult != null)
+@if (!_searching && _serialResult != null)
 {
     <div class="card">
         <div class="card-header">@_serialResult.SerialNumber — @_serialResult.PartNumber</div>
@@ -88,7 +107,7 @@
     </div>
 }
 
-@if (_searched && _result?.Lines.Count == 0 && _serialResult == null)
+@if (!_searching && _searched && _result?.Lines.Count == 0 && _serialResult == null)
 {
     <div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">No results found</div></div>
 }
@@ -98,6 +117,8 @@
     private PartTrackerResult? _result;
     private PartInstanceTrack? _serialResult;
     private bool _searched;
+    private bool _searching;
+    private string? _error;
     private bool _scanMode;
     private ElementReference _searchInput;
 
@@ -105,18 +126,40 @@
 
     private async Task Search()
     {
-        _result = null; _serialResult = null; _searched = true;
-        if (string.IsNullOrWhiteSpace(_searchTerm)) return;
-        switch (_searchType)
+        _result = null; _serialResult = null; _searched = true; _error = null;
+        if (string.IsNullOrWhiteSpace(_searchTerm)) { _error = "Please enter a search term."; return; }
+        _searching = true;
+        try
         {
-            case "wo": _result = await TrackerService.TrackByWorkOrderAsync(_searchTerm.Trim()); break;
-            case "part": _result = await TrackerService.TrackByPartNumberAsync(_searchTerm.Trim()); break;
-            case "serial": _serialResult = await TrackerService.TrackBySerialNumberAsync(_searchTerm.Trim()); break;
+            switch (_searchType)
+            {
+                case "wo": _result = await TrackerService.TrackByWorkOrderAsync(_searchTerm.Trim()); break;
+                case "part": _result = await TrackerService.TrackByPartNumberAsync(_searchTerm.Trim()); break;
+                case "serial": _serialResult = await TrackerService.TrackBySerialNumberAsync(_searchTerm.Trim()); break;
+            }
+            if (_scanMode) { _searchTerm = ""; }
         }
-        if (_scanMode) { _searchTerm = ""; }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Search failed: {ex.Message}");
+            _error = $"Search failed: {ex.Message}";
+        }
+        finally
+        {
+            _searching = false;
+        }
     }
 
-    private async Task ToggleScanMode()
+    private void ClearResults()
+    {
+        _result = null;
+        _serialResult = null;
+        _searched = false;
+        _error = null;
+        _searchTerm = "";
+    }
+
+    private void ToggleScanMode()
     {
         _scanMode = !_scanMode;
         if (_scanMode) { _searchType = "serial"; }

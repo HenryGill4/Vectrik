@@ -47,23 +47,23 @@ else
                     <span class="badge badge-@pkg.Status.ToString().ToLower()">@pkg.Status</span>
                     @if (pkg.Status == BuildPackageStatus.Draft)
                     {
-                        <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Ready)" title="Mark Ready">✓ Ready</button>
+                        <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Ready)" title="Mark Ready" disabled="@_processing">✓ Ready</button>
                     }
                     else if (pkg.Status == BuildPackageStatus.Ready)
                     {
-                        <button class="btn btn-sm btn-primary" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Scheduled)" title="Schedule">📅 Schedule</button>
+                        <button class="btn btn-sm btn-primary" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Scheduled)" title="Schedule" disabled="@_processing">📅 Schedule</button>
                     }
                     else if (pkg.Status == BuildPackageStatus.Scheduled)
                     {
-                        <button class="btn btn-sm btn-warning" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.InProgress)" title="Start Build">▶️ Start</button>
+                        <button class="btn btn-sm btn-warning" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.InProgress)" title="Start Build" disabled="@_processing">▶️ Start</button>
                     }
                     else if (pkg.Status == BuildPackageStatus.InProgress)
                     {
-                        <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Completed)" title="Complete">✅ Complete</button>
+                        <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Completed)" title="Complete" disabled="@_processing">✅ Complete</button>
                     }
                     @if (pkg.Status != BuildPackageStatus.Completed && pkg.Status != BuildPackageStatus.Cancelled)
                     {
-                        <button class="btn btn-sm btn-danger" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Cancelled)" title="Cancel">❌</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Cancelled)" title="Cancel" disabled="@_processing">❌</button>
                     }
                 </div>
             </div>
@@ -189,7 +189,10 @@ else
             <div class="form-group"><label class="form-label">Material</label><input class="form-control" @bind="_newMaterial" placeholder="e.g. Nylon PA12" /></div>
             <div class="form-group"><label class="form-label">Est. Duration (hours)</label><input class="form-control" type="number" step="0.5" min="0" @bind="_newDuration" /></div>
             <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" @bind="_newNotes"></textarea></div>
-            <button class="btn btn-primary" @onclick="Create">Create</button>
+            <button class="btn btn-primary" @onclick="Create" disabled="@_creating">
+                @if (_creating) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                Create
+            </button>
         </div>
     </div>
 }
@@ -203,6 +206,8 @@ else
     private List<Part>? _parts;
     private Dictionary<string, string> _machineNames = new();
     private bool _showCreate;
+    private bool _processing;
+    private bool _creating;
     private string _newName = "", _newMachineId = "", _newMaterial = "", _newNotes = "";
     private double? _newDuration;
     private string _statusFilter = "";
@@ -228,7 +233,7 @@ else
         _packages = await BuildPlanningService.GetAllPackagesAsync();
     }
 
-    private async Task ShowCreate()
+    private void ShowCreate()
     {
         _newName = ""; _newMachineId = ""; _newMaterial = ""; _newNotes = ""; _newDuration = null;
         _showCreate = true;
@@ -238,6 +243,7 @@ else
     {
         if (string.IsNullOrWhiteSpace(_newName)) { Toast.ShowError("Package name is required."); return; }
         if (string.IsNullOrWhiteSpace(_newMachineId)) { Toast.ShowError("Machine is required."); return; }
+        _creating = true;
         try
         {
             await BuildPlanningService.CreatePackageAsync(new BuildPackage
@@ -255,6 +261,7 @@ else
             await LoadPackages();
         }
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _creating = false; }
     }
 
     private async Task AddPartToPackage(int packageId)
@@ -297,6 +304,7 @@ else
         };
         var confirmed = await _confirmDialog.ShowAsync($"Are you sure you want to {label} \"{pkg.Name}\"?", "Confirm Status Change");
         if (!confirmed) return;
+        _processing = true;
         try
         {
             pkg.Status = newStatus;
@@ -307,6 +315,7 @@ else
             await LoadPackages();
         }
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _processing = false; }
     }
 
     private async Task ToggleRevisions(int packageId)

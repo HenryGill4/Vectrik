@@ -189,7 +189,11 @@ else
                 <span class="modal-title">📋 Scheduled Work — @_drillDownMachineName</span>
                 <button class="modal-close" @onclick="CloseDrillDown">&times;</button>
             </div>
-            @if (!_drillDownJobs.Any())
+            @if (_drillDownLoading)
+            {
+                <div class="loading"><span class="spinner"></span> Loading scheduled work...</div>
+            }
+            else if (!_drillDownJobs.Any())
             {
                 <div class="empty-state"><div class="empty-state-text">No scheduled jobs for this machine in the selected period.</div></div>
             }
@@ -250,6 +254,7 @@ else
     // Drill-down
     private List<StageExecution>? _drillDownJobs;
     private string _drillDownMachineName = "";
+    private bool _drillDownLoading;
 
     protected override async Task OnInitializedAsync()
     {
@@ -275,11 +280,11 @@ else
         _loading = false;
     }
 
-    private void SetRange(int days, string label)
+    private async Task SetRange(int days, string label)
     {
         _rangeLabel = label;
         _dateTo = _dateFrom.AddDays(days);
-        _ = LoadData();
+        await LoadData();
     }
 
     private string GetOeeColor(decimal oee) => oee switch
@@ -292,6 +297,8 @@ else
     private async Task DrillDown(int machineId, string machineName)
     {
         _drillDownMachineName = machineName;
+        _drillDownJobs = new();
+        _drillDownLoading = true;
         try
         {
             var all = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
@@ -300,6 +307,10 @@ else
         catch (Exception ex)
         {
             Toast.ShowError($"Error: {ex.Message}");
+        }
+        finally
+        {
+            _drillDownLoading = false;
         }
     }
 

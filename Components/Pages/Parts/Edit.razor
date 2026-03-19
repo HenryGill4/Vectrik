@@ -271,7 +271,7 @@
             }
 
                             <!-- BOM / Materials Tab -->
-            @if (_tab == "bom")
+                            @if (_tab == "bom")
             {
                 <div class="card">
                     <h3 class="card-title">Bill of Materials</h3>
@@ -341,7 +341,7 @@
             }
 
                             <!-- Stacking Tab (SLS feature-flagged) -->
-            @if (_tab == "stacking" && _showSlsFeatures)
+                            @if (_tab == "stacking" && _showSlsFeatures)
             {
                 <div class="card">
                     <h3 class="card-title">SLS Stacking Configuration</h3>
@@ -441,6 +441,8 @@
     </Authorized>
 </AuthorizeView>
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     [Parameter] public int Id { get; set; }
 
@@ -451,6 +453,7 @@
     private List<string> _validationErrors = new();
     private string _tab = "info";
     private string _currentUser = "System";
+    private ConfirmDialog _confirm = null!;
 
     // Feature flags
     private bool _showSlsFeatures;
@@ -539,10 +542,6 @@
         }
 
         _loading = false;
-    }
-
-    protected override async Task OnParametersSetAsync()
-    {
     }
 
     private void OnMaterialChanged(ChangeEventArgs e)
@@ -642,9 +641,12 @@
 
     private async Task RemoveStageReq(int id)
     {
+        var item = _stageReqs?.FirstOrDefault(r => r.ProductionStageId == id || r.Id == id);
+        var stageName = item?.ProductionStage?.Name ?? "this stage";
+        if (!await _confirm.ShowAsync($"Remove '{stageName}' from the routing?")) return;
+
         if (_isNew)
         {
-            var item = _stageReqs?.FirstOrDefault(r => r.ProductionStageId == id || r.Id == id);
             if (item != null) _stageReqs?.Remove(item);
         }
         else
@@ -677,7 +679,16 @@
         }
         r.LastModifiedBy = _currentUser;
         if (!_isNew)
-            await PartService.UpdateStageRequirementAsync(r);
+        {
+            try
+            {
+                await PartService.UpdateStageRequirementAsync(r);
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to save: {ex.Message}");
+            }
+        }
     }
 
     private async Task UpdateReqMachine(PartStageRequirement r, ChangeEventArgs e)
@@ -685,7 +696,16 @@
         r.AssignedMachineId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString();
         r.LastModifiedBy = _currentUser;
         if (!_isNew)
-            await PartService.UpdateStageRequirementAsync(r);
+        {
+            try
+            {
+                await PartService.UpdateStageRequirementAsync(r);
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to save: {ex.Message}");
+            }
+        }
     }
 
     private async Task UpdateReqRequired(PartStageRequirement r, ChangeEventArgs e)
@@ -693,7 +713,16 @@
         r.IsRequired = (bool)(e.Value ?? true);
         r.LastModifiedBy = _currentUser;
         if (!_isNew)
-            await PartService.UpdateStageRequirementAsync(r);
+        {
+            try
+            {
+                await PartService.UpdateStageRequirementAsync(r);
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to save: {ex.Message}");
+            }
+        }
     }
 
     private void OnCustomFieldsChanged(Dictionary<string, string> values)
@@ -735,6 +764,9 @@
 
     private async Task RemoveBomItem(PartBomItem item)
     {
+        var name = item.Material?.Name ?? $"Item #{item.Id}";
+        if (!await _confirm.ShowAsync($"Remove '{name}' from the BOM?")) return;
+
         if (_isNew)
         {
             _bomItems?.Remove(item);
@@ -752,8 +784,15 @@
     {
         if (!_isNew)
         {
-            item.LastModifiedDate = DateTime.UtcNow;
-            await PartService.UpdateBomItemAsync(item);
+            try
+            {
+                item.LastModifiedDate = DateTime.UtcNow;
+                await PartService.UpdateBomItemAsync(item);
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to save notes: {ex.Message}");
+            }
         }
     }
 

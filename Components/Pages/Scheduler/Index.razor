@@ -8,6 +8,7 @@
 @inject IJSRuntime JS
 @implements IDisposable
 @rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>Production Scheduler - OpCentrix</PageTitle>
@@ -873,7 +874,7 @@ else if (_viewMode == "table")
         _     => (TimeSpan.FromDays(14), TimeSpan.FromDays(1))
     };
 
-    private void SetZoom(string level)
+    private async Task SetZoom(string level)
     {
         _zoomLevel = level;
         var (range, slot) = GetZoomConfig();
@@ -893,30 +894,30 @@ else if (_viewMode == "table")
             }
         }
         _dateTo = _dateFrom.Add(range);
-        _ = LoadData();
+        await LoadData();
     }
 
-    private void ShiftBack()
+    private async Task ShiftBack()
     {
         var (range, _) = GetZoomConfig();
         var shift = TimeSpan.FromTicks(range.Ticks / 2);
         _dateFrom -= shift;
         if (IsDayLevel) _dateFrom = _dateFrom.Date;
         _dateTo = _dateFrom.Add(range);
-        _ = LoadData();
+        await LoadData();
     }
 
-    private void ShiftForward()
+    private async Task ShiftForward()
     {
         var (range, _) = GetZoomConfig();
         var shift = TimeSpan.FromTicks(range.Ticks / 2);
         _dateFrom += shift;
         if (IsDayLevel) _dateFrom = _dateFrom.Date;
         _dateTo = _dateFrom.Add(range);
-        _ = LoadData();
+        await LoadData();
     }
 
-    private void GoToNow()
+    private async Task GoToNow()
     {
         var (range, _) = GetZoomConfig();
         if (IsDayLevel)
@@ -928,7 +929,7 @@ else if (_viewMode == "table")
             _dateFrom = DateTime.UtcNow - TimeSpan.FromTicks(range.Ticks / 2);
         }
         _dateTo = _dateFrom.Add(range);
-        _ = LoadData();
+        await LoadData();
     }
 
     private string ZoomBtnClass(string level) => _zoomLevel == level ? "btn-primary" : "btn-secondary";

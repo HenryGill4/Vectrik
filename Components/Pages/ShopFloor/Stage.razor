@@ -45,7 +45,7 @@ else
                                 <td>#@exec.JobId</td>
                                 <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
                                 <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
-                                <td><button class="btn btn-sm btn-primary" @onclick="() => StartWork(exec.Id)">Start</button></td>
+                                <td><button class="btn btn-sm btn-primary" @onclick="() => StartWork(exec.Id)" disabled="@_actionInProgress">Start</button></td>
                             </tr>
                         }
                     </tbody>
@@ -78,8 +78,8 @@ else
                         }
                     </div>
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-success" @onclick="() => CompleteWork(exec.Id)">Complete</button>
-                        <button class="btn btn-danger btn-sm" @onclick="() => FailWork(exec.Id)">Fail</button>
+                        <button class="btn btn-success" @onclick="() => CompleteWork(exec.Id)" disabled="@_actionInProgress">Complete</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => FailWork(exec.Id)" disabled="@_actionInProgress">Fail</button>
                     </div>
                 </div>
             }
@@ -121,6 +121,7 @@ else
     private string _tab = "queue";
     private int _currentUserId;
     private string _currentUserName = "";
+    private bool _actionInProgress;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -138,6 +139,8 @@ else
 
     private async Task StartWork(int executionId)
     {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.StartStageExecutionAsync(executionId, _currentUserId, _currentUserName);
@@ -146,10 +149,13 @@ else
             _tab = "active";
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 
     private async Task CompleteWork(int executionId)
     {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.CompleteStageExecutionAsync(executionId);
@@ -157,10 +163,13 @@ else
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 
     private async Task FailWork(int executionId)
     {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
         try
         {
             await StageService.FailStageExecutionAsync(executionId, "Failed by operator");
@@ -168,5 +177,6 @@ else
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
     }
 }

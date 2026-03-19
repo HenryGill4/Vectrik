@@ -108,6 +108,8 @@ public class PartService : IPartService
             errors.Add("Part number is required.");
         if (string.IsNullOrWhiteSpace(part.Name))
             errors.Add("Part name is required.");
+        if (string.IsNullOrWhiteSpace(part.Material))
+            errors.Add("Material is required.");
 
         // Duplicate PartNumber check
         if (!string.IsNullOrWhiteSpace(part.PartNumber))

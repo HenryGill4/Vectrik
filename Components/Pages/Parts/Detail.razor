@@ -53,7 +53,12 @@ else
     <div class="tab-bar" style="margin-bottom: 16px;">
         <button class="tab @(_tab == "overview" ? "active" : "")" @onclick='() => _tab = "overview"'>Overview</button>
         <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_part.StageRequirements?.Count ?? 0))</button>
+        <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM (@(_bomItems?.Count ?? 0))</button>
         <button class="tab @(_tab == "drawings" ? "active" : "")" @onclick='() => _tab = "drawings"'>Drawings (@(_drawings?.Count ?? 0))</button>
+        @if (_showSlsFeatures && HasSlsConfig())
+        {
+            <button class="tab @(_tab == "sls" ? "active" : "")" @onclick='() => _tab = "sls"'>SLS Config</button>
+        }
         <button class="tab @(_tab == "revisions" ? "active" : "")" @onclick='() => _tab = "revisions"'>Revisions (@(_part.RevisionHistory?.Count ?? 0))</button>
         <button class="tab @(_tab == "notes" ? "active" : "")" @onclick='() => _tab = "notes"'>Notes (@(_part.Notes?.Count ?? 0))</button>
         <button class="tab @(_tab == "usage" ? "active" : "")" @onclick="LoadUsageTab">Usage</button>
@@ -153,7 +158,7 @@ else
                                 <td>@(sr.ProductionStage?.Department ?? "—")</td>
                                 <td>@(sr.EstimatedHours?.ToString("F1") ?? sr.ProductionStage?.DefaultDurationHours.ToString("F1") ?? "—")</td>
                                 <td>@(sr.SetupTimeMinutes?.ToString() ?? "—")</td>
-                                <td>@(sr.EstimatedCost > 0 ? sr.EstimatedCost.ToString("C") : "—")</td>
+                                <td>@(sr.CalculateTotalEstimatedCost() > 0 ? sr.CalculateTotalEstimatedCost().ToString("C") : "—")</td>
                                 <td>@(sr.MaterialCost > 0 ? sr.MaterialCost.ToString("C") : "—")</td>
                                 <td>@(sr.AssignedMachineId ?? "Any")</td>
                                 <td><span class="badge @(sr.IsRequired ? "badge-active" : "badge-info")">@(sr.IsRequired ? "Required" : "Optional")</span></td>
@@ -162,6 +167,102 @@ else
                     </tbody>
                 </table>
             }
+        </div>
+    }
+
+    <!-- BOM Tab -->
+    @if (_tab == "bom")
+    {
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 class="card-title" style="margin: 0;">Bill of Materials</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="GoToEdit">✏️ Edit BOM</button>
+            </div>
+            @if (_bomItems == null || !_bomItems.Any())
+            {
+                <div class="empty-state">
+                    <div class="empty-state-icon">📦</div>
+                    <div class="empty-state-text">No BOM items defined. Edit this part to add materials.</div>
+                </div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Material / Item</th>
+                            <th>Quantity</th>
+                            <th>UoM</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _bomItems)
+                        {
+                            <tr>
+                                <td>@item.SortOrder</td>
+                                <td style="font-weight: 600;">@(item.Material?.Name ?? item.InventoryItem?.Name ?? $"Item #{item.Id}")</td>
+                                <td>@item.QuantityRequired.ToString("F2")</td>
+                                <td>@item.UnitOfMeasure</td>
+                                <td style="color: var(--text-muted);">@(item.Notes ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div style="margin-top: 12px; padding: 10px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.85rem; color: var(--text-muted);">
+                    @_bomItems.Count item(s) · Total qty: @_bomItems.Sum(b => b.QuantityRequired).ToString("F2")
+                </div>
+            }
+        </div>
+    }
+
+    <!-- SLS Configuration Tab -->
+    @if (_tab == "sls" && _showSlsFeatures && HasSlsConfig())
+    {
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="card">
+                <h3 class="card-title">Stacking Configuration</h3>
+                <div class="detail-grid">
+                    <div class="detail-label">Allow Stacking</div><div class="detail-value">@(_part.AllowStacking ? "Yes" : "No")</div>
+                    <div class="detail-label">Max Stack Count</div><div class="detail-value">@_part.MaxStackCount</div>
+                    <div class="detail-label">Parts/Build (Single)</div><div class="detail-value">@_part.PartsPerBuildSingle</div>
+                    @if (_part.SingleStackDurationHours.HasValue)
+                    {
+                        <div class="detail-label">Single Stack Duration</div><div class="detail-value">@_part.SingleStackDurationHours.Value.ToString("F1") hrs</div>
+                    }
+                    @if (_part.EnableDoubleStack)
+                    {
+                        <div class="detail-label">Double Stack</div><div class="detail-value">Enabled — @(_part.PartsPerBuildDouble ?? 0) parts · @(_part.DoubleStackDurationHours?.ToString("F1") ?? "—") hrs</div>
+                    }
+                    @if (_part.EnableTripleStack)
+                    {
+                        <div class="detail-label">Triple Stack</div><div class="detail-value">Enabled — @(_part.PartsPerBuildTriple ?? 0) parts · @(_part.TripleStackDurationHours?.ToString("F1") ?? "—") hrs</div>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="card-title">Batch Stage Durations</h3>
+                <div class="detail-grid">
+                    @if (_part.SlsBuildDurationHours.HasValue)
+                    {
+                        <div class="detail-label">SLS Build</div><div class="detail-value">@_part.SlsBuildDurationHours.Value.ToString("F1") hrs (@(_part.SlsPartsPerBuild ?? 0) parts/build)</div>
+                    }
+                    @if (_part.DepowderingDurationHours.HasValue)
+                    {
+                        <div class="detail-label">Depowdering</div><div class="detail-value">@_part.DepowderingDurationHours.Value.ToString("F1") hrs (@(_part.DepowderingPartsPerBatch ?? 0) parts/batch)</div>
+                    }
+                    @if (_part.HeatTreatmentDurationHours.HasValue)
+                    {
+                        <div class="detail-label">Heat Treatment</div><div class="detail-value">@_part.HeatTreatmentDurationHours.Value.ToString("F1") hrs (@(_part.HeatTreatmentPartsPerBatch ?? 0) parts/batch)</div>
+                    }
+                    @if (!_part.SlsBuildDurationHours.HasValue && !_part.DepowderingDurationHours.HasValue && !_part.HeatTreatmentDurationHours.HasValue)
+                    {
+                        <div class="detail-label" style="grid-column: span 2;">No batch durations configured — defaults will be used.</div>
+                    }
+                </div>
+            </div>
         </div>
     }
 
@@ -446,7 +547,10 @@ else
     </ChildContent>
     <Footer>
         <button class="btn btn-secondary" @onclick="() => _showRevisionModal = false">Cancel</button>
-        <button class="btn btn-primary" @onclick="ConfirmRevisionBump">Bump Revision</button>
+        <button class="btn btn-primary" @onclick="ConfirmRevisionBump" disabled="@_bumpingRevision">
+            @if (_bumpingRevision) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+            Bump Revision
+        </button>
     </Footer>
 </AppModal>
 
@@ -517,8 +621,12 @@ else
     private Part? _part;
     private string _tab = "overview";
     private bool _showDlms;
+    private bool _showSlsFeatures;
     private string _userName = "System";
     private ConfirmDialog _confirm = null!;
+
+    // BOM
+    private List<PartBomItem>? _bomItems;
 
     // Drawings
     private List<PartDrawing> _drawings = new();
@@ -530,6 +638,7 @@ else
 
     // Revision bump
     private bool _showRevisionModal;
+    private bool _bumpingRevision;
     private string _newRevision = string.Empty;
     private string _revisionDescription = string.Empty;
 
@@ -559,11 +668,13 @@ else
                 ?? state.User?.Identity?.Name ?? "System";
         }
         _showDlms = Features.IsEnabled("dlms");
+        _showSlsFeatures = Features.IsEnabled("sls.stacking") || Features.IsEnabled("sls");
         _part = await PartService.GetPartDetailAsync(Id);
         _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Part");
         if (_part != null)
         {
             _drawings = await FileService.GetDrawingsAsync(Id);
+            _bomItems = await PartService.GetBomItemsAsync(Id);
             if (!string.IsNullOrEmpty(_part.CustomFieldValues))
             {
                 try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_part.CustomFieldValues) ?? new(); }
@@ -611,17 +722,31 @@ else
 
     private async Task SetPrimary(int drawingId)
     {
-        await FileService.SetPrimaryDrawingAsync(Id, drawingId);
-        _drawings = await FileService.GetDrawingsAsync(Id);
-        Toast.ShowSuccess("Primary drawing updated");
+        try
+        {
+            await FileService.SetPrimaryDrawingAsync(Id, drawingId);
+            _drawings = await FileService.GetDrawingsAsync(Id);
+            Toast.ShowSuccess("Primary drawing updated");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to set primary: {ex.Message}");
+        }
     }
 
     private async Task DeleteDrawing(PartDrawing drawing)
     {
         if (!await _confirm.ShowAsync($"Delete '{drawing.FileName}'?")) return;
-        await FileService.DeleteDrawingAsync(drawing.Id);
-        _drawings = await FileService.GetDrawingsAsync(Id);
-        Toast.ShowSuccess("Drawing deleted");
+        try
+        {
+            await FileService.DeleteDrawingAsync(drawing.Id);
+            _drawings = await FileService.GetDrawingsAsync(Id);
+            Toast.ShowSuccess("Drawing deleted");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to delete: {ex.Message}");
+        }
     }
 
     // Revision methods
@@ -634,7 +759,13 @@ else
 
     private async Task ConfirmRevisionBump()
     {
-        if (string.IsNullOrWhiteSpace(_newRevision) || _part == null) return;
+        if (_part == null) return;
+        if (string.IsNullOrWhiteSpace(_newRevision))
+        {
+            Toast.ShowError("New revision identifier is required.");
+            return;
+        }
+        _bumpingRevision = true;
         try
         {
             await PartService.BumpRevisionAsync(_part.Id, _newRevision, _revisionDescription, _userName);
@@ -645,6 +776,10 @@ else
         catch (Exception ex)
         {
             Toast.ShowError($"Failed: {ex.Message}");
+        }
+        finally
+        {
+            _bumpingRevision = false;
         }
     }
 
@@ -663,7 +798,12 @@ else
 
     private async Task SaveNote()
     {
-        if (_editNote == null || string.IsNullOrWhiteSpace(_editNote.Title)) return;
+        if (_editNote == null) return;
+        if (string.IsNullOrWhiteSpace(_editNote.Title))
+        {
+            Toast.ShowError("Note title is required.");
+            return;
+        }
         try
         {
             if (_editNote.Id == 0)
@@ -688,9 +828,16 @@ else
     private async Task DeleteNote(PartNote note)
     {
         if (!await _confirm.ShowAsync($"Delete note '{note.Title}'?")) return;
-        await PartService.DeleteNoteAsync(note.Id);
-        _part = await PartService.GetPartDetailAsync(Id);
-        Toast.ShowSuccess("Note deleted");
+        try
+        {
+            await PartService.DeleteNoteAsync(note.Id);
+            _part = await PartService.GetPartDetailAsync(Id);
+            Toast.ShowSuccess("Note deleted");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to delete note: {ex.Message}");
+        }
     }
 
     private static string FormatSize(long bytes) => bytes switch
@@ -720,7 +867,12 @@ else
 
     private async Task ConfirmClone()
     {
-        if (string.IsNullOrWhiteSpace(_clonePartNumber) || _part == null) return;
+        if (_part == null) return;
+        if (string.IsNullOrWhiteSpace(_clonePartNumber))
+        {
+            _cloneError = "Part number is required.";
+            return;
+        }
         _cloneError = null;
         _cloning = true;
         try
@@ -739,6 +891,14 @@ else
             _cloning = false;
         }
     }
+
+    private bool HasSlsConfig() =>
+        _part != null && (
+            _part.AllowStacking ||
+            _part.SlsBuildDurationHours.HasValue ||
+            _part.DepowderingDurationHours.HasValue ||
+            _part.HeatTreatmentDurationHours.HasValue ||
+            _part.ManufacturingApproach?.Contains("SLS", StringComparison.OrdinalIgnoreCase) == true);
 
     private void GoToEdit()
     {
