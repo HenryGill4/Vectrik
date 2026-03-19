@@ -1,0 +1,262 @@
+/* ── Debug Feedback FAB — scoped to DebugFab.razor ── */
+
+.dfab {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+/* ── Trigger button ── */
+.dfab-trigger {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-size: 1.5rem;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+    transition: transform 0.15s, background 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.dfab-trigger:hover {
+    transform: scale(1.08);
+}
+
+.dfab-trigger-on {
+    background: var(--danger, #ef4444);
+}
+
+/* ── Quick-pick menu ── */
+.dfab-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    animation: dfab-pop 0.15s ease;
+}
+
+.dfab-opt {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    white-space: nowrap;
+    text-align: left;
+    box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    transition: border-color 0.15s, transform 0.15s;
+}
+
+.dfab-opt:hover {
+    border-color: var(--accent);
+    transform: translateX(-4px);
+}
+
+/* ── Form panel ── */
+.dfab-panel {
+    width: 340px;
+    max-height: 80vh;
+    overflow-y: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.28);
+    animation: dfab-pop 0.15s ease;
+}
+
+.dfab-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.dfab-x {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.dfab-x:hover {
+    color: var(--text-primary);
+}
+
+.dfab-panel-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dfab-lbl {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.dfab-input {
+    width: 100%;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    padding: 10px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.dfab-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.dfab-ctx {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* ── Inline hint (style mode viewport/theme summary) ── */
+.dfab-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 4px 0;
+    letter-spacing: 0.02em;
+}
+
+/* ── Collapsible context section ── */
+.dfab-details {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.dfab-details-sum {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    background: var(--bg-primary);
+    user-select: none;
+    list-style: none;
+}
+
+.dfab-details-sum::marker,
+.dfab-details-sum::-webkit-details-marker {
+    display: none;
+}
+
+.dfab-details-sum::before {
+    content: "▸ ";
+}
+
+.dfab-details[open] > .dfab-details-sum::before {
+    content: "▾ ";
+}
+
+.dfab-details[open] > .dfab-details-sum {
+    border-bottom: 1px solid var(--border);
+}
+
+.dfab-details .dfab-ctx {
+    border: none;
+    border-radius: 0;
+}
+
+/* ── User agent text (long, needs wrapping) ── */
+.dfab-ua {
+    font-size: 0.72rem;
+    word-break: break-all;
+    line-height: 1.4;
+    opacity: 0.8;
+}
+
+/* ── Action buttons ── */
+.dfab-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.dfab-btn {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    transition: background 0.15s;
+}
+
+.dfab-btn-go {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+    flex: 1;
+}
+
+.dfab-btn-go:hover {
+    filter: brightness(1.1);
+}
+
+.dfab-btn-alt {
+    background: var(--bg-tertiary, #374151);
+    color: var(--text-primary);
+}
+
+.dfab-btn-alt:hover {
+    filter: brightness(1.15);
+}
+
+.dfab-ok {
+    text-align: center;
+    color: var(--success, #22c55e);
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 6px;
+}
+
+/* ── Animation ── */
+@keyframes dfab-pop {
+    from { opacity: 0; transform: translateY(8px) scale(0.95); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Mobile ── */
+@media (max-width: 480px) {
+    .dfab { right: 16px; bottom: 16px; }
+    .dfab-panel { width: calc(100vw - 32px); }
+}
+
+/* ── Print: hide entirely ── */
+@media print {
+    .dfab { display: none !important; }
+}

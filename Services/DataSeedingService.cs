@@ -57,7 +57,7 @@ public class DataSeedingService : IDataSeedingService
             {
                 Name = "SLS/LPBF Printing", StageSlug = "sls-printing", Department = "SLS",
                 DefaultDurationHours = 8.0, IsBatchStage = true, IsBuildLevelStage = true, HasBuiltInPage = true,
-                DisplayOrder = 1, StageIcon = "fas fa-print", StageColor = "#3B82F6",
+                DisplayOrder = 1, StageIcon = "🖨️", StageColor = "#3B82F6",
                 RequiresMachineAssignment = true, RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
             },
@@ -65,21 +65,21 @@ public class DataSeedingService : IDataSeedingService
             {
                 Name = "Depowdering", StageSlug = "depowdering", Department = "SLS",
                 DefaultDurationHours = 1.0, IsBatchStage = true, IsBuildLevelStage = true, HasBuiltInPage = true,
-                DisplayOrder = 2, StageIcon = "fas fa-wind", StageColor = "#F59E0B",
+                DisplayOrder = 2, StageIcon = "💨", StageColor = "#F59E0B",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 Name = "Heat Treatment", StageSlug = "heat-treatment", Department = "Post-Process",
                 DefaultDurationHours = 4.0, IsBatchStage = true, HasBuiltInPage = true,
-                DisplayOrder = 3, StageIcon = "fas fa-fire", StageColor = "#EF4444",
+                DisplayOrder = 3, StageIcon = "🔥", StageColor = "#EF4444",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 Name = "Wire EDM", StageSlug = "wire-edm", Department = "EDM",
                 DefaultDurationHours = 2.0, IsBatchStage = false, IsBuildLevelStage = true, HasBuiltInPage = true,
-                DisplayOrder = 4, StageIcon = "fas fa-bolt", StageColor = "#8B5CF6",
+                DisplayOrder = 4, StageIcon = "⚡", StageColor = "#8B5CF6",
                 RequiresMachineAssignment = true,
                 CreatedBy = "System", LastModifiedBy = "System"
             },
@@ -87,7 +87,7 @@ public class DataSeedingService : IDataSeedingService
             {
                 Name = "CNC Machining", StageSlug = "cnc-machining", Department = "Machining",
                 DefaultDurationHours = 3.0, IsBatchStage = false, HasBuiltInPage = true,
-                DisplayOrder = 5, StageIcon = "fas fa-cog", StageColor = "#06B6D4",
+                DisplayOrder = 5, StageIcon = "⚙️", StageColor = "#06B6D4",
                 RequiresMachineAssignment = true,
                 CreatedBy = "System", LastModifiedBy = "System"
             },
@@ -96,21 +96,21 @@ public class DataSeedingService : IDataSeedingService
                 Name = "Laser Engraving", StageSlug = "laser-engraving", Department = "Engraving",
                 DefaultDurationHours = 0.5, IsBatchStage = false, HasBuiltInPage = true,
                 RequiresSerialNumber = true,
-                DisplayOrder = 6, StageIcon = "fas fa-pen-nib", StageColor = "#10B981",
+                DisplayOrder = 6, StageIcon = "✒️", StageColor = "#10B981",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 Name = "Surface Finishing", StageSlug = "surface-finishing", Department = "Finishing",
                 DefaultDurationHours = 1.5, IsBatchStage = true, HasBuiltInPage = true,
-                DisplayOrder = 7, StageIcon = "fas fa-spray-can", StageColor = "#EC4899",
+                DisplayOrder = 7, StageIcon = "🎨", StageColor = "#EC4899",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 Name = "Quality Control", StageSlug = "qc", Department = "Quality",
                 DefaultDurationHours = 0.5, IsBatchStage = false, HasBuiltInPage = true,
-                DisplayOrder = 8, StageIcon = "fas fa-clipboard-check", StageColor = "#14B8A6",
+                DisplayOrder = 8, StageIcon = "✅", StageColor = "#14B8A6",
                 RequiresQualityCheck = true,
                 CreatedBy = "System", LastModifiedBy = "System"
             },
@@ -118,7 +118,7 @@ public class DataSeedingService : IDataSeedingService
             {
                 Name = "Shipping", StageSlug = "shipping", Department = "Shipping",
                 DefaultDurationHours = 0.5, IsBatchStage = false, HasBuiltInPage = true,
-                DisplayOrder = 9, StageIcon = "fas fa-truck", StageColor = "#6366F1",
+                DisplayOrder = 9, StageIcon = "🚚", StageColor = "#6366F1",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
             }

@@ -26,7 +26,7 @@
                     <a href="/account/login" class="btn-topbar">Login</a>
                 </NotAuthorized>
             </AuthorizeView>
-            <button class="btn-topbar" @onclick="ToggleDarkMode" title="Toggle theme">@(_darkMode ? "☀️" : "🌙")</button>
+            <button class="btn-topbar" @onclick="ToggleDarkMode" title="@ThemeTooltip">@ThemeIcon</button>
         </header>
 
         <main class="content-area">
@@ -36,6 +36,7 @@
 </div>
 
 <Opcentrix_V3.Components.Shared.ToastContainer />
+<Opcentrix_V3.Components.Shared.DebugFab />
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -48,61 +49,88 @@
     private Task<AuthenticationState>? AuthState { get; set; }
 
     private bool _sidebarCollapsed;
-    private bool _darkMode = true;
+    private string _themePreference = "dark";
     private int _userId;
-    private bool _themeLoaded;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            // Try to load the user's saved theme from the database
-            if (AuthState is not null)
-            {
-                var state = await AuthState;
-                var userIdClaim = state.User.FindFirst("UserId")?.Value;
-                if (int.TryParse(userIdClaim, out var uid))
-                {
-                    _userId = uid;
-                    try
-                    {
-                        var settings = await SettingsService.GetSettingsAsync(uid);
-                        var theme = settings.Theme;
-                        await JS.InvokeVoidAsync("opcentrix.setTheme", theme);
-                        _darkMode = theme != "light" && theme != "system";
-                        if (theme == "system")
-                        {
-                            var resolved = await JS.InvokeAsync<string>("opcentrix.resolveSystemTheme");
-                            _darkMode = resolved != "light";
-                        }
-                        _themeLoaded = true;
-                        StateHasChanged();
-                        return;
-                    }
-                    catch { /* Fall back to localStorage via JS */ }
-                }
-            }
+        if (!firstRender) return;
 
-            // Fallback: read from localStorage
-            var jsTheme = await JS.InvokeAsync<string>("opcentrix.getTheme");
-            _darkMode = jsTheme != "light";
-            _themeLoaded = true;
-            StateHasChanged();
+        try
+        {
+            // Read stored preference and always re-apply to DOM.
+            // Enhanced navigation may have reset data-theme to the
+            // hardcoded default in App.razor, so we must push the
+            // correct value back every time a circuit starts.
+            _themePreference = await JS.InvokeAsync<string>("opcentrix.getTheme") ?? "dark";
+            await JS.InvokeVoidAsync("opcentrix.setTheme", _themePreference);
         }
+        catch (JSDisconnectedException) { return; }
+
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var userIdClaim = state.User.FindFirst("UserId")?.Value;
+            if (int.TryParse(userIdClaim, out var uid))
+            {
+                _userId = uid;
+                try
+                {
+                    var settings = await SettingsService.GetSettingsAsync(uid);
+
+                    // DB is authoritative — override localStorage if they disagree
+                    if (settings.Theme != _themePreference)
+                    {
+                        _themePreference = settings.Theme;
+                        await JS.InvokeVoidAsync("opcentrix.setTheme", _themePreference);
+                    }
+
+                    await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", settings.DebugFabEnabled);
+                }
+                catch (JSDisconnectedException) { return; }
+                catch (Exception) { /* DB or auth failure — keep localStorage theme */ }
+            }
+        }
+
+        StateHasChanged();
     }
+
+    private string ThemeIcon => _themePreference switch
+    {
+        "light" => "☀️",
+        "system" => "💻",
+        _ => "🌙"
+    };
+
+    private string ThemeTooltip => _themePreference switch
+    {
+        "light" => "Theme: Light (click for System)",
+        "system" => "Theme: System (click for Dark)",
+        _ => "Theme: Dark (click for Light)"
+    };
 
     private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
 
     private async Task ToggleDarkMode()
     {
-        _darkMode = !_darkMode;
-        var theme = _darkMode ? "dark" : "light";
-        await JS.InvokeVoidAsync("opcentrix.setTheme", theme);
+        _themePreference = _themePreference switch
+        {
+            "dark" => "light",
+            "light" => "system",
+            _ => "dark"
+        };
 
-        // Persist to user's DB settings
+        try
+        {
+            await JS.InvokeVoidAsync("opcentrix.setTheme", _themePreference);
+        }
+        catch (JSDisconnectedException) { return; }
+
         if (_userId > 0)
         {
-            try { await SettingsService.SaveThemeAsync(_userId, theme); } catch { }
+            try { await SettingsService.SaveThemeAsync(_userId, _themePreference); }
+            catch (Exception) { /* DB save failed — localStorage already has the value */ }
         }
     }
-}
+
+    }

@@ -18,5 +18,7 @@ public class UserSettings
 
     public bool NotificationsEnabled { get; set; } = true;
 
+    public bool DebugFabEnabled { get; set; }
+
     public virtual User User { get; set; } = null!;
 }

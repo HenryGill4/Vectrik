@@ -5,11 +5,14 @@
 @inject IMachineService MachineService
 @inject ISchedulingService Scheduler
 @inject ToastService Toast
+@inject IJSRuntime JS
+@implements IDisposable
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>Production Scheduler - OpCentrix</PageTitle>
 
+<div class="sched-page">
 <div class="page-header">
     <h1 class="page-title">📅 Production Scheduler</h1>
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -28,30 +31,49 @@
 @* ── Controls Bar ── *@
 <div class="sched-controls">
     <div class="sched-controls-left">
-        <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label">From</label>
-            <input class="form-control" type="date" @bind="_dateFrom" @bind:event="onchange" />
+        <div class="sched-date-inputs">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">From</label>
+                <input class="form-control" type="date" @bind="_dateFrom" @bind:event="onchange" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">To</label>
+                <input class="form-control" type="date" @bind="_dateTo" @bind:event="onchange" />
+            </div>
         </div>
-        <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label">To</label>
-            <input class="form-control" type="date" @bind="_dateTo" @bind:event="onchange" />
+        <div class="sched-zoom-group">
+            <span class="sched-zoom-label">Zoom</span>
+            <button class="btn btn-sm @ZoomBtnClass("30M")" @onclick='() => SetZoom("30M")'>30m</button>
+            <button class="btn btn-sm @ZoomBtnClass("1H")" @onclick='() => SetZoom("1H")'>1h</button>
+            <button class="btn btn-sm @ZoomBtnClass("2H")" @onclick='() => SetZoom("2H")'>2h</button>
+            <button class="btn btn-sm @ZoomBtnClass("6H")" @onclick='() => SetZoom("6H")'>6h</button>
+            <button class="btn btn-sm @ZoomBtnClass("12H")" @onclick='() => SetZoom("12H")'>12h</button>
+            <span class="sched-zoom-sep"></span>
+            <button class="btn btn-sm @ZoomBtnClass("1D")" @onclick='() => SetZoom("1D")'>1D</button>
+            <button class="btn btn-sm @ZoomBtnClass("3D")" @onclick='() => SetZoom("3D")'>3D</button>
+            <span class="sched-zoom-sep"></span>
+            <button class="btn btn-sm @ZoomBtnClass("1W")" @onclick='() => SetZoom("1W")'>1W</button>
+            <button class="btn btn-sm @ZoomBtnClass("2W")" @onclick='() => SetZoom("2W")'>2W</button>
+            <button class="btn btn-sm @ZoomBtnClass("1M")" @onclick='() => SetZoom("1M")'>1M</button>
         </div>
-        <div class="sched-range-btns">
-            <button class="btn btn-sm @(_rangeLabel == "1W" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(7, "1W")'>1W</button>
-            <button class="btn btn-sm @(_rangeLabel == "2W" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(14, "2W")'>2W</button>
-            <button class="btn btn-sm @(_rangeLabel == "1M" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(30, "1M")'>1M</button>
+        <div class="sched-nav-btns">
+            <button class="btn btn-sm btn-secondary" @onclick="ShiftBack" title="Pan back">◀</button>
+            <button class="btn btn-sm btn-secondary" @onclick="GoToNow" title="Jump to now">Now</button>
+            <button class="btn btn-sm btn-secondary" @onclick="ShiftForward" title="Pan forward">▶</button>
         </div>
     </div>
     <div class="sched-controls-right">
         <div class="sched-view-toggle">
             <button class="btn btn-sm @(_viewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "gantt"'>📊 Machines</button>
             <button class="btn btn-sm @(_viewMode == "path" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "path"'>🔀 Part Path</button>
+            <button class="btn btn-sm @(_viewMode == "stages" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "stages"'>🔧 Stages</button>
             <button class="btn btn-sm @(_viewMode == "table" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "table"'>📋 Table</button>
         </div>
         <button class="btn btn-secondary btn-sm" @onclick="LoadData">🔄</button>
     </div>
 </div>
 
+<div @ref="_schedulerRef">
 @if (_loading)
 {
     <div class="loading"><span class="spinner"></span> Loading schedule...</div>
@@ -68,20 +90,47 @@ else if (_viewMode == "gantt")
                 }
                 else
                 {
-                    <div class="gantt-container" style="--gantt-cols: @_ganttDays.Count;">
-                        @* ── Header: day columns ── *@
-                        <div class="gantt-header">
-                            <div class="gantt-resource-label gantt-corner">Machine</div>
-                            @foreach (var day in _ganttDays)
-                            {
-                                var isToday = day.Date == DateTime.UtcNow.Date;
-                                var isWeekend = day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-                                <div class="gantt-day-header @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")">
-                                    <span class="gantt-day-name">@day.ToString("ddd")</span>
-                                    <span class="gantt-day-date">@day.ToString("M/d")</span>
+                    <div class="gantt-container" style="@GetGanttContainerStyle()">
+                        @* ── Header ── *@
+                        @if (IsDayLevel)
+                        {
+                            <div class="gantt-header">
+                                <div class="gantt-resource-label gantt-corner">Machine</div>
+                                @foreach (var slot in _ganttSlots)
+                                {
+                                    var isToday = slot.Date == DateTime.UtcNow.Date;
+                                    var isWeekend = slot.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+                                    <div class="gantt-day-header @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")">
+                                        <span class="gantt-day-name">@slot.ToString("ddd")</span>
+                                        <span class="gantt-day-date">@slot.ToString("M/d")</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="gantt-header-group">
+                                <div class="gantt-header gantt-header-dates">
+                                    <div class="gantt-resource-label gantt-corner">Machine</div>
+                                    @foreach (var dg in GetDateGroups())
+                                    {
+                                        var isToday = dg.Date == DateTime.UtcNow.Date;
+                                        var isWeekend = dg.Date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+                                        <div class="gantt-date-group @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")" style="grid-column: span @dg.Count;">
+                                            <span class="gantt-day-name">@dg.Date.ToString("ddd")</span>
+                                            <span class="gantt-day-date">@dg.Date.ToString("M/d")</span>
+                                        </div>
+                                    }
                                 </div>
-                            }
-                        </div>
+                                <div class="gantt-header gantt-header-times">
+                                    <div class="gantt-resource-label"></div>
+                                    @foreach (var slot in _ganttSlots)
+                                    {
+                                        <div class="gantt-slot-header">@FormatSlotTime(slot)</div>
+                                    }
+                                </div>
+                            </div>
+                        }
 
                         @* ── Machine rows ── *@
                         @foreach (var machine in _machines.Where(m => m.IsAvailableForScheduling))
@@ -95,7 +144,7 @@ else if (_viewMode == "gantt")
                                         <span class="gantt-machine-type">@machine.MachineType</span>
                                     </div>
                                 </div>
-                                <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
+                                <div class="gantt-track" style="grid-column: 2 / span @_ganttSlots.Count;">
                                     @* Today marker *@
                                     @{ var todayPct = GetGanttPosition(DateTime.UtcNow); }
                                     @if (todayPct > 0 && todayPct < 100)
@@ -166,7 +215,7 @@ else if (_viewMode == "gantt")
                                         <span class="gantt-machine-type">@unassignedScheduled.Count tasks</span>
                                     </div>
                                 </div>
-                                <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
+                                <div class="gantt-track" style="grid-column: 2 / span @_ganttSlots.Count;">
                                     @foreach (var exec in unassignedScheduled)
                                     {
                                         var start = exec.ScheduledStartAt ?? _dateFrom;
@@ -230,16 +279,16 @@ else if (_viewMode == "path")
     <div class="sched-layout">
         <div class="sched-gantt-panel">
             @* Filter bar *@
-            <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-                <select class="form-control" style="width:auto;" @bind="_pathFilterPartId" @bind:after="StateHasChanged">
+            <div class="sched-path-filters">
+                <select class="form-control" @bind="_pathFilterPartId" @bind:after="StateHasChanged">
                     <option value="0">All Parts</option>
                     @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber — @p.Name</option> } }
                 </select>
-                <select class="form-control" style="width:auto;" @bind="_pathFilterPriority" @bind:after="StateHasChanged">
+                <select class="form-control" @bind="_pathFilterPriority" @bind:after="StateHasChanged">
                     <option value="">All Priorities</option>
                     @foreach (var p in Enum.GetValues<JobPriority>()) { <option value="@p">@p</option> }
                 </select>
-                <select class="form-control" style="width:auto;" @bind="_pathSortMode" @bind:after="StateHasChanged">
+                <select class="form-control" @bind="_pathSortMode" @bind:after="StateHasChanged">
                     <option value="schedule">Sort: Schedule</option>
                     <option value="priority">Sort: Priority</option>
                     <option value="part">Sort: Part Number</option>
@@ -277,20 +326,47 @@ else if (_viewMode == "path")
                 }
                 else
                 {
-                    <div class="gantt-container" style="--gantt-cols: @_ganttDays.Count;">
-                        @* ── Header: day columns ── *@
-                        <div class="gantt-header">
-                            <div class="gantt-resource-label gantt-corner">Job / Part</div>
-                            @foreach (var day in _ganttDays)
-                            {
-                                var isToday = day.Date == DateTime.UtcNow.Date;
-                                var isWeekend = day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-                                <div class="gantt-day-header @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")">
-                                    <span class="gantt-day-name">@day.ToString("ddd")</span>
-                                    <span class="gantt-day-date">@day.ToString("M/d")</span>
+                    <div class="gantt-container" style="@GetGanttContainerStyle()">
+                        @* ── Header ── *@
+                        @if (IsDayLevel)
+                        {
+                            <div class="gantt-header">
+                                <div class="gantt-resource-label gantt-corner">Job / Part</div>
+                                @foreach (var slot in _ganttSlots)
+                                {
+                                    var isToday = slot.Date == DateTime.UtcNow.Date;
+                                    var isWeekend = slot.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+                                    <div class="gantt-day-header @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")">
+                                        <span class="gantt-day-name">@slot.ToString("ddd")</span>
+                                        <span class="gantt-day-date">@slot.ToString("M/d")</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="gantt-header-group">
+                                <div class="gantt-header gantt-header-dates">
+                                    <div class="gantt-resource-label gantt-corner">Job / Part</div>
+                                    @foreach (var dg in GetDateGroups())
+                                    {
+                                        var isToday = dg.Date == DateTime.UtcNow.Date;
+                                        var isWeekend = dg.Date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+                                        <div class="gantt-date-group @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")" style="grid-column: span @dg.Count;">
+                                            <span class="gantt-day-name">@dg.Date.ToString("ddd")</span>
+                                            <span class="gantt-day-date">@dg.Date.ToString("M/d")</span>
+                                        </div>
+                                    }
                                 </div>
-                            }
-                        </div>
+                                <div class="gantt-header gantt-header-times">
+                                    <div class="gantt-resource-label"></div>
+                                    @foreach (var slot in _ganttSlots)
+                                    {
+                                        <div class="gantt-slot-header">@FormatSlotTime(slot)</div>
+                                    }
+                                </div>
+                            </div>
+                        }
 
                         @* ── Job rows ── *@
                         @foreach (var group in jobGroups)
@@ -314,7 +390,7 @@ else if (_viewMode == "path")
                                         @(job.Quantity) qty
                                     </span>
                                 </div>
-                                <div class="gantt-track" style="grid-column: 2 / span @_ganttDays.Count;">
+                                <div class="gantt-track" style="grid-column: 2 / span @_ganttSlots.Count;">
                                     @* Today marker *@
                                     @{ var todayPct = GetGanttPosition(DateTime.UtcNow); }
                                     @if (todayPct > 0 && todayPct < 100)
@@ -396,15 +472,127 @@ else if (_viewMode == "path")
         }
     </div>
 }
-else
+else if (_viewMode == "stages")
+{
+    @* ── Stage Queue View ── *@
+    <div class="stage-queue-grid">
+        @foreach (var stage in _stages.OrderBy(s => s.DisplayOrder))
+        {
+            var stageId = stage.Id;
+            var allForStage = _executions.Concat(_unscheduled)
+                .Where(e => e.ProductionStageId == stageId)
+                .ToList();
+            var waiting = allForStage.Where(e => e.Status == StageExecutionStatus.NotStarted).ToList();
+            var active = allForStage.Where(e => e.Status == StageExecutionStatus.InProgress).ToList();
+            var completed = allForStage.Where(e => e.Status == StageExecutionStatus.Completed).ToList();
+            var failed = allForStage.Where(e => e.Status == StageExecutionStatus.Failed).ToList();
+            var queuedHours = waiting.Sum(e => e.EstimatedHours ?? 0) + active.Sum(e => e.EstimatedHours ?? 0);
+            var hasWork = allForStage.Any();
+            var isExpanded = _expandedStages.Contains(stageId);
+            var barPercent = Math.Min(100, queuedHours / 40.0 * 100);
+            var barColor = queuedHours > 40 ? "var(--danger)" : (queuedHours > 24 ? "var(--warning)" : (stage.StageColor ?? "var(--accent)"));
+
+            <div class="stage-queue-card @(!hasWork ? "stage-queue-card--empty" : "")">
+                <div class="stage-queue-header" @onclick="() => ToggleStageExpand(stageId)">
+                    <div class="stage-queue-title">
+                        <span class="stage-queue-swatch" style="background:@(stage.StageColor ?? "var(--accent)")"></span>
+                        <span class="stage-queue-icon">@ResolveStageIcon(stage.StageIcon)</span>
+                        <span class="stage-queue-name">@stage.Name</span>
+                        @if (!string.IsNullOrEmpty(stage.Department))
+                        {
+                            <span class="badge badge-secondary stage-queue-dept">@stage.Department</span>
+                        }
+                    </div>
+                    <span class="stage-queue-chevron @(isExpanded ? "stage-queue-chevron--open" : "")">▸</span>
+                </div>
+
+                <div class="stage-queue-metrics">
+                    <div class="stage-metric stage-metric--waiting">
+                        <span class="stage-metric-count">@waiting.Count</span>
+                        <span class="stage-metric-label">Queued</span>
+                    </div>
+                    <div class="stage-metric stage-metric--active">
+                        <span class="stage-metric-count">@active.Count</span>
+                        <span class="stage-metric-label">Active</span>
+                    </div>
+                    <div class="stage-metric stage-metric--done">
+                        <span class="stage-metric-count">@completed.Count</span>
+                        <span class="stage-metric-label">Done</span>
+                    </div>
+                    @if (failed.Any())
+                    {
+                        <div class="stage-metric stage-metric--failed">
+                            <span class="stage-metric-count">@failed.Count</span>
+                            <span class="stage-metric-label">Failed</span>
+                        </div>
+                    }
+                    <div class="stage-metric stage-metric--hours">
+                        <span class="stage-metric-count">@queuedHours.ToString("F1")</span>
+                        <span class="stage-metric-label">Hrs Queued</span>
+                    </div>
+                </div>
+
+                @if (queuedHours > 0)
+                {
+                    <div class="stage-queue-workload">
+                        <div class="stage-queue-workload-fill" style="width:@barPercent.ToString("F0")%;background:@barColor"></div>
+                    </div>
+                }
+
+                @if (isExpanded && (waiting.Any() || active.Any()))
+                {
+                    <div class="stage-queue-items">
+                        @foreach (var exec in active.Concat(waiting).OrderByDescending(e => e.Job?.Priority).ThenBy(e => e.ScheduledStartAt))
+                        {
+                            <div class="stage-queue-item @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item--active" : "")">
+                                <span class="stage-queue-item-dot @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item-dot--active" : "")"></span>
+                                <span class="stage-queue-item-part">
+                                    @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                    {
+                                        <text>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</text>
+                                    }
+                                    else
+                                    {
+                                        @(exec.Job?.Part?.PartNumber ?? "—")
+                                    }
+                                </span>
+                                <span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority ?? JobPriority.Normal)</span>
+                                <span class="stage-queue-item-hours">@(exec.EstimatedHours?.ToString("F1") ?? "—")h</span>
+                                @if (exec.Machine != null)
+                                {
+                                    <span class="stage-queue-item-machine">🖥️ @exec.Machine.Name</span>
+                                }
+                                @if (exec.ScheduledStartAt != null)
+                                {
+                                    <span class="stage-queue-item-time">@exec.ScheduledStartAt.Value.ToString("MM/dd HH:mm")</span>
+                                }
+                                @if (exec.Status == StageExecutionStatus.NotStarted)
+                                {
+                                    <button class="btn btn-sm btn-secondary stage-queue-item-action" @onclick="() => ShowReschedule(exec)" title="Reschedule">📅</button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else if (isExpanded && !waiting.Any() && !active.Any())
+                {
+                    <div class="stage-queue-items">
+                        <div class="stage-queue-empty">No items queued</div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+else if (_viewMode == "table")
 {
     @* ── Table View ── *@
     <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>Stage Executions — @_executions.Count scheduled</span>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <span>📋 Stage Executions — @_executions.Count scheduled · @(_executions.Sum(e => e.EstimatedHours ?? 0).ToString("F0"))h total</span>
             @if (_unscheduled.Any())
             {
-                <span class="badge badge-warning">@_unscheduled.Count unscheduled</span>
+                <span class="badge badge-warning">⚠️ @_unscheduled.Count unscheduled</span>
             }
         </div>
         @if (!_executions.Any() && !_unscheduled.Any())
@@ -421,6 +609,7 @@ else
                             <th>Part</th>
                             <th>Stage</th>
                             <th>Machine</th>
+                            <th>Operator</th>
                             <th>Start</th>
                             <th>End</th>
                             <th>Est. Hrs</th>
@@ -451,17 +640,27 @@ else
                                     {
                                         <span style="display:inline-flex;align-items:center;gap:4px;">
                                             <span style="width:8px;height:8px;border-radius:50%;background:@(exec.ProductionStage.StageColor);display:inline-block;"></span>
-                                            @exec.ProductionStage.Name
+                                            @ResolveStageIcon(exec.ProductionStage.StageIcon) @exec.ProductionStage.Name
                                         </span>
                                     }
                                     else { <span>—</span> }
                                 </td>
-                                <td>@(exec.Machine?.Name ?? "<span style='color:var(--warning)'>Unassigned</span>")</td>
+                                <td>
+                                    @if (exec.Machine != null)
+                                    {
+                                        @exec.Machine.Name
+                                    }
+                                    else
+                                    {
+                                        <span style="color:var(--warning)">Unassigned</span>
+                                    }
+                                </td>
+                                <td>@(exec.OperatorName ?? "—")</td>
                                 <td>@((exec.ScheduledStartAt ?? exec.Job?.ScheduledStart)?.ToString("MM/dd HH:mm") ?? "—")</td>
                                 <td>@((exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd)?.ToString("MM/dd HH:mm") ?? "—")</td>
                                 <td>@(exec.EstimatedHours?.ToString("F1") ?? "—")</td>
                                 <td><span class="badge badge-@exec.Status.ToString().ToLower()">@exec.Status</span></td>
-                                <td style="display:flex;gap:4px;">
+                                <td class="sched-table-actions">
                                     @if (exec.Status == StageExecutionStatus.NotStarted)
                                     {
                                         <button class="btn btn-sm btn-secondary" @onclick="() => ShowReschedule(exec)" title="Reschedule">📅</button>
@@ -479,6 +678,8 @@ else
         }
     </div>
 }
+</div>
+</div>
 
 @* ── Reschedule Modal ── *@
 @if (_showReschedule && _rescheduleExec != null)
@@ -589,12 +790,19 @@ else
     private List<StageExecution> _unscheduled = new();
     private List<Machine> _machines = new();
     private List<Part>? _parts;
-    private List<DateTime> _ganttDays = new();
+    private List<DateTime> _ganttSlots = new();
+    private List<ProductionStage> _stages = new();
+    private HashSet<int> _expandedStages = new();
     private DateTime _dateFrom = DateTime.UtcNow.Date;
     private DateTime _dateTo = DateTime.UtcNow.Date.AddDays(14);
     private string _viewMode = "gantt";
-    private string _rangeLabel = "2W";
+    private string _zoomLevel = "2W";
     private string _userName = "System";
+
+    // Zoom interop
+    private ElementReference _schedulerRef;
+    private DotNetObjectReference<Index>? _dotNetRef;
+    private static readonly string[] ZoomLevels = { "30M", "1H", "2H", "6H", "12H", "1D", "3D", "1W", "2W", "1M" };
 
     // Part Path filters
     private int _pathFilterPartId;
@@ -623,7 +831,17 @@ else
         }
         _parts = await PartService.GetAllPartsAsync();
         _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+        _stages = await StageService.GetAllStagesAsync(activeOnly: true);
         await LoadData();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("opcentrix.initSchedulerZoom", _dotNetRef, _schedulerRef);
+        }
     }
 
     private async Task LoadData()
@@ -632,22 +850,152 @@ else
         StateHasChanged();
         _executions = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
         _unscheduled = await StageService.GetUnscheduledExecutionsAsync();
-        BuildGanttDays();
+        BuildGanttSlots();
         _loading = false;
     }
 
-    private void SetRange(int days, string label)
+    // ── Zoom Configuration ──
+
+    private bool IsDayLevel => _zoomLevel is "1W" or "2W" or "1M";
+
+    private (TimeSpan Range, TimeSpan Slot) GetZoomConfig() => _zoomLevel switch
     {
-        _rangeLabel = label;
-        _dateTo = _dateFrom.AddDays(days);
+        "30M" => (TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(1)),
+        "1H"  => (TimeSpan.FromHours(1), TimeSpan.FromMinutes(5)),
+        "2H"  => (TimeSpan.FromHours(2), TimeSpan.FromMinutes(5)),
+        "6H"  => (TimeSpan.FromHours(6), TimeSpan.FromMinutes(15)),
+        "12H" => (TimeSpan.FromHours(12), TimeSpan.FromMinutes(30)),
+        "1D"  => (TimeSpan.FromDays(1), TimeSpan.FromHours(1)),
+        "3D"  => (TimeSpan.FromDays(3), TimeSpan.FromHours(4)),
+        "1W"  => (TimeSpan.FromDays(7), TimeSpan.FromDays(1)),
+        "2W"  => (TimeSpan.FromDays(14), TimeSpan.FromDays(1)),
+        "1M"  => (TimeSpan.FromDays(30), TimeSpan.FromDays(1)),
+        _     => (TimeSpan.FromDays(14), TimeSpan.FromDays(1))
+    };
+
+    private void SetZoom(string level)
+    {
+        _zoomLevel = level;
+        var (range, slot) = GetZoomConfig();
+        if (IsDayLevel)
+        {
+            _dateFrom = _dateFrom.Date;
+        }
+        else
+        {
+            var now = DateTime.UtcNow;
+            _dateFrom = now - TimeSpan.FromTicks(range.Ticks / 2);
+            if (slot.Ticks > 0)
+            {
+                var dayStart = _dateFrom.Date.Ticks;
+                var offset = _dateFrom.Ticks - dayStart;
+                _dateFrom = new DateTime(dayStart + (offset / slot.Ticks) * slot.Ticks, _dateFrom.Kind);
+            }
+        }
+        _dateTo = _dateFrom.Add(range);
         _ = LoadData();
     }
 
-    private void BuildGanttDays()
+    private void ShiftBack()
     {
-        _ganttDays = new List<DateTime>();
-        for (var d = _dateFrom.Date; d <= _dateTo.Date; d = d.AddDays(1))
-            _ganttDays.Add(d);
+        var (range, _) = GetZoomConfig();
+        var shift = TimeSpan.FromTicks(range.Ticks / 2);
+        _dateFrom -= shift;
+        if (IsDayLevel) _dateFrom = _dateFrom.Date;
+        _dateTo = _dateFrom.Add(range);
+        _ = LoadData();
+    }
+
+    private void ShiftForward()
+    {
+        var (range, _) = GetZoomConfig();
+        var shift = TimeSpan.FromTicks(range.Ticks / 2);
+        _dateFrom += shift;
+        if (IsDayLevel) _dateFrom = _dateFrom.Date;
+        _dateTo = _dateFrom.Add(range);
+        _ = LoadData();
+    }
+
+    private void GoToNow()
+    {
+        var (range, _) = GetZoomConfig();
+        if (IsDayLevel)
+        {
+            _dateFrom = DateTime.UtcNow.Date;
+        }
+        else
+        {
+            _dateFrom = DateTime.UtcNow - TimeSpan.FromTicks(range.Ticks / 2);
+        }
+        _dateTo = _dateFrom.Add(range);
+        _ = LoadData();
+    }
+
+    private string ZoomBtnClass(string level) => _zoomLevel == level ? "btn-primary" : "btn-secondary";
+
+    private void BuildGanttSlots()
+    {
+        var (_, slotSize) = GetZoomConfig();
+        _ganttSlots = new List<DateTime>();
+        for (var t = _dateFrom; t < _dateTo; t = t.Add(slotSize))
+        {
+            _ganttSlots.Add(t);
+            if (_ganttSlots.Count >= 200) break;
+        }
+    }
+
+    private string FormatSlotTime(DateTime slot)
+    {
+        var (_, slotSize) = GetZoomConfig();
+        if (slotSize >= TimeSpan.FromHours(1))
+            return slot.ToString("h tt").ToLower().Replace(" ", "");
+        if (slot.Minute == 0)
+            return slot.ToString("h tt").ToLower().Replace(" ", "");
+        return ":" + slot.ToString("mm");
+    }
+
+    private List<(DateTime Date, int Count)> GetDateGroups()
+    {
+        var groups = new List<(DateTime Date, int Count)>();
+        if (!_ganttSlots.Any()) return groups;
+        var currentDate = _ganttSlots[0].Date;
+        var count = 0;
+        foreach (var slot in _ganttSlots)
+        {
+            if (slot.Date != currentDate)
+            {
+                groups.Add((currentDate, count));
+                currentDate = slot.Date;
+                count = 0;
+            }
+            count++;
+        }
+        groups.Add((currentDate, count));
+        return groups;
+    }
+
+    private int GetColumnMinWidth() => _zoomLevel switch
+    {
+        "30M" => 32,
+        "1H"  => 48,
+        "2H"  => 36,
+        "6H"  => 40,
+        "12H" => 44,
+        "1D"  => 80,
+        "3D"  => 60,
+        "1W"  => 120,
+        "2W"  => 100,
+        "1M"  => 56,
+        _     => 80
+    };
+
+    private string GetGanttContainerStyle()
+    {
+        var colMin = GetColumnMinWidth();
+        var style = $"--gantt-cols: {_ganttSlots.Count};";
+        if (colMin > 0)
+            style += $" --gantt-col-min: {colMin}px; min-width: calc(var(--gantt-label-w) + {_ganttSlots.Count * colMin}px);";
+        return style;
     }
 
     private double GetGanttPosition(DateTime dt)
@@ -663,7 +1011,60 @@ else
         var totalSpan = (_dateTo - _dateFrom).TotalHours;
         if (totalSpan <= 0) return 1;
         var width = (end - start).TotalHours / totalSpan * 100;
-        return Math.Clamp(width, 0.3, 100);
+        var minWidth = IsDayLevel ? 0.3 : 1.5;
+        return Math.Clamp(width, minWidth, 100);
+    }
+
+    // ── JS Interop Zoom (mouse wheel + touch pinch) ──
+
+    [JSInvokable]
+    public async Task JsZoomIn(double cursorPct)
+    {
+        if (StepZoom(-1, cursorPct))
+        {
+            await LoadData();
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task JsZoomOut(double cursorPct)
+    {
+        if (StepZoom(1, cursorPct))
+        {
+            await LoadData();
+            StateHasChanged();
+        }
+    }
+
+    private bool StepZoom(int direction, double cursorPct)
+    {
+        var currentIdx = Array.IndexOf(ZoomLevels, _zoomLevel);
+        var newIdx = currentIdx + direction;
+        if (newIdx < 0 || newIdx >= ZoomLevels.Length) return false;
+
+        // Time at cursor position (anchor point)
+        var totalSpan = _dateTo - _dateFrom;
+        var cursorTime = _dateFrom + TimeSpan.FromTicks((long)(totalSpan.Ticks * Math.Clamp(cursorPct, 0, 1)));
+
+        // Change zoom level
+        _zoomLevel = ZoomLevels[newIdx];
+        var (newRange, slot) = GetZoomConfig();
+
+        // Reposition so cursor stays over the same time
+        _dateFrom = cursorTime - TimeSpan.FromTicks((long)(newRange.Ticks * cursorPct));
+        if (IsDayLevel)
+        {
+            _dateFrom = _dateFrom.Date;
+        }
+        else if (slot.Ticks > 0)
+        {
+            var dayStart = _dateFrom.Date.Ticks;
+            var offset = _dateFrom.Ticks - dayStart;
+            _dateFrom = new DateTime(dayStart + (offset / slot.Ticks) * slot.Ticks, _dateFrom.Kind);
+        }
+        _dateTo = _dateFrom.Add(newRange);
+        return true;
     }
 
     private bool HasOverlap(int machineId, StageExecution current, List<StageExecution> machineExecs)
@@ -676,6 +1077,33 @@ else
             e.Id != current.Id &&
             e.ScheduledStartAt < cEnd &&
             e.ScheduledEndAt > cStart);
+    }
+
+    // ── Stage Queue ──
+
+    private void ToggleStageExpand(int stageId)
+    {
+        if (!_expandedStages.Remove(stageId))
+            _expandedStages.Add(stageId);
+    }
+
+    private static string ResolveStageIcon(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return "⚙️";
+        if (!icon.StartsWith("fas ") && !icon.StartsWith("far ") && !icon.StartsWith("fa-")) return icon;
+        return icon switch
+        {
+            "fas fa-print"           => "🖨️",
+            "fas fa-wind"            => "💨",
+            "fas fa-fire"            => "🔥",
+            "fas fa-bolt"            => "⚡",
+            "fas fa-cog"             => "⚙️",
+            "fas fa-pen-nib"         => "✒️",
+            "fas fa-spray-can"       => "🎨",
+            "fas fa-clipboard-check" => "✅",
+            "fas fa-truck"           => "🚚",
+            _                        => "⚙️"
+        };
     }
 
     // ── Reschedule ──
@@ -780,5 +1208,10 @@ else
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _creatingJob = false; }
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
     }
 }

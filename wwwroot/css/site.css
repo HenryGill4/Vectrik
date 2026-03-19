@@ -28,6 +28,7 @@
     --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
     --transition-fast: 0.15s ease;
     --transition-normal: 0.25s ease;
+    --gantt-label-w: 180px;
 
     /* Semantic tokens for theme-adaptive hardcoded colors */
     --btn-secondary-hover: #4B5563;
@@ -292,7 +293,7 @@ body.modal-open { overflow: hidden; }
 .btn-topbar {
     background: none; border: none;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 1.25rem;
     cursor: pointer;
     min-width: var(--tap-target);
     min-height: var(--tap-target);
@@ -1111,6 +1112,18 @@ select.form-control {
     margin-top: 4px;
 }
 
+/* ── Scheduler Page (fills available width) ── */
+.content-area:has(.sched-page) {
+    max-width: none;
+    padding: 16px;
+}
+
+.sched-date-inputs {
+    display: flex;
+    gap: 12px;
+    align-items: end;
+}
+
 /* ── Gantt Chart ── */
 .gantt-container {
     display: grid;
@@ -1123,7 +1136,7 @@ select.form-control {
 
 .gantt-header {
     display: grid;
-    grid-template-columns: 180px repeat(var(--gantt-cols, 14), 1fr);
+    grid-template-columns: var(--gantt-label-w) repeat(var(--gantt-cols, 14), minmax(var(--gantt-col-min, 0px), 1fr));
     background: var(--bg-tertiary);
     border-bottom: 2px solid var(--border);
     position: sticky;
@@ -1179,11 +1192,45 @@ select.form-control {
     color: var(--accent);
 }
 
+.gantt-header-group {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.gantt-header-group > .gantt-header {
+    position: static;
+}
+
+.gantt-header.gantt-header-dates {
+    border-bottom: 1px solid var(--border);
+}
+
+.gantt-date-group {
+    padding: 4px 2px;
+    text-align: center;
+    border-left: 2px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+}
+
+.gantt-slot-header {
+    padding: 2px 1px;
+    text-align: center;
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    border-left: 1px solid var(--border);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
 .gantt-row {
     display: grid;
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: var(--gantt-label-w) 1fr;
     border-bottom: 1px solid var(--border);
-    min-height: 48px;
+    min-height: 64px;
     align-items: center;
     transition: background 0.15s;
 }
@@ -1201,11 +1248,11 @@ select.form-control {
 }
 
 .gantt-resource-label {
-    padding: 8px 12px;
-    font-size: 0.82rem;
+    padding: 10px 14px;
+    font-size: 0.85rem;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     border-right: 1px solid var(--border);
     min-width: 0;
 }
@@ -1236,7 +1283,7 @@ select.form-control {
 
 .gantt-machine-name {
     font-weight: 600;
-    font-size: 0.82rem;
+    font-size: 0.88rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1249,8 +1296,8 @@ select.form-control {
 
 .gantt-track {
     position: relative;
-    height: 36px;
-    margin: 4px 8px 4px 0;
+    height: 48px;
+    margin: 6px 8px 6px 0;
 }
 
 .gantt-today-line {
@@ -1276,15 +1323,15 @@ select.form-control {
 
 .gantt-bar {
     position: absolute;
-    top: 2px;
-    height: 32px;
+    top: 3px;
+    height: 42px;
     border-radius: 5px;
     display: flex;
     align-items: center;
-    padding: 0 8px;
+    padding: 0 10px;
     overflow: hidden;
     cursor: pointer;
-    font-size: 0.72rem;
+    font-size: 0.78rem;
     font-weight: 600;
     color: var(--gantt-bar-text);
     transition: transform var(--transition-fast), box-shadow var(--transition-fast);
@@ -1451,6 +1498,26 @@ select.form-control {
     vertical-align: middle;
 }
 
+/* ── Path View Filters ── */
+.sched-path-filters {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.sched-path-filters .form-control {
+    width: auto;
+    min-width: 140px;
+}
+
+/* ── Table View ── */
+.sched-table-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
 /* ── Scheduler Layout ── */
 .sched-controls {
     display: flex;
@@ -1478,9 +1545,32 @@ select.form-control {
     align-items: end;
 }
 
-.sched-range-btns {
+.sched-zoom-group {
     display: flex;
-    gap: 4px;
+    gap: 2px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.sched-zoom-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-right: 4px;
+}
+
+.sched-zoom-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 4px;
+}
+
+.sched-nav-btns {
+    display: flex;
+    gap: 2px;
     align-self: end;
 }
 
@@ -1506,6 +1596,13 @@ select.form-control {
 .sched-gantt-card {
     overflow-x: auto;
     padding: 0;
+    min-height: calc(100vh - 260px);
+    cursor: grab;
+    scroll-behavior: auto;
+}
+
+.sched-gantt-card:active {
+    cursor: grabbing;
 }
 
 /* ── Sidebar: Unscheduled ── */
@@ -1593,12 +1690,397 @@ select.form-control {
     background: rgba(var(--warning-rgb), 0.06);
 }
 
+/* ── Stage Queue View ── */
+.stage-queue-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+    padding: 16px 0;
+}
+
+.stage-queue-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+}
+
+.stage-queue-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.stage-queue-card--empty {
+    opacity: 0.5;
+}
+
+.stage-queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border);
+}
+
+.stage-queue-header:hover {
+    background: var(--bg-tertiary);
+}
+
+.stage-queue-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    min-width: 0;
+}
+
+.stage-queue-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.stage-queue-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.stage-queue-name {
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stage-queue-dept {
+    font-size: 0.7rem;
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
+.stage-queue-chevron {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+.stage-queue-chevron--open {
+    transform: rotate(90deg);
+}
+
+.stage-queue-metrics {
+    display: flex;
+    gap: 6px;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+}
+
+.stage-metric {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    min-width: 56px;
+    flex: 1 1 auto;
+}
+
+.stage-metric-count {
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.stage-metric-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+.stage-metric--waiting .stage-metric-count { color: var(--warning); }
+.stage-metric--active .stage-metric-count { color: var(--info, var(--accent)); }
+.stage-metric--done .stage-metric-count { color: var(--success); }
+.stage-metric--failed .stage-metric-count { color: var(--danger); }
+.stage-metric--hours .stage-metric-count { color: var(--text-primary); }
+
+.stage-queue-workload {
+    height: 4px;
+    background: var(--bg-tertiary);
+    margin: 0 16px 12px;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.stage-queue-workload-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.4s ease;
+}
+
+.stage-queue-items {
+    border-top: 1px solid var(--border);
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.stage-queue-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    font-size: 0.82rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    transition: background 0.15s;
+}
+
+.stage-queue-item:last-child {
+    border-bottom: none;
+}
+
+.stage-queue-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.stage-queue-item--active {
+    background: rgba(46, 204, 113, 0.08);
+}
+
+.stage-queue-item-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.stage-queue-item-dot--active {
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(46, 204, 113, 0.5);
+}
+
+.stage-queue-item-part {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 60px;
+}
+
+.stage-queue-item-hours {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.stage-queue-item-machine {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.stage-queue-item-time {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+.stage-queue-item-action {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.stage-queue-item:hover .stage-queue-item-action {
+    opacity: 1;
+}
+
+.stage-queue-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-style: italic;
+}
+
+/* ── Scheduler Responsive ── */
 @media (max-width: 1024px) {
     .sched-layout {
         grid-template-columns: 1fr;
     }
     .sched-sidebar {
         position: static;
+    }
+    .sched-sidebar-list {
+        max-height: 300px;
+    }
+    .stage-queue-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    :root { --gantt-label-w: 120px; }
+    .content-area:has(.sched-page) {
+        padding: 10px;
+    }
+    .sched-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 10px 12px;
+    }
+    .sched-controls-left {
+        flex-direction: column;
+        gap: 8px;
+    }
+    .sched-controls-right {
+        justify-content: space-between;
+    }
+    .sched-date-inputs {
+        gap: 8px;
+    }
+    .sched-zoom-group .btn {
+        min-width: 36px;
+        min-height: 36px;
+        padding: 4px 6px;
+    }
+    .sched-nav-btns .btn {
+        min-width: 40px;
+        min-height: 36px;
+    }
+    .sched-view-toggle .btn {
+        font-size: 0.78rem;
+        padding: 6px 10px;
+    }
+    .stage-queue-grid {
+        gap: 10px;
+        padding: 10px 0;
+    }
+    .stage-queue-metrics {
+        gap: 4px;
+        padding: 8px 12px;
+    }
+    .stage-metric {
+        padding: 4px 8px;
+        min-width: 44px;
+    }
+    .stage-metric-count {
+        font-size: 1rem;
+    }
+    .stage-queue-item {
+        padding: 6px 12px;
+        font-size: 0.78rem;
+    }
+    .stage-queue-item-machine {
+        display: none;
+    }
+    .gantt-container {
+        min-width: 500px;
+    }
+    .gantt-resource-label {
+        padding: 6px 8px;
+        gap: 6px;
+    }
+    .gantt-machine-name {
+        font-size: 0.75rem;
+    }
+    .gantt-machine-type {
+        display: none;
+    }
+    .gantt-path-meta {
+        display: none;
+    }
+    .gantt-bar {
+        height: 34px;
+        font-size: 0.72rem;
+        padding: 0 6px;
+    }
+    .gantt-track {
+        height: 40px;
+        margin: 4px 4px 4px 0;
+    }
+    .gantt-row {
+        min-height: 52px;
+    }
+}
+
+@media (max-width: 480px) {
+    :root { --gantt-label-w: 80px; }
+    .content-area:has(.sched-page) {
+        padding: 6px;
+    }
+    .sched-controls {
+        padding: 8px;
+        gap: 6px;
+    }
+    .sched-date-inputs {
+        display: none;
+    }
+    .sched-zoom-label {
+        display: none;
+    }
+    .sched-zoom-sep {
+        display: none;
+    }
+    .gantt-container {
+        min-width: 320px;
+    }
+    .gantt-resource-label {
+        padding: 4px 6px;
+        gap: 4px;
+    }
+    .gantt-machine-name {
+        font-size: 0.68rem;
+    }
+    .gantt-machine-status {
+        width: 6px;
+        height: 6px;
+    }
+    .gantt-bar {
+        height: 28px;
+        font-size: 0.65rem;
+        padding: 0 4px;
+        border-radius: 3px;
+    }
+    .gantt-bar .gantt-bar-machine {
+        display: none;
+    }
+    .gantt-track {
+        height: 32px;
+        margin: 2px 2px 2px 0;
+    }
+    .gantt-row {
+        min-height: 40px;
+    }
+    .gantt-day-header {
+        padding: 4px 1px;
+    }
+    .gantt-day-name {
+        font-size: 0.6rem;
+    }
+    .gantt-day-date {
+        font-size: 0.62rem;
+    }
+    .gantt-slot-header {
+        font-size: 0.55rem;
+    }
+    .gantt-legend, .gantt-path-legend {
+        font-size: 0.68rem;
+        gap: 8px;
+    }
+    .page-header {
+        flex-wrap: wrap;
+    }
+    .page-header h1 {
+        font-size: 1.1rem;
     }
 }
 

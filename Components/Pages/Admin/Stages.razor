@@ -21,7 +21,7 @@ else
                 {
                     <tr>
                         <td>@s.DisplayOrder</td>
-                        <td><span style="color: @s.StageColor">⚙</span> @s.Name</td>
+                        <td><span style="color: @s.StageColor">@ResolveStageIcon(s.StageIcon)</span> @s.Name</td>
                         <td style="font-family: monospace;">@s.StageSlug</td>
                         <td>@s.Department</td>
                         <td>@s.DefaultDurationHours h</td>
@@ -61,7 +61,7 @@ else
                     <div class="form-group"><label class="form-label">Setup Minutes</label><input class="form-control" type="number" @bind="_edit.DefaultSetupMinutes" /></div>
                     <div class="form-group"><label class="form-label">Material Cost ($)</label><input class="form-control" type="number" step="0.01" @bind="_edit.DefaultMaterialCost" /></div>
                     <div class="form-group"><label class="form-label">Color</label><input class="form-control" type="color" @bind="_edit.StageColor" /></div>
-                    <div class="form-group"><label class="form-label">Icon CSS</label><input class="form-control" @bind="_edit.StageIcon" placeholder="fas fa-cogs" /></div>
+                    <div class="form-group"><label class="form-label">Icon (emoji)</label><input class="form-control" @bind="_edit.StageIcon" placeholder="🖨️ or ⚙️" /></div>
                     <div class="form-group" style="grid-column: span 2;"><label class="form-label">Description</label><input class="form-control" @bind="_edit.Description" /></div>
                 </div>
             }
@@ -192,5 +192,24 @@ else
             _stages = await StageService.GetAllStagesAsync(activeOnly: false);
         }
         catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private static string ResolveStageIcon(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return "⚙️";
+        if (!icon.StartsWith("fas ") && !icon.StartsWith("far ") && !icon.StartsWith("fa-")) return icon;
+        return icon switch
+        {
+            "fas fa-print"           => "🖨️",
+            "fas fa-wind"            => "💨",
+            "fas fa-fire"            => "🔥",
+            "fas fa-bolt"            => "⚡",
+            "fas fa-cog"             => "⚙️",
+            "fas fa-pen-nib"         => "✒️",
+            "fas fa-spray-can"       => "🎨",
+            "fas fa-clipboard-check" => "✅",
+            "fas fa-truck"           => "🚚",
+            _                        => "⚙️"
+        };
     }
 }

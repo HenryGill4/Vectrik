@@ -98,6 +98,24 @@ else
             </button>
         </div>
     </div>
+
+    <div class="card" style="max-width: 600px;">
+        <div class="card-header">🛠️ Debug Feedback</div>
+        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">
+            Show a floating feedback button on every page. Use it to report bugs, request changes, or flag styling issues with full context capture.
+        </p>
+        <div class="form-group">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.875rem;">
+                <input type="checkbox" @bind="_debugFabEnabled" style="width:18px; height:18px;" />
+                Enable debug feedback button
+            </label>
+        </div>
+        <div style="display:flex; justify-content:flex-end; padding-top:8px;">
+            <button class="btn btn-primary" @onclick="SaveDebugFab" disabled="@_savingDebug">
+                @(_savingDebug ? "Saving…" : "Save")
+            </button>
+        </div>
+    </div>
 }
 
 @code {
@@ -107,9 +125,11 @@ else
     private int _userId;
     private bool _loading = true;
     private bool _saving;
+    private bool _savingDebug;
     private string _selectedTheme = "dark";
     private string? _defaultView;
     private bool _notificationsEnabled = true;
+    private bool _debugFabEnabled;
 
     protected override async Task OnInitializedAsync()
     {
@@ -127,6 +147,7 @@ else
             _selectedTheme = settings.Theme;
             _defaultView = settings.DefaultView;
             _notificationsEnabled = settings.NotificationsEnabled;
+            _debugFabEnabled = settings.DebugFabEnabled;
         }
 
         _loading = false;
@@ -135,19 +156,19 @@ else
     private async Task SelectTheme(string theme)
     {
         _selectedTheme = theme;
+        await JS.InvokeVoidAsync("opcentrix.setTheme", theme);
 
-        // Apply immediately via JS
-        var effectiveTheme = theme == "system" ? "system" : theme;
-        await JS.InvokeVoidAsync("opcentrix.setTheme", effectiveTheme);
-
-        // Persist to DB
         if (_userId > 0)
         {
             try
             {
                 await SettingsService.SaveThemeAsync(_userId, theme);
+                Toast.ShowSuccess($"Theme set to {theme}");
             }
-            catch { /* localStorage fallback already applied via JS */ }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to save theme: {ex.Message}");
+            }
         }
     }
 
@@ -171,6 +192,27 @@ else
         finally
         {
             _saving = false;
+        }
+    }
+
+    private async Task SaveDebugFab()
+    {
+        if (_userId == 0) return;
+        _savingDebug = true;
+
+        try
+        {
+            await SettingsService.SaveDebugFabAsync(_userId, _debugFabEnabled);
+            await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", _debugFabEnabled);
+            Toast.ShowSuccess(_debugFabEnabled ? "Debug button enabled — navigate to any page to see it" : "Debug button disabled");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            _savingDebug = false;
         }
     }
 }

@@ -1,0 +1,189 @@
+@page "/admin/debug"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IUserSettingsService SettingsService
+@inject IJSRuntime JS
+@inject ToastService Toast
+
+<PageTitle>Debug Tools - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">🛠️ Debug Tools</h1>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">Feedback Button</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">
+        The debug feedback button appears as a floating 🛠️ icon in the bottom-right corner of every page.
+        Each user can enable or disable it from <a href="/settings/display" style="color:var(--accent);">Display Settings</a>.
+    </p>
+
+    <div class="form-group">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.875rem;">
+            <input type="checkbox" @bind="_debugFabEnabled" style="width:18px; height:18px;" />
+            Enable for my account
+        </label>
+    </div>
+    <div style="display:flex; justify-content:flex-end; padding-top:8px;">
+        <button class="btn btn-primary" @onclick="ToggleDebugFab" disabled="@_saving">
+            @(_saving ? "Saving…" : "Save")
+        </button>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">How It Works</div>
+    <div style="color: var(--text-secondary); font-size: 0.875rem; line-height: 1.7;">
+        <p>Click the floating <strong>🛠️</strong> button to open the feedback menu with three options:</p>
+        <table class="data-table" style="margin: 12px 0;">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>When to Use</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>🐛 <strong>Report Bug</strong></td>
+                    <td>Something is broken, crashes, or behaves unexpectedly</td>
+                </tr>
+                <tr>
+                    <td>💡 <strong>Request Change</strong></td>
+                    <td>A feature should work differently or something is missing</td>
+                </tr>
+                <tr>
+                    <td>🎨 <strong>Styling Issue</strong></td>
+                    <td>Layout, colors, spacing, or responsiveness looks wrong</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>Each report automatically captures:</p>
+        <ul style="margin: 8px 0; padding-left: 20px;">
+            <li><strong>Page URL</strong> — which page the issue is on</li>
+            <li><strong>Viewport</strong> — screen size for responsive debugging</li>
+            <li><strong>Theme</strong> — dark or light mode</li>
+            <li><strong>Timestamp</strong> — when the issue was observed</li>
+            <li><strong>User Agent</strong> — browser and OS info</li>
+        </ul>
+        <p style="margin-top:12px;">
+            Hit <strong>📋 Copy to Clipboard</strong> to get a formatted markdown block you can paste directly into a conversation with the AI agent.
+            On iOS, you'll be shown a text area to select and copy manually.
+        </p>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">Quick Test</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        Capture this page's context and copy it to verify the system works:
+    </p>
+    <button class="btn btn-primary" @onclick="CaptureTest" disabled="@_capturing">
+        @(_capturing ? "Capturing…" : "📋 Capture & Copy Test Context")
+    </button>
+
+    @if (_testCopied)
+    {
+        <div style="color: var(--success); font-weight: 600; margin-top: 8px; font-size: 0.85rem;">
+            ✅ Copied! Paste it anywhere to verify.
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private int _userId;
+    private bool _debugFabEnabled;
+    private bool _saving;
+    private bool _capturing;
+    private bool _testCopied;
+    private string _testText = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var userIdClaim = state.User.FindFirst("UserId")?.Value;
+            if (int.TryParse(userIdClaim, out var uid))
+                _userId = uid;
+        }
+
+        if (_userId > 0)
+        {
+            var settings = await SettingsService.GetSettingsAsync(_userId);
+            _debugFabEnabled = settings.DebugFabEnabled;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", _debugFabEnabled);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ToggleDebugFab()
+    {
+        if (_userId == 0) return;
+        _saving = true;
+
+        try
+        {
+            await SettingsService.SaveDebugFabAsync(_userId, _debugFabEnabled);
+            await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", _debugFabEnabled);
+            Toast.ShowSuccess(_debugFabEnabled
+                ? "Debug button enabled — navigate to any page to see it"
+                : "Debug button disabled");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CaptureTest()
+    {
+        _capturing = true;
+        _testCopied = false;
+
+        try
+        {
+            var ctx = await JS.InvokeAsync<Dictionary<string, string>>("opcentrix.debugFab.getContext");
+            _testText = $"""
+## 🛠️ DEBUG TEST
+
+**Description:**
+This is a test capture from the Debug Tools admin page.
+
+**Context:**
+- Page: /admin/debug
+- Viewport: {ctx.GetValueOrDefault("viewport", "unknown")}
+- Theme: {ctx.GetValueOrDefault("theme", "unknown")}
+- Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+- User Agent: {ctx.GetValueOrDefault("userAgent", "unknown")}
+""";
+
+            await JS.InvokeVoidAsync("opcentrix.debugFab.copyText", _testText);
+            _testCopied = true;
+        }
+        catch
+        {
+            Toast.ShowError("Failed to capture context");
+        }
+        finally
+        {
+            _capturing = false;
+        }
+    }
+}

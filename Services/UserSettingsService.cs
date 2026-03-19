@@ -31,6 +31,13 @@ public class UserSettingsService : IUserSettingsService
         await _db.SaveChangesAsync();
     }
 
+    public async Task SaveDebugFabAsync(int userId, bool enabled)
+    {
+        var settings = await GetSettingsAsync(userId);
+        settings.DebugFabEnabled = enabled;
+        await _db.SaveChangesAsync();
+    }
+
     public async Task SaveSettingsAsync(UserSettings settings)
     {
         _db.UserSettings.Update(settings);

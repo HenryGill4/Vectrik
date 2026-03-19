@@ -61,7 +61,7 @@
                     @if (!isOperator || IsAssignedStage(context.User, stage.Id))
                     {
                         <NavLink class="nav-item" href="@($"shopfloor/stage/{stage.StageSlug}")">
-                            <span class="nav-icon" style="color: @stage.StageColor">⚙</span> @stage.Name
+                            <span class="nav-icon" style="color: @stage.StageColor">@ResolveStageIcon(stage.StageIcon)</span> @stage.Name
                         </NavLink>
                     }
                 }
@@ -178,6 +178,9 @@
                     <NavLink class="nav-item" href="admin/work-instructions">
                         <span class="nav-icon">📋</span> Work Instructions
                     </NavLink>
+                    <NavLink class="nav-item" href="admin/debug">
+                        <span class="nav-icon">🛠️</span> Debug Tools
+                    </NavLink>
                 }
             }
 
@@ -222,6 +225,25 @@
         var assignedIds = user.FindFirst("AssignedStageIds")?.Value;
         if (string.IsNullOrWhiteSpace(assignedIds)) return true;
         return assignedIds.Split(',').Any(id => id.Trim() == stageId.ToString());
+    }
+
+    private static string ResolveStageIcon(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return "⚙️";
+        if (!icon.StartsWith("fas ") && !icon.StartsWith("far ") && !icon.StartsWith("fa-")) return icon;
+        return icon switch
+        {
+            "fas fa-print"           => "🖨️",
+            "fas fa-wind"            => "💨",
+            "fas fa-fire"            => "🔥",
+            "fas fa-bolt"            => "⚡",
+            "fas fa-cog"             => "⚙️",
+            "fas fa-pen-nib"         => "✒️",
+            "fas fa-spray-can"       => "🎨",
+            "fas fa-clipboard-check" => "✅",
+            "fas fa-truck"           => "🚚",
+            _                        => "⚙️"
+        };
     }
 }
 
