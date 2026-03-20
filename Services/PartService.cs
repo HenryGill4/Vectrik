@@ -17,6 +17,8 @@ public class PartService : IPartService
     {
         var query = _db.Parts
             .Include(p => p.MaterialEntity)
+            .Include(p => p.ManufacturingApproach)
+            .Include(p => p.AdditiveBuildConfig)
             .Include(p => p.StageRequirements)
             .Include(p => p.Drawings)
             .AsQueryable();
@@ -29,6 +31,8 @@ public class PartService : IPartService
     {
         return await _db.Parts
             .Include(p => p.MaterialEntity)
+            .Include(p => p.ManufacturingApproach)
+            .Include(p => p.AdditiveBuildConfig)
             .Include(p => p.StageRequirements)
                 .ThenInclude(sr => sr.ProductionStage)
             .FirstOrDefaultAsync(p => p.Id == id);
@@ -37,6 +41,7 @@ public class PartService : IPartService
     public async Task<Part?> GetPartByNumberAsync(string partNumber)
     {
         return await _db.Parts
+            .Include(p => p.AdditiveBuildConfig)
             .Include(p => p.StageRequirements)
             .FirstOrDefaultAsync(p => p.PartNumber == partNumber);
     }
@@ -125,7 +130,8 @@ public class PartService : IPartService
                 errors.Add($"Part number '{part.PartNumber}' already exists.");
         }
 
-        errors.AddRange(part.ValidateStackingConfiguration());
+        if (part.AdditiveBuildConfig != null)
+            errors.AddRange(part.AdditiveBuildConfig.ValidateStackingConfiguration());
 
         return errors;
     }
@@ -136,6 +142,8 @@ public class PartService : IPartService
     {
         return await _db.Parts
             .Include(p => p.MaterialEntity)
+            .Include(p => p.ManufacturingApproach)
+            .Include(p => p.AdditiveBuildConfig)
             .Include(p => p.StageRequirements)
                 .ThenInclude(sr => sr.ProductionStage)
             .Include(p => p.Drawings)
@@ -181,6 +189,8 @@ public class PartService : IPartService
     {
         var query = _db.Parts
             .Include(p => p.MaterialEntity)
+            .Include(p => p.ManufacturingApproach)
+            .Include(p => p.AdditiveBuildConfig)
             .Include(p => p.StageRequirements)
             .Include(p => p.Drawings)
             .AsQueryable();
@@ -268,6 +278,7 @@ public class PartService : IPartService
     public async Task<Part> ClonePartAsync(int sourcePartId, string newPartNumber, string createdBy)
     {
         var source = await _db.Parts
+            .Include(p => p.AdditiveBuildConfig)
             .Include(p => p.StageRequirements)
                 .ThenInclude(sr => sr.ProductionStage)
             .FirstOrDefaultAsync(p => p.Id == sourcePartId)
@@ -285,7 +296,7 @@ public class PartService : IPartService
             Description = source.Description,
             Material = source.Material,
             MaterialId = source.MaterialId,
-            ManufacturingApproach = source.ManufacturingApproach,
+            ManufacturingApproachId = source.ManufacturingApproachId,
             CustomerPartNumber = source.CustomerPartNumber,
             DrawingNumber = source.DrawingNumber,
             Revision = "A",
@@ -294,25 +305,6 @@ public class PartService : IPartService
             CustomFieldValues = source.CustomFieldValues,
             ItarClassification = source.ItarClassification,
             IsDefensePart = source.IsDefensePart,
-            AllowStacking = source.AllowStacking,
-            SingleStackDurationHours = source.SingleStackDurationHours,
-            DoubleStackDurationHours = source.DoubleStackDurationHours,
-            TripleStackDurationHours = source.TripleStackDurationHours,
-            MaxStackCount = source.MaxStackCount,
-            PartsPerBuildSingle = source.PartsPerBuildSingle,
-            PartsPerBuildDouble = source.PartsPerBuildDouble,
-            PartsPerBuildTriple = source.PartsPerBuildTriple,
-            EnableDoubleStack = source.EnableDoubleStack,
-            EnableTripleStack = source.EnableTripleStack,
-            StageEstimateSingle = source.StageEstimateSingle,
-            SlsBuildDurationHours = source.SlsBuildDurationHours,
-            SlsPartsPerBuild = source.SlsPartsPerBuild,
-            DepowderingDurationHours = source.DepowderingDurationHours,
-            DepowderingPartsPerBatch = source.DepowderingPartsPerBatch,
-            HeatTreatmentDurationHours = source.HeatTreatmentDurationHours,
-            HeatTreatmentPartsPerBatch = source.HeatTreatmentPartsPerBatch,
-            WireEdmDurationHours = source.WireEdmDurationHours,
-            WireEdmPartsPerSession = source.WireEdmPartsPerSession,
             IsActive = true,
             CreatedBy = createdBy,
             LastModifiedBy = createdBy,
@@ -322,6 +314,33 @@ public class PartService : IPartService
 
         _db.Parts.Add(clone);
         await _db.SaveChangesAsync();
+
+        // Deep-copy additive build config if present
+        if (source.AdditiveBuildConfig != null)
+        {
+            var src = source.AdditiveBuildConfig;
+            var clonedConfig = new PartAdditiveBuildConfig
+            {
+                PartId = clone.Id,
+                AllowStacking = src.AllowStacking,
+                MaxStackCount = src.MaxStackCount,
+                SingleStackDurationHours = src.SingleStackDurationHours,
+                DoubleStackDurationHours = src.DoubleStackDurationHours,
+                TripleStackDurationHours = src.TripleStackDurationHours,
+                PlannedPartsPerBuildSingle = src.PlannedPartsPerBuildSingle,
+                PlannedPartsPerBuildDouble = src.PlannedPartsPerBuildDouble,
+                PlannedPartsPerBuildTriple = src.PlannedPartsPerBuildTriple,
+                EnableDoubleStack = src.EnableDoubleStack,
+                EnableTripleStack = src.EnableTripleStack,
+                DepowderingDurationHours = src.DepowderingDurationHours,
+                DepowderingPartsPerBatch = src.DepowderingPartsPerBatch,
+                HeatTreatmentDurationHours = src.HeatTreatmentDurationHours,
+                HeatTreatmentPartsPerBatch = src.HeatTreatmentPartsPerBatch,
+                WireEdmDurationHours = src.WireEdmDurationHours,
+                WireEdmPartsPerSession = src.WireEdmPartsPerSession
+            };
+            _db.PartAdditiveBuildConfigs.Add(clonedConfig);
+        }
 
         // Deep-copy stage requirements
         foreach (var sr in source.StageRequirements.Where(s => s.IsActive))

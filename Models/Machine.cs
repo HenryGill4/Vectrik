@@ -56,6 +56,14 @@ public class Machine
     public double BuildHeightMm { get; set; } = 300;
     public double MaxLaserPowerWatts { get; set; } = 400;
 
+    // Build plate management
+    public int BuildPlateCapacity { get; set; } = 1;
+    public bool AutoChangeoverEnabled { get; set; }
+    public double ChangeoverMinutes { get; set; } = 30;
+
+    // Laser configuration (planning reference)
+    public int? LaserCount { get; set; }
+
     // OPC UA
     [MaxLength(200)]
     public string? OpcUaEndpointUrl { get; set; }

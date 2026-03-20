@@ -33,8 +33,22 @@ public class BuildPackage
     // Build plate revision tracking
     public int? CurrentRevision { get; set; }
 
+    // Slicer data
+    public bool IsSlicerDataEntered { get; set; }
+
+    // Scheduling lock
+    public bool IsLocked { get; set; }
+
     // JSON for build-level params (layer thickness, laser power, etc.)
     public string? BuildParameters { get; set; }
+
+    // Build lifecycle timestamps
+    public DateTime? PrintStartedAt { get; set; }
+    public DateTime? PrintCompletedAt { get; set; }
+    public DateTime? PlateReleasedAt { get; set; }
+
+    // Changeover chain: links to the build that was printing before this one
+    public int? PredecessorBuildPackageId { get; set; }
 
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
@@ -50,6 +64,7 @@ public class BuildPackage
     public virtual ICollection<BuildPackageRevision> Revisions { get; set; } = new List<BuildPackageRevision>();
     public virtual BuildFileInfo? BuildFileInfo { get; set; }
     public virtual Job? ScheduledJob { get; set; }
+    public virtual BuildPackage? PredecessorBuildPackage { get; set; }
 
     // Computed
     [NotMapped]
@@ -59,7 +74,7 @@ public class BuildPackage
     public int UniquePartCount => Parts?.Select(p => p.PartId).Distinct().Count() ?? 0;
 
     [NotMapped]
-    public bool IsReadyToSchedule => Status == BuildPackageStatus.Ready && Parts?.Any() == true;
+    public bool IsReadyToSchedule => Status == BuildPackageStatus.Ready && IsSlicerDataEntered && Parts?.Any() == true;
 }
 
 public class BuildPackagePart
@@ -78,6 +93,11 @@ public class BuildPackagePart
 
     [MaxLength(500)]
     public string? Notes { get; set; }
+
+    public int StackLevel { get; set; } = 1;           // 1=single, 2=double, 3=triple
+
+    [MaxLength(500)]
+    public string? SlicerNotes { get; set; }            // Position/orientation notes from slicer
 
     // Navigation
     public virtual BuildPackage BuildPackage { get; set; } = null!;

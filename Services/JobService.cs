@@ -60,20 +60,22 @@ public class JobService : IJobService
         // Hydrate from Part if available
         if (job.PartId > 0)
         {
-            var part = await _db.Parts.FindAsync(job.PartId)
+            var part = await _db.Parts
+                .Include(p => p.AdditiveBuildConfig)
+                .FirstOrDefaultAsync(p => p.Id == job.PartId)
                 ?? throw new InvalidOperationException($"Part with ID {job.PartId} not found.");
 
             job.PartNumber = part.PartNumber;
             job.SlsMaterial = part.Material;
 
-            // Hydrate stacking duration
-            if (job.StackLevel.HasValue)
+            // Hydrate stacking duration from AdditiveBuildConfig
+            if (job.StackLevel.HasValue && part.AdditiveBuildConfig != null)
             {
-                var duration = part.GetStackDuration(job.StackLevel.Value);
+                var duration = part.AdditiveBuildConfig.GetStackDuration(job.StackLevel.Value);
                 if (duration.HasValue)
                     job.PlannedStackDurationHours = duration.Value;
 
-                var ppb = part.GetPartsPerBuild(job.StackLevel.Value);
+                var ppb = part.AdditiveBuildConfig.GetPartsPerBuild(job.StackLevel.Value);
                 if (ppb.HasValue)
                     job.PartsPerBuild = ppb.Value;
             }

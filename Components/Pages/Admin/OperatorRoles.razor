@@ -1,0 +1,97 @@
+@page "/admin/operator-roles"
+@inject IOperatorRoleService RoleService
+@inject ToastService Toast
+@rendermode InteractiveServer
+
+<PageTitle>Operator Roles - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Operator Roles</h1>
+    <button class="btn btn-primary" @onclick="NewRole">+ New Role</button>
+</div>
+
+@if (_roles == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Description</th><th>Active</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var r in _roles)
+                {
+                    <tr>
+                        <td>@r.DisplayOrder</td>
+                        <td style="font-weight: 600;">@r.Name</td>
+                        <td style="font-family: monospace;">@r.Slug</td>
+                        <td style="font-size: 0.85rem; color: var(--text-secondary);">@r.Description</td>
+                        <td><span class="badge @(r.IsActive ? "badge-active" : "badge-cancelled")">@(r.IsActive ? "Yes" : "No")</span></td>
+                        <td><button class="btn btn-sm btn-secondary" @onclick="() => Edit(r)">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New Role" : "Edit Role")</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
+                <div class="form-group"><label class="form-label">Slug</label><input class="form-control" @bind="_edit.Slug" placeholder="e.g. sls-operator" /></div>
+                <div class="form-group" style="grid-column: span 2;"><label class="form-label">Description</label><input class="form-control" @bind="_edit.Description" /></div>
+                <div class="form-group"><label class="form-label">Display Order</label><input class="form-control" type="number" @bind="_edit.DisplayOrder" /></div>
+                <div class="form-group" style="display: flex; align-items: end;">
+                    <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<OperatorRole>? _roles;
+    private OperatorRole? _edit;
+    private bool _showForm;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _roles = await RoleService.GetAllAsync(activeOnly: false); }
+        catch (Exception ex) { Toast.ShowError($"Failed to load roles: {ex.Message}"); _roles = new(); }
+    }
+
+    private void NewRole()
+    {
+        _edit = new OperatorRole();
+        _showForm = true;
+    }
+
+    private void Edit(OperatorRole r)
+    {
+        _edit = r;
+        _showForm = true;
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        try
+        {
+            if (_edit!.Id == 0) await RoleService.CreateAsync(_edit);
+            else await RoleService.UpdateAsync(_edit);
+            _showForm = false;
+            _roles = await RoleService.GetAllAsync(activeOnly: false);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

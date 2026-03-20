@@ -16,6 +16,8 @@ internal sealed class StubBuildPlanningService : IBuildPlanningService
     public Task DeletePackageAsync(int id) => Task.CompletedTask;
     public Task<BuildPackagePart> AddPartToPackageAsync(int packageId, int partId, int quantity, int? workOrderLineId = null)
         => Task.FromResult(new BuildPackagePart());
+    public Task<BuildPackagePart> UpdatePartInPackageAsync(int packagePartId, int quantity, int stackLevel, string? slicerNotes = null)
+        => Task.FromResult(new BuildPackagePart());
     public Task RemovePartFromPackageAsync(int packagePartId) => Task.CompletedTask;
     public Task<BuildFileInfo?> GetBuildFileInfoAsync(int packageId) => Task.FromResult<BuildFileInfo?>(null);
     public Task<BuildFileInfo> SaveBuildFileInfoAsync(BuildFileInfo info) => Task.FromResult(info);

@@ -160,12 +160,17 @@ public class JobServiceTests : IDisposable
     public async Task CreateJobAsync_WithStackLevel_HydratesDurationAndPartsPerBuild()
     {
         var part = await SeedPartAsync();
-        part.AllowStacking = true;
-        part.SingleStackDurationHours = 5.0;
-        part.PartsPerBuildSingle = 2;
-        part.EnableDoubleStack = true;
-        part.DoubleStackDurationHours = 8.0;
-        part.PartsPerBuildDouble = 4;
+        var config = new PartAdditiveBuildConfig
+        {
+            PartId = part.Id,
+            AllowStacking = true,
+            SingleStackDurationHours = 5.0,
+            PlannedPartsPerBuildSingle = 2,
+            EnableDoubleStack = true,
+            DoubleStackDurationHours = 8.0,
+            PlannedPartsPerBuildDouble = 4
+        };
+        _db.PartAdditiveBuildConfigs.Add(config);
         await _db.SaveChangesAsync();
 
         var job = CreateTestJob(part.Id);

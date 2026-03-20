@@ -1,5 +1,6 @@
 @page "/builds"
 @inject IBuildPlanningService BuildPlanningService
+@inject IBuildSchedulingService BuildScheduling
 @inject IMachineService MachineService
 @inject IPartService PartService
 @inject ToastService Toast
@@ -41,25 +42,47 @@ else
     @foreach (var pkg in _filteredPackages)
     {
         <div class="card" style="margin-bottom:1rem">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>@pkg.Name</span>
-                <div style="display:flex;gap:0.5rem;align-items:center">
+            @* ── Card Header: Name + Status + Actions ── *@
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <div style="display:flex;gap:0.5rem;align-items:center;">
+                    @if (pkg.IsLocked) { <span title="Locked for scheduling">🔒</span> }
+                    <span style="font-weight:600">@pkg.Name</span>
                     <span class="badge badge-@pkg.Status.ToString().ToLower()">@pkg.Status</span>
-                    @if (pkg.Status == BuildPackageStatus.Draft)
+                </div>
+                <div style="display:flex;gap:0.5rem;align-items:center">
+                    @* Workflow buttons based on current status *@
+                    @switch (pkg.Status)
                     {
-                        <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Ready)" title="Mark Ready" disabled="@_processing">✓ Ready</button>
+                        case BuildPackageStatus.Draft:
+                            <button class="btn btn-sm btn-info" @onclick="() => ShowSlicerDataEntry(pkg)"
+                                    title="Enter Slicer Data" disabled="@(!pkg.Parts.Any() || _processing)">📐 Slicer Data</button>
+                            break;
+                        case BuildPackageStatus.Sliced:
+                            <button class="btn btn-sm btn-info" @onclick="() => ShowSlicerDataEntry(pkg)"
+                                    title="Edit Slicer Data" disabled="@_processing">📐 Edit Slicer</button>
+                            <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Ready)"
+                                    title="Mark Ready" disabled="@_processing">✓ Ready</button>
+                            break;
+                        case BuildPackageStatus.Ready:
+                            <button class="btn btn-sm btn-primary" @onclick="() => ScheduleBuild(pkg)"
+                                    title="Schedule" disabled="@_processing">📅 Schedule</button>
+                            break;
+                        case BuildPackageStatus.Scheduled:
+                            <button class="btn btn-sm btn-warning" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Printing)"
+                                    title="Start Print" disabled="@_processing">▶️ Print</button>
+                            break;
+                        case BuildPackageStatus.Printing:
+                            <button class="btn btn-sm btn-info" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.PostPrint)"
+                                    title="Print Complete → Post-Print" disabled="@_processing">🔄 Post-Print</button>
+                            break;
+                        case BuildPackageStatus.PostPrint:
+                            <button class="btn btn-sm btn-success" @onclick="() => ReleasePlate(pkg)"
+                                    title="Release Plate" disabled="@_processing">📦 Release Plate</button>
+                            break;
                     }
-                    else if (pkg.Status == BuildPackageStatus.Ready)
+                    @if (pkg.IsLocked && pkg.Status != BuildPackageStatus.Printing && pkg.Status != BuildPackageStatus.PostPrint && pkg.Status != BuildPackageStatus.Completed)
                     {
-                        <button class="btn btn-sm btn-primary" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Scheduled)" title="Schedule" disabled="@_processing">📅 Schedule</button>
-                    }
-                    else if (pkg.Status == BuildPackageStatus.Scheduled)
-                    {
-                        <button class="btn btn-sm btn-warning" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.InProgress)" title="Start Build" disabled="@_processing">▶️ Start</button>
-                    }
-                    else if (pkg.Status == BuildPackageStatus.InProgress)
-                    {
-                        <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Completed)" title="Complete" disabled="@_processing">✅ Complete</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => UnlockBuild(pkg)" title="Unlock / Reopen" disabled="@_processing">🔓</button>
                     }
                     @if (pkg.Status != BuildPackageStatus.Completed && pkg.Status != BuildPackageStatus.Cancelled)
                     {
@@ -67,29 +90,89 @@ else
                     }
                 </div>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+
+            @* ── Build Summary Grid ── *@
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px;">
                 <div><span class="form-label">Machine</span><div>@(_machineNames.GetValueOrDefault(pkg.MachineId, pkg.MachineId))</div></div>
-                <div><span class="form-label">Parts</span><div>@pkg.TotalPartCount (@pkg.UniquePartCount unique)</div></div>
+                <div><span class="form-label">Parts on Plate</span><div>@pkg.TotalPartCount total (@pkg.UniquePartCount unique)</div></div>
                 <div><span class="form-label">Est. Duration</span><div>@(pkg.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div></div>
+                @if (!string.IsNullOrWhiteSpace(pkg.Material)) { <div><span class="form-label">Material</span><div>@pkg.Material</div></div> }
+                @if (pkg.ScheduledDate.HasValue) { <div><span class="form-label">Scheduled</span><div>@pkg.ScheduledDate.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
+                @if (pkg.PrintStartedAt.HasValue) { <div><span class="form-label">Print Started</span><div>@pkg.PrintStartedAt.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
+                @if (pkg.PrintCompletedAt.HasValue) { <div><span class="form-label">Print Completed</span><div>@pkg.PrintCompletedAt.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
+                @if (pkg.PlateReleasedAt.HasValue) { <div><span class="form-label">Plate Released</span><div>@pkg.PlateReleasedAt.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
             </div>
 
+            @* ── Nested Parts Table ── *@
             @if (pkg.Parts.Any())
             {
                 <div style="margin-bottom:12px">
+                    <div class="form-label" style="margin-bottom:6px">Nested Parts</div>
                     <table class="data-table">
-                        <thead><tr><th>Part</th><th>Qty</th><th></th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th>Part</th>
+                                <th style="width:90px">Qty</th>
+                                <th style="width:90px">Stack</th>
+                                <th>Notes</th>
+                                @if (pkg.Status == BuildPackageStatus.Draft)
+                                {
+                                    <th style="width:100px"></th>
+                                }
+                            </tr>
+                        </thead>
                         <tbody>
                             @foreach (var pp in pkg.Parts)
                             {
+                                var partConfig = pp.Part?.AdditiveBuildConfig;
+                                var isEditing = _editingPartId == pp.Id;
                                 <tr>
-                                    <td>@(pp.Part?.PartNumber ?? $"Part #{pp.PartId}") @(pp.Part?.Name != null ? $"— {pp.Part.Name}" : "")</td>
-                                    <td>@pp.Quantity</td>
                                     <td>
-                                        @if (pkg.Status == BuildPackageStatus.Draft)
+                                        <div>
+                                            <strong>@(pp.Part?.PartNumber ?? $"#{pp.PartId}")</strong>
+                                            @if (!string.IsNullOrEmpty(pp.Part?.Name)) { <span style="color:var(--text-secondary)"> — @pp.Part.Name</span> }
+                                        </div>
+                                        @if (partConfig != null)
                                         {
-                                            <button class="btn btn-sm btn-danger" @onclick="() => RemovePart(pp.Id)">🗑️</button>
+                                            <div style="font-size:0.75rem;color:var(--text-secondary);">
+                                                Plan: @(partConfig.PlannedPartsPerBuildSingle)/plate
+                                                @if (partConfig.AllowStacking) { <span> · Stacking: up to @(partConfig.MaxStackCount)x</span> }
+                                            </div>
                                         }
                                     </td>
+                                    @if (isEditing && pkg.Status == BuildPackageStatus.Draft)
+                                    {
+                                        <td><input class="form-control form-control-sm" type="number" min="1" max="500" @bind="_editQty" style="width:70px" /></td>
+                                        <td>
+                                            <select class="form-control form-control-sm" @bind="_editStackLevel" style="width:70px">
+                                                <option value="1">1x</option>
+                                                @if (partConfig?.EnableDoubleStack == true) { <option value="2">2x</option> }
+                                                @if (partConfig?.EnableTripleStack == true) { <option value="3">3x</option> }
+                                            </select>
+                                        </td>
+                                        <td><input class="form-control form-control-sm" @bind="_editSlicerNotes" placeholder="Position / orientation" /></td>
+                                        <td>
+                                            <div style="display:flex;gap:4px">
+                                                <button class="btn btn-sm btn-success" @onclick="() => SavePartEdit(pp.Id)" title="Save">✓</button>
+                                                <button class="btn btn-sm btn-secondary" @onclick="CancelPartEdit" title="Cancel">✕</button>
+                                            </div>
+                                        </td>
+                                    }
+                                    else
+                                    {
+                                        <td>@pp.Quantity</td>
+                                        <td>@(pp.StackLevel)x</td>
+                                        <td style="font-size:0.85rem;color:var(--text-secondary);">@(pp.SlicerNotes ?? "—")</td>
+                                        @if (pkg.Status == BuildPackageStatus.Draft)
+                                        {
+                                            <td>
+                                                <div style="display:flex;gap:4px">
+                                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => StartPartEdit(pp)" title="Edit">✏️</button>
+                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemovePart(pp.Id)" title="Remove">🗑️</button>
+                                                </div>
+                                            </td>
+                                        }
+                                    }
                                 </tr>
                             }
                         </tbody>
@@ -97,32 +180,53 @@ else
                 </div>
             }
 
+            @* ── Add Part (Draft only) ── *@
             @if (pkg.Status == BuildPackageStatus.Draft)
             {
-                <div style="display:flex;gap:0.5rem;align-items:end;margin-bottom:12px">
-                    <div style="flex:1">
-                        <label class="form-label" style="font-size:0.8rem">Add Part</label>
-                        <select class="form-control" @bind="_addPartId">
-                            <option value="0">Select part...</option>
-                            @if (_parts != null)
-                            {
-                                @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber — @p.Name</option> }
-                            }
-                        </select>
+                <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;margin-bottom:12px;">
+                    <div class="form-label" style="margin-bottom:6px">Add Part to Plate</div>
+                    <div style="display:flex;gap:0.5rem;align-items:end;flex-wrap:wrap;">
+                        <div style="flex:2;min-width:200px;">
+                            <input class="form-control" placeholder="Search parts..." @bind="_partSearch" @bind:event="oninput" />
+                        </div>
+                        <div style="flex:3;min-width:220px;">
+                            <select class="form-control" @bind="_addPartId">
+                                <option value="0">Select part...</option>
+                                @foreach (var p in FilteredAdditiveParts)
+                                {
+                                    var cfg = p.AdditiveBuildConfig;
+                                    var hint = cfg != null ? $" [{cfg.PlannedPartsPerBuildSingle}/plate]" : "";
+                                    <option value="@p.Id">@p.PartNumber — @p.Name@hint</option>
+                                }
+                            </select>
+                        </div>
+                        <div style="width:80px;">
+                            <input class="form-control" type="number" min="1" max="500" @bind="_addPartQty" placeholder="Qty" />
+                        </div>
+                        <button class="btn btn-primary" style="height:36px;white-space:nowrap" @onclick="() => AddPartToPackage(pkg.Id)" disabled="@(_addPartId <= 0)">+ Add</button>
                     </div>
-                    <div style="width:80px">
-                        <label class="form-label" style="font-size:0.8rem">Qty</label>
-                        <input class="form-control" type="number" min="1" @bind="_addPartQty" />
-                    </div>
-                    <button class="btn btn-sm btn-primary" style="height:36px" @onclick="() => AddPartToPackage(pkg.Id)">Add</button>
+                    @if (_addPartId > 0)
+                    {
+                        var selectedPart = _additiveParts?.FirstOrDefault(p => p.Id == _addPartId);
+                        @if (selectedPart?.AdditiveBuildConfig is { } selCfg)
+                        {
+                            <div style="margin-top:8px;font-size:0.8rem;color:var(--text-secondary);display:flex;gap:16px;flex-wrap:wrap;">
+                                <span>📋 Planned: <strong>@selCfg.PlannedPartsPerBuildSingle</strong> per plate (single)</span>
+                                @if (selCfg.HasValidDoubleStack) { <span>· <strong>@selCfg.PlannedPartsPerBuildDouble</strong> (2x stack)</span> }
+                                @if (selCfg.HasValidTripleStack) { <span>· <strong>@selCfg.PlannedPartsPerBuildTriple</strong> (3x stack)</span> }
+                                @if (selCfg.SingleStackDurationHours.HasValue) { <span>⏱ ~@selCfg.SingleStackDurationHours.Value.ToString("F1")h single</span> }
+                            </div>
+                        }
+                    }
                 </div>
             }
 
+            @* ── Build File Info ── *@
             @if (pkg.BuildFileInfo != null)
             {
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;margin-bottom:12px;">
                     <div class="form-label">Build File Info</div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;font-size:0.85rem;">
                         <div>Layers: @pkg.BuildFileInfo.LayerCount</div>
                         <div>Height: @pkg.BuildFileInfo.BuildHeightMm mm</div>
                         <div>Print Time: @pkg.BuildFileInfo.EstimatedPrintTimeHours hrs</div>
@@ -132,7 +236,7 @@ else
             }
 
             @* ── Revision History ── *@
-            <div style="margin-bottom: 4px;">
+            <div style="margin-bottom:4px;">
                 <button class="btn btn-sm btn-secondary" @onclick="() => ToggleRevisions(pkg.Id)">
                     @(_expandedRevisions.Contains(pkg.Id) ? "▾" : "▸") Revisions (@(pkg.CurrentRevision ?? 0))
                 </button>
@@ -146,11 +250,11 @@ else
                 }
                 else if (!revisions.Any())
                 {
-                    <div style="font-size: 0.85rem; color: var(--text-secondary); padding: 8px 0;">No revisions recorded.</div>
+                    <div style="font-size:0.85rem;color:var(--text-secondary);padding:8px 0;">No revisions recorded.</div>
                 }
                 else
                 {
-                    <table class="data-table" style="font-size: 0.85rem;">
+                    <table class="data-table" style="font-size:0.85rem;">
                         <thead><tr><th>Rev</th><th>Date</th><th>By</th><th>Notes</th></tr></thead>
                         <tbody>
                             @foreach (var rev in revisions)
@@ -170,6 +274,7 @@ else
     }
 }
 
+@* ── Create Modal ── *@
 @if (_showCreate)
 {
     <div class="modal-overlay" @onclick="() => _showCreate = false">
@@ -187,11 +292,65 @@ else
                 </select>
             </div>
             <div class="form-group"><label class="form-label">Material</label><input class="form-control" @bind="_newMaterial" placeholder="e.g. Nylon PA12" /></div>
-            <div class="form-group"><label class="form-label">Est. Duration (hours)</label><input class="form-control" type="number" step="0.5" min="0" @bind="_newDuration" /></div>
             <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" @bind="_newNotes"></textarea></div>
             <button class="btn btn-primary" @onclick="Create" disabled="@_creating">
                 @if (_creating) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
                 Create
+            </button>
+        </div>
+    </div>
+}
+
+@* ── Slicer Data Entry Modal ── *@
+@if (_showSlicerEntry)
+{
+    <div class="modal-overlay" @onclick="() => _showSlicerEntry = false">
+        <div class="modal-content" style="max-width:650px" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">Slicer Data — @(_slicerPackage?.Name)</span><button class="modal-close" @onclick="() => _showSlicerEntry = false">&times;</button></div>
+            <div class="form-group">
+                <label class="form-label">Estimated Build Duration (hours) *</label>
+                <input class="form-control" type="number" step="0.1" min="0.1" @bind="_slicerDuration" />
+                <small style="color:var(--text-secondary)">Enter the total print duration from the slicer software</small>
+            </div>
+            @if (_slicerPackage?.Parts != null)
+            {
+                <div class="form-group">
+                    <label class="form-label">Part Nesting (from slicer)</label>
+                    <table class="data-table" style="font-size:0.9rem;">
+                        <thead><tr><th>Part</th><th style="width:80px">Qty</th><th style="width:85px">Stack</th><th>Slicer Notes</th></tr></thead>
+                        <tbody>
+                            @foreach (var pp in _slicerPackage.Parts)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@(pp.Part?.PartNumber ?? $"#{pp.PartId}")</strong>
+                                        @if (!string.IsNullOrEmpty(pp.Part?.Name)) { <span style="color:var(--text-secondary)"> — @pp.Part.Name</span> }
+                                    </td>
+                                    <td>
+                                        <input class="form-control form-control-sm" type="number" min="1" max="500" style="width:70px"
+                                               value="@pp.Quantity" @onchange="(e) => UpdateSlicerQuantity(pp.Id, e)" />
+                                    </td>
+                                    <td>
+                                        <select class="form-control form-control-sm" style="width:70px"
+                                                value="@pp.StackLevel" @onchange="(e) => UpdateSlicerStackLevel(pp.Id, e)">
+                                            <option value="1">1x</option>
+                                            <option value="2">2x</option>
+                                            <option value="3">3x</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input class="form-control form-control-sm" value="@(pp.SlicerNotes ?? "")"
+                                               placeholder="Position / orientation"
+                                               @onchange="(e) => UpdateSlicerNotes(pp.Id, e)" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            <button class="btn btn-primary" @onclick="SaveSlicerData" disabled="@(_slicerDuration is null or <= 0)">
+                Save Slicer Data
             </button>
         </div>
     </div>
@@ -203,22 +362,46 @@ else
     private string _currentUser = "System";
     private List<BuildPackage>? _packages;
     private List<Machine>? _machines;
-    private List<Part>? _parts;
+    private List<Part>? _additiveParts;
     private Dictionary<string, string> _machineNames = new();
     private bool _showCreate;
     private bool _processing;
     private bool _creating;
     private string _newName = "", _newMachineId = "", _newMaterial = "", _newNotes = "";
-    private double? _newDuration;
     private string _statusFilter = "";
     private int _addPartId;
     private int _addPartQty = 1;
+    private string _partSearch = "";
     private ConfirmDialog _confirmDialog = null!;
     private HashSet<int> _expandedRevisions = new();
     private Dictionary<int, List<BuildPackageRevision>> _revisionCache = new();
 
+    // Inline part editing
+    private int? _editingPartId;
+    private int _editQty;
+    private int _editStackLevel;
+    private string? _editSlicerNotes;
+
+    // Slicer data entry
+    private bool _showSlicerEntry;
+    private BuildPackage? _slicerPackage;
+    private double? _slicerDuration;
+
     private IEnumerable<BuildPackage> _filteredPackages =>
         _packages?.Where(p => string.IsNullOrEmpty(_statusFilter) || p.Status.ToString() == _statusFilter) ?? Enumerable.Empty<BuildPackage>();
+
+    private IEnumerable<Part> FilteredAdditiveParts
+    {
+        get
+        {
+            if (_additiveParts == null) return Enumerable.Empty<Part>();
+            if (string.IsNullOrWhiteSpace(_partSearch)) return _additiveParts;
+            var search = _partSearch.Trim();
+            return _additiveParts.Where(p =>
+                p.PartNumber.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || p.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -226,7 +409,10 @@ else
         {
             _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
             _machineNames = _machines.ToDictionary(m => m.MachineId, m => m.Name);
-            _parts = await PartService.GetAllPartsAsync(activeOnly: true);
+            var allParts = await PartService.GetAllPartsAsync(activeOnly: true);
+            _additiveParts = allParts
+                .Where(p => p.ManufacturingApproach?.RequiresBuildPlate == true)
+                .ToList();
             await LoadPackages();
         }
         catch (Exception ex) { Toast.ShowError($"Failed to load build planning: {ex.Message}"); }
@@ -237,9 +423,11 @@ else
         _packages = await BuildPlanningService.GetAllPackagesAsync();
     }
 
+    // ── Create Package ──────────────────────────────────────────
+
     private void ShowCreate()
     {
-        _newName = ""; _newMachineId = ""; _newMaterial = ""; _newNotes = ""; _newDuration = null;
+        _newName = ""; _newMachineId = ""; _newMaterial = ""; _newNotes = "";
         _showCreate = true;
     }
 
@@ -255,7 +443,6 @@ else
                 Name = _newName,
                 MachineId = _newMachineId,
                 Material = _newMaterial,
-                EstimatedDurationHours = _newDuration,
                 Notes = _newNotes,
                 CreatedBy = _currentUser,
                 LastModifiedBy = _currentUser
@@ -268,6 +455,8 @@ else
         finally { _creating = false; }
     }
 
+    // ── Part Management ─────────────────────────────────────────
+
     private async Task AddPartToPackage(int packageId)
     {
         if (_addPartId <= 0) { Toast.ShowError("Select a part to add."); return; }
@@ -275,7 +464,7 @@ else
         try
         {
             await BuildPlanningService.AddPartToPackageAsync(packageId, _addPartId, _addPartQty);
-            _addPartId = 0; _addPartQty = 1;
+            _addPartId = 0; _addPartQty = 1; _partSearch = "";
             Toast.ShowSuccess("Part added to package.");
             await LoadPackages();
         }
@@ -294,6 +483,34 @@ else
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
     }
 
+    private void StartPartEdit(BuildPackagePart pp)
+    {
+        _editingPartId = pp.Id;
+        _editQty = pp.Quantity;
+        _editStackLevel = pp.StackLevel;
+        _editSlicerNotes = pp.SlicerNotes;
+    }
+
+    private void CancelPartEdit()
+    {
+        _editingPartId = null;
+    }
+
+    private async Task SavePartEdit(int packagePartId)
+    {
+        if (_editQty < 1) { Toast.ShowError("Quantity must be at least 1."); return; }
+        try
+        {
+            await BuildPlanningService.UpdatePartInPackageAsync(packagePartId, _editQty, _editStackLevel, _editSlicerNotes);
+            _editingPartId = null;
+            Toast.ShowSuccess("Part updated.");
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    // ── Status Changes ──────────────────────────────────────────
+
     private async Task ChangeStatus(BuildPackage pkg, BuildPackageStatus newStatus)
     {
         if (newStatus == BuildPackageStatus.Ready && !pkg.Parts.Any())
@@ -301,10 +518,17 @@ else
             Toast.ShowError("Add at least one part before marking as Ready.");
             return;
         }
+        if (newStatus == BuildPackageStatus.Ready && !pkg.IsSlicerDataEntered)
+        {
+            Toast.ShowError("Enter slicer data before marking as Ready.");
+            return;
+        }
         var label = newStatus switch
         {
             BuildPackageStatus.Cancelled => "cancel",
             BuildPackageStatus.Completed => "complete",
+            BuildPackageStatus.Printing => "start printing",
+            BuildPackageStatus.PostPrint => "move to post-print",
             _ => $"change to {newStatus}"
         };
         var confirmed = await _confirmDialog.ShowAsync($"Are you sure you want to {label} \"{pkg.Name}\"?", "Confirm Status Change");
@@ -312,6 +536,11 @@ else
         _processing = true;
         try
         {
+            if (newStatus == BuildPackageStatus.Printing)
+                pkg.PrintStartedAt = DateTime.UtcNow;
+            else if (newStatus == BuildPackageStatus.PostPrint)
+                pkg.PrintCompletedAt = DateTime.UtcNow;
+
             pkg.Status = newStatus;
             pkg.LastModifiedBy = _currentUser;
             pkg.LastModifiedDate = DateTime.UtcNow;
@@ -333,5 +562,124 @@ else
         _expandedRevisions.Add(packageId);
         if (!_revisionCache.ContainsKey(packageId))
             _revisionCache[packageId] = await BuildPlanningService.GetRevisionsAsync(packageId);
+    }
+
+    // ── Slicer Data Entry ───────────────────────────────────────
+
+    private void ShowSlicerDataEntry(BuildPackage pkg)
+    {
+        _slicerPackage = pkg;
+        _slicerDuration = pkg.EstimatedDurationHours;
+        _showSlicerEntry = true;
+    }
+
+    private void UpdateSlicerQuantity(int partId, ChangeEventArgs e)
+    {
+        if (_slicerPackage == null) return;
+        var pp = _slicerPackage.Parts.FirstOrDefault(p => p.Id == partId);
+        if (pp != null && int.TryParse(e.Value?.ToString(), out var qty) && qty >= 1)
+            pp.Quantity = qty;
+    }
+
+    private void UpdateSlicerStackLevel(int partId, ChangeEventArgs e)
+    {
+        if (_slicerPackage == null) return;
+        var pp = _slicerPackage.Parts.FirstOrDefault(p => p.Id == partId);
+        if (pp != null && int.TryParse(e.Value?.ToString(), out var level) && level >= 1 && level <= 3)
+            pp.StackLevel = level;
+    }
+
+    private void UpdateSlicerNotes(int partId, ChangeEventArgs e)
+    {
+        if (_slicerPackage == null) return;
+        var pp = _slicerPackage.Parts.FirstOrDefault(p => p.Id == partId);
+        if (pp != null)
+            pp.SlicerNotes = e.Value?.ToString();
+    }
+
+    private async Task SaveSlicerData()
+    {
+        if (_slicerPackage == null || _slicerDuration is null or <= 0) return;
+        try
+        {
+            _slicerPackage.EstimatedDurationHours = _slicerDuration;
+            _slicerPackage.IsSlicerDataEntered = true;
+            _slicerPackage.Status = BuildPackageStatus.Sliced;
+            _slicerPackage.LastModifiedBy = _currentUser;
+            _slicerPackage.LastModifiedDate = DateTime.UtcNow;
+            await BuildPlanningService.UpdatePackageAsync(_slicerPackage);
+
+            // Persist per-part slicer changes (qty, stack level, notes)
+            foreach (var pp in _slicerPackage.Parts)
+            {
+                await BuildPlanningService.UpdatePartInPackageAsync(pp.Id, pp.Quantity, pp.StackLevel, pp.SlicerNotes);
+            }
+
+            Toast.ShowSuccess("Slicer data saved. Package → Sliced");
+            _showSlicerEntry = false;
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    // ── Build Scheduling ────────────────────────────────────────
+
+    private async Task ScheduleBuild(BuildPackage pkg)
+    {
+        var confirmed = await _confirmDialog.ShowAsync(
+            $"Schedule \"{pkg.Name}\" on machine {_machineNames.GetValueOrDefault(pkg.MachineId, pkg.MachineId)}?",
+            "Confirm Schedule");
+        if (!confirmed) return;
+        _processing = true;
+        try
+        {
+            var machine = _machines?.FirstOrDefault(m => m.MachineId == pkg.MachineId);
+            if (machine == null) { Toast.ShowError("Machine not found."); return; }
+
+            var result = await BuildScheduling.ScheduleBuildAsync(pkg.Id, machine.Id);
+
+            var msg = $"Scheduled: {result.Slot.PrintStart:g} → {result.Slot.PrintEnd:g}";
+            if (result.ChangeoverInfo is { OperatorAvailable: false, SuggestedAction: not null })
+                msg += $"\n⚠️ {result.ChangeoverInfo.SuggestedAction}";
+
+            Toast.ShowSuccess(msg);
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _processing = false; }
+    }
+
+    private async Task ReleasePlate(BuildPackage pkg)
+    {
+        var confirmed = await _confirmDialog.ShowAsync(
+            $"Release plate for \"{pkg.Name}\"? This will create PartInstances and per-part jobs.",
+            "Confirm Plate Release");
+        if (!confirmed) return;
+        _processing = true;
+        try
+        {
+            var result = await BuildScheduling.ReleasePlateAsync(pkg.Id, _currentUser);
+            Toast.ShowSuccess($"Plate released: {result.TotalPartCount} part instance(s) created.");
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _processing = false; }
+    }
+
+    private async Task UnlockBuild(BuildPackage pkg)
+    {
+        var confirmed = await _confirmDialog.ShowAsync(
+            $"Unlock \"{pkg.Name}\" and return to Draft? This will cancel scheduled stages.",
+            "Confirm Unlock");
+        if (!confirmed) return;
+        _processing = true;
+        try
+        {
+            await BuildScheduling.UnlockBuildAsync(pkg.Id, _currentUser, "User requested reopen");
+            Toast.ShowSuccess("Build unlocked → Draft");
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _processing = false; }
     }
 }

@@ -27,7 +27,14 @@ public enum BuildJobStatus
 
 public enum BuildPackageStatus
 {
-    Draft, Ready, Scheduled, InProgress, Completed, Cancelled
+    Draft,          // Parts being assembled onto plate
+    Sliced,         // Slicer data entered (duration, actual counts)
+    Ready,          // Approved for scheduling
+    Scheduled,      // Assigned to machine + time slot
+    Printing,       // Actively printing on machine
+    PostPrint,      // Plate off printer, going through post-print stages
+    Completed,      // All parts released as PartInstances
+    Cancelled
 }
 
 public enum StageExecutionStatus

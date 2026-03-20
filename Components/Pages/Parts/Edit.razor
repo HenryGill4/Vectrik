@@ -4,6 +4,7 @@
 @inject IPartService PartService
 @inject IStageService StageService
 @inject IMaterialService MaterialService
+@inject IManufacturingApproachService ApproachService
 @inject ICustomFieldService CustomFieldService
 @inject ITenantFeatureService Features
 @inject IMachineService MachineService
@@ -67,7 +68,7 @@
                 <button class="tab @(_tab == "pdm" ? "active" : "")" @onclick='() => _tab = "pdm"'>Drawing & Revision</button>
                 <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_stageReqs?.Count ?? 0))</button>
                 <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM / Materials (@(_bomItems?.Count ?? 0))</button>
-                @if (_showSlsFeatures)
+                @if (ShowAdditiveTabs)
                 {
                     <button class="tab @(_tab == "stacking" ? "active" : "")" @onclick='() => _tab = "stacking"'>Stacking</button>
                     <button class="tab @(_tab == "batch" ? "active" : "")" @onclick='() => _tab = "batch"'>Batch Durations</button>
@@ -121,10 +122,11 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Manufacturing Approach</label>
-                            <select class="form-control" @bind="_part!.ManufacturingApproach">
+                            <select class="form-control" value="@_part!.ManufacturingApproachId" @onchange="OnApproachChanged">
+                                <option value="">Select approach...</option>
                                 @foreach (var a in _approaches)
                                 {
-                                    <option value="@a">@a</option>
+                                    <option value="@a.Id">@(a.IconEmoji) @a.Name</option>
                                 }
                             </select>
                         </div>
@@ -340,56 +342,54 @@
                 </div>
             }
 
-                            <!-- Stacking Tab (SLS feature-flagged) -->
-                            @if (_tab == "stacking" && _showSlsFeatures)
+                            <!-- Stacking Tab (approach-driven) -->
+                            @if (_tab == "stacking" && ShowAdditiveTabs)
             {
                 <div class="card">
                     <h3 class="card-title">SLS Stacking Configuration</h3>
-                    <p style="color: var(--text-muted); margin-bottom: 12px;">Configure how this part can be stacked in SLS/LPBF builds.</p>
+                    <p style="color: var(--text-muted); margin-bottom: 12px;">Configure how this part can be stacked in SLS/LPBF builds. These are <strong>planning guidelines</strong> — actual per-build counts come from the slicer.</p>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div class="form-group">
-                            <label class="form-label"><input type="checkbox" @bind="_part!.AllowStacking" style="margin-right: 6px;" />Allow Stacking</label>
+                            <label class="form-label"><input type="checkbox" @bind="_part!.AdditiveBuildConfig!.AllowStacking" style="margin-right: 6px;" />Allow Stacking</label>
                         </div>
-                        <div class="form-group"><label class="form-label">Max Stack Count</label><input class="form-control" type="number" min="1" max="10" @bind="_part!.MaxStackCount" /></div>
-                        <div class="form-group"><label class="form-label">Parts/Build (Single)</label><input class="form-control" type="number" min="1" @bind="_part!.PartsPerBuildSingle" /></div>
-                        <div class="form-group"><label class="form-label">Single Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.SingleStackDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Max Stack Count</label><input class="form-control" type="number" min="1" max="10" @bind="_part!.AdditiveBuildConfig!.MaxStackCount" /></div>
+                        <div class="form-group"><label class="form-label">Planned Parts/Build (Single)</label><input class="form-control" type="number" min="1" max="500" @bind="_part!.AdditiveBuildConfig!.PlannedPartsPerBuildSingle" /></div>
+                        <div class="form-group"><label class="form-label">Single Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.AdditiveBuildConfig!.SingleStackDurationHours" /></div>
 
                         <div class="form-group" style="grid-column: span 2;">
-                            <label class="form-label"><input type="checkbox" @bind="_part!.EnableDoubleStack" style="margin-right: 6px;" />Enable Double Stack</label>
+                            <label class="form-label"><input type="checkbox" @bind="_part!.AdditiveBuildConfig!.EnableDoubleStack" style="margin-right: 6px;" />Enable Double Stack</label>
                         </div>
-                        @if (_part!.EnableDoubleStack)
+                        @if (_part!.AdditiveBuildConfig!.EnableDoubleStack)
                         {
-                            <div class="form-group"><label class="form-label">Parts/Build (Double)</label><input class="form-control" type="number" min="1" @bind="_part.PartsPerBuildDouble" /></div>
-                            <div class="form-group"><label class="form-label">Double Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part.DoubleStackDurationHours" /></div>
+                            <div class="form-group"><label class="form-label">Planned Parts/Build (Double)</label><input class="form-control" type="number" min="1" max="500" @bind="_part.AdditiveBuildConfig!.PlannedPartsPerBuildDouble" /></div>
+                            <div class="form-group"><label class="form-label">Double Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part.AdditiveBuildConfig!.DoubleStackDurationHours" /></div>
                         }
 
                         <div class="form-group" style="grid-column: span 2;">
-                            <label class="form-label"><input type="checkbox" @bind="_part!.EnableTripleStack" style="margin-right: 6px;" />Enable Triple Stack</label>
+                            <label class="form-label"><input type="checkbox" @bind="_part!.AdditiveBuildConfig!.EnableTripleStack" style="margin-right: 6px;" />Enable Triple Stack</label>
                         </div>
-                        @if (_part!.EnableTripleStack)
+                        @if (_part!.AdditiveBuildConfig!.EnableTripleStack)
                         {
-                            <div class="form-group"><label class="form-label">Parts/Build (Triple)</label><input class="form-control" type="number" min="1" @bind="_part.PartsPerBuildTriple" /></div>
-                            <div class="form-group"><label class="form-label">Triple Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part.TripleStackDurationHours" /></div>
+                            <div class="form-group"><label class="form-label">Planned Parts/Build (Triple)</label><input class="form-control" type="number" min="1" max="500" @bind="_part.AdditiveBuildConfig!.PlannedPartsPerBuildTriple" /></div>
+                            <div class="form-group"><label class="form-label">Triple Stack Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part.AdditiveBuildConfig!.TripleStackDurationHours" /></div>
                         }
                     </div>
                 </div>
             }
 
-            <!-- Batch Durations Tab (SLS feature-flagged) -->
-            @if (_tab == "batch" && _showSlsFeatures)
+            <!-- Batch Durations Tab (approach-driven) -->
+            @if (_tab == "batch" && ShowBatchDurationTab)
             {
                 <div class="card">
-                    <h3 class="card-title">Batch Stage Durations</h3>
-                    <p style="color: var(--text-muted); margin-bottom: 12px;">Override default durations for batch processing stages specific to this part.</p>
+                    <h3 class="card-title">Post-Print Batch Durations</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 12px;">Planning estimates for post-print batch processing stages specific to this part.</p>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <div class="form-group"><label class="form-label">SLS Build Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.SlsBuildDurationHours" /></div>
-                        <div class="form-group"><label class="form-label">SLS Parts/Build</label><input class="form-control" type="number" @bind="_part!.SlsPartsPerBuild" /></div>
-                        <div class="form-group"><label class="form-label">Depowdering Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.DepowderingDurationHours" /></div>
-                        <div class="form-group"><label class="form-label">Depowdering Parts/Batch</label><input class="form-control" type="number" @bind="_part!.DepowderingPartsPerBatch" /></div>
-                        <div class="form-group"><label class="form-label">Heat Treatment Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.HeatTreatmentDurationHours" /></div>
-                        <div class="form-group"><label class="form-label">Heat Treatment Parts/Batch</label><input class="form-control" type="number" @bind="_part!.HeatTreatmentPartsPerBatch" /></div>
-                        <div class="form-group"><label class="form-label">Wire EDM Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.WireEdmDurationHours" /></div>
-                        <div class="form-group"><label class="form-label">Wire EDM Parts/Session</label><input class="form-control" type="number" @bind="_part!.WireEdmPartsPerSession" /></div>
+                        <div class="form-group"><label class="form-label">Depowdering Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.AdditiveBuildConfig!.DepowderingDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Depowdering Parts/Batch</label><input class="form-control" type="number" max="500" @bind="_part!.AdditiveBuildConfig!.DepowderingPartsPerBatch" /></div>
+                        <div class="form-group"><label class="form-label">Heat Treatment Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.AdditiveBuildConfig!.HeatTreatmentDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Heat Treatment Parts/Batch</label><input class="form-control" type="number" max="500" @bind="_part!.AdditiveBuildConfig!.HeatTreatmentPartsPerBatch" /></div>
+                        <div class="form-group"><label class="form-label">Wire EDM Duration (hrs)</label><input class="form-control" type="number" step="0.1" @bind="_part!.AdditiveBuildConfig!.WireEdmDurationHours" /></div>
+                        <div class="form-group"><label class="form-label">Wire EDM Parts/Session</label><input class="form-control" type="number" max="500" @bind="_part!.AdditiveBuildConfig!.WireEdmPartsPerSession" /></div>
                     </div>
                 </div>
             }
@@ -456,7 +456,6 @@
     private ConfirmDialog _confirm = null!;
 
     // Feature flags
-    private bool _showSlsFeatures;
     private bool _showDlms;
 
     // Part data
@@ -481,20 +480,22 @@
     // Stage requirement form state
     private int _addStageId;
 
-    // Manufacturing approaches
-    private readonly string[] _approaches = [
-        "SLS-Based", "CNC Machining", "CNC Turning", "Wire EDM", "Casting",
-        "Injection Molding", "Sheet Metal", "3D Printing (FDM)", "3D Printing (SLA)",
-        "Additive + Subtractive", "Assembly", "Manual", "Other"
-    ];
+    // Manufacturing approaches (DB-backed)
+    private List<ManufacturingApproach> _approaches = new();
+
+    private ManufacturingApproach? SelectedApproach =>
+        _approaches.FirstOrDefault(a => a.Id == _part?.ManufacturingApproachId);
+
+    private bool ShowAdditiveTabs => SelectedApproach?.IsAdditive == true;
+    private bool ShowBatchDurationTab => SelectedApproach?.HasPostPrintBatching == true;
 
     protected override async Task OnInitializedAsync()
     {
-        _showSlsFeatures = Features.IsEnabled("sls.stacking") || Features.IsEnabled("sls");
         _showDlms = Features.IsEnabled("dlms");
 
         // Load reference data
         _materials = await MaterialService.GetAllMaterialsAsync();
+        _approaches = await ApproachService.GetAllAsync();
         _allStages = await StageService.GetAllStagesAsync();
         _machines = await MachineService.GetAllMachinesAsync(true);
 
@@ -503,9 +504,6 @@
             _part = new Part
             {
                 Material = "",
-                ManufacturingApproach = "CNC Machining",
-                PartsPerBuildSingle = 1,
-                MaxStackCount = 1,
                 IsActive = true,
                 CreatedBy = _currentUser,
                 LastModifiedBy = _currentUser
@@ -530,6 +528,9 @@
             }
         }
 
+        // Ensure AdditiveBuildConfig exists when approach is additive
+        EnsureAdditiveBuildConfig();
+
         // Load custom field definitions for "Part" entity
         _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Part");
         if (_part != null && !string.IsNullOrEmpty(_part.CustomFieldValues))
@@ -550,6 +551,34 @@
         _part!.Material = selectedName;
         var match = _materials?.FirstOrDefault(m => m.Name == selectedName);
         _part.MaterialId = match?.Id;
+    }
+
+    private void OnApproachChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+            _part!.ManufacturingApproachId = id;
+        else
+            _part!.ManufacturingApproachId = null;
+
+        EnsureAdditiveBuildConfig();
+    }
+
+    /// <summary>
+    /// Creates or removes AdditiveBuildConfig based on the selected ManufacturingApproach.
+    /// </summary>
+    private void EnsureAdditiveBuildConfig()
+    {
+        if (_part == null) return;
+
+        if (ShowAdditiveTabs && _part.AdditiveBuildConfig == null)
+        {
+            _part.AdditiveBuildConfig = new PartAdditiveBuildConfig
+            {
+                PartId = _part.Id,
+                PlannedPartsPerBuildSingle = 1,
+                MaxStackCount = 1
+            };
+        }
     }
 
     private async Task Save()

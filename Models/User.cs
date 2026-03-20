@@ -40,4 +40,5 @@ public class User
     public string LastModifiedBy { get; set; } = string.Empty;
 
     public virtual UserSettings? Settings { get; set; }
+    public virtual ICollection<UserOperatorRole> OperatorRoles { get; set; } = new List<UserOperatorRole>();
 }

@@ -22,6 +22,7 @@ public class BuildPlanningService : IBuildPlanningService
         return await _db.BuildPackages
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.Part)
+                    .ThenInclude(part => part.AdditiveBuildConfig)
             .Include(p => p.BuildFileInfo)
             .OrderByDescending(p => p.CreatedDate)
             .ToListAsync();
@@ -129,6 +130,28 @@ public class BuildPlanningService : IBuildPlanningService
         await _db.SaveChangesAsync();
 
         await CreateRevisionAsync(packageId, "System", $"Removed part entry {packagePartId}");
+    }
+
+    public async Task<BuildPackagePart> UpdatePartInPackageAsync(int packagePartId, int quantity, int stackLevel, string? slicerNotes = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(stackLevel, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(stackLevel, 3);
+
+        var part = await _db.BuildPackageParts.FindAsync(packagePartId)
+            ?? throw new InvalidOperationException("Build package part not found.");
+
+        var changed = part.Quantity != quantity || part.StackLevel != stackLevel || part.SlicerNotes != slicerNotes;
+        part.Quantity = quantity;
+        part.StackLevel = stackLevel;
+        part.SlicerNotes = slicerNotes;
+        await _db.SaveChangesAsync();
+
+        if (changed)
+            await CreateRevisionAsync(part.BuildPackageId, "System",
+                $"Updated part entry {packagePartId}: qty={quantity}, stack={stackLevel}x");
+
+        return part;
     }
 
     public async Task<BuildFileInfo?> GetBuildFileInfoAsync(int packageId)

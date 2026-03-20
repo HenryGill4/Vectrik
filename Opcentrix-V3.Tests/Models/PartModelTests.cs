@@ -3,72 +3,40 @@ using Xunit;
 
 namespace Opcentrix_V3.Tests.Models;
 
-public class PartModelTests
+public class PartAdditiveBuildConfigTests
 {
     // ── Per-part hour computed properties ──────────────────────
 
     [Fact]
-    public void SlsPerPartHours_WhenBothValuesSet_ReturnsCorrectRatio()
-    {
-        var part = new Part { SlsBuildDurationHours = 10, SlsPartsPerBuild = 5 };
-
-        Assert.Equal(2.0, part.SlsPerPartHours);
-    }
-
-    [Fact]
-    public void SlsPerPartHours_WhenDurationMissing_ReturnsNull()
-    {
-        var part = new Part { SlsPartsPerBuild = 5 };
-
-        Assert.Null(part.SlsPerPartHours);
-    }
-
-    [Fact]
-    public void SlsPerPartHours_WhenPartsPerBuildMissing_ReturnsNull()
-    {
-        var part = new Part { SlsBuildDurationHours = 10 };
-
-        Assert.Null(part.SlsPerPartHours);
-    }
-
-    [Fact]
-    public void SlsPerPartHours_WhenPartsPerBuildZero_ReturnsNull()
-    {
-        var part = new Part { SlsBuildDurationHours = 10, SlsPartsPerBuild = 0 };
-
-        Assert.Null(part.SlsPerPartHours);
-    }
-
-    [Fact]
     public void DepowderingPerPartHours_WhenBothValuesSet_ReturnsCorrectRatio()
     {
-        var part = new Part { DepowderingDurationHours = 4, DepowderingPartsPerBatch = 8 };
+        var config = new PartAdditiveBuildConfig { DepowderingDurationHours = 4, DepowderingPartsPerBatch = 8 };
 
-        Assert.Equal(0.5, part.DepowderingPerPartHours);
+        Assert.Equal(0.5, config.DepowderingPerPartHours);
     }
 
     [Fact]
     public void DepowderingPerPartHours_WhenMissing_ReturnsNull()
     {
-        var part = new Part();
+        var config = new PartAdditiveBuildConfig();
 
-        Assert.Null(part.DepowderingPerPartHours);
+        Assert.Null(config.DepowderingPerPartHours);
     }
 
     [Fact]
     public void HeatTreatmentPerPartHours_WhenBothValuesSet_ReturnsCorrectRatio()
     {
-        var part = new Part { HeatTreatmentDurationHours = 6, HeatTreatmentPartsPerBatch = 3 };
+        var config = new PartAdditiveBuildConfig { HeatTreatmentDurationHours = 6, HeatTreatmentPartsPerBatch = 3 };
 
-        Assert.Equal(2.0, part.HeatTreatmentPerPartHours);
+        Assert.Equal(2.0, config.HeatTreatmentPerPartHours);
     }
 
     [Fact]
     public void WireEdmPerPartHours_WhenBothValuesSet_ReturnsCorrectRatio()
     {
-        var part = new Part { WireEdmDurationHours = 8, WireEdmPartsPerSession = 4 };
+        var config = new PartAdditiveBuildConfig { WireEdmDurationHours = 8, WireEdmPartsPerSession = 4 };
 
-        Assert.Equal(2.0, part.WireEdmPerPartHours);
+        Assert.Equal(2.0, config.WireEdmPerPartHours);
     }
 
     // ── Stacking configuration properties ─────────────────────
@@ -76,88 +44,80 @@ public class PartModelTests
     [Fact]
     public void HasStackingConfiguration_WhenStackingAllowedAndSingleDurationSet_ReturnsTrue()
     {
-        var part = new Part { AllowStacking = true, SingleStackDurationHours = 5 };
+        var config = new PartAdditiveBuildConfig { AllowStacking = true, SingleStackDurationHours = 5 };
 
-        Assert.True(part.HasStackingConfiguration);
+        Assert.True(config.HasStackingConfiguration);
     }
 
     [Fact]
     public void HasStackingConfiguration_WhenStackingNotAllowed_ReturnsFalse()
     {
-        var part = new Part { AllowStacking = false, SingleStackDurationHours = 5 };
+        var config = new PartAdditiveBuildConfig { AllowStacking = false, SingleStackDurationHours = 5 };
 
-        Assert.False(part.HasStackingConfiguration);
+        Assert.False(config.HasStackingConfiguration);
     }
 
     [Fact]
     public void HasStackingConfiguration_WhenNoDuration_ReturnsFalse()
     {
-        var part = new Part { AllowStacking = true };
+        var config = new PartAdditiveBuildConfig { AllowStacking = true };
 
-        Assert.False(part.HasStackingConfiguration);
+        Assert.False(config.HasStackingConfiguration);
     }
 
     [Fact]
-    public void EffectiveSingleDuration_PrefersStackDurationOverEstimate()
+    public void EffectiveSingleDuration_ReturnsSingleStackDuration()
     {
-        var part = new Part { SingleStackDurationHours = 3.0, StageEstimateSingle = 7.0 };
+        var config = new PartAdditiveBuildConfig { SingleStackDurationHours = 3.0 };
 
-        Assert.Equal(3.0, part.EffectiveSingleDuration);
+        Assert.Equal(3.0, config.EffectiveSingleDuration);
     }
 
     [Fact]
-    public void EffectiveSingleDuration_FallsBackToStageEstimate()
+    public void EffectiveSingleDuration_WhenNotSet_ReturnsNull()
     {
-        var part = new Part { StageEstimateSingle = 7.0 };
+        var config = new PartAdditiveBuildConfig();
 
-        Assert.Equal(7.0, part.EffectiveSingleDuration);
-    }
-
-    [Fact]
-    public void EffectiveSingleDuration_WhenNeitherSet_ReturnsNull()
-    {
-        var part = new Part();
-
-        Assert.Null(part.EffectiveSingleDuration);
+        Assert.Null(config.EffectiveSingleDuration);
     }
 
     [Fact]
     public void HasValidDoubleStack_WhenAllFieldsSet_ReturnsTrue()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             EnableDoubleStack = true,
             DoubleStackDurationHours = 8,
-            PartsPerBuildDouble = 4
+            PlannedPartsPerBuildDouble = 4
         };
 
-        Assert.True(part.HasValidDoubleStack);
+        Assert.True(config.HasValidDoubleStack);
     }
 
     [Fact]
     public void HasValidDoubleStack_WhenDisabled_ReturnsFalse()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             EnableDoubleStack = false,
             DoubleStackDurationHours = 8,
-            PartsPerBuildDouble = 4
+            PlannedPartsPerBuildDouble = 4
         };
 
-        Assert.False(part.HasValidDoubleStack);
+        Assert.False(config.HasValidDoubleStack);
     }
 
     [Fact]
     public void HasValidTripleStack_WhenAllFieldsSet_ReturnsTrue()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             EnableTripleStack = true,
             TripleStackDurationHours = 12,
-            PartsPerBuildTriple = 6
+            PlannedPartsPerBuildTriple = 6
         };
 
-        Assert.True(part.HasValidTripleStack);
+        Assert.True(config.HasValidTripleStack);
     }
 
     // ── AvailableStackLevels ──────────────────────────────────
@@ -165,51 +125,51 @@ public class PartModelTests
     [Fact]
     public void AvailableStackLevels_AlwaysIncludesLevel1()
     {
-        var part = new Part();
+        var config = new PartAdditiveBuildConfig();
 
-        Assert.Contains(1, part.AvailableStackLevels);
+        Assert.Contains(1, config.AvailableStackLevels);
     }
 
     [Fact]
     public void AvailableStackLevels_IncludesLevel2WhenDoubleStackValid()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             EnableDoubleStack = true,
             DoubleStackDurationHours = 8,
-            PartsPerBuildDouble = 4
+            PlannedPartsPerBuildDouble = 4
         };
 
-        Assert.Contains(2, part.AvailableStackLevels);
+        Assert.Contains(2, config.AvailableStackLevels);
     }
 
     [Fact]
     public void AvailableStackLevels_IncludesLevel3WhenTripleStackValid()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             EnableTripleStack = true,
             TripleStackDurationHours = 12,
-            PartsPerBuildTriple = 6
+            PlannedPartsPerBuildTriple = 6
         };
 
-        Assert.Contains(3, part.AvailableStackLevels);
+        Assert.Contains(3, config.AvailableStackLevels);
     }
 
     [Fact]
     public void AvailableStackLevels_AllThreeLevelsWhenBothEnabled()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             EnableDoubleStack = true,
             DoubleStackDurationHours = 8,
-            PartsPerBuildDouble = 4,
+            PlannedPartsPerBuildDouble = 4,
             EnableTripleStack = true,
             TripleStackDurationHours = 12,
-            PartsPerBuildTriple = 6
+            PlannedPartsPerBuildTriple = 6
         };
 
-        Assert.Equal([1, 2, 3], part.AvailableStackLevels);
+        Assert.Equal([1, 2, 3], config.AvailableStackLevels);
     }
 
     // ── GetStackDuration ──────────────────────────────────────
@@ -217,63 +177,63 @@ public class PartModelTests
     [Fact]
     public void GetStackDuration_Level1_ReturnsEffectiveSingleDuration()
     {
-        var part = new Part { SingleStackDurationHours = 5.0 };
+        var config = new PartAdditiveBuildConfig { SingleStackDurationHours = 5.0 };
 
-        Assert.Equal(5.0, part.GetStackDuration(1));
+        Assert.Equal(5.0, config.GetStackDuration(1));
     }
 
     [Fact]
     public void GetStackDuration_Level2_WhenValid_ReturnsDoubleDuration()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             EnableDoubleStack = true,
             DoubleStackDurationHours = 8.5,
-            PartsPerBuildDouble = 4
+            PlannedPartsPerBuildDouble = 4
         };
 
-        Assert.Equal(8.5, part.GetStackDuration(2));
+        Assert.Equal(8.5, config.GetStackDuration(2));
     }
 
     [Fact]
     public void GetStackDuration_Level2_WhenInvalid_ReturnsNull()
     {
-        var part = new Part { EnableDoubleStack = false };
+        var config = new PartAdditiveBuildConfig { EnableDoubleStack = false };
 
-        Assert.Null(part.GetStackDuration(2));
+        Assert.Null(config.GetStackDuration(2));
     }
 
     [Fact]
     public void GetStackDuration_Level3_WhenValid_ReturnsTripleDuration()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             EnableTripleStack = true,
             TripleStackDurationHours = 12.0,
-            PartsPerBuildTriple = 6
+            PlannedPartsPerBuildTriple = 6
         };
 
-        Assert.Equal(12.0, part.GetStackDuration(3));
+        Assert.Equal(12.0, config.GetStackDuration(3));
     }
 
     [Fact]
     public void GetStackDuration_InvalidLevel_ReturnsNull()
     {
-        var part = new Part();
+        var config = new PartAdditiveBuildConfig();
 
-        Assert.Null(part.GetStackDuration(4));
-        Assert.Null(part.GetStackDuration(0));
-        Assert.Null(part.GetStackDuration(-1));
+        Assert.Null(config.GetStackDuration(4));
+        Assert.Null(config.GetStackDuration(0));
+        Assert.Null(config.GetStackDuration(-1));
     }
 
     // ── GetPartsPerBuild ──────────────────────────────────────
 
     [Fact]
-    public void GetPartsPerBuild_Level1_ReturnsPartsPerBuildSingle()
+    public void GetPartsPerBuild_Level1_ReturnsPlannedPartsPerBuildSingle()
     {
-        var part = new Part { PartsPerBuildSingle = 3 };
+        var config = new PartAdditiveBuildConfig { PlannedPartsPerBuildSingle = 76 };
 
-        Assert.Equal(3, part.GetPartsPerBuild(1));
+        Assert.Equal(76, config.GetPartsPerBuild(1));
     }
 
     [Theory]
@@ -282,9 +242,9 @@ public class PartModelTests
     [InlineData(-1)]
     public void GetPartsPerBuild_InvalidLevel_ReturnsNull(int level)
     {
-        var part = new Part();
+        var config = new PartAdditiveBuildConfig();
 
-        Assert.Null(part.GetPartsPerBuild(level));
+        Assert.Null(config.GetPartsPerBuild(level));
     }
 
     // ── ValidateStackingConfiguration ─────────────────────────
@@ -292,17 +252,17 @@ public class PartModelTests
     [Fact]
     public void ValidateStackingConfiguration_WhenStackingDisabled_ReturnsNoErrors()
     {
-        var part = new Part { AllowStacking = false };
+        var config = new PartAdditiveBuildConfig { AllowStacking = false };
 
-        Assert.Empty(part.ValidateStackingConfiguration());
+        Assert.Empty(config.ValidateStackingConfiguration());
     }
 
     [Fact]
     public void ValidateStackingConfiguration_WhenStackingEnabledButNoSingleDuration_ReturnsError()
     {
-        var part = new Part { AllowStacking = true };
+        var config = new PartAdditiveBuildConfig { AllowStacking = true };
 
-        var errors = part.ValidateStackingConfiguration();
+        var errors = config.ValidateStackingConfiguration();
 
         Assert.Contains(errors, e => e.Contains("Single stack duration"));
     }
@@ -310,15 +270,14 @@ public class PartModelTests
     [Fact]
     public void ValidateStackingConfiguration_WhenDoubleEnabledButMissingFields_ReturnsErrors()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             AllowStacking = true,
             SingleStackDurationHours = 5,
             EnableDoubleStack = true
-            // Missing DoubleStackDurationHours and PartsPerBuildDouble
         };
 
-        var errors = part.ValidateStackingConfiguration();
+        var errors = config.ValidateStackingConfiguration();
 
         Assert.Contains(errors, e => e.Contains("Double stack duration"));
         Assert.Contains(errors, e => e.Contains("Parts per build (double)"));
@@ -327,15 +286,14 @@ public class PartModelTests
     [Fact]
     public void ValidateStackingConfiguration_WhenTripleEnabledButMissingFields_ReturnsErrors()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             AllowStacking = true,
             SingleStackDurationHours = 5,
             EnableTripleStack = true
-            // Missing TripleStackDurationHours and PartsPerBuildTriple
         };
 
-        var errors = part.ValidateStackingConfiguration();
+        var errors = config.ValidateStackingConfiguration();
 
         Assert.Contains(errors, e => e.Contains("Triple stack duration"));
         Assert.Contains(errors, e => e.Contains("Parts per build (triple)"));
@@ -344,19 +302,19 @@ public class PartModelTests
     [Fact]
     public void ValidateStackingConfiguration_WhenFullyConfigured_ReturnsNoErrors()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             AllowStacking = true,
             SingleStackDurationHours = 5,
             EnableDoubleStack = true,
             DoubleStackDurationHours = 8,
-            PartsPerBuildDouble = 4,
+            PlannedPartsPerBuildDouble = 4,
             EnableTripleStack = true,
             TripleStackDurationHours = 12,
-            PartsPerBuildTriple = 6
+            PlannedPartsPerBuildTriple = 6
         };
 
-        Assert.Empty(part.ValidateStackingConfiguration());
+        Assert.Empty(config.ValidateStackingConfiguration());
     }
 
     // ── GetRecommendedStackLevel ──────────────────────────────
@@ -364,37 +322,37 @@ public class PartModelTests
     [Fact]
     public void GetRecommendedStackLevel_WhenStackingDisabled_Returns1()
     {
-        var part = new Part { AllowStacking = false };
+        var config = new PartAdditiveBuildConfig { AllowStacking = false };
 
-        Assert.Equal(1, part.GetRecommendedStackLevel(10));
+        Assert.Equal(1, config.GetRecommendedStackLevel(10));
     }
 
     [Fact]
     public void GetRecommendedStackLevel_WhenQuantityZeroOrNegative_Returns1()
     {
-        var part = new Part { AllowStacking = true, SingleStackDurationHours = 5, PartsPerBuildSingle = 2 };
+        var config = new PartAdditiveBuildConfig { AllowStacking = true, SingleStackDurationHours = 5, PlannedPartsPerBuildSingle = 2 };
 
-        Assert.Equal(1, part.GetRecommendedStackLevel(0));
-        Assert.Equal(1, part.GetRecommendedStackLevel(-1));
+        Assert.Equal(1, config.GetRecommendedStackLevel(0));
+        Assert.Equal(1, config.GetRecommendedStackLevel(-1));
     }
 
     [Fact]
     public void GetRecommendedStackLevel_PicksMostEfficientLevel()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             AllowStacking = true,
             SingleStackDurationHours = 5,
-            PartsPerBuildSingle = 1,      // 5 hrs/part
+            PlannedPartsPerBuildSingle = 1,      // 5 hrs/part
             EnableDoubleStack = true,
             DoubleStackDurationHours = 6,
-            PartsPerBuildDouble = 3,       // 2 hrs/part — best
+            PlannedPartsPerBuildDouble = 3,       // 2 hrs/part — best
             EnableTripleStack = true,
             TripleStackDurationHours = 10,
-            PartsPerBuildTriple = 4         // 2.5 hrs/part
+            PlannedPartsPerBuildTriple = 4         // 2.5 hrs/part
         };
 
-        Assert.Equal(2, part.GetRecommendedStackLevel(6));
+        Assert.Equal(2, config.GetRecommendedStackLevel(6));
     }
 
     // ── CalculateStackEfficiency ──────────────────────────────
@@ -402,49 +360,71 @@ public class PartModelTests
     [Fact]
     public void CalculateStackEfficiency_WhenValidInputs_ReturnsHoursPerPart()
     {
-        var part = new Part
+        var config = new PartAdditiveBuildConfig
         {
             SingleStackDurationHours = 5,
-            PartsPerBuildSingle = 2
+            PlannedPartsPerBuildSingle = 2
         };
 
         // quantity=4 → ceil(4/2)=2 builds * 5 hrs = 10 hrs / 4 = 2.5
-        Assert.Equal(2.5, part.CalculateStackEfficiency(1, 4));
+        Assert.Equal(2.5, config.CalculateStackEfficiency(1, 4));
     }
 
     [Fact]
     public void CalculateStackEfficiency_WhenQuantityZero_ReturnsNull()
     {
-        var part = new Part { SingleStackDurationHours = 5, PartsPerBuildSingle = 2 };
+        var config = new PartAdditiveBuildConfig { SingleStackDurationHours = 5, PlannedPartsPerBuildSingle = 2 };
 
-        Assert.Null(part.CalculateStackEfficiency(1, 0));
+        Assert.Null(config.CalculateStackEfficiency(1, 0));
     }
 
     [Fact]
     public void CalculateStackEfficiency_WhenNegativeQuantity_ReturnsNull()
     {
-        var part = new Part { SingleStackDurationHours = 5, PartsPerBuildSingle = 2 };
+        var config = new PartAdditiveBuildConfig { SingleStackDurationHours = 5, PlannedPartsPerBuildSingle = 2 };
 
-        Assert.Null(part.CalculateStackEfficiency(1, -1));
+        Assert.Null(config.CalculateStackEfficiency(1, -1));
     }
 
     [Fact]
     public void CalculateStackEfficiency_WhenMissingDuration_ReturnsNull()
     {
-        var part = new Part { PartsPerBuildSingle = 2 };
+        var config = new PartAdditiveBuildConfig { PlannedPartsPerBuildSingle = 2 };
 
-        Assert.Null(part.CalculateStackEfficiency(1, 4));
+        Assert.Null(config.CalculateStackEfficiency(1, 4));
     }
 
     [Fact]
     public void CalculateStackEfficiency_WhenInvalidLevel_ReturnsNull()
     {
-        var part = new Part();
+        var config = new PartAdditiveBuildConfig();
 
-        Assert.Null(part.CalculateStackEfficiency(99, 4));
+        Assert.Null(config.CalculateStackEfficiency(99, 4));
     }
 
     // ── Default values ────────────────────────────────────────
+
+    [Fact]
+    public void NewConfig_HasCorrectDefaults()
+    {
+        var config = new PartAdditiveBuildConfig();
+
+        Assert.Equal(1, config.PlannedPartsPerBuildSingle);
+        Assert.Equal(1, config.MaxStackCount);
+        Assert.False(config.AllowStacking);
+        Assert.False(config.EnableDoubleStack);
+        Assert.False(config.EnableTripleStack);
+    }
+
+    // ── Part.AdditiveBuildConfig navigation ───────────────────
+
+    [Fact]
+    public void NewPart_HasNullAdditiveBuildConfig()
+    {
+        var part = new Part();
+
+        Assert.Null(part.AdditiveBuildConfig);
+    }
 
     [Fact]
     public void NewPart_HasCorrectDefaults()
@@ -452,13 +432,9 @@ public class PartModelTests
         var part = new Part();
 
         Assert.True(part.IsActive);
-        Assert.Equal(1, part.PartsPerBuildSingle);
-        Assert.Equal(1, part.MaxStackCount);
         Assert.Equal("Ti-6Al-4V Grade 5", part.Material);
-        Assert.Equal("CNC Machining", part.ManufacturingApproach);
-        Assert.False(part.AllowStacking);
-        Assert.False(part.EnableDoubleStack);
-        Assert.False(part.EnableTripleStack);
+        Assert.Null(part.ManufacturingApproachId);
+        Assert.Null(part.ManufacturingApproach);
         Assert.False(part.IsDefensePart);
     }
 }

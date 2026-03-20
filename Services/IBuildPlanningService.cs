@@ -10,6 +10,7 @@ public interface IBuildPlanningService
     Task<BuildPackage> UpdatePackageAsync(BuildPackage package);
     Task DeletePackageAsync(int id);
     Task<BuildPackagePart> AddPartToPackageAsync(int packageId, int partId, int quantity, int? workOrderLineId = null);
+    Task<BuildPackagePart> UpdatePartInPackageAsync(int packagePartId, int quantity, int stackLevel, string? slicerNotes = null);
     Task RemovePartFromPackageAsync(int packagePartId);
     Task<BuildFileInfo?> GetBuildFileInfoAsync(int packageId);
     Task<BuildFileInfo> SaveBuildFileInfoAsync(BuildFileInfo info);

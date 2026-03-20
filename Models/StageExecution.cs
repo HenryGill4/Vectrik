@@ -77,6 +77,12 @@ public class StageExecution
     // Sequence within job
     public int SortOrder { get; set; }
 
+    // Batch execution grouping (e.g. "DEPOW-{buildPackageId}-1")
+    [MaxLength(100)]
+    public string? BatchGroupId { get; set; }
+
+    public int? BatchPartCount { get; set; }
+
     // Audit
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
@@ -93,6 +99,7 @@ public class StageExecution
     public virtual User? Operator { get; set; }
     public virtual Machine? Machine { get; set; }
     public virtual ICollection<DelayLog> DelayLogs { get; set; } = new List<DelayLog>();
+    public virtual ExternalOperation? ExternalOperation { get; set; }
 
     // Build plate link (nullable — only set for build-level stage executions)
     public int? BuildPackageId { get; set; }

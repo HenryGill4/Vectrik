@@ -77,7 +77,10 @@ builder.Services.AddScoped<ILearningService, LearningService>();
 builder.Services.AddScoped<IMaintenanceService, MaintenanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
+builder.Services.AddScoped<IManufacturingApproachService, ManufacturingApproachService>();
 builder.Services.AddScoped<IMachineService, MachineService>();
+builder.Services.AddScoped<IOperatorRoleService, OperatorRoleService>();
+builder.Services.AddScoped<IExternalOperationService, ExternalOperationService>();
 builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
 
 // Customization Foundation (Stage 0.5)
@@ -95,6 +98,7 @@ builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
 
 // Shop Floor & Scheduling (Stage 4)
 builder.Services.AddScoped<ISchedulingService, SchedulingService>();
+builder.Services.AddScoped<IBuildSchedulingService, BuildSchedulingService>();
 builder.Services.AddScoped<IOeeService, OeeService>();
 
 // Inventory Control (Module 06)

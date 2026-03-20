@@ -55,9 +55,9 @@ else
         <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_part.StageRequirements?.Count ?? 0))</button>
         <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM (@(_bomItems?.Count ?? 0))</button>
         <button class="tab @(_tab == "drawings" ? "active" : "")" @onclick='() => _tab = "drawings"'>Drawings (@(_drawings?.Count ?? 0))</button>
-        @if (_showSlsFeatures && HasSlsConfig())
+        @if (HasAdditiveConfig())
         {
-            <button class="tab @(_tab == "sls" ? "active" : "")" @onclick='() => _tab = "sls"'>SLS Config</button>
+            <button class="tab @(_tab == "sls" ? "active" : "")" @onclick='() => _tab = "sls"'>Additive Config</button>
         }
         <button class="tab @(_tab == "revisions" ? "active" : "")" @onclick='() => _tab = "revisions"'>Revisions (@(_part.RevisionHistory?.Count ?? 0))</button>
         <button class="tab @(_tab == "notes" ? "active" : "")" @onclick='() => _tab = "notes"'>Notes (@(_part.Notes?.Count ?? 0))</button>
@@ -76,7 +76,7 @@ else
                     <div class="detail-label">Description</div><div class="detail-value">@(_part.Description ?? "—")</div>
                     <div class="detail-label">Material</div><div class="detail-value">@_part.Material</div>
                     <div class="detail-label">Raw Material Spec</div><div class="detail-value">@(_part.RawMaterialSpec ?? "—")</div>
-                    <div class="detail-label">Approach</div><div class="detail-value">@_part.ManufacturingApproach</div>
+                    <div class="detail-label">Approach</div><div class="detail-value">@(_part.ManufacturingApproach?.IconEmoji) @(_part.ManufacturingApproach?.Name ?? "—")</div>
                     <div class="detail-label">Est. Weight (kg)</div><div class="detail-value">@(_part.EstimatedWeightKg?.ToString("F2") ?? "—")</div>
                 </div>
             </div>
@@ -217,47 +217,48 @@ else
         </div>
     }
 
-    <!-- SLS Configuration Tab -->
-    @if (_tab == "sls" && _showSlsFeatures && HasSlsConfig())
+    <!-- Additive Configuration Tab -->
+    @if (_tab == "sls" && HasAdditiveConfig())
     {
+        var cfg = _part.AdditiveBuildConfig!;
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div class="card">
                 <h3 class="card-title">Stacking Configuration</h3>
                 <div class="detail-grid">
-                    <div class="detail-label">Allow Stacking</div><div class="detail-value">@(_part.AllowStacking ? "Yes" : "No")</div>
-                    <div class="detail-label">Max Stack Count</div><div class="detail-value">@_part.MaxStackCount</div>
-                    <div class="detail-label">Parts/Build (Single)</div><div class="detail-value">@_part.PartsPerBuildSingle</div>
-                    @if (_part.SingleStackDurationHours.HasValue)
+                    <div class="detail-label">Allow Stacking</div><div class="detail-value">@(cfg.AllowStacking ? "Yes" : "No")</div>
+                    <div class="detail-label">Max Stack Count</div><div class="detail-value">@cfg.MaxStackCount</div>
+                    <div class="detail-label">Planned Parts/Build (Single)</div><div class="detail-value">@cfg.PlannedPartsPerBuildSingle</div>
+                    @if (cfg.SingleStackDurationHours.HasValue)
                     {
-                        <div class="detail-label">Single Stack Duration</div><div class="detail-value">@_part.SingleStackDurationHours.Value.ToString("F1") hrs</div>
+                        <div class="detail-label">Single Stack Duration</div><div class="detail-value">@cfg.SingleStackDurationHours.Value.ToString("F1") hrs</div>
                     }
-                    @if (_part.EnableDoubleStack)
+                    @if (cfg.EnableDoubleStack)
                     {
-                        <div class="detail-label">Double Stack</div><div class="detail-value">Enabled — @(_part.PartsPerBuildDouble ?? 0) parts · @(_part.DoubleStackDurationHours?.ToString("F1") ?? "—") hrs</div>
+                        <div class="detail-label">Double Stack</div><div class="detail-value">Enabled — @(cfg.PlannedPartsPerBuildDouble ?? 0) parts · @(cfg.DoubleStackDurationHours?.ToString("F1") ?? "—") hrs</div>
                     }
-                    @if (_part.EnableTripleStack)
+                    @if (cfg.EnableTripleStack)
                     {
-                        <div class="detail-label">Triple Stack</div><div class="detail-value">Enabled — @(_part.PartsPerBuildTriple ?? 0) parts · @(_part.TripleStackDurationHours?.ToString("F1") ?? "—") hrs</div>
+                        <div class="detail-label">Triple Stack</div><div class="detail-value">Enabled — @(cfg.PlannedPartsPerBuildTriple ?? 0) parts · @(cfg.TripleStackDurationHours?.ToString("F1") ?? "—") hrs</div>
                     }
                 </div>
             </div>
 
             <div class="card">
-                <h3 class="card-title">Batch Stage Durations</h3>
+                <h3 class="card-title">Post-Print Batch Durations</h3>
                 <div class="detail-grid">
-                    @if (_part.SlsBuildDurationHours.HasValue)
+                    @if (cfg.DepowderingDurationHours.HasValue)
                     {
-                        <div class="detail-label">SLS Build</div><div class="detail-value">@_part.SlsBuildDurationHours.Value.ToString("F1") hrs (@(_part.SlsPartsPerBuild ?? 0) parts/build)</div>
+                        <div class="detail-label">Depowdering</div><div class="detail-value">@cfg.DepowderingDurationHours.Value.ToString("F1") hrs (@(cfg.DepowderingPartsPerBatch ?? 0) parts/batch)</div>
                     }
-                    @if (_part.DepowderingDurationHours.HasValue)
+                    @if (cfg.HeatTreatmentDurationHours.HasValue)
                     {
-                        <div class="detail-label">Depowdering</div><div class="detail-value">@_part.DepowderingDurationHours.Value.ToString("F1") hrs (@(_part.DepowderingPartsPerBatch ?? 0) parts/batch)</div>
+                        <div class="detail-label">Heat Treatment</div><div class="detail-value">@cfg.HeatTreatmentDurationHours.Value.ToString("F1") hrs (@(cfg.HeatTreatmentPartsPerBatch ?? 0) parts/batch)</div>
                     }
-                    @if (_part.HeatTreatmentDurationHours.HasValue)
+                    @if (cfg.WireEdmDurationHours.HasValue)
                     {
-                        <div class="detail-label">Heat Treatment</div><div class="detail-value">@_part.HeatTreatmentDurationHours.Value.ToString("F1") hrs (@(_part.HeatTreatmentPartsPerBatch ?? 0) parts/batch)</div>
+                        <div class="detail-label">Wire EDM</div><div class="detail-value">@cfg.WireEdmDurationHours.Value.ToString("F1") hrs (@(cfg.WireEdmPartsPerSession ?? 0) parts/session)</div>
                     }
-                    @if (!_part.SlsBuildDurationHours.HasValue && !_part.DepowderingDurationHours.HasValue && !_part.HeatTreatmentDurationHours.HasValue)
+                    @if (!cfg.DepowderingDurationHours.HasValue && !cfg.HeatTreatmentDurationHours.HasValue && !cfg.WireEdmDurationHours.HasValue)
                     {
                         <div class="detail-label" style="grid-column: span 2;">No batch durations configured — defaults will be used.</div>
                     }
@@ -621,7 +622,6 @@ else
     private Part? _part;
     private string _tab = "overview";
     private bool _showDlms;
-    private bool _showSlsFeatures;
     private string _userName = "System";
     private ConfirmDialog _confirm = null!;
 
@@ -668,7 +668,6 @@ else
                 ?? state.User?.Identity?.Name ?? "System";
         }
         _showDlms = Features.IsEnabled("dlms");
-        _showSlsFeatures = Features.IsEnabled("sls.stacking") || Features.IsEnabled("sls");
         _part = await PartService.GetPartDetailAsync(Id);
         _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("Part");
         if (_part != null)
@@ -892,13 +891,9 @@ else
         }
     }
 
-    private bool HasSlsConfig() =>
-        _part != null && (
-            _part.AllowStacking ||
-            _part.SlsBuildDurationHours.HasValue ||
-            _part.DepowderingDurationHours.HasValue ||
-            _part.HeatTreatmentDurationHours.HasValue ||
-            _part.ManufacturingApproach?.Contains("SLS", StringComparison.OrdinalIgnoreCase) == true);
+    private bool HasAdditiveConfig() =>
+        _part?.AdditiveBuildConfig != null ||
+        _part?.ManufacturingApproach?.IsAdditive == true;
 
     private void GoToEdit()
     {

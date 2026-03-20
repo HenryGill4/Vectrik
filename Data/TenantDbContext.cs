@@ -13,6 +13,8 @@ public class TenantDbContext : DbContext
 
     // Core Manufacturing
     public DbSet<Part> Parts { get; set; }
+    public DbSet<PartAdditiveBuildConfig> PartAdditiveBuildConfigs { get; set; }
+    public DbSet<ManufacturingApproach> ManufacturingApproaches { get; set; }
     public DbSet<Job> Jobs { get; set; }
     public DbSet<ProductionStage> ProductionStages { get; set; }
     public DbSet<PartStageRequirement> PartStageRequirements { get; set; }
@@ -112,6 +114,13 @@ public class TenantDbContext : DbContext
     public DbSet<WorkInstructionRevision> WorkInstructionRevisions { get; set; }
     public DbSet<OperatorFeedback> OperatorFeedback { get; set; }
 
+    // Operator Roles (Phase 5)
+    public DbSet<OperatorRole> OperatorRoles { get; set; }
+    public DbSet<UserOperatorRole> UserOperatorRoles { get; set; }
+
+    // External Operations (Phase 6)
+    public DbSet<ExternalOperation> ExternalOperations { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -129,6 +138,28 @@ public class TenantDbContext : DbContext
         modelBuilder.Entity<ProductionStage>(entity =>
         {
             entity.HasIndex(e => e.StageSlug).IsUnique();
+            entity.HasOne(e => e.RequiredOperatorRole)
+                .WithMany()
+                .HasForeignKey(e => e.RequiredOperatorRoleId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // OperatorRole
+        modelBuilder.Entity<OperatorRole>(entity =>
+        {
+            entity.HasIndex(e => e.Slug).IsUnique();
+        });
+
+        // UserOperatorRole
+        modelBuilder.Entity<UserOperatorRole>(entity =>
+        {
+            entity.HasKey(e => new { e.UserId, e.OperatorRoleId });
+            entity.HasOne(e => e.User)
+                .WithMany(u => u.OperatorRoles)
+                .HasForeignKey(e => e.UserId);
+            entity.HasOne(e => e.OperatorRole)
+                .WithMany(r => r.UserRoles)
+                .HasForeignKey(e => e.OperatorRoleId);
         });
 
         // Machine
@@ -145,6 +176,26 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(p => p.MaterialId)
                 .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(p => p.ManufacturingApproach)
+                .WithMany()
+                .HasForeignKey(p => p.ManufacturingApproachId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ManufacturingApproach
+        modelBuilder.Entity<ManufacturingApproach>(entity =>
+        {
+            entity.HasIndex(e => e.Slug).IsUnique();
+        });
+
+        // PartAdditiveBuildConfig
+        modelBuilder.Entity<PartAdditiveBuildConfig>(entity =>
+        {
+            entity.HasIndex(e => e.PartId).IsUnique();
+            entity.HasOne(e => e.Part)
+                .WithOne(e => e.AdditiveBuildConfig)
+                .HasForeignKey<PartAdditiveBuildConfig>(e => e.PartId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // PartDrawing
@@ -306,6 +357,9 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.BuildPackage)
                 .WithMany()
                 .HasForeignKey(e => e.BuildPackageId);
+            entity.HasOne(e => e.ExternalOperation)
+                .WithOne(e => e.StageExecution)
+                .HasForeignKey<ExternalOperation>(e => e.StageExecutionId);
         });
 
         // JobNote
@@ -346,6 +400,11 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.ScheduledJob)
                 .WithMany()
                 .HasForeignKey(e => e.ScheduledJobId);
+
+            entity.HasOne(e => e.PredecessorBuildPackage)
+                .WithMany()
+                .HasForeignKey(e => e.PredecessorBuildPackageId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // BuildPackageRevision
@@ -381,7 +440,10 @@ public class TenantDbContext : DbContext
         // PartInstance
         modelBuilder.Entity<PartInstance>(entity =>
         {
-            entity.HasIndex(e => e.SerialNumber).IsUnique();
+            entity.HasIndex(e => e.SerialNumber)
+                .IsUnique()
+                .HasFilter("\"SerialNumber\" IS NOT NULL");
+            entity.HasIndex(e => e.TemporaryTrackingId);
             entity.HasOne(e => e.WorkOrderLine)
                 .WithMany(e => e.PartInstances)
                 .HasForeignKey(e => e.WorkOrderLineId);

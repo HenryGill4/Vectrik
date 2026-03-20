@@ -256,8 +256,11 @@ public class PartServiceTests : IDisposable
     public async Task ValidatePartAsync_IncludesStackingValidationErrors()
     {
         var part = CreateTestPart();
-        part.AllowStacking = true;
-        // Missing SingleStackDurationHours
+        part.AdditiveBuildConfig = new PartAdditiveBuildConfig
+        {
+            AllowStacking = true
+            // Missing SingleStackDurationHours
+        };
 
         var errors = await _sut.ValidatePartAsync(part);
 

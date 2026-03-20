@@ -35,6 +35,9 @@ public class ProductionStage
     [MaxLength(50)]
     public string? RequiredRole { get; set; }
 
+    public int? RequiredOperatorRoleId { get; set; }
+    public virtual OperatorRole? RequiredOperatorRole { get; set; }
+
     public string CustomFieldsConfig { get; set; } = "[]";
 
     [MaxLength(500)]
@@ -62,6 +65,8 @@ public class ProductionStage
     public double DefaultDurationHours { get; set; } = 1.0;
     public bool IsBatchStage { get; set; }
     public bool IsBuildLevelStage { get; set; }
+    public bool IsExternalOperation { get; set; }
+    public double? DefaultTurnaroundDays { get; set; }
     public bool IsActive { get; set; } = true;
 
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;

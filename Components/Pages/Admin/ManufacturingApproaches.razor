@@ -1,0 +1,109 @@
+@page "/admin/manufacturing-approaches"
+@inject IManufacturingApproachService ApproachService
+@inject ToastService Toast
+@rendermode InteractiveServer
+
+<PageTitle>Manufacturing Approaches - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Manufacturing Approaches</h1>
+    <button class="btn btn-primary" @onclick="NewApproach">+ New Approach</button>
+</div>
+
+@if (_approaches == null) { <div class="loading"><span class="spinner"></span></div> }
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Additive</th><th>Build Plate</th><th>Post-Print</th><th>Active</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var a in _approaches)
+                {
+                    <tr>
+                        <td>@a.DisplayOrder</td>
+                        <td>@(a.IconEmoji) @a.Name</td>
+                        <td style="font-family: monospace;">@a.Slug</td>
+                        <td>@(a.IsAdditive ? "Yes" : "No")</td>
+                        <td>@(a.RequiresBuildPlate ? "Yes" : "No")</td>
+                        <td>@(a.HasPostPrintBatching ? "Yes" : "No")</td>
+                        <td><span class="badge @(a.IsActive ? "badge-active" : "badge-cancelled")">@(a.IsActive ? "Yes" : "No")</span></td>
+                        <td><button class="btn btn-sm btn-secondary" @onclick="() => Edit(a)">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New Approach" : "Edit Approach")</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
+                <div class="form-group"><label class="form-label">Slug</label><input class="form-control" @bind="_edit.Slug" placeholder="e.g. cnc-machining" /></div>
+                <div class="form-group" style="grid-column: span 2;"><label class="form-label">Description</label><input class="form-control" @bind="_edit.Description" /></div>
+                <div class="form-group"><label class="form-label">Icon (emoji)</label><input class="form-control" @bind="_edit.IconEmoji" placeholder="🖨️ or ⚙️" /></div>
+                <div class="form-group"><label class="form-label">Display Order</label><input class="form-control" type="number" @bind="_edit.DisplayOrder" /></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px;">
+                <label class="form-label"><input type="checkbox" @bind="_edit.IsAdditive" style="margin-right: 6px;" />Additive (Show Stacking)</label>
+                <label class="form-label"><input type="checkbox" @bind="_edit.RequiresBuildPlate" style="margin-right: 6px;" />Requires Build Plate</label>
+                <label class="form-label"><input type="checkbox" @bind="_edit.HasPostPrintBatching" style="margin-right: 6px;" />Post-Print Batching</label>
+                <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label class="form-label">Default Routing Template (JSON array of stage slugs)</label>
+                <textarea class="form-control" @bind="_edit.DefaultRoutingTemplate" rows="3" placeholder='["sls-print","depowdering","inspection"]'></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ManufacturingApproach>? _approaches;
+    private ManufacturingApproach? _edit;
+    private bool _showForm;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _approaches = await ApproachService.GetAllAsync(activeOnly: false); }
+        catch (Exception ex) { Toast.ShowError($"Failed to load approaches: {ex.Message}"); _approaches = new(); }
+    }
+
+    private void NewApproach()
+    {
+        _edit = new ManufacturingApproach { DefaultRoutingTemplate = "[]" };
+        _showForm = true;
+    }
+
+    private void Edit(ManufacturingApproach a)
+    {
+        _edit = a;
+        _showForm = true;
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        try
+        {
+            if (_edit!.Id == 0) await ApproachService.CreateAsync(_edit);
+            else await ApproachService.UpdateAsync(_edit);
+            _showForm = false;
+            _approaches = await ApproachService.GetAllAsync(activeOnly: false);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

@@ -138,7 +138,7 @@ else
                             }
                         </td>
                         <td>@p.Material</td>
-                        <td><span class="badge" style="background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.75rem;">@(p.ManufacturingApproach ?? "—")</span></td>
+                        <td><span class="badge" style="background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.75rem;">@(p.ManufacturingApproach?.IconEmoji) @(p.ManufacturingApproach?.Name ?? "—")</span></td>
                         <td>
                             @{ var stageCount = p.StageRequirements?.Count ?? 0; }
                             @if (stageCount > 0)
@@ -228,8 +228,8 @@ else
             .ToList();
 
         _approachOptions = _allParts
-            .Where(p => !string.IsNullOrWhiteSpace(p.ManufacturingApproach))
-            .Select(p => p.ManufacturingApproach)
+            .Where(p => p.ManufacturingApproach != null)
+            .Select(p => p.ManufacturingApproach!.Name)
             .Distinct()
             .OrderBy(a => a)
             .ToList();
@@ -319,7 +319,7 @@ else
             parts = parts.Where(p => p.Material == _materialFilter);
 
         if (!string.IsNullOrEmpty(_approachFilter))
-            parts = parts.Where(p => p.ManufacturingApproach == _approachFilter);
+            parts = parts.Where(p => p.ManufacturingApproach?.Name == _approachFilter);
 
         // Sort
         parts = (_sortField, _sortAscending) switch

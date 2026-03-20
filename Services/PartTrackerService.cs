@@ -69,14 +69,15 @@ public class PartTrackerService : IPartTrackerService
             .Include(p => p.CurrentStage)
             .Include(p => p.StageLogs)
                 .ThenInclude(sl => sl.ProductionStage)
-            .FirstOrDefaultAsync(p => p.SerialNumber == serialNumber);
+            .FirstOrDefaultAsync(p => p.SerialNumber == serialNumber
+                || p.TemporaryTrackingId == serialNumber);
 
         if (instance == null) return null;
 
         return new PartInstanceTrack
         {
             PartInstanceId = instance.Id,
-            SerialNumber = instance.SerialNumber,
+            SerialNumber = instance.DisplayIdentifier,
             PartNumber = instance.Part.PartNumber,
             CurrentStageName = instance.CurrentStage?.Name ?? "Not assigned",
             Status = instance.Status.ToString(),
@@ -138,7 +139,7 @@ public class PartTrackerService : IPartTrackerService
             SerializedParts = line.PartInstances.Select(pi => new PartInstanceTrack
             {
                 PartInstanceId = pi.Id,
-                SerialNumber = pi.SerialNumber,
+                SerialNumber = pi.DisplayIdentifier,
                 PartNumber = line.Part.PartNumber,
                 CurrentStageName = pi.CurrentStage?.Name ?? "Not assigned",
                 Status = pi.Status.ToString(),

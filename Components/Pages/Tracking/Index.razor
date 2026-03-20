@@ -61,12 +61,18 @@
             @if (line.SerializedParts.Any())
             {
                 <table class="data-table">
-                    <thead><tr><th>Serial #</th><th>Stage</th><th>Status</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Stage</th><th>Status</th></tr></thead>
                     <tbody>
                         @foreach (var pi in line.SerializedParts)
                         {
                             <tr>
-                                <td>@pi.SerialNumber</td>
+                                <td>
+                                    @pi.SerialNumber
+                                    @if (pi.SerialNumber.StartsWith("TMP-"))
+                                    {
+                                        <span class="badge" style="background:#F59E0B;color:#000;font-size:0.65rem;margin-left:4px;">Temp</span>
+                                    }
+                                </td>
                                 <td>@pi.CurrentStageName</td>
                                 <td><span class="badge badge-@pi.Status.ToLower()">@pi.Status</span></td>
                             </tr>
@@ -81,7 +87,13 @@
 @if (!_searching && _serialResult != null)
 {
     <div class="card">
-        <div class="card-header">@_serialResult.SerialNumber — @_serialResult.PartNumber</div>
+        <div class="card-header">
+            @_serialResult.SerialNumber — @_serialResult.PartNumber
+            @if (_serialResult.SerialNumber.StartsWith("TMP-"))
+            {
+                <span class="badge" style="background:#F59E0B;color:#000;font-size:0.7rem;margin-left:6px;">Temp ID</span>
+            }
+        </div>
         <div style="margin-bottom: 12px;">
             <span class="badge badge-@_serialResult.Status.ToLower()">@_serialResult.Status</span>
             Current Stage: @_serialResult.CurrentStageName

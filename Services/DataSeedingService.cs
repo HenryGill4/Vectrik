@@ -19,8 +19,10 @@ public class DataSeedingService : IDataSeedingService
     {
         // Foundation data (no dependencies)
         await SeedProductionStagesAsync(tenantDb);
+        await SeedOperatorRolesAsync(tenantDb);
         await SeedMachinesAsync(tenantDb);
         await SeedMaterialsAsync(tenantDb);
+        await SeedManufacturingApproachesAsync(tenantDb);
         await SeedOperatingShiftsAsync(tenantDb);
         await SeedSystemSettingsAsync(tenantDb);
         await SeedDefaultAdminUserAsync(tenantDb);
@@ -121,10 +123,80 @@ public class DataSeedingService : IDataSeedingService
                 DisplayOrder = 9, StageIcon = "🚚", StageColor = "#6366F1",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                Name = "CNC Turning", StageSlug = "cnc-turning", Department = "Machining",
+                DefaultDurationHours = 2.0, IsBatchStage = false, HasBuiltInPage = true,
+                DisplayOrder = 10, StageIcon = "🔩", StageColor = "#0891B2",
+                RequiresMachineAssignment = true,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                Name = "Assembly", StageSlug = "assembly", Department = "Assembly",
+                DefaultDurationHours = 1.0, IsBatchStage = false, HasBuiltInPage = true,
+                DisplayOrder = 11, StageIcon = "🔧", StageColor = "#7C3AED",
+                RequiresQualityCheck = false,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                Name = "Sandblasting", StageSlug = "sandblasting", Department = "Finishing",
+                DefaultDurationHours = 1.0, IsBatchStage = true,
+                DisplayOrder = 12, StageIcon = "🌪️", StageColor = "#A3A3A3",
+                RequiresQualityCheck = false,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                Name = "External Coating", StageSlug = "external-coating", Department = "External",
+                DefaultDurationHours = 0, IsExternalOperation = true, DefaultTurnaroundDays = 14,
+                DisplayOrder = 13, StageIcon = "🏢", StageColor = "#D97706",
+                RequiresQualityCheck = true,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                Name = "Oil & Sleeve Assembly", StageSlug = "oil-sleeve", Department = "Assembly",
+                DefaultDurationHours = 0.5, IsBatchStage = false,
+                DisplayOrder = 14, StageIcon = "🛢️", StageColor = "#059669",
+                RequiresQualityCheck = false,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                Name = "Packaging & Shipping", StageSlug = "packaging", Department = "Shipping",
+                DefaultDurationHours = 0.5, IsBatchStage = false,
+                DisplayOrder = 15, StageIcon = "📦", StageColor = "#7C3AED",
+                RequiresQualityCheck = false,
+                CreatedBy = "System", LastModifiedBy = "System"
             }
         };
 
         db.ProductionStages.AddRange(stages);
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedOperatorRolesAsync(TenantDbContext db)
+    {
+        if (await db.OperatorRoles.AnyAsync()) return;
+
+        var roles = new List<OperatorRole>
+        {
+            new() { Name = "SLS Operator", Slug = "sls-operator", Description = "Operates SLS/LPBF printers", DisplayOrder = 1 },
+            new() { Name = "CNC Operator", Slug = "cnc-operator", Description = "Operates CNC mills and lathes", DisplayOrder = 2 },
+            new() { Name = "EDM Operator", Slug = "edm-operator", Description = "Operates wire EDM machines", DisplayOrder = 3 },
+            new() { Name = "QC Inspector", Slug = "qc-inspector", Description = "Performs quality control inspections", DisplayOrder = 4 },
+            new() { Name = "Laser Engraver", Slug = "laser-engraver", Description = "Operates laser engraving equipment", DisplayOrder = 5 },
+            new() { Name = "Surface Finishing", Slug = "surface-finishing", Description = "Sandblasting, tumbling, and coating", DisplayOrder = 6 },
+            new() { Name = "Assembly Technician", Slug = "assembly-technician", Description = "Assembles multi-part products", DisplayOrder = 7 },
+            new() { Name = "Shipping Clerk", Slug = "shipping-clerk", Description = "Handles packaging and shipping", DisplayOrder = 8 },
+            new() { Name = "Scheduler", Slug = "scheduler", Description = "Plans and schedules production", DisplayOrder = 9 },
+            new() { Name = "Supervisor", Slug = "supervisor", Description = "Production floor supervisor", DisplayOrder = 10 }
+        };
+
+        db.OperatorRoles.AddRange(roles);
         await db.SaveChangesAsync();
     }
 
@@ -163,6 +235,12 @@ public class DataSeedingService : IDataSeedingService
                 MachineId = "CNC1", Name = "CNC Mill #1", MachineType = "CNC",
                 Department = "Machining", HourlyRate = 95.00m,
                 CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "LATHE1", Name = "CNC Lathe #1", MachineType = "CNC",
+                MachineModel = "Haas ST-20Y", Department = "Machining",
+                HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
             }
         };
 
@@ -199,10 +277,41 @@ public class DataSeedingService : IDataSeedingService
                 Name = "AlSi10Mg", Category = "Metal Powder",
                 Density = 2.67, CostPerKg = 65.00m,
                 CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                Name = "17-4PH Stainless Steel", Category = "Bar Stock",
+                Density = 7.78, CostPerKg = 45.00m,
+                CreatedBy = "System", LastModifiedBy = "System"
             }
         };
 
         db.Materials.AddRange(materials);
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedManufacturingApproachesAsync(TenantDbContext db)
+    {
+        if (await db.ManufacturingApproaches.AnyAsync()) return;
+
+        var approaches = new List<ManufacturingApproach>
+        {
+            new() { Name = "SLS-Based",              Slug = "sls-based",           IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = true,  DefaultRoutingTemplate = """["sls-printing","depowdering","heat-treatment","qc"]""",          DisplayOrder = 1,  IconEmoji = "🖨️" },
+            new() { Name = "CNC Machining",          Slug = "cnc-machining",        IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 2,  IconEmoji = "⚙️" },
+            new() { Name = "CNC Turning",            Slug = "cnc-turning",          IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 3,  IconEmoji = "🔩" },
+            new() { Name = "Wire EDM",               Slug = "wire-edm",             IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["wire-edm","qc"]""",                                            DisplayOrder = 4,  IconEmoji = "⚡" },
+            new() { Name = "3D Printing (FDM)",      Slug = "fdm",                  IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = false, DefaultRoutingTemplate = """["sls-printing","qc"]""",                                        DisplayOrder = 5,  IconEmoji = "🖨️" },
+            new() { Name = "3D Printing (SLA)",      Slug = "sla",                  IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = false, DefaultRoutingTemplate = """["sls-printing","qc"]""",                                        DisplayOrder = 6,  IconEmoji = "🖨️" },
+            new() { Name = "Additive + Subtractive", Slug = "additive-subtractive", IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = true,  DefaultRoutingTemplate = """["sls-printing","depowdering","cnc-machining","qc"]""",          DisplayOrder = 7,  IconEmoji = "🔧" },
+            new() { Name = "Sheet Metal",            Slug = "sheet-metal",          IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 8,  IconEmoji = "📐" },
+            new() { Name = "Casting",                Slug = "casting",              IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 9,  IconEmoji = "🏭" },
+            new() { Name = "Injection Molding",      Slug = "injection-molding",    IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 10, IconEmoji = "💉" },
+            new() { Name = "Assembly",               Slug = "assembly",             IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 11, IconEmoji = "🔧" },
+            new() { Name = "Manual",                 Slug = "manual",               IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 12, IconEmoji = "✋" },
+            new() { Name = "Other",                  Slug = "other",                IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = "[]",                                                                DisplayOrder = 13, IconEmoji = "❓" },
+        };
+
+        db.ManufacturingApproaches.AddRange(approaches);
         await db.SaveChangesAsync();
     }
 
@@ -384,171 +493,291 @@ public class DataSeedingService : IDataSeedingService
         var heatTreatment = stages.FirstOrDefault(s => s.StageSlug == "heat-treatment");
         var wireEdm = stages.FirstOrDefault(s => s.StageSlug == "wire-edm");
         var cncMachining = stages.FirstOrDefault(s => s.StageSlug == "cnc-machining");
+        var cncTurning = stages.FirstOrDefault(s => s.StageSlug == "cnc-turning");
         var laserEngraving = stages.FirstOrDefault(s => s.StageSlug == "laser-engraving");
         var surfaceFinishing = stages.FirstOrDefault(s => s.StageSlug == "surface-finishing");
+        var assembly = stages.FirstOrDefault(s => s.StageSlug == "assembly");
         var qc = stages.FirstOrDefault(s => s.StageSlug == "qc");
         var shipping = stages.FirstOrDefault(s => s.StageSlug == "shipping");
 
-        if (slsPrinting == null) return; // Stages not seeded yet
+        if (slsPrinting == null) return;
 
-        // Build material lookup for FK backfill (PI.6)
         var materialLookup = await db.Materials.ToDictionaryAsync(m => m.Name, m => (int?)m.Id);
+        var approachLookup = await db.ManufacturingApproaches.ToDictionaryAsync(a => a.Slug, a => (int?)a.Id);
 
+        // ── 8 Suppressor Parts ──
         var parts = new List<Part>
         {
+            // Part 1: Outer tube — CNC turned from Ti-6Al-4V bar stock
             new()
             {
-                PartNumber = "TI-BRACKET-001",
-                Name = "Titanium Mounting Bracket",
-                Description = "SLS-printed titanium bracket for aerospace mounting application",
+                PartNumber = "SUP-TUBE-001",
+                Name = "Titanium Outer Tube",
+                Description = "Precision CNC-turned outer housing tube from Ti-6Al-4V bar stock. 1.375\" OD x 1.125\" ID x 7.5\" overall length. Threads 1.375-24 TPI both ends for end cap engagement. Wall thickness optimized for strength-to-weight ratio in rifle-caliber suppressor applications.",
                 Material = "Ti-6Al-4V Grade 5",
                 MaterialId = materialLookup.GetValueOrDefault("Ti-6Al-4V Grade 5"),
-                ManufacturingApproach = "SLS/LPBF",
-                Revision = "A",
-                RevisionDate = DateTime.UtcNow,
-                EstimatedWeightKg = 0.45,
-                AllowStacking = true,
-                MaxStackCount = 2,
-                EnableDoubleStack = true,
-                PartsPerBuildSingle = 4,
-                PartsPerBuildDouble = 8,
-                SingleStackDurationHours = 6.0,
-                DoubleStackDurationHours = 10.0,
-                SlsBuildDurationHours = 6.0,
-                SlsPartsPerBuild = 4,
-                DepowderingDurationHours = 1.0,
-                DepowderingPartsPerBatch = 8,
-                HeatTreatmentDurationHours = 4.0,
-                HeatTreatmentPartsPerBatch = 16,
-                WireEdmDurationHours = 1.5,
-                WireEdmPartsPerSession = 2,
+                ManufacturingApproachId = approachLookup.GetValueOrDefault("cnc-turning"),
+                Revision = "B",
+                RevisionDate = DateTime.UtcNow.AddDays(-45),
+                EstimatedWeightKg = 0.28,
+                IsDefensePart = true,
+                ItarClassification = ItarClassification.ITAR,
                 IsActive = true,
-                CreatedBy = "System",
-                LastModifiedBy = "System"
+                CreatedBy = "System", LastModifiedBy = "System"
             },
+            // Part 2: Monocore baffle stack
             new()
             {
-                PartNumber = "SS-HOUSING-002",
-                Name = "Stainless Steel Sensor Housing",
-                Description = "Precision sensor housing for industrial applications",
-                Material = "316L Stainless Steel",
-                MaterialId = materialLookup.GetValueOrDefault("316L Stainless Steel"),
-                ManufacturingApproach = "SLS/LPBF",
+                PartNumber = "SUP-MONO-002",
+                Name = "Monocore Baffle Stack",
+                Description = "Monolithic 6-cone K-baffle stack with integrated flow diffuser channels. SLS/LPBF printed as single unit in Inconel 718 for extreme heat and erosion resistance. Internal geometry impossible to manufacture subtractively — true additive-only design. Rated for 5.56 NATO / .300 BLK / 7.62 NATO.",
+                Material = "Inconel 718",
+                MaterialId = materialLookup.GetValueOrDefault("Inconel 718"),
+                ManufacturingApproachId = approachLookup.GetValueOrDefault("sls-based"),
+                Revision = "D",
+                RevisionDate = DateTime.UtcNow.AddDays(-10),
+                EstimatedWeightKg = 0.38,
+                IsDefensePart = true,
+                ItarClassification = ItarClassification.ITAR,
+                IsActive = true,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            // Part 3: Front end cap — CNC machined from 17-4PH
+            new()
+            {
+                PartNumber = "SUP-ECAP-003",
+                Name = "Front End Cap",
+                Description = "Muzzle-side end cap with integrated blast chamber pocket. CNC machined from 17-4PH stainless steel bar, condition H900 for maximum hardness. 1.375-24 TPI external thread for tube engagement, 0.375\" bore for projectile clearance with 0.010\" radial tolerance.",
+                Material = "17-4PH Stainless Steel",
+                MaterialId = materialLookup.GetValueOrDefault("17-4PH Stainless Steel"),
+                ManufacturingApproachId = approachLookup.GetValueOrDefault("cnc-machining"),
+                Revision = "A",
+                RevisionDate = DateTime.UtcNow.AddDays(-60),
+                EstimatedWeightKg = 0.15,
+                IsActive = true,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            // Part 4: Rear end cap — CNC machined from 17-4PH, serialized
+            new()
+            {
+                PartNumber = "SUP-RCAP-004",
+                Name = "Rear End Cap (Mount Interface)",
+                Description = "Rear mount-side end cap with adapter thread interface. 1.375-24 TPI external for tube, internal 1.375-24 TPI for adapter retention. Laser-engraved with serial number, manufacturer, and caliber designation per ATF requirements. 17-4PH H900 condition.",
+                Material = "17-4PH Stainless Steel",
+                MaterialId = materialLookup.GetValueOrDefault("17-4PH Stainless Steel"),
+                ManufacturingApproachId = approachLookup.GetValueOrDefault("cnc-machining"),
                 Revision = "B",
                 RevisionDate = DateTime.UtcNow.AddDays(-30),
-                EstimatedWeightKg = 0.82,
-                AllowStacking = false,
-                PartsPerBuildSingle = 2,
-                SlsBuildDurationHours = 8.0,
-                SlsPartsPerBuild = 2,
-                DepowderingDurationHours = 1.5,
-                DepowderingPartsPerBatch = 4,
-                HeatTreatmentDurationHours = 3.0,
-                HeatTreatmentPartsPerBatch = 8,
+                EstimatedWeightKg = 0.18,
+                IsDefensePart = true,
+                ItarClassification = ItarClassification.ITAR,
                 IsActive = true,
-                CreatedBy = "System",
-                LastModifiedBy = "System"
+                CreatedBy = "System", LastModifiedBy = "System"
             },
+            // Part 5: Muzzle adapter
             new()
             {
-                PartNumber = "TI-IMPELLER-003",
-                Name = "Titanium Impeller",
-                Description = "High-performance impeller for turbomachinery, requires full routing",
+                PartNumber = "SUP-ADPT-005",
+                Name = "Direct Thread Muzzle Adapter (1/2x28)",
+                Description = "Direct thread muzzle adapter for 5.56 NATO / .223 Rem host barrels. 1/2-28 UNEF male thread (barrel side), 1.375-24 TPI male thread (suppressor side). 316L stainless steel for corrosion resistance. Includes crush washer detent groove.",
+                Material = "316L Stainless Steel",
+                MaterialId = materialLookup.GetValueOrDefault("316L Stainless Steel"),
+                ManufacturingApproachId = approachLookup.GetValueOrDefault("cnc-turning"),
+                Revision = "C",
+                RevisionDate = DateTime.UtcNow.AddDays(-20),
+                EstimatedWeightKg = 0.09,
+                IsActive = true,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            // Part 6: Blast baffle — SLS + CNC finish (Additive+Subtractive)
+            new()
+            {
+                PartNumber = "SUP-BBAF-006",
+                Name = "Blast Baffle",
+                Description = "First-contact blast baffle with reinforced stellite-tipped cone geometry. SLS printed in Inconel 718 then CNC finish-machined for critical bore tolerance (0.375\" +0.002/-0.000). Takes the highest thermal and erosive loading in the suppressor stack. Designed for 50,000+ round service life.",
+                Material = "Inconel 718",
+                MaterialId = materialLookup.GetValueOrDefault("Inconel 718"),
+                ManufacturingApproachId = approachLookup.GetValueOrDefault("additive-subtractive"),
+                Revision = "B",
+                RevisionDate = DateTime.UtcNow.AddDays(-15),
+                EstimatedWeightKg = 0.12,
+                IsActive = true,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            // Part 7: Retention clips
+            new()
+            {
+                PartNumber = "SUP-CLIP-007",
+                Name = "Baffle Retention Spring Clip",
+                Description = "Wire EDM cut retention clip from 0.040\" Ti-6Al-4V sheet. C-clip design with spring detent that locks monocore baffle stack inside outer tube. 2 clips required per suppressor assembly. Designed for tool-free disassembly during cleaning.",
                 Material = "Ti-6Al-4V Grade 5",
                 MaterialId = materialLookup.GetValueOrDefault("Ti-6Al-4V Grade 5"),
-                ManufacturingApproach = "SLS/LPBF + CNC Finish",
-                Revision = "C",
-                RevisionDate = DateTime.UtcNow.AddDays(-15),
-                EstimatedWeightKg = 1.2,
-                IsDefensePart = true,
-                AllowStacking = false,
-                PartsPerBuildSingle = 1,
-                SlsBuildDurationHours = 12.0,
-                SlsPartsPerBuild = 1,
-                DepowderingDurationHours = 2.0,
-                DepowderingPartsPerBatch = 2,
-                HeatTreatmentDurationHours = 6.0,
-                HeatTreatmentPartsPerBatch = 4,
-                WireEdmDurationHours = 3.0,
-                WireEdmPartsPerSession = 1,
+                ManufacturingApproachId = approachLookup.GetValueOrDefault("wire-edm"),
+                Revision = "A",
+                RevisionDate = DateTime.UtcNow.AddDays(-90),
+                EstimatedWeightKg = 0.02,
                 IsActive = true,
-                CreatedBy = "System",
-                LastModifiedBy = "System"
+                CreatedBy = "System", LastModifiedBy = "System"
             },
+            // Part 8: Complete suppressor assembly
             new()
             {
-                PartNumber = "CNC-PLATE-004",
-                Name = "Aluminum Adapter Plate",
-                Description = "CNC-only machined adapter plate, no SLS required",
-                Material = "AlSi10Mg",
-                MaterialId = materialLookup.GetValueOrDefault("AlSi10Mg"),
-                ManufacturingApproach = "CNC Machining",
+                PartNumber = "SUP-ASSY-008",
+                Name = "Complete Suppressor Assembly",
+                Description = "Final assembled suppressor unit: outer tube, monocore baffle stack, blast baffle, front end cap, rear end cap, muzzle adapter, and 2x retention clips. Full functional test, sound reduction verification, and serialization. Rated for 5.56 NATO, .300 BLK subsonic/supersonic, 7.62 NATO.",
+                Material = "Ti-6Al-4V Grade 5",
+                MaterialId = materialLookup.GetValueOrDefault("Ti-6Al-4V Grade 5"),
+                ManufacturingApproachId = approachLookup.GetValueOrDefault("assembly"),
                 Revision = "A",
                 RevisionDate = DateTime.UtcNow,
-                EstimatedWeightKg = 0.35,
-                AllowStacking = false,
-                PartsPerBuildSingle = 1,
+                EstimatedWeightKg = 0.72,
+                IsDefensePart = true,
+                ItarClassification = ItarClassification.ITAR,
                 IsActive = true,
-                CreatedBy = "System",
-                LastModifiedBy = "System"
+                CreatedBy = "System", LastModifiedBy = "System"
             }
         };
 
         db.Parts.AddRange(parts);
         await db.SaveChangesAsync();
 
-        // Now add stage requirements for each part
-        var bracket = parts[0];
-        var housing = parts[1];
-        var impeller = parts[2];
-        var plate = parts[3];
+        var tube = parts[0];      // SUP-TUBE-001
+        var monocore = parts[1];  // SUP-MONO-002
+        var frontCap = parts[2];  // SUP-ECAP-003
+        var rearCap = parts[3];   // SUP-RCAP-004
+        var adapter = parts[4];   // SUP-ADPT-005
+        var blastBaffle = parts[5]; // SUP-BBAF-006
+        var clip = parts[6];      // SUP-CLIP-007
+        var assy = parts[7];      // SUP-ASSY-008
+
+        // Additive build configs for SLS/additive parts
+        var additiveConfigs = new List<PartAdditiveBuildConfig>
+        {
+            // SUP-MONO-002: Monocore (SLS-Based) — single or double stack
+            new()
+            {
+                PartId = monocore.Id,
+                AllowStacking = true,
+                MaxStackCount = 2,
+                EnableDoubleStack = true,
+                PlannedPartsPerBuildSingle = 1,
+                PlannedPartsPerBuildDouble = 2,
+                SingleStackDurationHours = 14.0,
+                DoubleStackDurationHours = 22.0,
+                DepowderingDurationHours = 2.5,
+                DepowderingPartsPerBatch = 4,
+                HeatTreatmentDurationHours = 8.0,
+                HeatTreatmentPartsPerBatch = 8,
+                WireEdmDurationHours = 1.5,
+                WireEdmPartsPerSession = 2
+            },
+            // SUP-BBAF-006: Blast Baffle (Additive+Subtractive) — single or double stack
+            new()
+            {
+                PartId = blastBaffle.Id,
+                AllowStacking = true,
+                MaxStackCount = 2,
+                EnableDoubleStack = true,
+                PlannedPartsPerBuildSingle = 2,
+                PlannedPartsPerBuildDouble = 4,
+                SingleStackDurationHours = 8.0,
+                DoubleStackDurationHours = 13.0,
+                DepowderingDurationHours = 1.0,
+                DepowderingPartsPerBatch = 8,
+                HeatTreatmentDurationHours = 8.0,
+                HeatTreatmentPartsPerBatch = 16
+            }
+        };
+
+        db.PartAdditiveBuildConfigs.AddRange(additiveConfigs);
+        await db.SaveChangesAsync();
 
         var requirements = new List<PartStageRequirement>();
 
-        // TI-BRACKET-001: SLS → Depowder → Heat Treat → Wire EDM → Surface Finish → QC → Ship
+        // SUP-TUBE-001: CNC Turning → Surface Finishing → Laser Engraving → QC → Shipping
+        if (cncTurning != null)
+        {
+            requirements.AddRange(new[]
+            {
+                new PartStageRequirement { PartId = tube.Id, ProductionStageId = cncTurning.Id, ExecutionOrder = 1, EstimatedHours = 1.5, SetupTimeMinutes = 30, AssignedMachineId = "LATHE1", RequiresSpecificMachine = true, EstimatedCost = 142.50m, MaterialCost = 98.00m, SpecialInstructions = "Ti-6Al-4V bar stock 1.500\" OD. Use flood coolant, 200 SFM, 0.004 IPR feed. Bore ID to 1.125\" ±0.001\". Thread both ends 1.375-24 TPI, class 3A.", CreatedBy = "System", LastModifiedBy = "System" },
+                new PartStageRequirement { PartId = tube.Id, ProductionStageId = surfaceFinishing!.Id, ExecutionOrder = 2, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Tumble deburr and bead blast to uniform matte finish. No media entrapment in threads.", CreatedBy = "System", LastModifiedBy = "System" },
+                new PartStageRequirement { PartId = tube.Id, ProductionStageId = laserEngraving!.Id, ExecutionOrder = 3, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Engrave serial number, caliber, and manufacturer per ATF markings requirement. Depth 0.003\" min.", CreatedBy = "System", LastModifiedBy = "System" },
+                new PartStageRequirement { PartId = tube.Id, ProductionStageId = qc!.Id, ExecutionOrder = 4, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Verify OD/ID concentricity ≤0.002\" TIR. Thread gauge both ends. Visual inspect bore for tool marks.", CreatedBy = "System", LastModifiedBy = "System" },
+                new PartStageRequirement { PartId = tube.Id, ProductionStageId = shipping!.Id, ExecutionOrder = 5, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
+            });
+        }
+
+        // SUP-MONO-002: SLS → Depowder → Heat Treat → Wire EDM → Surface Finishing → QC → Shipping
         requirements.AddRange(new[]
         {
-            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 6.0, AssignedMachineId = "TI1", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = depowdering.Id, ExecutionOrder = 2, EstimatedHours = 1.0, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = heatTreatment.Id, ExecutionOrder = 3, EstimatedHours = 4.0, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = wireEdm.Id, ExecutionOrder = 4, EstimatedHours = 1.5, AssignedMachineId = "EDM1", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 5, EstimatedHours = 1.5, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = qc.Id, ExecutionOrder = 6, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = bracket.Id, ProductionStageId = shipping.Id, ExecutionOrder = 7, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" }
+            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 14.0, SetupTimeMinutes = 60, AssignedMachineId = "TI1", EstimatedCost = 2100.00m, MaterialCost = 45.60m, SpecialInstructions = "Inconel 718 powder, 30μm layer thickness. Orientation: vertical with cone apexes pointing up. Support structure on base plate interface only — internal channels are self-supporting at 45° minimum.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = depowdering!.Id, ExecutionOrder = 2, EstimatedHours = 2.5, EstimatedCost = 212.50m, SpecialInstructions = "Extended depowdering cycle required — internal K-baffle channels trap powder. Use compressed air + ultrasonic agitation. Verify all 6 cone passages are clear with borescope before proceeding.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = heatTreatment!.Id, ExecutionOrder = 3, EstimatedHours = 8.0, EstimatedCost = 680.00m, SpecialInstructions = "Solution anneal 1750°F / 1hr, air cool. Age harden 1325°F / 8hr, furnace cool to 1150°F / 8hr, air cool. Argon atmosphere required. Verify Rockwell C 38-44 post-treatment.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = wireEdm!.Id, ExecutionOrder = 4, EstimatedHours = 1.5, AssignedMachineId = "EDM1", EstimatedCost = 127.50m, SpecialInstructions = "Wire EDM cut from build plate. Leave 0.5mm stock on interface face for final dress on surface grinder.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 5, EstimatedHours = 1.0, EstimatedCost = 85.00m, SpecialInstructions = "Vibratory tumble to remove loose particles and break sharp edges. Passivate per AMS 2700. Do NOT plug bore openings — media must flow through.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = qc.Id, ExecutionOrder = 6, EstimatedHours = 1.0, EstimatedCost = 85.00m, SpecialInstructions = "CMM inspect OD profile. Borescope all 6 internal channels. CT scan sample (1 per lot of 10). Measure bore alignment ≤0.005\" over full length. Weigh and record.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = shipping.Id, ExecutionOrder = 7, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
         });
 
-        // SS-HOUSING-002: SLS → Depowder → Heat Treat → Laser Engrave → QC → Ship
+        // SUP-ECAP-003: CNC Machining → Surface Finishing → QC → Shipping
         requirements.AddRange(new[]
         {
-            new PartStageRequirement { PartId = housing.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 8.0, AssignedMachineId = "TI2", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = housing.Id, ProductionStageId = depowdering.Id, ExecutionOrder = 2, EstimatedHours = 1.5, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = housing.Id, ProductionStageId = heatTreatment.Id, ExecutionOrder = 3, EstimatedHours = 3.0, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = housing.Id, ProductionStageId = laserEngraving.Id, ExecutionOrder = 4, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = housing.Id, ProductionStageId = qc.Id, ExecutionOrder = 5, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = housing.Id, ProductionStageId = shipping.Id, ExecutionOrder = 6, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" }
+            new PartStageRequirement { PartId = frontCap.Id, ProductionStageId = cncMachining!.Id, ExecutionOrder = 1, EstimatedHours = 1.0, SetupTimeMinutes = 20, AssignedMachineId = "CNC1", EstimatedCost = 95.00m, MaterialCost = 7.00m, SpecialInstructions = "17-4PH bar stock 1.500\" OD, H900 condition. Two-op: OP10 turn OD + thread 1.375-24, OP20 flip and bore blast chamber pocket 0.750\" Ø x 0.250\" deep + through-bore 0.375\" +0.002/-0.000.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = frontCap.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 2, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Tumble deburr. Black oxide finish per MIL-DTL-13924, Class 1.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = frontCap.Id, ProductionStageId = qc.Id, ExecutionOrder = 3, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Thread gauge 1.375-24. Pin gauge bore 0.375\". Visual inspect blast chamber for tool marks.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = frontCap.Id, ProductionStageId = shipping.Id, ExecutionOrder = 4, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
         });
 
-        // TI-IMPELLER-003: Full routing — SLS → Depowder → Heat Treat → Wire EDM → CNC → Laser Engrave → Surface Finish → QC → Ship
+        // SUP-RCAP-004: CNC Machining → Laser Engraving → QC → Shipping
         requirements.AddRange(new[]
         {
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 12.0, AssignedMachineId = "TI1", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = depowdering.Id, ExecutionOrder = 2, EstimatedHours = 2.0, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = heatTreatment.Id, ExecutionOrder = 3, EstimatedHours = 6.0, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = wireEdm.Id, ExecutionOrder = 4, EstimatedHours = 3.0, AssignedMachineId = "EDM1", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = cncMachining.Id, ExecutionOrder = 5, EstimatedHours = 4.0, AssignedMachineId = "CNC1", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = laserEngraving.Id, ExecutionOrder = 6, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 7, EstimatedHours = 2.0, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = qc.Id, ExecutionOrder = 8, EstimatedHours = 1.0, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = impeller.Id, ProductionStageId = shipping.Id, ExecutionOrder = 9, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" }
+            new PartStageRequirement { PartId = rearCap.Id, ProductionStageId = cncMachining.Id, ExecutionOrder = 1, EstimatedHours = 1.25, SetupTimeMinutes = 20, AssignedMachineId = "CNC1", EstimatedCost = 118.75m, MaterialCost = 8.00m, SpecialInstructions = "17-4PH bar stock 1.500\" OD, H900 condition. OP10 turn OD + external thread 1.375-24. OP20 bore internal thread 1.375-24 for adapter retention. Concentricity ≤0.001\" TIR.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = rearCap.Id, ProductionStageId = laserEngraving.Id, ExecutionOrder = 2, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Engrave serial number (unique per unit), manufacturer name, caliber marking, and model designation per ATF markings requirements. Depth 0.003\" minimum, 0.070\" character height.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = rearCap.Id, ProductionStageId = qc.Id, ExecutionOrder = 3, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Thread gauge both internal and external threads. Verify engraving legibility and depth. Check concentricity.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = rearCap.Id, ProductionStageId = shipping.Id, ExecutionOrder = 4, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
         });
 
-        // CNC-PLATE-004: CNC only → QC → Ship
+        // SUP-ADPT-005: CNC Turning → QC → Shipping
+        if (cncTurning != null)
+        {
+            requirements.AddRange(new[]
+            {
+                new PartStageRequirement { PartId = adapter.Id, ProductionStageId = cncTurning.Id, ExecutionOrder = 1, EstimatedHours = 0.75, SetupTimeMinutes = 15, AssignedMachineId = "LATHE1", EstimatedCost = 71.25m, MaterialCost = 6.40m, SpecialInstructions = "316L SS bar stock 1.000\" OD. Turn OD profile, cut 1/2-28 UNEF male thread (barrel side), 1.375-24 TPI male thread (suppressor side). Crush washer groove 0.030\" wide x 0.015\" deep.", CreatedBy = "System", LastModifiedBy = "System" },
+                new PartStageRequirement { PartId = adapter.Id, ProductionStageId = qc.Id, ExecutionOrder = 2, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Thread gauge both ends. Verify crush washer groove depth. Check runout ≤0.001\" TIR.", CreatedBy = "System", LastModifiedBy = "System" },
+                new PartStageRequirement { PartId = adapter.Id, ProductionStageId = shipping.Id, ExecutionOrder = 3, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
+            });
+        }
+
+        // SUP-BBAF-006: SLS → Depowder → Heat Treat → CNC Machining → QC → Shipping
         requirements.AddRange(new[]
         {
-            new PartStageRequirement { PartId = plate.Id, ProductionStageId = cncMachining.Id, ExecutionOrder = 1, EstimatedHours = 2.0, AssignedMachineId = "CNC1", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = plate.Id, ProductionStageId = qc.Id, ExecutionOrder = 2, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = plate.Id, ProductionStageId = shipping.Id, ExecutionOrder = 3, EstimatedHours = 0.5, CreatedBy = "System", LastModifiedBy = "System" }
+            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 8.0, SetupTimeMinutes = 45, AssignedMachineId = "TI2", EstimatedCost = 1200.00m, MaterialCost = 14.40m, SpecialInstructions = "Inconel 718, 30μm layers. Print 2 per plate in single-stack configuration. Cone apex up, 45° internal overhang is self-supporting. Reinforce base with 3mm support block.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = depowdering.Id, ExecutionOrder = 2, EstimatedHours = 1.0, EstimatedCost = 85.00m, SpecialInstructions = "Standard depowdering — single cone chamber, no complex internal channels. Compressed air sufficient.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = heatTreatment.Id, ExecutionOrder = 3, EstimatedHours = 8.0, EstimatedCost = 680.00m, SpecialInstructions = "Same heat treat cycle as monocore: solution anneal + double age. Argon atmosphere. Verify HRC 38-44.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = cncMachining.Id, ExecutionOrder = 4, EstimatedHours = 0.75, SetupTimeMinutes = 15, AssignedMachineId = "CNC1", EstimatedCost = 71.25m, SpecialInstructions = "Finish-machine bore to 0.375\" +0.002/-0.000. Face both ends. This is the critical tolerance — bore alignment affects accuracy.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = qc.Id, ExecutionOrder = 5, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Pin gauge bore. Verify hardness. Visual inspect cone geometry for print defects.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = shipping.Id, ExecutionOrder = 6, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
         });
+
+        // SUP-CLIP-007: Wire EDM → Surface Finishing → QC → Shipping
+        requirements.AddRange(new[]
+        {
+            new PartStageRequirement { PartId = clip.Id, ProductionStageId = wireEdm.Id, ExecutionOrder = 1, EstimatedHours = 0.5, SetupTimeMinutes = 15, AssignedMachineId = "EDM1", EstimatedCost = 42.50m, MaterialCost = 12.00m, SpecialInstructions = "Wire EDM cut from 0.040\" Ti-6Al-4V sheet. Nest 8 clips per sheet for efficiency. 0.010\" wire, 2-pass (rough + skim) for clean edge.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = clip.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 2, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Tumble deburr to remove EDM recast layer and break edges. Clips must flex without cracking.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = clip.Id, ProductionStageId = qc.Id, ExecutionOrder = 3, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Verify spring force 5-8 lbf. Go/no-go gauge fit check in dummy tube section. Visual for cracks.", CreatedBy = "System", LastModifiedBy = "System" },
+            new PartStageRequirement { PartId = clip.Id, ProductionStageId = shipping.Id, ExecutionOrder = 4, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
+        });
+
+        // SUP-ASSY-008: Assembly → QC → Shipping
+        if (assembly != null)
+        {
+            requirements.AddRange(new[]
+            {
+                new PartStageRequirement { PartId = assy.Id, ProductionStageId = assembly.Id, ExecutionOrder = 1, EstimatedHours = 0.75, SetupTimeMinutes = 10, EstimatedCost = 63.75m, SpecialInstructions = "Assembly sequence: (1) Insert blast baffle into tube, (2) Insert monocore stack, (3) Install retention clips, (4) Thread front end cap, (5) Thread rear end cap, (6) Thread muzzle adapter into rear cap. Torque end caps to 25 ft-lbs with anti-seize on threads.", CreatedBy = "System", LastModifiedBy = "System" },
+                new PartStageRequirement { PartId = assy.Id, ProductionStageId = qc.Id, ExecutionOrder = 2, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Bore alignment check with alignment rod — must pass freely. Shake test for loose internals. Weigh complete unit (spec: 0.72 ±0.05 kg). Record serial number from rear end cap.", CreatedBy = "System", LastModifiedBy = "System" },
+                new PartStageRequirement { PartId = assy.Id, ProductionStageId = shipping.Id, ExecutionOrder = 3, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Individual protective case with foam insert. Include CoC, test report, and user manual. ITAR-controlled shipment — verify end-user documentation.", CreatedBy = "System", LastModifiedBy = "System" }
+            });
+        }
 
         db.PartStageRequirements.AddRange(requirements);
         await db.SaveChangesAsync();
@@ -742,16 +971,58 @@ public class DataSeedingService : IDataSeedingService
                 UnitOfMeasure = "each", CurrentStockQty = 24m, ReservedQty = 0m,
                 ReorderPoint = 5m, ReorderQuantity = 12m, UnitCost = 38.50m,
                 TrackLots = false, CreatedBy = "System"
+            },
+            new()
+            {
+                ItemNumber = "BAR-174PH-150", Name = "17-4PH SS Bar Stock (1.500\" OD)",
+                Description = "17-4PH stainless steel round bar, 1.500\" OD x 12\" length, condition H900",
+                ItemType = InventoryItemType.RawMaterial,
+                MaterialId = materials.FirstOrDefault(m => m.Name.StartsWith("17-4PH"))?.Id,
+                UnitOfMeasure = "bar", CurrentStockQty = 48m, ReservedQty = 12m,
+                ReorderPoint = 10m, ReorderQuantity = 24m, UnitCost = 42.00m,
+                TrackLots = true, CreatedBy = "System"
+            },
+            new()
+            {
+                ItemNumber = "BAR-SS316L-100", Name = "316L SS Bar Stock (1.000\" OD)",
+                Description = "316L stainless steel round bar, 1.000\" OD x 12\" length, annealed",
+                ItemType = InventoryItemType.RawMaterial,
+                MaterialId = materials.FirstOrDefault(m => m.Name.StartsWith("316L"))?.Id,
+                UnitOfMeasure = "bar", CurrentStockQty = 60m, ReservedQty = 0m,
+                ReorderPoint = 15m, ReorderQuantity = 30m, UnitCost = 18.00m,
+                TrackLots = false, CreatedBy = "System"
+            },
+            new()
+            {
+                ItemNumber = "BAR-TI64-150", Name = "Ti-6Al-4V Bar Stock (1.500\" OD)",
+                Description = "Ti-6Al-4V Grade 5 round bar, 1.500\" OD x 12\" length, annealed",
+                ItemType = InventoryItemType.RawMaterial,
+                MaterialId = materials.FirstOrDefault(m => m.Name.StartsWith("Ti-6Al-4V"))?.Id,
+                UnitOfMeasure = "bar", CurrentStockQty = 24m, ReservedQty = 6m,
+                ReorderPoint = 6m, ReorderQuantity = 12m, UnitCost = 155.00m,
+                TrackLots = true, CreatedBy = "System"
+            },
+            new()
+            {
+                ItemNumber = "SHT-TI64-040", Name = "Ti-6Al-4V Sheet (0.040\" x 12\" x 12\")",
+                Description = "Ti-6Al-4V Grade 5 sheet for Wire EDM cutting, 0.040\" thick",
+                ItemType = InventoryItemType.RawMaterial,
+                MaterialId = materials.FirstOrDefault(m => m.Name.StartsWith("Ti-6Al-4V"))?.Id,
+                UnitOfMeasure = "sheet", CurrentStockQty = 15m, ReservedQty = 2m,
+                ReorderPoint = 5m, ReorderQuantity = 10m, UnitCost = 85.00m,
+                TrackLots = true, CreatedBy = "System"
             }
         };
 
         db.InventoryItems.AddRange(items);
         await db.SaveChangesAsync();
 
-        // Add lots for the powder materials
+        // Add lots for the powder materials and bar stock
         var tiPowder = items[0];
         var ssPowder = items[1];
         var inPowder = items[2];
+        var barStock174PH = items[7];
+        var tiBarStock = items[9];
 
         var lots = new List<InventoryLot>
         {
@@ -800,6 +1071,24 @@ public class DataSeedingService : IDataSeedingService
                 StockLocationId = powderStorage.Id,
                 ReceivedAt = DateTime.UtcNow.AddDays(-5),
                 Status = LotStatus.Quarantine, InspectionStatus = "Pending"
+            },
+            new()
+            {
+                InventoryItemId = barStock174PH.Id, LotNumber = "174PH-2026-001",
+                CertificateNumber = "CERT-BODYCOTE-2026-0033",
+                ReceivedQty = 48m, CurrentQty = 36m,
+                StockLocationId = receiving?.Id ?? powderStorage.Id,
+                ReceivedAt = DateTime.UtcNow.AddDays(-30),
+                Status = LotStatus.Available, InspectionStatus = "Approved"
+            },
+            new()
+            {
+                InventoryItemId = tiBarStock.Id, LotNumber = "TI64B-2026-001",
+                CertificateNumber = "CERT-TITANIUM-2026-0087",
+                ReceivedQty = 24m, CurrentQty = 18m,
+                StockLocationId = receiving?.Id ?? powderStorage.Id,
+                ReceivedAt = DateTime.UtcNow.AddDays(-25),
+                Status = LotStatus.Available, InspectionStatus = "Approved"
             }
         };
 
@@ -815,15 +1104,15 @@ public class DataSeedingService : IDataSeedingService
                 Quantity = 100m, QuantityBefore = 0m, QuantityAfter = 100m,
                 ToLocationId = powderStorage.Id, LotId = lots[0].Id,
                 PerformedByUserId = "System", Reference = "PO-2026-001",
-                Notes = "Initial powder stock from AP&C", TransactedAt = DateTime.UtcNow.AddDays(-45)
+                Notes = "Initial Ti64 powder stock from AP&C", TransactedAt = DateTime.UtcNow.AddDays(-45)
             },
             new()
             {
                 InventoryItemId = tiPowder.Id, TransactionType = TransactionType.JobConsumption,
                 Quantity = -20m, QuantityBefore = 100m, QuantityAfter = 80m,
                 FromLocationId = powderStorage.Id, LotId = lots[0].Id,
-                PerformedByUserId = "System", Reference = "Build BP-2026-001",
-                Notes = "Consumed for titanium bracket build", TransactedAt = DateTime.UtcNow.AddDays(-30)
+                PerformedByUserId = "System", Reference = "Build BP-2026-002",
+                Notes = "Consumed for monocore baffle stack build", TransactedAt = DateTime.UtcNow.AddDays(-30)
             },
             new()
             {
@@ -854,8 +1143,40 @@ public class DataSeedingService : IDataSeedingService
                 InventoryItemId = inPowder.Id, TransactionType = TransactionType.JobConsumption,
                 Quantity = -20m, QuantityBefore = 60m, QuantityAfter = 40m,
                 FromLocationId = powderStorage.Id, LotId = lots[3].Id,
-                PerformedByUserId = "System", Reference = "Build BP-2025-012",
-                Notes = "Consumed for impeller prototype", TransactedAt = DateTime.UtcNow.AddDays(-60)
+                PerformedByUserId = "System", Reference = "Build BP-2026-002",
+                Notes = "Consumed for monocore + blast baffle SLS build", TransactedAt = DateTime.UtcNow.AddDays(-60)
+            },
+            new()
+            {
+                InventoryItemId = barStock174PH.Id, TransactionType = TransactionType.Receipt,
+                Quantity = 48m, QuantityBefore = 0m, QuantityAfter = 48m,
+                ToLocationId = receiving?.Id ?? powderStorage.Id, LotId = lots[5].Id,
+                PerformedByUserId = "System", Reference = "PO-2026-005",
+                Notes = "17-4PH bar stock from Bodycote, H900 heat treated", TransactedAt = DateTime.UtcNow.AddDays(-30)
+            },
+            new()
+            {
+                InventoryItemId = barStock174PH.Id, TransactionType = TransactionType.JobConsumption,
+                Quantity = -12m, QuantityBefore = 48m, QuantityAfter = 36m,
+                FromLocationId = receiving?.Id ?? powderStorage.Id, LotId = lots[5].Id,
+                PerformedByUserId = "System", Reference = "JOB-00004",
+                Notes = "End cap machining — 12 bars for 24 caps (front + rear)", TransactedAt = DateTime.UtcNow.AddDays(-15)
+            },
+            new()
+            {
+                InventoryItemId = tiBarStock.Id, TransactionType = TransactionType.Receipt,
+                Quantity = 24m, QuantityBefore = 0m, QuantityAfter = 24m,
+                ToLocationId = receiving?.Id ?? powderStorage.Id, LotId = lots[6].Id,
+                PerformedByUserId = "System", Reference = "PO-2026-006",
+                Notes = "Ti-6Al-4V bar stock for suppressor tube turning", TransactedAt = DateTime.UtcNow.AddDays(-25)
+            },
+            new()
+            {
+                InventoryItemId = tiBarStock.Id, TransactionType = TransactionType.JobConsumption,
+                Quantity = -6m, QuantityBefore = 24m, QuantityAfter = 18m,
+                FromLocationId = receiving?.Id ?? powderStorage.Id, LotId = lots[6].Id,
+                PerformedByUserId = "System", Reference = "JOB-00005",
+                Notes = "Consumed for first batch of 6 suppressor tubes", TransactedAt = DateTime.UtcNow.AddDays(-12)
             }
         };
 
@@ -871,130 +1192,161 @@ public class DataSeedingService : IDataSeedingService
         if (await db.Quotes.AnyAsync()) return;
 
         var parts = await db.Parts.ToListAsync();
-        if (parts.Count < 4) return;
+        if (parts.Count < 8) return;
 
-        var bracket = parts.First(p => p.PartNumber == "TI-BRACKET-001");
-        var housing = parts.First(p => p.PartNumber == "SS-HOUSING-002");
-        var impeller = parts.First(p => p.PartNumber == "TI-IMPELLER-003");
-        var plate = parts.First(p => p.PartNumber == "CNC-PLATE-004");
+        var monocore = parts.First(p => p.PartNumber == "SUP-MONO-002");
+        var frontCap = parts.First(p => p.PartNumber == "SUP-ECAP-003");
+        var rearCap = parts.First(p => p.PartNumber == "SUP-RCAP-004");
+        var blastBaffle = parts.First(p => p.PartNumber == "SUP-BBAF-006");
+        var clip = parts.First(p => p.PartNumber == "SUP-CLIP-007");
+        var tube = parts.First(p => p.PartNumber == "SUP-TUBE-001");
+        var adapter = parts.First(p => p.PartNumber == "SUP-ADPT-005");
+        var assy = parts.First(p => p.PartNumber == "SUP-ASSY-008");
 
         var quotes = new List<Quote>
         {
-            // Quote 1 — Accepted (converted to WO)
+            // Quote 1 — Accepted (defense contract for complete suppressor kits)
             new()
             {
                 QuoteNumber = "QT-00001",
-                CustomerName = "Apex Aerospace Inc.",
-                CustomerEmail = "purchasing@apexaero.com",
-                CustomerPhone = "480-555-1234",
+                CustomerName = "Vanguard Defense Systems",
+                CustomerEmail = "contracts@vanguarddefense.com",
+                CustomerPhone = "703-555-8800",
                 Status = QuoteStatus.Accepted,
                 CreatedDate = DateTime.UtcNow.AddDays(-30),
                 ExpirationDate = DateTime.UtcNow.AddDays(60),
-                TotalEstimatedCost = 18500.00m,
-                QuotedPrice = 24050.00m,
-                Markup = 30m,
-                EstimatedLaborCost = 8200.00m,
-                EstimatedMaterialCost = 6800.00m,
-                EstimatedOverheadCost = 3500.00m,
-                TargetMarginPct = 30m,
-                RevisionNumber = 1,
+                TotalEstimatedCost = 82500.00m,
+                QuotedPrice = 115500.00m,
+                Markup = 40m,
+                EstimatedLaborCost = 42000.00m,
+                EstimatedMaterialCost = 18500.00m,
+                EstimatedOverheadCost = 22000.00m,
+                TargetMarginPct = 40m,
+                RevisionNumber = 2,
                 SentAt = DateTime.UtcNow.AddDays(-28),
                 AcceptedAt = DateTime.UtcNow.AddDays(-20),
                 CreatedBy = "admin",
                 LastModifiedBy = "admin",
-                Notes = "Titanium brackets for F-35 avionics mounting. ITAR controlled.",
+                Notes = "24x complete suppressor kits for SOCOM evaluation program. ITAR controlled — no foreign nationals. Includes monocore, blast baffles, end caps, and retention hardware. Excludes tubes and adapters (GFE).",
                 IsDefenseContract = true,
-                ContractNumber = "FA8650-26-C-0042"
+                ContractNumber = "W56HZV-26-C-0187"
             },
-            // Quote 2 — Sent, awaiting response
+            // Quote 2 — Sent (commercial replacement parts)
             new()
             {
                 QuoteNumber = "QT-00002",
-                CustomerName = "MedTech Solutions",
-                CustomerEmail = "procurement@medtechsol.com",
-                CustomerPhone = "612-555-9876",
+                CustomerName = "Summit Firearms LLC",
+                CustomerEmail = "orders@summitfirearms.com",
+                CustomerPhone = "406-555-2200",
                 Status = QuoteStatus.Sent,
                 CreatedDate = DateTime.UtcNow.AddDays(-7),
                 ExpirationDate = DateTime.UtcNow.AddDays(23),
-                TotalEstimatedCost = 4200.00m,
-                QuotedPrice = 5460.00m,
+                TotalEstimatedCost = 38200.00m,
+                QuotedPrice = 49660.00m,
                 Markup = 30m,
-                EstimatedLaborCost = 1800.00m,
-                EstimatedMaterialCost = 1400.00m,
-                EstimatedOverheadCost = 1000.00m,
+                EstimatedLaborCost = 20000.00m,
+                EstimatedMaterialCost = 8200.00m,
+                EstimatedOverheadCost = 10000.00m,
                 TargetMarginPct = 30m,
-                RevisionNumber = 2,
+                RevisionNumber = 1,
                 SentAt = DateTime.UtcNow.AddDays(-5),
                 CreatedBy = "admin",
                 LastModifiedBy = "admin",
-                Notes = "Sensor housings for implantable medical devices. Needs biocompatibility cert."
+                Notes = "Replacement monocore and blast baffle inventory for Summit's suppressor refurbishment program. Commercial sale — standard FFL/SOT transfer."
             },
-            // Quote 3 — Draft
+            // Quote 3 — Draft (R&D prototype)
             new()
             {
                 QuoteNumber = "QT-00003",
-                CustomerName = "TurboTech Engineering",
-                CustomerEmail = "rfq@turbotech.com",
-                CustomerPhone = "206-555-3344",
+                CustomerName = "Precision Arms Research",
+                CustomerEmail = "engineering@precisionarms.com",
+                CustomerPhone = "480-555-7100",
                 Status = QuoteStatus.Draft,
                 CreatedDate = DateTime.UtcNow.AddDays(-2),
                 ExpirationDate = DateTime.UtcNow.AddDays(28),
-                TotalEstimatedCost = 32000.00m,
+                TotalEstimatedCost = 14400.00m,
                 QuotedPrice = 0m,
-                EstimatedLaborCost = 15000.00m,
-                EstimatedMaterialCost = 10000.00m,
-                EstimatedOverheadCost = 7000.00m,
-                TargetMarginPct = 25m,
+                EstimatedLaborCost = 7200.00m,
+                EstimatedMaterialCost = 3200.00m,
+                EstimatedOverheadCost = 4000.00m,
+                TargetMarginPct = 35m,
                 RevisionNumber = 1,
                 CreatedBy = "admin",
                 LastModifiedBy = "admin",
-                Notes = "Titanium impellers + adapter plates for turbocharger prototyping."
+                Notes = "R&D prototype: 6x complete suppressor sets for .308 caliber testing. Custom bore diameter (0.390\" vs standard 0.375\"). Monocore baffle geometry TBD after first article test."
             }
         };
 
         db.Quotes.AddRange(quotes);
         await db.SaveChangesAsync();
 
-        // Quote lines
         var lines = new List<QuoteLine>
         {
-            // QT-00001 lines
+            // QT-00001 lines (defense kit — 4 part types)
             new()
             {
-                QuoteId = quotes[0].Id, PartId = bracket.Id, Quantity = 20,
-                EstimatedCostPerPart = 725.00m, QuotedPricePerPart = 942.50m,
-                LaborMinutes = 210, SetupMinutes = 45, MaterialCostEach = 157.50m,
-                Notes = "Ti-6Al-4V brackets, full SLS routing incl. heat treat"
+                QuoteId = quotes[0].Id, PartId = monocore.Id, Quantity = 24,
+                EstimatedCostPerPart = 2400.00m, QuotedPricePerPart = 3360.00m,
+                LaborMinutes = 420, SetupMinutes = 60, MaterialCostEach = 45.60m,
+                Notes = "Inconel 718 monocore — full SLS + post-process routing. 14hr build per unit, 2 per double-stack."
             },
             new()
             {
-                QuoteId = quotes[0].Id, PartId = plate.Id, Quantity = 20,
-                EstimatedCostPerPart = 200.00m, QuotedPricePerPart = 260.00m,
-                LaborMinutes = 60, SetupMinutes = 15, MaterialCostEach = 22.75m,
-                Notes = "Aluminum adapter plates, CNC only"
-            },
-            // QT-00002 lines
-            new()
-            {
-                QuoteId = quotes[1].Id, PartId = housing.Id, Quantity = 10,
-                EstimatedCostPerPart = 420.00m, QuotedPricePerPart = 546.00m,
-                LaborMinutes = 180, SetupMinutes = 30, MaterialCostEach = 65.60m,
-                Notes = "316L SS sensor housings, passivation finish required"
-            },
-            // QT-00003 lines
-            new()
-            {
-                QuoteId = quotes[2].Id, PartId = impeller.Id, Quantity = 5,
-                EstimatedCostPerPart = 4800.00m, QuotedPricePerPart = 0m,
-                LaborMinutes = 480, SetupMinutes = 90, MaterialCostEach = 420.00m,
-                Notes = "Full routing: SLS → depowder → HT → EDM → CNC → engrave → finish → QC"
+                QuoteId = quotes[0].Id, PartId = blastBaffle.Id, Quantity = 24,
+                EstimatedCostPerPart = 850.00m, QuotedPricePerPart = 1190.00m,
+                LaborMinutes = 180, SetupMinutes = 45, MaterialCostEach = 14.40m,
+                Notes = "Inconel 718 blast baffle — SLS printed + CNC finish bore to 0.375\" +0.002/-0.000."
             },
             new()
             {
-                QuoteId = quotes[2].Id, PartId = plate.Id, Quantity = 10,
-                EstimatedCostPerPart = 800.00m, QuotedPricePerPart = 0m,
-                LaborMinutes = 60, SetupMinutes = 15, MaterialCostEach = 22.75m,
-                Notes = "Adapter plates for impeller assembly"
+                QuoteId = quotes[0].Id, PartId = frontCap.Id, Quantity = 24,
+                EstimatedCostPerPart = 85.00m, QuotedPricePerPart = 119.00m,
+                LaborMinutes = 60, SetupMinutes = 20, MaterialCostEach = 7.00m,
+                Notes = "17-4PH front end cap with blast chamber pocket. CNC milled, black oxide finish."
+            },
+            new()
+            {
+                QuoteId = quotes[0].Id, PartId = rearCap.Id, Quantity = 24,
+                EstimatedCostPerPart = 120.00m, QuotedPricePerPart = 168.00m,
+                LaborMinutes = 75, SetupMinutes = 20, MaterialCostEach = 8.00m,
+                Notes = "17-4PH rear end cap — serialized per ATF requirements. Laser-engraved markings."
+            },
+            // QT-00002 lines (commercial replacements)
+            new()
+            {
+                QuoteId = quotes[1].Id, PartId = monocore.Id, Quantity = 50,
+                EstimatedCostPerPart = 620.00m, QuotedPricePerPart = 806.00m,
+                LaborMinutes = 420, SetupMinutes = 60, MaterialCostEach = 45.60m,
+                Notes = "Volume pricing — double-stack builds to maximize throughput. Est. 25 build cycles."
+            },
+            new()
+            {
+                QuoteId = quotes[1].Id, PartId = blastBaffle.Id, Quantity = 50,
+                EstimatedCostPerPart = 144.00m, QuotedPricePerPart = 187.20m,
+                LaborMinutes = 180, SetupMinutes = 45, MaterialCostEach = 14.40m,
+                Notes = "Volume blast baffle batch — 25 build cycles at 2 per plate."
+            },
+            // QT-00003 lines (R&D prototype)
+            new()
+            {
+                QuoteId = quotes[2].Id, PartId = monocore.Id, Quantity = 6,
+                EstimatedCostPerPart = 1800.00m, QuotedPricePerPart = 0m,
+                LaborMinutes = 480, SetupMinutes = 90, MaterialCostEach = 45.60m,
+                Notes = "Custom .308 bore diameter (0.390\"). Modified baffle geometry — requires new build file. First article inspection mandatory."
+            },
+            new()
+            {
+                QuoteId = quotes[2].Id, PartId = tube.Id, Quantity = 6,
+                EstimatedCostPerPart = 350.00m, QuotedPricePerPart = 0m,
+                LaborMinutes = 90, SetupMinutes = 30, MaterialCostEach = 98.00m,
+                Notes = "Ti-6Al-4V tubes with enlarged bore for .308 clearance."
+            },
+            new()
+            {
+                QuoteId = quotes[2].Id, PartId = adapter.Id, Quantity = 6,
+                EstimatedCostPerPart = 80.00m, QuotedPricePerPart = 0m,
+                LaborMinutes = 45, SetupMinutes = 15, MaterialCostEach = 6.40m,
+                Notes = "5/8-24 UNEF thread (standard .308 muzzle thread) instead of 1/2-28."
             }
         };
 
@@ -1014,76 +1366,80 @@ public class DataSeedingService : IDataSeedingService
         var machines = await db.Machines.ToListAsync();
         var users = await db.Users.ToListAsync();
 
-        if (parts.Count < 4 || stages.Count == 0) return;
+        if (parts.Count < 8 || stages.Count == 0) return;
 
-        var bracket = parts.First(p => p.PartNumber == "TI-BRACKET-001");
-        var housing = parts.First(p => p.PartNumber == "SS-HOUSING-002");
-        var impeller = parts.First(p => p.PartNumber == "TI-IMPELLER-003");
-        var plate = parts.First(p => p.PartNumber == "CNC-PLATE-004");
+        var monocore = parts.First(p => p.PartNumber == "SUP-MONO-002");
+        var blastBaffle = parts.First(p => p.PartNumber == "SUP-BBAF-006");
+        var frontCap = parts.First(p => p.PartNumber == "SUP-ECAP-003");
+        var rearCap = parts.First(p => p.PartNumber == "SUP-RCAP-004");
+        var tube = parts.First(p => p.PartNumber == "SUP-TUBE-001");
+        var adapter = parts.First(p => p.PartNumber == "SUP-ADPT-005");
+        var clip = parts.First(p => p.PartNumber == "SUP-CLIP-007");
         var stageRequirements = await db.PartStageRequirements.ToListAsync();
 
         var ti1 = machines.FirstOrDefault(m => m.MachineId == "TI1");
         var ti2 = machines.FirstOrDefault(m => m.MachineId == "TI2");
         var edm1 = machines.FirstOrDefault(m => m.MachineId == "EDM1");
         var cnc1 = machines.FirstOrDefault(m => m.MachineId == "CNC1");
+        var lathe1 = machines.FirstOrDefault(m => m.MachineId == "LATHE1");
         var operator1 = users.FirstOrDefault(u => u.Username == "operator1");
         var operator2 = users.FirstOrDefault(u => u.Username == "operator2");
         var qcInspector = users.FirstOrDefault(u => u.Username == "qcinspector");
 
         var acceptedQuote = await db.Quotes.FirstOrDefaultAsync(q => q.QuoteNumber == "QT-00001");
 
-        // ── WO-1: Released, from accepted quote (brackets + plates) ──
+        // ── WO-1: In Progress — Defense suppressor kit production (from QT-00001) ──
         var wo1 = new WorkOrder
         {
             OrderNumber = "WO-00001",
-            CustomerName = "Apex Aerospace Inc.",
-            CustomerPO = "APX-PO-2026-0187",
-            CustomerEmail = "purchasing@apexaero.com",
-            CustomerPhone = "480-555-1234",
+            CustomerName = "Vanguard Defense Systems",
+            CustomerPO = "VDS-PO-2026-0187",
+            CustomerEmail = "contracts@vanguarddefense.com",
+            CustomerPhone = "703-555-8800",
             OrderDate = DateTime.UtcNow.AddDays(-18),
-            DueDate = DateTime.UtcNow.AddDays(25),
-            ShipByDate = DateTime.UtcNow.AddDays(22),
-            PromisedDate = DateTime.UtcNow.AddDays(25),
+            DueDate = DateTime.UtcNow.AddDays(45),
+            ShipByDate = DateTime.UtcNow.AddDays(42),
+            PromisedDate = DateTime.UtcNow.AddDays(45),
             Status = WorkOrderStatus.InProgress,
             Priority = JobPriority.High,
             QuoteId = acceptedQuote?.Id,
-            Notes = "ITAR: F-35 avionics mounting brackets. Export-controlled — no foreign nationals.",
+            Notes = "ITAR: SOCOM suppressor evaluation program. 24x complete internal kits (monocore + blast baffle + end caps). Export-controlled — no foreign nationals. Serialization required on all rear end caps.",
             IsDefenseContract = true,
-            ContractNumber = "FA8650-26-C-0042",
+            ContractNumber = "W56HZV-26-C-0187",
             ContractLineItem = "CLIN 0001",
             CreatedBy = "admin", LastModifiedBy = "admin",
             ApprovedBy = "admin", ApprovedDate = DateTime.UtcNow.AddDays(-17)
         };
 
-        // ── WO-2: Released, standalone (sensor housings) ──
+        // ── WO-2: Released — Commercial replacement monocores ──
         var wo2 = new WorkOrder
         {
             OrderNumber = "WO-00002",
-            CustomerName = "MedTech Solutions",
-            CustomerPO = "MTS-2026-0044",
-            CustomerEmail = "procurement@medtechsol.com",
+            CustomerName = "Summit Firearms LLC",
+            CustomerPO = "SFL-2026-0044",
+            CustomerEmail = "orders@summitfirearms.com",
             OrderDate = DateTime.UtcNow.AddDays(-12),
-            DueDate = DateTime.UtcNow.AddDays(30),
-            ShipByDate = DateTime.UtcNow.AddDays(28),
+            DueDate = DateTime.UtcNow.AddDays(60),
+            ShipByDate = DateTime.UtcNow.AddDays(58),
             Status = WorkOrderStatus.Released,
             Priority = JobPriority.Normal,
-            Notes = "Biocompatible sensor housings for implant program. Passivation required per ASTM A967.",
+            Notes = "Commercial replacement monocore and blast baffle inventory. Standard FFL/SOT transfer. Ship in bulk packs of 10.",
             CreatedBy = "admin", LastModifiedBy = "admin",
             ApprovedBy = "admin", ApprovedDate = DateTime.UtcNow.AddDays(-11)
         };
 
-        // ── WO-3: Draft (impeller prototypes) ──
+        // ── WO-3: Draft — R&D prototype suppressors ──
         var wo3 = new WorkOrder
         {
             OrderNumber = "WO-00003",
-            CustomerName = "TurboTech Engineering",
-            CustomerPO = "TTE-RD-2026-009",
-            CustomerEmail = "rfq@turbotech.com",
+            CustomerName = "Precision Arms Research",
+            CustomerPO = "PAR-RD-2026-009",
+            CustomerEmail = "engineering@precisionarms.com",
             OrderDate = DateTime.UtcNow.AddDays(-2),
-            DueDate = DateTime.UtcNow.AddDays(60),
+            DueDate = DateTime.UtcNow.AddDays(90),
             Status = WorkOrderStatus.Draft,
             Priority = JobPriority.Normal,
-            Notes = "R&D prototype impellers. Customer may add additional parts.",
+            Notes = "R&D: .308 caliber prototype suppressors with custom bore. Hold for engineering approval on modified baffle geometry. First article inspection mandatory before lot production.",
             CreatedBy = "admin", LastModifiedBy = "admin"
         };
 
@@ -1091,13 +1447,17 @@ public class DataSeedingService : IDataSeedingService
         await db.SaveChangesAsync();
 
         // ── Work Order Lines ──
-        var wo1Line1 = new WorkOrderLine { WorkOrderId = wo1.Id, PartId = bracket.Id, Quantity = 20, Status = WorkOrderStatus.InProgress };
-        var wo1Line2 = new WorkOrderLine { WorkOrderId = wo1.Id, PartId = plate.Id, Quantity = 20, Status = WorkOrderStatus.Released };
-        var wo2Line1 = new WorkOrderLine { WorkOrderId = wo2.Id, PartId = housing.Id, Quantity = 10, Status = WorkOrderStatus.Released };
-        var wo3Line1 = new WorkOrderLine { WorkOrderId = wo3.Id, PartId = impeller.Id, Quantity = 5, Status = WorkOrderStatus.Draft };
-        var wo3Line2 = new WorkOrderLine { WorkOrderId = wo3.Id, PartId = plate.Id, Quantity = 10, Status = WorkOrderStatus.Draft };
+        var wo1Line1 = new WorkOrderLine { WorkOrderId = wo1.Id, PartId = monocore.Id, Quantity = 24, Status = WorkOrderStatus.InProgress };
+        var wo1Line2 = new WorkOrderLine { WorkOrderId = wo1.Id, PartId = blastBaffle.Id, Quantity = 24, Status = WorkOrderStatus.Released };
+        var wo1Line3 = new WorkOrderLine { WorkOrderId = wo1.Id, PartId = frontCap.Id, Quantity = 24, Status = WorkOrderStatus.Released };
+        var wo1Line4 = new WorkOrderLine { WorkOrderId = wo1.Id, PartId = rearCap.Id, Quantity = 24, Status = WorkOrderStatus.Released };
+        var wo2Line1 = new WorkOrderLine { WorkOrderId = wo2.Id, PartId = monocore.Id, Quantity = 50, Status = WorkOrderStatus.Released };
+        var wo2Line2 = new WorkOrderLine { WorkOrderId = wo2.Id, PartId = blastBaffle.Id, Quantity = 50, Status = WorkOrderStatus.Released };
+        var wo3Line1 = new WorkOrderLine { WorkOrderId = wo3.Id, PartId = monocore.Id, Quantity = 6, Status = WorkOrderStatus.Draft };
+        var wo3Line2 = new WorkOrderLine { WorkOrderId = wo3.Id, PartId = tube.Id, Quantity = 6, Status = WorkOrderStatus.Draft };
+        var wo3Line3 = new WorkOrderLine { WorkOrderId = wo3.Id, PartId = adapter.Id, Quantity = 6, Status = WorkOrderStatus.Draft };
 
-        db.WorkOrderLines.AddRange(wo1Line1, wo1Line2, wo2Line1, wo3Line1, wo3Line2);
+        db.WorkOrderLines.AddRange(wo1Line1, wo1Line2, wo1Line3, wo1Line4, wo2Line1, wo2Line2, wo3Line1, wo3Line2, wo3Line3);
         await db.SaveChangesAsync();
 
         // Link accepted quote to WO-1
@@ -1133,7 +1493,6 @@ public class DataSeedingService : IDataSeedingService
             db.Jobs.Add(job);
             await db.SaveChangesAsync();
 
-            // Get routing for this part
             var partReqs = stageRequirements
                 .Where(r => r.PartId == part.Id)
                 .OrderBy(r => r.ExecutionOrder)
@@ -1170,82 +1529,82 @@ public class DataSeedingService : IDataSeedingService
             return job;
         }
 
-        // ── WO-1: Bracket jobs (in progress — first build completed SLS, doing depowder) ──
-        var bracketJob1 = await CreateJobWithStagesAsync(
-            bracket, 8, wo1Line1.Id, "TI1", "JOB-00001",
-            JobStatus.InProgress, DateTime.UtcNow.AddDays(-10), 15.0,
+        // ── JOB-00001: Monocore batch 1 (6x, in progress — SLS complete, doing depowdering) ──
+        var monocoreJob1 = await CreateJobWithStagesAsync(
+            monocore, 6, wo1Line1.Id, "TI1", "JOB-00001",
+            JobStatus.InProgress, DateTime.UtcNow.AddDays(-10), 27.25,
             operator1?.Id, "admin");
 
-        // Mark first 2 stages as completed for bracketJob1
-        var bj1Stages = await db.StageExecutions.Where(s => s.JobId == bracketJob1.Id).OrderBy(s => s.SortOrder).ToListAsync();
-        if (bj1Stages.Count >= 3)
+        var mj1Stages = await db.StageExecutions.Where(s => s.JobId == monocoreJob1.Id).OrderBy(s => s.SortOrder).ToListAsync();
+        if (mj1Stages.Count >= 3)
         {
-            // SLS Printing — completed
-            bj1Stages[0].Status = StageExecutionStatus.Completed;
-            bj1Stages[0].ActualStartAt = DateTime.UtcNow.AddDays(-10);
-            bj1Stages[0].ActualEndAt = DateTime.UtcNow.AddDays(-9.5);
-            bj1Stages[0].StartedAt = bj1Stages[0].ActualStartAt;
-            bj1Stages[0].CompletedAt = bj1Stages[0].ActualEndAt;
-            bj1Stages[0].ActualHours = 7.2;
-            bj1Stages[0].OperatorUserId = operator1?.Id;
-            bj1Stages[0].OperatorName = "Mike Johnson";
+            // SLS Printing — completed (14hr build, 3 double-stack cycles for 6 parts)
+            mj1Stages[0].Status = StageExecutionStatus.Completed;
+            mj1Stages[0].ActualStartAt = DateTime.UtcNow.AddDays(-10);
+            mj1Stages[0].ActualEndAt = DateTime.UtcNow.AddDays(-7);
+            mj1Stages[0].StartedAt = mj1Stages[0].ActualStartAt;
+            mj1Stages[0].CompletedAt = mj1Stages[0].ActualEndAt;
+            mj1Stages[0].ActualHours = 66.0; // 3 builds x 22hr each (double-stacked)
+            mj1Stages[0].OperatorUserId = operator1?.Id;
+            mj1Stages[0].OperatorName = "Mike Johnson";
+            mj1Stages[0].CompletionNotes = "3x double-stack builds completed. All 6 monocores visually good. Minor support marks on base — will clean in depowdering.";
 
-            // Depowdering — completed
-            bj1Stages[1].Status = StageExecutionStatus.Completed;
-            bj1Stages[1].ActualStartAt = DateTime.UtcNow.AddDays(-9);
-            bj1Stages[1].ActualEndAt = DateTime.UtcNow.AddDays(-9).AddHours(1.2);
-            bj1Stages[1].StartedAt = bj1Stages[1].ActualStartAt;
-            bj1Stages[1].CompletedAt = bj1Stages[1].ActualEndAt;
-            bj1Stages[1].ActualHours = 1.2;
-            bj1Stages[1].OperatorUserId = operator1?.Id;
-            bj1Stages[1].OperatorName = "Mike Johnson";
+            // Depowdering — in progress (extended cycle for K-baffle channels)
+            mj1Stages[1].Status = StageExecutionStatus.InProgress;
+            mj1Stages[1].ActualStartAt = DateTime.UtcNow.AddHours(-4);
+            mj1Stages[1].StartedAt = mj1Stages[1].ActualStartAt;
+            mj1Stages[1].OperatorUserId = operator1?.Id;
+            mj1Stages[1].OperatorName = "Mike Johnson";
 
-            // Heat Treatment — in progress
-            bj1Stages[2].Status = StageExecutionStatus.InProgress;
-            bj1Stages[2].ActualStartAt = DateTime.UtcNow.AddHours(-2);
-            bj1Stages[2].StartedAt = bj1Stages[2].ActualStartAt;
-            bj1Stages[2].OperatorUserId = operator1?.Id;
-            bj1Stages[2].OperatorName = "Mike Johnson";
+            // Heat Treatment — not started yet
         }
 
-        bracketJob1.Status = JobStatus.InProgress;
-        bracketJob1.ActualStart = DateTime.UtcNow.AddDays(-10);
-        bracketJob1.ProducedQuantity = 0; // not yet at final stage
+        monocoreJob1.Status = JobStatus.InProgress;
+        monocoreJob1.ActualStart = DateTime.UtcNow.AddDays(-10);
+        monocoreJob1.ProducedQuantity = 0;
         await db.SaveChangesAsync();
 
-        // Second bracket batch — scheduled
-        var bracketJob2 = await CreateJobWithStagesAsync(
-            bracket, 12, wo1Line1.Id, "TI1", "JOB-00002",
-            JobStatus.Scheduled, DateTime.UtcNow.AddDays(3), 15.0,
+        // ── JOB-00002: Monocore batch 2 (6x, scheduled) ──
+        await CreateJobWithStagesAsync(
+            monocore, 6, wo1Line1.Id, "TI1", "JOB-00002",
+            JobStatus.Scheduled, DateTime.UtcNow.AddDays(5), 27.25,
             operator1?.Id, "admin");
 
-        // ── WO-1: Plate jobs (scheduled) ──
-        var plateJob1 = await CreateJobWithStagesAsync(
-            plate, 20, wo1Line2.Id, "CNC1", "JOB-00003",
-            JobStatus.Scheduled, DateTime.UtcNow.AddDays(5), 3.0,
+        // ── JOB-00003: Blast baffle batch (12x, scheduled on TI2) ──
+        await CreateJobWithStagesAsync(
+            blastBaffle, 12, wo1Line2.Id, "TI2", "JOB-00003",
+            JobStatus.Scheduled, DateTime.UtcNow.AddDays(3), 18.5,
+            operator1?.Id, "admin");
+
+        // ── JOB-00004: Front end caps (24x, scheduled CNC) ──
+        await CreateJobWithStagesAsync(
+            frontCap, 24, wo1Line3.Id, "CNC1", "JOB-00004",
+            JobStatus.Scheduled, DateTime.UtcNow.AddDays(7), 2.25,
             operator2?.Id, "admin");
 
-        // ── WO-2: Housing job (scheduled) ──
-        var housingJob1 = await CreateJobWithStagesAsync(
-            housing, 10, wo2Line1.Id, "TI2", "JOB-00004",
-            JobStatus.Scheduled, DateTime.UtcNow.AddDays(2), 13.5,
-            operator1?.Id, "admin");
+        // ── JOB-00005: Rear end caps (24x, scheduled CNC) ──
+        await CreateJobWithStagesAsync(
+            rearCap, 24, wo1Line4.Id, "CNC1", "JOB-00005",
+            JobStatus.Scheduled, DateTime.UtcNow.AddDays(10), 2.5,
+            operator2?.Id, "admin");
 
-        // ── Create some PartInstances for the in-progress bracket job ──
-        var bracketInstances = new List<PartInstance>();
-        for (int i = 1; i <= 8; i++)
+        // ── Create PartInstances for the in-progress monocore job ──
+        var monocoreInstances = new List<PartInstance>();
+        for (int i = 1; i <= 6; i++)
         {
-            bracketInstances.Add(new PartInstance
+            monocoreInstances.Add(new PartInstance
             {
-                SerialNumber = $"SN-2026-{i:D5}",
+                SerialNumber = $"MC-2026-{i:D5}",
+                TemporaryTrackingId = $"MC-2026-{i:D5}",
+                IsSerialAssigned = true,
                 WorkOrderLineId = wo1Line1.Id,
-                PartId = bracket.Id,
-                CurrentStageId = bj1Stages.Count >= 3 ? bj1Stages[2].ProductionStageId : null,
+                PartId = monocore.Id,
+                CurrentStageId = mj1Stages.Count >= 2 ? mj1Stages[1].ProductionStageId : null,
                 Status = PartInstanceStatus.InProcess,
                 CreatedBy = "System"
             });
         }
-        db.PartInstances.AddRange(bracketInstances);
+        db.PartInstances.AddRange(monocoreInstances);
         await db.SaveChangesAsync();
     }
 
@@ -1260,84 +1619,119 @@ public class DataSeedingService : IDataSeedingService
         var machines = await db.Machines.ToListAsync();
         var woLines = await db.WorkOrderLines.Include(l => l.WorkOrder).ToListAsync();
 
-        if (parts.Count < 4 || woLines.Count == 0) return;
+        if (parts.Count < 8 || woLines.Count == 0) return;
 
-        var bracket = parts.First(p => p.PartNumber == "TI-BRACKET-001");
-        var impeller = parts.First(p => p.PartNumber == "TI-IMPELLER-003");
-        var housing = parts.First(p => p.PartNumber == "SS-HOUSING-002");
+        var monocore = parts.First(p => p.PartNumber == "SUP-MONO-002");
+        var blastBaffle = parts.First(p => p.PartNumber == "SUP-BBAF-006");
         var ti1 = machines.FirstOrDefault(m => m.MachineId == "TI1");
+        var ti2 = machines.FirstOrDefault(m => m.MachineId == "TI2");
 
-        var bracketLine = woLines.FirstOrDefault(l => l.PartId == bracket.Id);
-        var housingLine = woLines.FirstOrDefault(l => l.PartId == housing.Id);
+        var monocoreLine = woLines.FirstOrDefault(l => l.PartId == monocore.Id && l.WorkOrder?.OrderNumber == "WO-00001");
+        var blastBaffleLine = woLines.FirstOrDefault(l => l.PartId == blastBaffle.Id && l.WorkOrder?.OrderNumber == "WO-00001");
 
-        // ── Build Package 1: Mixed bracket+housing build — Ready status ──
+        // ── BP-2026-001: Monocore double-stack build — Ready (next up on TI1) ──
         var bp1 = new BuildPackage
         {
-            Name = "BP-2026-001 — Ti Bracket + SS Housing Mixed Build",
-            Description = "Mixed build plate: 4x Ti brackets (top) + 2x SS housings (bottom). Split material zones not supported — this is a single-material Ti build with brackets only.",
+            Name = "BP-2026-001 — Monocore Baffle Stack Build (Double-Stack)",
+            Description = "2x Inconel 718 monocore baffle stacks, double-stacked on TI1. Vanguard Defense WO-00001 batch 2. 22hr estimated build time at 30μm layer thickness. Argon atmosphere required for IN718.",
             MachineId = ti1?.MachineId ?? "TI1",
             Status = BuildPackageStatus.Ready,
-            Material = "Ti-6Al-4V Grade 5",
+            Material = "Inconel 718",
             ScheduledDate = DateTime.UtcNow.AddDays(5),
-            EstimatedDurationHours = 8.5,
+            EstimatedDurationHours = 22.0,
+            IsSlicerDataEntered = true,
             CurrentRevision = 1,
-            BuildParameters = """{"layerThickness_um":30,"laserPower_W":280,"scanSpeed_mm_s":1200,"hatchDistance_um":100,"platformTemp_C":200}""",
-            Notes = "First mixed-part build test for build plate flow validation.",
+            BuildParameters = """{"layerThickness_um":30,"laserPower_W":285,"scanSpeed_mm_s":960,"hatchDistance_um":110,"platformTemp_C":80,"atmosphere":"Argon","recoaterType":"Rubber"}""",
+            Notes = "Second monocore build for Vanguard SOCOM order. Double-stack layout verified in Magics — 45° overhang on K-baffle cones is self-supporting. Monitor argon O2 level < 100ppm.",
             CreatedBy = "admin", LastModifiedBy = "admin"
         };
 
-        // ── Build Package 2: Completed bracket build ──
+        // ── BP-2026-002: Completed monocore build (first batch, already processed) ──
         var bp2 = new BuildPackage
         {
-            Name = "BP-2026-002 — Ti Bracket Production Run",
-            Description = "Full plate of titanium brackets for Apex Aerospace WO-00001.",
+            Name = "BP-2026-002 — Monocore Baffle Stack Build (Batch 1)",
+            Description = "Completed build: 2x Inconel 718 monocore stacks, double-stacked. First batch for Vanguard Defense WO-00001. All parts passed visual and depowdering is in progress.",
             MachineId = ti1?.MachineId ?? "TI1",
             Status = BuildPackageStatus.Completed,
-            Material = "Ti-6Al-4V Grade 5",
+            Material = "Inconel 718",
             ScheduledDate = DateTime.UtcNow.AddDays(-12),
-            EstimatedDurationHours = 6.0,
+            EstimatedDurationHours = 22.0,
+            IsSlicerDataEntered = true,
+            IsLocked = true,
+            PrintStartedAt = DateTime.UtcNow.AddDays(-11),
+            PrintCompletedAt = DateTime.UtcNow.AddDays(-10),
+            PlateReleasedAt = DateTime.UtcNow.AddDays(-9),
             CurrentRevision = 2,
-            BuildParameters = """{"layerThickness_um":30,"laserPower_W":280,"scanSpeed_mm_s":1200,"hatchDistance_um":100,"platformTemp_C":200}""",
-            Notes = "Completed successfully. Parts passed QC.",
+            BuildParameters = """{"layerThickness_um":30,"laserPower_W":285,"scanSpeed_mm_s":960,"hatchDistance_um":110,"platformTemp_C":80,"atmosphere":"Argon","recoaterType":"Rubber"}""",
+            Notes = "Completed successfully. 2 monocores printed in double-stack. Build time: 21.8hr actual. O2 level maintained <80ppm throughout. Parts released to depowdering.",
             CreatedBy = "admin", LastModifiedBy = "admin"
         };
 
-        db.BuildPackages.AddRange(bp1, bp2);
+        // ── BP-2026-003: Blast baffle build — Scheduled on TI2 ──
+        var bp3 = new BuildPackage
+        {
+            Name = "BP-2026-003 — Blast Baffle Build (4x Single-Stack)",
+            Description = "4x Inconel 718 blast baffles, single-stack on TI2. Two build plates needed for WO-00001 qty of 24 (2 per plate x 12 plates, but we batch 4 per plate with double-stack for efficiency).",
+            MachineId = ti2?.MachineId ?? "TI2",
+            Status = BuildPackageStatus.Scheduled,
+            Material = "Inconel 718",
+            ScheduledDate = DateTime.UtcNow.AddDays(3),
+            EstimatedDurationHours = 13.0,
+            IsSlicerDataEntered = true,
+            IsLocked = true,
+            CurrentRevision = 1,
+            BuildParameters = """{"layerThickness_um":30,"laserPower_W":285,"scanSpeed_mm_s":960,"hatchDistance_um":110,"platformTemp_C":80,"atmosphere":"Argon","recoaterType":"Rubber"}""",
+            Notes = "First blast baffle build for Vanguard order. Double-stack 4 baffles per plate. Parts go to depowder → heat treat → CNC finish bore after build.",
+            CreatedBy = "admin", LastModifiedBy = "admin"
+        };
+
+        db.BuildPackages.AddRange(bp1, bp2, bp3);
         await db.SaveChangesAsync();
 
         // ── Build Package Parts ──
         var bpParts = new List<BuildPackagePart>
         {
-            // BP1 parts
+            // BP1: 2x monocore (double-stacked)
             new()
             {
-                BuildPackageId = bp1.Id, PartId = bracket.Id, Quantity = 4,
-                WorkOrderLineId = bracketLine?.Id,
-                Notes = "Top zone — standard orientation"
+                BuildPackageId = bp1.Id, PartId = monocore.Id, Quantity = 2,
+                StackLevel = 2,
+                WorkOrderLineId = monocoreLine?.Id,
+                Notes = "Double-stack: 1 monocore per stack level, 2 total. Vertical orientation, cone apexes up."
             },
-            // BP2 parts (completed build)
+            // BP2: 2x monocore (completed build)
             new()
             {
-                BuildPackageId = bp2.Id, PartId = bracket.Id, Quantity = 8,
-                WorkOrderLineId = bracketLine?.Id,
-                Notes = "Full plate — double-stacked"
+                BuildPackageId = bp2.Id, PartId = monocore.Id, Quantity = 2,
+                StackLevel = 2,
+                WorkOrderLineId = monocoreLine?.Id,
+                Notes = "Completed — double-stacked. Both parts released to post-processing."
+            },
+            // BP3: 4x blast baffle (double-stacked)
+            new()
+            {
+                BuildPackageId = bp3.Id, PartId = blastBaffle.Id, Quantity = 4,
+                StackLevel = 2,
+                WorkOrderLineId = blastBaffleLine?.Id,
+                Notes = "Double-stack: 2 baffles per level x 2 levels. Cone apex up, 3mm support block on base."
             }
         };
 
         db.BuildPackageParts.AddRange(bpParts);
         await db.SaveChangesAsync();
 
-        // ── Build File Info for both packages ──
+        // ── Build File Info ──
         var buildFiles = new List<BuildFileInfo>
         {
             new()
             {
                 BuildPackageId = bp1.Id,
-                FileName = "BP-2026-001_TiBracket_v3.cli",
-                LayerCount = 2840,
-                BuildHeightMm = 85.2m,
-                EstimatedPrintTimeHours = 8.5m,
-                EstimatedPowderKg = 4.2m,
+                FileName = "BP-2026-001_Monocore_DblStack_v2.cli",
+                LayerCount = 4200,
+                BuildHeightMm = 126.0m,
+                EstimatedPrintTimeHours = 22.0m,
+                EstimatedPowderKg = 3.8m,
+                PartPositionsJson = """[{"partId":"SUP-MONO-002","x":62,"y":62,"z":0,"rotation":0,"stackLevel":1},{"partId":"SUP-MONO-002","x":62,"y":62,"z":63,"rotation":0,"stackLevel":2}]""",
                 SlicerSoftware = "Materialise Magics",
                 SlicerVersion = "27.0.3",
                 ImportedBy = "admin",
@@ -1346,23 +1740,37 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 BuildPackageId = bp2.Id,
-                FileName = "BP-2026-002_TiBracket_prod.cli",
-                LayerCount = 3200,
-                BuildHeightMm = 96.0m,
-                EstimatedPrintTimeHours = 6.0m,
-                EstimatedPowderKg = 5.8m,
-                PartPositionsJson = """[{"partId":"TI-BRACKET-001","x":20,"y":20,"z":0,"copies":4},{"partId":"TI-BRACKET-001","x":20,"y":20,"z":48,"copies":4}]""",
+                FileName = "BP-2026-002_Monocore_DblStack_v1.cli",
+                LayerCount = 4200,
+                BuildHeightMm = 126.0m,
+                EstimatedPrintTimeHours = 22.0m,
+                EstimatedPowderKg = 3.8m,
+                PartPositionsJson = """[{"partId":"SUP-MONO-002","x":62,"y":62,"z":0,"rotation":0,"stackLevel":1},{"partId":"SUP-MONO-002","x":62,"y":62,"z":63,"rotation":0,"stackLevel":2}]""",
                 SlicerSoftware = "Materialise Magics",
                 SlicerVersion = "27.0.3",
                 ImportedBy = "admin",
                 ImportedDate = DateTime.UtcNow.AddDays(-14)
+            },
+            new()
+            {
+                BuildPackageId = bp3.Id,
+                FileName = "BP-2026-003_BlastBaffle_DblStack_v1.cli",
+                LayerCount = 1800,
+                BuildHeightMm = 54.0m,
+                EstimatedPrintTimeHours = 13.0m,
+                EstimatedPowderKg = 1.6m,
+                PartPositionsJson = """[{"partId":"SUP-BBAF-006","x":40,"y":40,"z":0,"rotation":0,"stackLevel":1},{"partId":"SUP-BBAF-006","x":85,"y":40,"z":0,"rotation":0,"stackLevel":1},{"partId":"SUP-BBAF-006","x":40,"y":40,"z":27,"rotation":0,"stackLevel":2},{"partId":"SUP-BBAF-006","x":85,"y":40,"z":27,"rotation":0,"stackLevel":2}]""",
+                SlicerSoftware = "Materialise Magics",
+                SlicerVersion = "27.0.3",
+                ImportedBy = "admin",
+                ImportedDate = DateTime.UtcNow.AddDays(-1)
             }
         };
 
         db.BuildFileInfos.AddRange(buildFiles);
         await db.SaveChangesAsync();
 
-        // ── Revisions for BP2 (showing history) ──
+        // ── Revisions for BP2 (showing build history) ──
         var revisions = new List<BuildPackageRevision>
         {
             new()
@@ -1370,8 +1778,8 @@ public class DataSeedingService : IDataSeedingService
                 BuildPackageId = bp2.Id, RevisionNumber = 1,
                 RevisionDate = DateTime.UtcNow.AddDays(-15),
                 ChangedBy = "admin",
-                ChangeNotes = "Initial build layout — 4 brackets single stack",
-                PartsSnapshotJson = """[{"partNumber":"TI-BRACKET-001","qty":4}]""",
+                ChangeNotes = "Initial layout — single monocore, single-stack. 14hr estimated.",
+                PartsSnapshotJson = """[{"partNumber":"SUP-MONO-002","qty":1,"stackLevel":1}]""",
                 ParametersSnapshotJson = bp2.BuildParameters
             },
             new()
@@ -1379,8 +1787,8 @@ public class DataSeedingService : IDataSeedingService
                 BuildPackageId = bp2.Id, RevisionNumber = 2,
                 RevisionDate = DateTime.UtcNow.AddDays(-14),
                 ChangedBy = "admin",
-                ChangeNotes = "Doubled to 8 brackets with stacking — updated slice file",
-                PartsSnapshotJson = """[{"partNumber":"TI-BRACKET-001","qty":8}]""",
+                ChangeNotes = "Upgraded to double-stack (2x monocore). Build time increased to 22hr but throughput doubled. Updated slice file.",
+                PartsSnapshotJson = """[{"partNumber":"SUP-MONO-002","qty":2,"stackLevel":2}]""",
                 ParametersSnapshotJson = bp2.BuildParameters
             }
         };
@@ -1403,36 +1811,36 @@ public class DataSeedingService : IDataSeedingService
 
         if (parts.Count == 0 || users.Count == 0) return;
 
-        var bracket = parts.First(p => p.PartNumber == "TI-BRACKET-001");
-        var housing = parts.First(p => p.PartNumber == "SS-HOUSING-002");
-        var impeller = parts.First(p => p.PartNumber == "TI-IMPELLER-003");
+        var monocore = parts.First(p => p.PartNumber == "SUP-MONO-002");
+        var blastBaffle = parts.First(p => p.PartNumber == "SUP-BBAF-006");
+        var rearCap = parts.First(p => p.PartNumber == "SUP-RCAP-004");
         var qcInspector = users.FirstOrDefault(u => u.Username == "qcinspector");
-        var bracketJob = jobs.FirstOrDefault(j => j.JobNumber == "JOB-00001");
+        var monocoreJob = jobs.FirstOrDefault(j => j.JobNumber == "JOB-00001");
 
-        // ── NCR 1: In-process defect on bracket (open) ──
+        // ── NCR 1: Monocore internal porosity (open, in review) ──
         var ncr1 = new NonConformanceReport
         {
             NcrNumber = "NCR-00001",
-            JobId = bracketJob?.Id,
-            PartId = bracket.Id,
+            JobId = monocoreJob?.Id,
+            PartId = monocore.Id,
             Type = NcrType.InProcess,
-            Description = "Surface porosity detected on 2 of 8 brackets after depowdering. Pores visible on inner mounting face, estimated 0.3-0.5mm diameter. Possible powder contamination or insufficient laser energy in overhang zone.",
-            QuantityAffected = "2",
+            Description = "CT scan of monocore MC-2026-00003 revealed sub-surface porosity cluster in cone #4 (0.2-0.4mm voids). Density 99.2% vs. specification minimum 99.5%. Root cause suspected: argon flow rate dropped below setpoint during layer 2800-3100 range. Remaining 5 monocores from same build passed CT scan.",
+            QuantityAffected = "1",
             Severity = NcrSeverity.Major,
             Disposition = NcrDisposition.PendingReview,
             Status = NcrStatus.InReview,
             ReportedByUserId = qcInspector?.Id.ToString() ?? "1",
-            ReportedAt = DateTime.UtcNow.AddDays(-8)
+            ReportedAt = DateTime.UtcNow.AddDays(-6)
         };
 
-        // ── NCR 2: Incoming material (closed) ──
+        // ── NCR 2: Inconel 718 powder PSD (closed, returned to vendor) ──
         var ncr2 = new NonConformanceReport
         {
             NcrNumber = "NCR-00002",
-            PartId = housing.Id,
+            PartId = monocore.Id,
             Type = NcrType.IncomingMaterial,
-            Description = "316L powder lot SS316L-2025-018 particle size distribution out of spec. D50 measured at 52μm vs. 30±5μm specification. Lot rejected and quarantined.",
-            QuantityAffected = "50 kg",
+            Description = "Inconel 718 powder lot IN718-2026-001 particle size distribution out of spec. D50 measured at 48μm vs. specification 25-40μm. Satellite particles visible under SEM at 500x. Lot quarantined pending vendor disposition.",
+            QuantityAffected = "80 kg",
             Severity = NcrSeverity.Critical,
             Disposition = NcrDisposition.ReturnToVendor,
             Status = NcrStatus.Closed,
@@ -1441,56 +1849,72 @@ public class DataSeedingService : IDataSeedingService
             ClosedAt = DateTime.UtcNow.AddDays(-18)
         };
 
-        // ── NCR 3: Minor dimensional issue (dispositioned) ──
+        // ── NCR 3: Blast baffle bore tolerance (dispositioned — use as is) ──
         var ncr3 = new NonConformanceReport
         {
             NcrNumber = "NCR-00003",
-            PartId = bracket.Id,
+            PartId = blastBaffle.Id,
             Type = NcrType.InProcess,
-            Description = "Bracket hole position 0.15mm out of tolerance on X-axis. Within customer UAI (Use As-Is) limits per drawing note 4.",
+            Description = "CNC finish bore on blast baffle measured 0.3762\" — within tolerance (+0.002/-0.000 on 0.375\" nominal) but at 60% of tolerance band. Part is within spec but flagged for process monitoring. CNC tool wear detected — replacement recommended after 50 bores.",
             QuantityAffected = "1",
             Severity = NcrSeverity.Minor,
             Disposition = NcrDisposition.UseAsIs,
             Status = NcrStatus.Dispositioned,
             ReportedByUserId = qcInspector?.Id.ToString() ?? "1",
-            ReportedAt = DateTime.UtcNow.AddDays(-5)
+            ReportedAt = DateTime.UtcNow.AddDays(-4)
         };
 
-        db.NonConformanceReports.AddRange(ncr1, ncr2, ncr3);
+        // ── NCR 4: Rear end cap engraving depth (dispositioned — rework) ──
+        var ncr4 = new NonConformanceReport
+        {
+            NcrNumber = "NCR-00004",
+            PartId = rearCap.Id,
+            Type = NcrType.InProcess,
+            Description = "Laser engraving depth on rear end cap serial RCAP-2026-00012 measured 0.002\" — below ATF minimum requirement of 0.003\". Laser power setting found at 80% vs. SOP requirement of 95%. Re-engrave required.",
+            QuantityAffected = "1",
+            Severity = NcrSeverity.Major,
+            Disposition = NcrDisposition.Rework,
+            Status = NcrStatus.Closed,
+            ReportedByUserId = qcInspector?.Id.ToString() ?? "1",
+            ReportedAt = DateTime.UtcNow.AddDays(-10),
+            ClosedAt = DateTime.UtcNow.AddDays(-8)
+        };
+
+        db.NonConformanceReports.AddRange(ncr1, ncr2, ncr3, ncr4);
         await db.SaveChangesAsync();
 
         // ── CAPAs ──
         var capas = new List<CorrectiveAction>
         {
-            // CAPA for NCR-00001 (porosity)
+            // CAPA for NCR-00001 (monocore porosity)
             new()
             {
                 CapaNumber = "CAPA-00001",
                 Type = CapaType.Corrective,
-                ProblemStatement = "Surface porosity on Ti-6Al-4V brackets traced to powder moisture absorption during extended storage.",
-                RootCauseAnalysis = "Powder hopper left unsealed over weekend. Ambient humidity 65% RH caused moisture pickup in Ti64 powder.",
-                ImmediateAction = "Quarantined remaining powder from lot TI64-2026-001. Switched to fresh lot TI64-2026-002.",
-                LongTermAction = "Install desiccant-based humidity monitoring in powder storage. Add SOP for sealing hoppers after each shift.",
-                PreventiveAction = "Add humidity sensor alarm to powder storage area. Require powder moisture check before each build.",
+                ProblemStatement = "Sub-surface porosity in Inconel 718 monocore baffle stack traced to argon flow rate drop during SLS build on TruPrint 1000 #1 (TI1).",
+                RootCauseAnalysis = "Gas flow sensor on TI1 showed intermittent readings between layers 2800-3100. Maintenance log shows sensor last calibrated 6 months ago (overdue by 3 months). Low argon flow allowed O2 ingress >200ppm in build chamber, causing oxide inclusion porosity.",
+                ImmediateAction = "Replaced argon flow sensor on TI1. Recalibrated all gas sensors on TI1 and TI2. Quarantined affected monocore MC-2026-00003 pending engineering review.",
+                LongTermAction = "Add argon flow rate to real-time build monitoring dashboard with automatic pause if flow drops below 95% setpoint. Reduce sensor calibration interval from 6 months to 3 months.",
+                PreventiveAction = "Install redundant O2 sensors in both TruPrint build chambers. Add automated build abort if O2 exceeds 150ppm for >30 seconds. Update PM schedule for all SLS machine gas systems.",
                 OwnerId = qcInspector?.Id.ToString() ?? "1",
                 DueDate = DateTime.UtcNow.AddDays(14),
                 Status = CapaStatus.InProgress,
-                CreatedAt = DateTime.UtcNow.AddDays(-7)
+                CreatedAt = DateTime.UtcNow.AddDays(-5)
             },
-            // CAPA for NCR-00002 (vendor material)
+            // CAPA for NCR-00002 (vendor powder PSD)
             new()
             {
                 CapaNumber = "CAPA-00002",
                 Type = CapaType.Preventive,
-                ProblemStatement = "Incoming 316L powder failed particle size distribution. Vendor quality control gap.",
-                RootCauseAnalysis = "Vendor sieving equipment calibration was overdue. Lot passed vendor QC with out-of-cal equipment.",
-                ImmediateAction = "Returned lot to vendor. Issued corrective action request (CAR) to vendor.",
-                LongTermAction = "Add incoming PSD check to receiving SOP for all metal powder lots.",
-                PreventiveAction = "Require vendor calibration certificates with each shipment. Add vendor to quarterly audit schedule.",
+                ProblemStatement = "Incoming Inconel 718 powder from Carpenter Technology failed particle size distribution specification. Satellite particles indicate atomization process issue at vendor.",
+                RootCauseAnalysis = "Vendor atomization nozzle worn beyond tolerance. Lot passed vendor QC using outdated PSD specification (pre-2025 revision). Vendor acknowledged discrepancy.",
+                ImmediateAction = "Returned 80kg lot to Carpenter Technology with RMA #CT-2026-0102. Switched to backup lot IN718-2025-004 (verified in-spec).",
+                LongTermAction = "Require vendors to include PSD report (D10/D50/D90) and SEM imagery with each powder lot. Add incoming PSD verification to receiving SOP using Malvern Mastersizer.",
+                PreventiveAction = "Qualify second Inconel 718 powder vendor (AP&C) to avoid single-source risk. Add vendor to quarterly audit schedule with focus on atomization equipment calibration.",
                 OwnerId = qcInspector?.Id.ToString() ?? "1",
                 DueDate = DateTime.UtcNow.AddDays(-4),
                 CompletedAt = DateTime.UtcNow.AddDays(-4),
-                EffectivenessVerification = "Verified: next 3 lots from vendor all within spec. Vendor provided updated calibration records.",
+                EffectivenessVerification = "Verified: next 2 lots from Carpenter all within spec. Vendor provided updated nozzle replacement schedule and revised PSD specification. Incoming PSD check added to receiving SOP — first 5 lots all verified.",
                 Status = CapaStatus.Closed,
                 CreatedAt = DateTime.UtcNow.AddDays(-24)
             }
@@ -1499,7 +1923,7 @@ public class DataSeedingService : IDataSeedingService
         db.CorrectiveActions.AddRange(capas);
         await db.SaveChangesAsync();
 
-        // Link CAPA to NCR
+        // Link CAPAs to NCRs
         ncr1.CorrectiveActionId = capas[0].Id;
         ncr2.CorrectiveActionId = capas[1].Id;
         await db.SaveChangesAsync();
@@ -1507,34 +1931,40 @@ public class DataSeedingService : IDataSeedingService
         // ── Inspection Plans ──
         var inspPlans = new List<InspectionPlan>
         {
+            // Monocore baffle stack inspection
             new()
             {
-                PartId = bracket.Id,
-                Name = "TI-BRACKET-001 Standard Inspection",
-                Revision = "A",
+                PartId = monocore.Id,
+                Name = "SUP-MONO-002 Monocore Baffle Stack Inspection",
+                Revision = "D",
                 IsDefault = true,
                 Characteristics = new List<InspectionPlanCharacteristic>
                 {
-                    new() { Name = "Overall Length", DrawingCallout = "45.00 ±0.10", NominalValue = 45.00m, TolerancePlus = 0.10m, ToleranceMinus = 0.10m, InstrumentType = "Caliper", IsKeyCharacteristic = true, DisplayOrder = 1 },
-                    new() { Name = "Mounting Hole Diameter", DrawingCallout = "6.00 +0.02/-0.00", NominalValue = 6.00m, TolerancePlus = 0.02m, ToleranceMinus = 0.00m, InstrumentType = "Pin Gauge", IsKeyCharacteristic = true, DisplayOrder = 2 },
-                    new() { Name = "Hole Position X", DrawingCallout = "22.50 ±0.05", NominalValue = 22.50m, TolerancePlus = 0.05m, ToleranceMinus = 0.05m, InstrumentType = "CMM", IsKeyCharacteristic = true, DisplayOrder = 3 },
-                    new() { Name = "Hole Position Y", DrawingCallout = "15.00 ±0.05", NominalValue = 15.00m, TolerancePlus = 0.05m, ToleranceMinus = 0.05m, InstrumentType = "CMM", IsKeyCharacteristic = true, DisplayOrder = 4 },
-                    new() { Name = "Wall Thickness", DrawingCallout = "2.00 ±0.15", NominalValue = 2.00m, TolerancePlus = 0.15m, ToleranceMinus = 0.15m, InstrumentType = "Caliper", DisplayOrder = 5 },
-                    new() { Name = "Surface Roughness (Ra)", DrawingCallout = "Ra ≤ 6.3μm", NominalValue = 4.0m, TolerancePlus = 2.3m, ToleranceMinus = 4.0m, InstrumentType = "Profilometer", DisplayOrder = 6 }
+                    new() { Name = "Bore Diameter", DrawingCallout = "0.375\" +0.005/-0.000", NominalValue = 9.525m, TolerancePlus = 0.127m, ToleranceMinus = 0.000m, InstrumentType = "Pin Gauge Set", IsKeyCharacteristic = true, DisplayOrder = 1 },
+                    new() { Name = "Bore Alignment (Full Length)", DrawingCallout = "≤0.005\" TIR over 6.5\"", NominalValue = 0.000m, TolerancePlus = 0.127m, ToleranceMinus = 0.000m, InstrumentType = "Alignment Rod + DTI", IsKeyCharacteristic = true, DisplayOrder = 2 },
+                    new() { Name = "Overall Length", DrawingCallout = "6.500\" ±0.010", NominalValue = 165.10m, TolerancePlus = 0.254m, ToleranceMinus = 0.254m, InstrumentType = "Caliper", IsKeyCharacteristic = true, DisplayOrder = 3 },
+                    new() { Name = "OD Profile (Max)", DrawingCallout = "1.350\" ±0.005", NominalValue = 34.29m, TolerancePlus = 0.127m, ToleranceMinus = 0.127m, InstrumentType = "CMM", IsKeyCharacteristic = true, DisplayOrder = 4 },
+                    new() { Name = "Weight", DrawingCallout = "0.38 kg ±0.03", NominalValue = 0.38m, TolerancePlus = 0.03m, ToleranceMinus = 0.03m, InstrumentType = "Precision Scale", DisplayOrder = 5 },
+                    new() { Name = "Surface Roughness (Ra) — External", DrawingCallout = "Ra ≤ 12.5μm", NominalValue = 8.0m, TolerancePlus = 4.5m, ToleranceMinus = 8.0m, InstrumentType = "Profilometer", DisplayOrder = 6 },
+                    new() { Name = "Hardness (HRC)", DrawingCallout = "HRC 38-44", NominalValue = 41.0m, TolerancePlus = 3.0m, ToleranceMinus = 3.0m, InstrumentType = "Rockwell C Tester", IsKeyCharacteristic = true, DisplayOrder = 7 },
+                    new() { Name = "Internal Channel Clearance", DrawingCallout = "All 6 channels clear (borescope)", NominalValue = 1.0m, TolerancePlus = 0.0m, ToleranceMinus = 0.0m, InstrumentType = "Borescope", IsKeyCharacteristic = true, DisplayOrder = 8 }
                 }
             },
+            // Rear end cap inspection (serialized part — critical for ATF compliance)
             new()
             {
-                PartId = housing.Id,
-                Name = "SS-HOUSING-002 Standard Inspection",
+                PartId = rearCap.Id,
+                Name = "SUP-RCAP-004 Rear End Cap Inspection",
                 Revision = "B",
                 IsDefault = true,
                 Characteristics = new List<InspectionPlanCharacteristic>
                 {
-                    new() { Name = "Outer Diameter", DrawingCallout = "25.00 ±0.05", NominalValue = 25.00m, TolerancePlus = 0.05m, ToleranceMinus = 0.05m, InstrumentType = "Micrometer", IsKeyCharacteristic = true, DisplayOrder = 1 },
-                    new() { Name = "Inner Bore", DrawingCallout = "18.00 +0.02/-0.00", NominalValue = 18.00m, TolerancePlus = 0.02m, ToleranceMinus = 0.00m, InstrumentType = "Bore Gauge", IsKeyCharacteristic = true, DisplayOrder = 2 },
-                    new() { Name = "Overall Height", DrawingCallout = "30.00 ±0.10", NominalValue = 30.00m, TolerancePlus = 0.10m, ToleranceMinus = 0.10m, InstrumentType = "Caliper", DisplayOrder = 3 },
-                    new() { Name = "Thread M20x1.5 Go", DrawingCallout = "M20x1.5-6H", NominalValue = 20.00m, TolerancePlus = 0.10m, ToleranceMinus = 0.00m, InstrumentType = "Thread Gauge", IsKeyCharacteristic = true, DisplayOrder = 4 }
+                    new() { Name = "External Thread (1.375-24 TPI)", DrawingCallout = "Class 3A Go/No-Go", NominalValue = 34.925m, TolerancePlus = 0.050m, ToleranceMinus = 0.000m, InstrumentType = "Thread Ring Gauge", IsKeyCharacteristic = true, DisplayOrder = 1 },
+                    new() { Name = "Internal Thread (1.375-24 TPI)", DrawingCallout = "Class 3B Go/No-Go", NominalValue = 34.925m, TolerancePlus = 0.050m, ToleranceMinus = 0.000m, InstrumentType = "Thread Plug Gauge", IsKeyCharacteristic = true, DisplayOrder = 2 },
+                    new() { Name = "Concentricity (ID to OD)", DrawingCallout = "≤0.001\" TIR", NominalValue = 0.000m, TolerancePlus = 0.0254m, ToleranceMinus = 0.000m, InstrumentType = "DTI on V-Block", IsKeyCharacteristic = true, DisplayOrder = 3 },
+                    new() { Name = "Engraving Depth", DrawingCallout = "≥0.003\" (ATF requirement)", NominalValue = 0.004m, TolerancePlus = 0.002m, ToleranceMinus = 0.001m, InstrumentType = "Depth Micrometer", IsKeyCharacteristic = true, DisplayOrder = 4 },
+                    new() { Name = "Engraving Legibility", DrawingCallout = "Visual: serial, mfr, caliber readable", NominalValue = 1.0m, TolerancePlus = 0.0m, ToleranceMinus = 0.0m, InstrumentType = "Visual (10x Loupe)", IsKeyCharacteristic = true, DisplayOrder = 5 },
+                    new() { Name = "Overall Height", DrawingCallout = "0.750\" ±0.005", NominalValue = 19.05m, TolerancePlus = 0.127m, ToleranceMinus = 0.127m, InstrumentType = "Caliper", DisplayOrder = 6 }
                 }
             }
         };
@@ -1542,63 +1972,77 @@ public class DataSeedingService : IDataSeedingService
         db.InspectionPlans.AddRange(inspPlans);
         await db.SaveChangesAsync();
 
-        // ── QC Inspections (for completed stages) ──
-        if (qcInspector != null && bracketJob != null)
+        // ── QC Inspections (for completed monocore SLS stage) ──
+        if (qcInspector != null && monocoreJob != null)
         {
             var inspection = new QCInspection
             {
-                JobId = bracketJob.Id,
-                PartId = bracket.Id,
+                JobId = monocoreJob.Id,
+                PartId = monocore.Id,
                 InspectorUserId = qcInspector.Id,
                 InspectionPlanId = inspPlans[0].Id,
-                OverallResult = InspectionResult.Pass,
+                OverallResult = InspectionResult.Conditional,
                 OverallPass = true,
-                Notes = "All 8 brackets from first build batch passed dimensional inspection. 2 brackets flagged for surface porosity — see NCR-00001.",
-                InspectionDate = DateTime.UtcNow.AddDays(-7)
+                Notes = "5 of 6 monocores from JOB-00001 batch 1 passed all dimensional and NDT checks. MC-2026-00003 failed CT scan density — see NCR-00001. Remaining 5 parts approved for continued processing through heat treatment.",
+                InspectionDate = DateTime.UtcNow.AddDays(-5)
             };
             db.QCInspections.Add(inspection);
             await db.SaveChangesAsync();
 
-            // ── Measurements for the inspection ──
+            // ── Measurements for the inspection (representative of passing parts) ──
             var measurements = new List<InspectionMeasurement>
             {
-                new() { QcInspectionId = inspection.Id, CharacteristicName = "Overall Length", ActualValue = 45.03m, Deviation = 0.03m, NominalValue = 45.00m, TolerancePlus = 0.10m, ToleranceMinus = 0.10m, IsInSpec = true },
-                new() { QcInspectionId = inspection.Id, CharacteristicName = "Mounting Hole Diameter", ActualValue = 6.01m, Deviation = 0.01m, NominalValue = 6.00m, TolerancePlus = 0.02m, ToleranceMinus = 0.00m, IsInSpec = true },
-                new() { QcInspectionId = inspection.Id, CharacteristicName = "Hole Position X", ActualValue = 22.48m, Deviation = -0.02m, NominalValue = 22.50m, TolerancePlus = 0.05m, ToleranceMinus = 0.05m, IsInSpec = true },
-                new() { QcInspectionId = inspection.Id, CharacteristicName = "Hole Position Y", ActualValue = 15.02m, Deviation = 0.02m, NominalValue = 15.00m, TolerancePlus = 0.05m, ToleranceMinus = 0.05m, IsInSpec = true },
-                new() { QcInspectionId = inspection.Id, CharacteristicName = "Wall Thickness", ActualValue = 2.08m, Deviation = 0.08m, NominalValue = 2.00m, TolerancePlus = 0.15m, ToleranceMinus = 0.15m, IsInSpec = true },
-                new() { QcInspectionId = inspection.Id, CharacteristicName = "Surface Roughness (Ra)", ActualValue = 5.2m, Deviation = 1.2m, NominalValue = 4.0m, TolerancePlus = 2.3m, ToleranceMinus = 4.0m, IsInSpec = true }
+                new() { QcInspectionId = inspection.Id, CharacteristicName = "Bore Diameter", ActualValue = 9.540m, Deviation = 0.015m, NominalValue = 9.525m, TolerancePlus = 0.127m, ToleranceMinus = 0.000m, IsInSpec = true },
+                new() { QcInspectionId = inspection.Id, CharacteristicName = "Bore Alignment (Full Length)", ActualValue = 0.076m, Deviation = 0.076m, NominalValue = 0.000m, TolerancePlus = 0.127m, ToleranceMinus = 0.000m, IsInSpec = true },
+                new() { QcInspectionId = inspection.Id, CharacteristicName = "Overall Length", ActualValue = 165.18m, Deviation = 0.08m, NominalValue = 165.10m, TolerancePlus = 0.254m, ToleranceMinus = 0.254m, IsInSpec = true },
+                new() { QcInspectionId = inspection.Id, CharacteristicName = "OD Profile (Max)", ActualValue = 34.32m, Deviation = 0.03m, NominalValue = 34.29m, TolerancePlus = 0.127m, ToleranceMinus = 0.127m, IsInSpec = true },
+                new() { QcInspectionId = inspection.Id, CharacteristicName = "Weight", ActualValue = 0.382m, Deviation = 0.002m, NominalValue = 0.38m, TolerancePlus = 0.03m, ToleranceMinus = 0.03m, IsInSpec = true },
+                new() { QcInspectionId = inspection.Id, CharacteristicName = "Surface Roughness (Ra) — External", ActualValue = 9.8m, Deviation = 1.8m, NominalValue = 8.0m, TolerancePlus = 4.5m, ToleranceMinus = 8.0m, IsInSpec = true },
+                new() { QcInspectionId = inspection.Id, CharacteristicName = "Hardness (HRC)", ActualValue = 41.5m, Deviation = 0.5m, NominalValue = 41.0m, TolerancePlus = 3.0m, ToleranceMinus = 3.0m, IsInSpec = true },
+                new() { QcInspectionId = inspection.Id, CharacteristicName = "Internal Channel Clearance", ActualValue = 1.0m, Deviation = 0.0m, NominalValue = 1.0m, TolerancePlus = 0.0m, ToleranceMinus = 0.0m, IsInSpec = true }
             };
             db.InspectionMeasurements.AddRange(measurements);
             await db.SaveChangesAsync();
         }
 
-        // ── SPC Data Points (historical bracket measurements) ──
+        // ── SPC Data Points (historical monocore bore diameter and alignment measurements) ──
         var spcData = new List<SpcDataPoint>();
         var rng = new Random(42); // Deterministic for reproducible test data
         for (int i = 0; i < 30; i++)
         {
-            // Overall Length: nominal 45.00 ±0.10
+            // Bore Diameter: nominal 9.525mm (0.375"), tolerance +0.127/-0.000
             spcData.Add(new SpcDataPoint
             {
-                PartId = bracket.Id,
-                CharacteristicName = "Overall Length",
-                MeasuredValue = 45.00m + (decimal)(rng.NextDouble() * 0.14 - 0.07),
-                NominalValue = 45.00m,
-                TolerancePlus = 0.10m,
-                ToleranceMinus = 0.10m,
+                PartId = monocore.Id,
+                CharacteristicName = "Bore Diameter",
+                MeasuredValue = 9.525m + (decimal)(rng.NextDouble() * 0.100),
+                NominalValue = 9.525m,
+                TolerancePlus = 0.127m,
+                ToleranceMinus = 0.000m,
                 RecordedAt = DateTime.UtcNow.AddDays(-30 + i)
             });
 
-            // Mounting Hole Diameter: nominal 6.00 +0.02/-0.00
+            // Bore Alignment: nominal 0.000mm, tolerance +0.127/-0.000 (TIR)
             spcData.Add(new SpcDataPoint
             {
-                PartId = bracket.Id,
-                CharacteristicName = "Mounting Hole Diameter",
-                MeasuredValue = 6.00m + (decimal)(rng.NextDouble() * 0.018),
-                NominalValue = 6.00m,
-                TolerancePlus = 0.02m,
-                ToleranceMinus = 0.00m,
+                PartId = monocore.Id,
+                CharacteristicName = "Bore Alignment (Full Length)",
+                MeasuredValue = (decimal)(rng.NextDouble() * 0.100),
+                NominalValue = 0.000m,
+                TolerancePlus = 0.127m,
+                ToleranceMinus = 0.000m,
+                RecordedAt = DateTime.UtcNow.AddDays(-30 + i)
+            });
+
+            // Overall Length: nominal 165.10mm (6.500"), tolerance ±0.254mm
+            spcData.Add(new SpcDataPoint
+            {
+                PartId = monocore.Id,
+                CharacteristicName = "Overall Length",
+                MeasuredValue = 165.10m + (decimal)(rng.NextDouble() * 0.36 - 0.18),
+                NominalValue = 165.10m,
+                TolerancePlus = 0.254m,
+                ToleranceMinus = 0.254m,
                 RecordedAt = DateTime.UtcNow.AddDays(-30 + i)
             });
         }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using Opcentrix_V3.Models.Enums;
 
 namespace Opcentrix_V3.Models;
@@ -7,8 +8,30 @@ public class PartInstance
 {
     public int Id { get; set; }
 
+    /// <summary>
+    /// Official serial number, assigned at laser engraving stage.
+    /// Null until <see cref="IsSerialAssigned"/> is true.
+    /// </summary>
+    [MaxLength(50)]
+    public string? SerialNumber { get; set; }
+
+    /// <summary>
+    /// Auto-generated tracking ID assigned at plate release (before official serial).
+    /// Format: "TMP-{buildPackageId}-{index:D4}".
+    /// </summary>
     [Required, MaxLength(50)]
-    public string SerialNumber { get; set; } = string.Empty;
+    public string TemporaryTrackingId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True after the official serial number is assigned at laser engraving.
+    /// </summary>
+    public bool IsSerialAssigned { get; set; }
+
+    /// <summary>
+    /// Returns the official serial if assigned, otherwise the temporary tracking ID.
+    /// </summary>
+    [NotMapped]
+    public string DisplayIdentifier => SerialNumber ?? TemporaryTrackingId;
 
     public int WorkOrderLineId { get; set; }
     public int PartId { get; set; }
