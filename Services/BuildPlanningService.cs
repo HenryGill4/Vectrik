@@ -23,6 +23,12 @@ public class BuildPlanningService : IBuildPlanningService
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.Part)
                     .ThenInclude(part => part.AdditiveBuildConfig)
+            .Include(p => p.Parts)
+                .ThenInclude(pp => pp.Part)
+                    .ThenInclude(part => part.MaterialEntity)
+            .Include(p => p.Parts)
+                .ThenInclude(pp => pp.WorkOrderLine)
+                    .ThenInclude(wl => wl!.WorkOrder)
             .Include(p => p.BuildFileInfo)
             .OrderByDescending(p => p.CreatedDate)
             .ToListAsync();
@@ -323,16 +329,46 @@ public class BuildPlanningService : IBuildPlanningService
             await _db.SaveChangesAsync();
         }
 
+        // Build a lookup from string MachineId → int Id for machine assignment
+        var machineLookup = await _db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.MachineId, m => m.Id);
+
+        // Resolve the build's SLS machine (for the print stage)
+        int? buildMachineIntId = null;
+        if (!string.IsNullOrEmpty(package.MachineId) && machineLookup.TryGetValue(package.MachineId, out var bmId))
+            buildMachineIntId = bmId;
+
         var executions = new List<StageExecution>();
         var sortOrder = 0;
+        var currentStart = package.ScheduledDate ?? DateTime.UtcNow;
 
         foreach (var stage in buildStages)
         {
             var estimatedHours = stage.DefaultDurationHours;
 
-            // SLS printing stage gets duration from slice file
-            if (stage.StageSlug == "sls-printing" && package.BuildFileInfo?.EstimatedPrintTimeHours != null)
-                estimatedHours = (double)package.BuildFileInfo.EstimatedPrintTimeHours.Value;
+            // SLS printing stage gets duration from slice file or package estimate
+            if (stage.StageSlug == "sls-printing")
+            {
+                if (package.BuildFileInfo?.EstimatedPrintTimeHours != null)
+                    estimatedHours = (double)package.BuildFileInfo.EstimatedPrintTimeHours.Value;
+                else if (package.EstimatedDurationHours.HasValue)
+                    estimatedHours = package.EstimatedDurationHours.Value;
+            }
+
+            // Resolve the correct machine for this stage
+            int? machineId = null;
+            if (stage.StageSlug == "sls-printing")
+            {
+                machineId = buildMachineIntId;
+            }
+            else if (!string.IsNullOrEmpty(stage.DefaultMachineId)
+                     && machineLookup.TryGetValue(stage.DefaultMachineId, out var stageIntId))
+            {
+                machineId = stageIntId;
+            }
+
+            var scheduledEnd = currentStart.AddHours(estimatedHours);
 
             var execution = new StageExecution
             {
@@ -344,6 +380,9 @@ public class BuildPlanningService : IBuildPlanningService
                 SetupHours = stage.DefaultSetupMinutes / 60.0,
                 QualityCheckRequired = stage.RequiresQualityCheck,
                 SortOrder = sortOrder++,
+                MachineId = machineId,
+                ScheduledStartAt = currentStart,
+                ScheduledEndAt = scheduledEnd,
                 CreatedBy = createdBy,
                 LastModifiedBy = createdBy,
                 CreatedDate = DateTime.UtcNow,
@@ -352,6 +391,9 @@ public class BuildPlanningService : IBuildPlanningService
 
             _db.StageExecutions.Add(execution);
             executions.Add(execution);
+
+            // Next stage starts after this one ends
+            currentStart = scheduledEnd;
         }
 
         await _db.SaveChangesAsync();

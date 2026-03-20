@@ -23,10 +23,35 @@ public class WorkOrderService : IWorkOrderService
         var query = _db.WorkOrders
             .Include(w => w.Lines)
                 .ThenInclude(l => l.Part)
+                    .ThenInclude(p => p.ManufacturingApproach)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.Jobs)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.BuildPackageParts)
+                    .ThenInclude(bp => bp.BuildPackage)
             .AsQueryable();
 
         if (statusFilter.HasValue)
             query = query.Where(w => w.Status == statusFilter.Value);
+
+        return await query.OrderByDescending(w => w.OrderDate).ToListAsync();
+    }
+
+    public async Task<List<WorkOrder>> GetWorkOrdersByStatusesAsync(params WorkOrderStatus[] statuses)
+    {
+        var query = _db.WorkOrders
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.Part)
+                    .ThenInclude(p => p.ManufacturingApproach)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.Jobs)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.BuildPackageParts)
+                    .ThenInclude(bp => bp.BuildPackage)
+            .AsQueryable();
+
+        if (statuses.Length > 0)
+            query = query.Where(w => statuses.Contains(w.Status));
 
         return await query.OrderByDescending(w => w.OrderDate).ToListAsync();
     }
@@ -49,12 +74,19 @@ public class WorkOrderService : IWorkOrderService
         return await _db.WorkOrders
             .Include(w => w.Lines)
                 .ThenInclude(l => l.Part)
+                    .ThenInclude(p => p.ManufacturingApproach)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.Part)
+                    .ThenInclude(p => p.MaterialEntity)
             .Include(w => w.Lines)
                 .ThenInclude(l => l.Jobs)
                     .ThenInclude(j => j.Stages)
                         .ThenInclude(s => s.ProductionStage)
             .Include(w => w.Lines)
                 .ThenInclude(l => l.PartInstances)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.BuildPackageParts)
+                    .ThenInclude(bp => bp.BuildPackage)
             .Include(w => w.Comments.Where(c => c.ParentCommentId == null))
                 .ThenInclude(c => c.Replies)
             .Include(w => w.Quote)

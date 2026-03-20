@@ -118,6 +118,13 @@ public enum MaterialRequestStatus
     Pending, PartiallyFulfilled, Fulfilled, Cancelled
 }
 
+public enum BuildTemplateStatus
+{
+    Draft,
+    Certified,
+    Archived
+}
+
 // Quality Systems (Module 05)
 public enum InspectionResult
 {

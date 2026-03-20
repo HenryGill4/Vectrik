@@ -99,4 +99,5 @@ public class WorkOrderLine
     public virtual Part Part { get; set; } = null!;
     public virtual ICollection<Job> Jobs { get; set; } = new List<Job>();
     public virtual ICollection<PartInstance> PartInstances { get; set; } = new List<PartInstance>();
+    public virtual ICollection<BuildPackagePart> BuildPackageParts { get; set; } = new List<BuildPackagePart>();
 }

@@ -4,10 +4,14 @@
 @inject IPartService PartService
 @inject IMachineService MachineService
 @inject ISchedulingService Scheduler
+@inject IBuildPlanningService BuildPlanning
+@inject IBuildSchedulingService BuildScheduling
+@inject IWorkOrderService WorkOrderService
+@inject IBuildTemplateService BuildTemplateService
+@inject IBuildSuggestionService BuildSuggestionService
 @inject ToastService Toast
 @inject IJSRuntime JS
-@implements IDisposable
-@rendermode InteractiveServer
+@implements IAsyncDisposable
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Microsoft.AspNetCore.Components.Authorization
 
@@ -17,12 +21,13 @@
 <div class="page-header">
     <h1 class="page-title">📅 Production Scheduler</h1>
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <a href="/builds" class="btn btn-secondary">📦 Builds</a>
         <a href="scheduler/capacity" class="btn btn-secondary">📊 Capacity</a>
-        @if (_unscheduled.Any())
+        @if (_unscheduled.Any() || ReadyBuilds.Any(b => b.Status == BuildPackageStatus.Ready))
         {
             <button class="btn btn-warning" @onclick="AutoScheduleAll" disabled="@_scheduling">
                 @if (_scheduling) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
-                ⚡ Auto-Schedule (@_unscheduled.Count)
+                ⚡ Auto-Schedule (@(_unscheduled.Count + ReadyBuilds.Count(b => b.Status == BuildPackageStatus.Ready)))
             </button>
         }
         <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Job</button>
@@ -32,49 +37,39 @@
 @* ── Controls Bar ── *@
 <div class="sched-controls">
     <div class="sched-controls-left">
-        <div class="sched-date-inputs">
-            <div class="form-group" style="margin-bottom: 0;">
-                <label class="form-label">From</label>
-                <input class="form-control" type="date" @bind="_dateFrom" @bind:event="onchange" />
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label class="form-label">To</label>
-                <input class="form-control" type="date" @bind="_dateTo" @bind:event="onchange" />
-            </div>
-        </div>
-        <div class="sched-zoom-group">
-            <span class="sched-zoom-label">Zoom</span>
-            <button class="btn btn-sm @ZoomBtnClass("30M")" @onclick='() => SetZoom("30M")'>30m</button>
-            <button class="btn btn-sm @ZoomBtnClass("1H")" @onclick='() => SetZoom("1H")'>1h</button>
-            <button class="btn btn-sm @ZoomBtnClass("2H")" @onclick='() => SetZoom("2H")'>2h</button>
-            <button class="btn btn-sm @ZoomBtnClass("6H")" @onclick='() => SetZoom("6H")'>6h</button>
-            <button class="btn btn-sm @ZoomBtnClass("12H")" @onclick='() => SetZoom("12H")'>12h</button>
-            <span class="sched-zoom-sep"></span>
-            <button class="btn btn-sm @ZoomBtnClass("1D")" @onclick='() => SetZoom("1D")'>1D</button>
-            <button class="btn btn-sm @ZoomBtnClass("3D")" @onclick='() => SetZoom("3D")'>3D</button>
-            <span class="sched-zoom-sep"></span>
-            <button class="btn btn-sm @ZoomBtnClass("1W")" @onclick='() => SetZoom("1W")'>1W</button>
-            <button class="btn btn-sm @ZoomBtnClass("2W")" @onclick='() => SetZoom("2W")'>2W</button>
-            <button class="btn btn-sm @ZoomBtnClass("1M")" @onclick='() => SetZoom("1M")'>1M</button>
+        <div class="sched-viewport-info">
+            <span class="sched-viewport-date" title="Click to jump to a date">
+                @_viewportStart.ToString("MMM d") — @_viewportEnd.ToString("MMM d, yyyy")
+            </span>
+            <span class="sched-viewport-zoom" title="Zoom level">
+                @(_pixelsPerHour.ToString("F1")) px/hr
+            </span>
         </div>
         <div class="sched-nav-btns">
-            <button class="btn btn-sm btn-secondary" @onclick="ShiftBack" title="Pan back">◀</button>
-            <button class="btn btn-sm btn-secondary" @onclick="GoToNow" title="Jump to now">Now</button>
-            <button class="btn btn-sm btn-secondary" @onclick="ShiftForward" title="Pan forward">▶</button>
+            <button class="btn btn-sm btn-secondary" @onclick="() => ShiftViewportAsync(-1)" title="Pan back">◀</button>
+            <button class="btn btn-sm btn-secondary" @onclick="ScrollToNowAsync" title="Jump to now">Now</button>
+            <button class="btn btn-sm btn-secondary" @onclick="() => ShiftViewportAsync(1)" title="Pan forward">▶</button>
         </div>
     </div>
     <div class="sched-controls-right">
         <div class="sched-view-toggle">
             <button class="btn btn-sm @(_viewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "gantt"'>📊 Machines</button>
+            <button class="btn btn-sm @(_viewMode == "builds" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "builds"'>📦 SLS Builds</button>
+            <button class="btn btn-sm @(_viewMode == "orders" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "orders"'>📋 Work Orders</button>
             <button class="btn btn-sm @(_viewMode == "path" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "path"'>🔀 Part Path</button>
             <button class="btn btn-sm @(_viewMode == "stages" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "stages"'>🔧 Stages</button>
             <button class="btn btn-sm @(_viewMode == "table" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "table"'>📋 Table</button>
         </div>
-        <button class="btn btn-secondary btn-sm" @onclick="LoadData">🔄</button>
+        <button class="btn btn-secondary btn-sm" @onclick="LoadData" title="Refresh now">🔄</button>
+        <button class="btn btn-sm @(_autoRefreshEnabled ? "btn-accent" : "btn-secondary")" @onclick="ToggleAutoRefresh"
+                title="@(_autoRefreshEnabled ? "Auto-refresh ON (30s)" : "Auto-refresh OFF")">
+            @(_autoRefreshEnabled ? "⏱ ON" : "⏱ OFF")
+        </button>
+        <span style="font-size: 0.7rem; color: var(--text-muted); white-space: nowrap;">@_lastRefresh.ToLocalTime().ToString("HH:mm:ss")</span>
     </div>
 </div>
 
-<div @ref="_schedulerRef">
+<div>
 @if (_loading)
 {
     <div class="loading"><span class="spinner"></span> Loading schedule...</div>
@@ -91,145 +86,122 @@ else if (_viewMode == "gantt")
                 }
                 else
                 {
-                    <div class="gantt-container" style="@GetGanttContainerStyle()">
-                        @* ── Header ── *@
-                        @if (IsDayLevel)
-                        {
-                            <div class="gantt-header">
-                                <div class="gantt-resource-label gantt-corner">Machine</div>
-                                @foreach (var slot in _ganttSlots)
+                    <div class="gantt-container gantt-viewport" @ref="_ganttContainerRef">
+                        <div class="gantt-inner" data-data-end="@_dataRangeEnd.ToString("o")" style="width: @(GetTotalInnerWidthPx())px; position: relative;">
+                            @* ── Time Header ── *@
+                            <div class="gantt-time-header">
+                                @foreach (var tick in GenerateTimeHeaders())
                                 {
-                                    var isToday = slot.Date == DateTime.UtcNow.Date;
-                                    var isWeekend = slot.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-                                    <div class="gantt-day-header @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")">
-                                        <span class="gantt-day-name">@slot.ToString("ddd")</span>
-                                        <span class="gantt-day-date">@slot.ToString("M/d")</span>
+                                    var tickLeft = GetBarLeftPx(tick.Time);
+                                    <div class="gantt-tick @(tick.IsMajor ? "gantt-tick-major" : "")" style="left: @(tickLeft)px;">
+                                        <span class="gantt-tick-label">@tick.Label</span>
                                     </div>
                                 }
                             </div>
-                        }
-                        else
-                        {
-                            <div class="gantt-header-group">
-                                <div class="gantt-header gantt-header-dates">
-                                    <div class="gantt-resource-label gantt-corner">Machine</div>
-                                    @foreach (var dg in GetDateGroups())
-                                    {
-                                        var isToday = dg.Date == DateTime.UtcNow.Date;
-                                        var isWeekend = dg.Date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-                                        <div class="gantt-date-group @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")" style="grid-column: span @dg.Count;">
-                                            <span class="gantt-day-name">@dg.Date.ToString("ddd")</span>
-                                            <span class="gantt-day-date">@dg.Date.ToString("M/d")</span>
-                                        </div>
-                                    }
-                                </div>
-                                <div class="gantt-header gantt-header-times">
-                                    <div class="gantt-resource-label"></div>
-                                    @foreach (var slot in _ganttSlots)
-                                    {
-                                        <div class="gantt-slot-header">@FormatSlotTime(slot)</div>
-                                    }
-                                </div>
-                            </div>
-                        }
 
-                        @* ── Machine rows ── *@
-                        @foreach (var machine in _machines.Where(m => m.IsAvailableForScheduling))
-                        {
-                            var machineExecs = _executions.Where(e => e.MachineId == machine.Id).ToList();
-                            <div class="gantt-row">
-                                <div class="gantt-resource-label">
-                                    <span class="gantt-machine-status gantt-status-@machine.Status.ToString().ToLower()"></span>
-                                    <div class="gantt-machine-info">
-                                        <span class="gantt-machine-name">@machine.Name</span>
-                                        <span class="gantt-machine-type">@machine.MachineType</span>
+                            @* ── Today line ── *@
+                            <div class="gantt-today-line" style="left: @(GetBarLeftPx(DateTime.UtcNow))px;"></div>
+
+                            @* ── Machine rows (grouped by type, ordered by priority) ── *@
+                            @{
+                                var orderedMachines = GetOrderedMachines();
+                                string? lastGroup = null;
+                            }
+                            @foreach (var machine in orderedMachines)
+                            {
+                                var groupLabel = IsSls(machine) ? "SLS / Additive" : (machine.MachineType ?? "Other");
+                                if (groupLabel != lastGroup)
+                                {
+                                    lastGroup = groupLabel;
+                                    <div class="gantt-group-header">
+                                        <span class="gantt-group-label">@groupLabel</span>
+                                    </div>
+                                }
+                                var machineExecs = _executions.Where(e => e.MachineId == machine.Id).ToList();
+                                <div class="gantt-row">
+                                    <div class="gantt-resource-label">
+                                        <span class="gantt-machine-status gantt-status-@machine.Status.ToString().ToLower()"></span>
+                                        <div class="gantt-machine-info">
+                                            <span class="gantt-machine-name">@machine.Name</span>
+                                            <span class="gantt-machine-type">@machine.MachineType</span>
+                                        </div>
+                                    </div>
+                                    <div class="gantt-track">
+                                        @{
+                                            var buildGroups = machineExecs
+                                                .Where(e => e.BuildPackageId != null && e.ProductionStage?.IsBuildLevelStage == true)
+                                                .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId })
+                                                .ToList();
+                                            var buildGroupExecIds = buildGroups.SelectMany(g => g.Select(e => e.Id)).ToHashSet();
+                                            var individualExecs = machineExecs.Where(e => !buildGroupExecIds.Contains(e.Id)).ToList();
+                                        }
+                                        @foreach (var group in buildGroups)
+                                        {
+                                            var first = group.OrderBy(e => e.ScheduledStartAt ?? DateTime.MaxValue).First();
+                                            var last = group.OrderByDescending(e => e.ScheduledEndAt ?? DateTime.MinValue).First();
+                                            var start = first.ScheduledStartAt ?? first.Job?.ScheduledStart ?? _dataRangeStart;
+                                            var end = last.ScheduledEndAt ?? last.Job?.ScheduledEnd ?? start.AddHours(first.EstimatedHours ?? 4);
+                                            var barLeft = GetBarLeftPx(start);
+                                            var barWidth = GetBarWidthPx(start, end);
+                                            var stageColor = first.ProductionStage?.StageColor ?? "";
+                                            var partList = string.Join(", ", group.Select(e => e.Job?.Part?.PartNumber ?? "?").Distinct());
+                                            var pkgName = first.BuildPackage?.Name ?? $"Build #{first.BuildPackageId}";
+                                            <div class="gantt-bar gantt-bar-normal"
+                                                 style="left: @(barLeft)px; width: @(barWidth)px; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};") border: 2px solid var(--accent);"
+                                                 title="📦 @pkgName — @(first.ProductionStage?.Name ?? "Stage")&#10;Parts: @partList&#10;@start.ToString("MM/dd HH:mm") → @end.ToString("MM/dd HH:mm")&#10;Est: @(first.EstimatedHours?.ToString("F1") ?? "?")h"
+                                                 @onclick="() => ShowReschedule(first)">
+                                                <span class="gantt-bar-text">📦 @pkgName · @(first.ProductionStage?.Name ?? "")</span>
+                                            </div>
+                                        }
+                                        @foreach (var exec in individualExecs)
+                                        {
+                                            var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dataRangeStart;
+                                            var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                            var barLeft = GetBarLeftPx(start);
+                                            var barWidth = GetBarWidthPx(start, end);
+                                            var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
+                                            var stageColor = exec.ProductionStage?.StageColor ?? "";
+                                            var isConflict = HasOverlap(machine.Id, exec, machineExecs);
+                                            <div class="gantt-bar gantt-bar-@priorityClass @(isConflict ? "gantt-bar-conflict" : "")"
+                                                 style="left: @(barLeft)px; width: @(barWidth)px; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};")"
+                                                 title="@(exec.Job?.Part?.PartNumber ?? "?") — @(exec.ProductionStage?.Name ?? "Stage")&#10;@start.ToString("MM/dd HH:mm") → @end.ToString("MM/dd HH:mm")&#10;Est: @(exec.EstimatedHours?.ToString("F1") ?? "?")h | Priority: @(exec.Job?.Priority)"
+                                                 @onclick="() => ShowReschedule(exec)">
+                                                <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? $"J{exec.JobId}") · @(exec.ProductionStage?.Name ?? "")</span>
+                                            </div>
+                                        }
                                     </div>
                                 </div>
-                                <div class="gantt-track" style="grid-column: 2 / span @_ganttSlots.Count;">
-                                    @* Today marker *@
-                                    @{ var todayPct = GetGanttPosition(DateTime.UtcNow); }
-                                    @if (todayPct > 0 && todayPct < 100)
-                                    {
-                                        <div class="gantt-today-line" style="left: @(todayPct)%;"></div>
-                                    }
-                                    @* Execution bars *@
-                                    @{
-                                        // Group build-level executions into single bars by BuildPackageId
-                                        var buildGroups = machineExecs
-                                            .Where(e => e.BuildPackageId != null && e.ProductionStage?.IsBuildLevelStage == true)
-                                            .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId })
-                                            .ToList();
-                                        var buildGroupExecIds = buildGroups.SelectMany(g => g.Select(e => e.Id)).ToHashSet();
-                                        var individualExecs = machineExecs.Where(e => !buildGroupExecIds.Contains(e.Id)).ToList();
-                                    }
-                                    @* Build-level bars (one per build+stage) *@
-                                    @foreach (var group in buildGroups)
-                                    {
-                                        var first = group.OrderBy(e => e.ScheduledStartAt ?? DateTime.MaxValue).First();
-                                        var last = group.OrderByDescending(e => e.ScheduledEndAt ?? DateTime.MinValue).First();
-                                        var start = first.ScheduledStartAt ?? first.Job?.ScheduledStart ?? _dateFrom;
-                                        var end = last.ScheduledEndAt ?? last.Job?.ScheduledEnd ?? start.AddHours(first.EstimatedHours ?? 4);
-                                        var leftPct = GetGanttPosition(start);
-                                        var widthPct = GetGanttWidth(start, end);
-                                        var stageColor = first.ProductionStage?.StageColor ?? "";
-                                        var partList = string.Join(", ", group.Select(e => e.Job?.Part?.PartNumber ?? "?").Distinct());
-                                        var pkgName = first.BuildPackage?.Name ?? $"Build #{first.BuildPackageId}";
-                                        <div class="gantt-bar gantt-bar-normal"
-                                             style="left: @(leftPct)%; width: @(widthPct)%; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};") border: 2px solid var(--accent);"
-                                             title="📦 @pkgName — @(first.ProductionStage?.Name ?? "Stage")&#10;Parts: @partList&#10;@start.ToString("MM/dd HH:mm") → @end.ToString("MM/dd HH:mm")&#10;Est: @(first.EstimatedHours?.ToString("F1") ?? "?")h"
-                                             @onclick="() => ShowReschedule(first)">
-                                            <span class="gantt-bar-text">📦 @pkgName · @(first.ProductionStage?.Name ?? "")</span>
-                                        </div>
-                                    }
-                                    @* Individual bars (non-build-level) *@
-                                    @foreach (var exec in individualExecs)
-                                    {
-                                        var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
-                                        var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
-                                        var leftPct = GetGanttPosition(start);
-                                        var widthPct = GetGanttWidth(start, end);
-                                        var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
-                                        var stageColor = exec.ProductionStage?.StageColor ?? "";
-                                        var isConflict = HasOverlap(machine.Id, exec, machineExecs);
-                                        <div class="gantt-bar gantt-bar-@priorityClass @(isConflict ? "gantt-bar-conflict" : "")"
-                                             style="left: @(leftPct)%; width: @(widthPct)%; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};")"
-                                             title="@(exec.Job?.Part?.PartNumber ?? "?") — @(exec.ProductionStage?.Name ?? "Stage")&#10;@start.ToString("MM/dd HH:mm") → @end.ToString("MM/dd HH:mm")&#10;Est: @(exec.EstimatedHours?.ToString("F1") ?? "?")h | Priority: @(exec.Job?.Priority)"
-                                             @onclick="() => ShowReschedule(exec)">
-                                            <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? $"J{exec.JobId}") · @(exec.ProductionStage?.Name ?? "")</span>
-                                        </div>
-                                    }
-                                </div>
-                            </div>
-                        }
+                            }
 
-                        @* ── Unassigned row ── *@
-                        @{
-                            var unassignedScheduled = _executions.Where(e => e.MachineId == null && e.ScheduledStartAt != null).ToList();
-                        }
-                        @if (unassignedScheduled.Any())
-                        {
-                            <div class="gantt-row gantt-row-unassigned">
-                                <div class="gantt-resource-label">
-                                    <span class="gantt-machine-status" style="background: var(--warning);"></span>
-                                    <div class="gantt-machine-info">
-                                        <span class="gantt-machine-name">Unassigned</span>
-                                        <span class="gantt-machine-type">@unassignedScheduled.Count tasks</span>
+                            @* ── Unassigned row ── *@
+                            @{
+                                var unassignedScheduled = _executions.Where(e => e.MachineId == null && e.ScheduledStartAt != null).ToList();
+                            }
+                            @if (unassignedScheduled.Any())
+                            {
+                                <div class="gantt-row gantt-row-unassigned">
+                                    <div class="gantt-resource-label">
+                                        <span class="gantt-machine-status" style="background: var(--warning);"></span>
+                                        <div class="gantt-machine-info">
+                                            <span class="gantt-machine-name">Unassigned</span>
+                                            <span class="gantt-machine-type">@unassignedScheduled.Count tasks</span>
+                                        </div>
+                                    </div>
+                                    <div class="gantt-track">
+                                        @foreach (var exec in unassignedScheduled)
+                                        {
+                                            var start = exec.ScheduledStartAt ?? _dataRangeStart;
+                                            var end = exec.ScheduledEndAt ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                            <div class="gantt-bar gantt-bar-unassigned" style="left: @(GetBarLeftPx(start))px; width: @(GetBarWidthPx(start, end))px;"
+                                                 title="UNASSIGNED — @(exec.Job?.Part?.PartNumber ?? "?") · @(exec.ProductionStage?.Name ?? "")"
+                                                 @onclick="() => ShowReschedule(exec)">
+                                                <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? $"J{exec.JobId}") · @(exec.ProductionStage?.Name ?? "")</span>
+                                            </div>
+                                        }
                                     </div>
                                 </div>
-                                <div class="gantt-track" style="grid-column: 2 / span @_ganttSlots.Count;">
-                                    @foreach (var exec in unassignedScheduled)
-                                    {
-                                        var start = exec.ScheduledStartAt ?? _dateFrom;
-                                        var end = exec.ScheduledEndAt ?? start.AddHours(exec.EstimatedHours ?? 4);
-                                        <div class="gantt-bar gantt-bar-unassigned" style="left: @(GetGanttPosition(start))%; width: @(GetGanttWidth(start, end))%;"
-                                             title="UNASSIGNED — @(exec.Job?.Part?.PartNumber ?? "?") · @(exec.ProductionStage?.Name ?? "")"
-                                             @onclick="() => ShowReschedule(exec)">
-                                            <span class="gantt-bar-text">@(exec.Job?.Part?.PartNumber ?? $"J{exec.JobId}") · @(exec.ProductionStage?.Name ?? "")</span>
-                                        </div>
-                                    }
-                                </div>
-                            </div>
-                        }
+                            }
+                        </div>
                     </div>
 
                     @* Legend *@
@@ -258,10 +230,188 @@ else if (_viewMode == "gantt")
                         @foreach (var exec in _unscheduled)
                         {
                             var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
-                            <div class="sched-sidebar-item" @onclick="() => AutoScheduleSingle(exec.Id)">
+                            <div class="sched-sidebar-item">
                                 <div class="sched-sidebar-priority sched-priority-@priorityClass"></div>
                                 <div class="sched-sidebar-info">
                                     <span class="sched-sidebar-part">@(exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}")</span>
+                                    <span class="sched-sidebar-stage">@(exec.ProductionStage?.Name ?? "—")</span>
+                                    <span class="sched-sidebar-est">@(exec.EstimatedHours?.ToString("F1") ?? "?")h est</span>
+                                </div>
+                                <span class="sched-sidebar-action" title="Manual schedule" @onclick="() => ManualScheduleSingle(exec)" @onclick:stopPropagation>📅</span>
+                                <span class="sched-sidebar-action" title="Auto-schedule" @onclick="() => AutoScheduleSingle(exec.Id)" @onclick:stopPropagation>⚡</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else if (_viewMode == "builds")
+{
+    @* ── SLS Builds View: build pipeline + per-machine timelines ── *@
+    <div class="sched-layout">
+        <div class="sched-gantt-panel">
+            @* ── Build Pipeline Summary ── *@
+            @{
+                var active = ActiveBuilds;
+                var ready = ReadyBuilds;
+                var printing = _buildPackages.Where(b => b.Status == BuildPackageStatus.Printing).ToList();
+                var postPrint = _buildPackages.Where(b => b.Status == BuildPackageStatus.PostPrint).ToList();
+                var slsMachineList = SlsMachines;
+            }
+            <div class="builds-pipeline-summary">
+                <div class="builds-pipeline-stat">
+                    <span class="builds-pipeline-count">@active.Count</span>
+                    <span class="builds-pipeline-label">Active Builds</span>
+                </div>
+                <div class="builds-pipeline-stat builds-pipeline-stat--ready">
+                    <span class="builds-pipeline-count">@ready.Count</span>
+                    <span class="builds-pipeline-label">Ready to Schedule</span>
+                </div>
+                <div class="builds-pipeline-stat builds-pipeline-stat--printing">
+                    <span class="builds-pipeline-count">@printing.Count</span>
+                    <span class="builds-pipeline-label">Printing</span>
+                </div>
+                <div class="builds-pipeline-stat builds-pipeline-stat--post">
+                    <span class="builds-pipeline-count">@postPrint.Count</span>
+                    <span class="builds-pipeline-label">Post-Print</span>
+                </div>
+                <div class="builds-pipeline-stat">
+                    <span class="builds-pipeline-count">@slsMachineList.Count</span>
+                    <span class="builds-pipeline-label">SLS Machines</span>
+                </div>
+            </div>
+
+            @* ── Per-Machine Build Timelines ── *@
+            <div class="card sched-gantt-card">
+                @if (!slsMachineList.Any())
+                {
+                    <div class="empty-state"><div class="empty-state-icon">🖨️</div><div class="empty-state-text">No SLS machines configured for scheduling</div></div>
+                }
+                else
+                {
+                    <div class="gantt-container gantt-viewport">
+                        <div class="gantt-inner" data-data-end="@_dataRangeEnd.ToString("o")" style="width: @(GetTotalInnerWidthPx())px; position: relative;">
+                            @* ── Time Header ── *@
+                            <div class="gantt-time-header">
+                                @foreach (var tick in GenerateTimeHeaders())
+                                {
+                                    var tickLeft = GetBarLeftPx(tick.Time);
+                                    <div class="gantt-tick @(tick.IsMajor ? "gantt-tick-major" : "")" style="left: @(tickLeft)px;">
+                                        <span class="gantt-tick-label">@tick.Label</span>
+                                    </div>
+                                }
+                            </div>
+
+                            @* ── Today line ── *@
+                            <div class="gantt-today-line" style="left: @(GetBarLeftPx(DateTime.UtcNow))px;"></div>
+
+                            @* ── SLS machine rows with build bars ── *@
+                            @foreach (var machine in slsMachineList)
+                            {
+                                var timeline = _machineTimelines.GetValueOrDefault(machine.Id) ?? [];
+                                <div class="gantt-row">
+                                    <div class="gantt-resource-label">
+                                        <span class="gantt-machine-status gantt-status-@machine.Status.ToString().ToLower()"></span>
+                                        <div class="gantt-machine-info">
+                                            <span class="gantt-machine-name">@machine.Name</span>
+                                            <span class="gantt-machine-type">@(machine.LaserCount != null ? $"{machine.LaserCount} laser" : "SLS") · @(machine.BuildPlateCapacity) plate</span>
+                                        </div>
+                                    </div>
+                                    <div class="gantt-track">
+                                        @foreach (var entry in timeline)
+                                        {
+                                            var barLeft = GetBarLeftPx(entry.PrintStart);
+                                            var barWidth = GetBarWidthPx(entry.PrintStart, entry.PrintEnd);
+                                            var statusClass = entry.Status switch
+                                            {
+                                                BuildPackageStatus.Printing => "builds-bar--printing",
+                                                BuildPackageStatus.PostPrint => "builds-bar--postprint",
+                                                BuildPackageStatus.Completed => "builds-bar--completed",
+                                                BuildPackageStatus.Scheduled => "builds-bar--scheduled",
+                                                _ => "builds-bar--ready"
+                                            };
+                                            var tooltip = $"{entry.BuildName}\nStatus: {entry.Status}\n{entry.PrintStart:MM/dd HH:mm} → {entry.PrintEnd:MM/dd HH:mm}";
+                                            if (entry.ChangeoverStart != null && entry.ChangeoverEnd != null)
+                                                tooltip += $"\nChangeover: {entry.ChangeoverStart:HH:mm} → {entry.ChangeoverEnd:HH:mm}";
+                                            <div class="gantt-bar @statusClass"
+                                                 style="left: @(barLeft)px; width: @(barWidth)px;"
+                                                 title="@tooltip">
+                                                <span class="gantt-bar-text">📦 @entry.BuildName · @entry.Status</span>
+                                            </div>
+                                            @if (entry.ChangeoverStart != null && entry.ChangeoverEnd != null)
+                                            {
+                                                var coLeft = GetBarLeftPx(entry.ChangeoverStart.Value);
+                                                var coWidth = GetBarWidthPx(entry.ChangeoverStart.Value, entry.ChangeoverEnd.Value);
+                                                <div class="builds-changeover-bar"
+                                                     style="left: @(coLeft)px; width: @(coWidth)px;"
+                                                     title="Changeover: @entry.ChangeoverStart.Value.ToString("HH:mm") → @entry.ChangeoverEnd.Value.ToString("HH:mm")">
+                                                    <span class="gantt-bar-text">🔄 Changeover</span>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @* Build status legend *@
+                    <div class="gantt-legend">
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch builds-bar--scheduled"></span> Scheduled</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch builds-bar--printing"></span> Printing</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch builds-bar--postprint"></span> Post-Print</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch builds-bar--completed"></span> Completed</span>
+                        <span class="gantt-legend-item"><span class="gantt-legend-swatch builds-changeover-bar"></span> Changeover</span>
+                    </div>
+                }
+            </div>
+
+            @* ── Ready Builds Cards ── *@
+            @if (ready.Any())
+            {
+                <div class="builds-ready-section">
+                    <h3 class="builds-ready-title">✅ Ready to Schedule (@ready.Count)</h3>
+                    <div class="builds-ready-grid">
+                        @foreach (var build in ready)
+                        {
+                            <div class="builds-ready-card">
+                                <div class="builds-ready-card-header">
+                                    <span class="builds-ready-card-name">📦 @(build.Name ?? $"Build #{build.Id}")</span>
+                                    <span class="badge badge-@BuildStatusBadgeClass(build.Status)">@BuildStatusIcon(build.Status) @build.Status</span>
+                                </div>
+                                <div class="builds-ready-card-meta">
+                                    <span>@(build.TotalPartCount) parts</span>
+                                    <span>@(build.EstimatedDurationHours?.ToString("F1") ?? "?")h est</span>
+                                    @if (build.ScheduledDate != null)
+                                    {
+                                        <span>📅 @build.ScheduledDate.Value.ToString("MM/dd")</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* ── Sidebar: Unscheduled Build Work ── *@
+        @if (_unscheduled.Any(e => e.ProductionStage?.IsBuildLevelStage == true))
+        {
+            <div class="sched-sidebar">
+                <div class="card">
+                    <div class="card-header sched-sidebar-header">
+                        📋 Unscheduled Build Stages
+                    </div>
+                    <div class="sched-sidebar-list">
+                        @foreach (var exec in _unscheduled.Where(e => e.ProductionStage?.IsBuildLevelStage == true))
+                        {
+                            var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
+                            <div class="sched-sidebar-item" @onclick="() => AutoScheduleSingle(exec.Id)">
+                                <div class="sched-sidebar-priority sched-priority-@priorityClass"></div>
+                                <div class="sched-sidebar-info">
+                                    <span class="sched-sidebar-part">📦 @(exec.BuildPackage?.Name ?? exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}")</span>
                                     <span class="sched-sidebar-stage">@(exec.ProductionStage?.Name ?? "—")</span>
                                     <span class="sched-sidebar-est">@(exec.EstimatedHours?.ToString("F1") ?? "?")h est</span>
                                 </div>
@@ -270,6 +420,321 @@ else if (_viewMode == "gantt")
                         }
                     </div>
                 </div>
+            </div>
+        }
+    </div>
+}
+else if (_viewMode == "orders")
+{
+    @* ── Work Orders Command Center ── *@
+    <div class="wo-demand-view">
+        @{
+            var woAllLines = _workOrders.SelectMany(w => w.Lines).ToList();
+            var woTotalOutstanding = woAllLines.Sum(l => GetOutstanding(l));
+            var woTotalInBuilds = woAllLines.Sum(l => GetInBuildQty(l));
+            var woAddLines = woAllLines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+            var woCncLines = woAllLines.Where(l => !IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+            var woUnscheduledLines = woAllLines.Where(l => GetOutstanding(l) > 0 && GetInBuildQty(l) == 0 && !HasExistingJobs(l)).ToList();
+            var templatesAvailable = _buildTemplates.Count(t => t.IsCertified);
+            var templatesNeedingRecert = _buildTemplates.Count(t => t.NeedsRecertification);
+        }
+
+        @if (!_workOrders.Any())
+        {
+            <div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No released work orders. Release a work order to see demand here.</div></div>
+        }
+        else
+        {
+            <div class="wo-demand-stats">
+                <div class="wo-demand-stat">
+                    <span class="wo-demand-stat-count">@_workOrders.Count</span>
+                    <span class="wo-demand-stat-label">Active Orders</span>
+                </div>
+                <div class="wo-demand-stat wo-demand-stat--outstanding">
+                    <span class="wo-demand-stat-count">@woTotalOutstanding</span>
+                    <span class="wo-demand-stat-label">Parts Outstanding</span>
+                </div>
+                <div class="wo-demand-stat wo-demand-stat--additive">
+                    <span class="wo-demand-stat-count">@woAddLines.Count</span>
+                    <span class="wo-demand-stat-label">Need Builds (SLS)</span>
+                </div>
+                <div class="wo-demand-stat wo-demand-stat--cnc">
+                    <span class="wo-demand-stat-count">@woCncLines.Count</span>
+                    <span class="wo-demand-stat-label">Need Machining</span>
+                </div>
+                @if (woTotalInBuilds > 0)
+                {
+                    <div class="wo-demand-stat wo-demand-stat--inbuilds">
+                        <span class="wo-demand-stat-count">@woTotalInBuilds</span>
+                        <span class="wo-demand-stat-label">In Builds</span>
+                    </div>
+                }
+                <div class="wo-demand-stat wo-demand-stat--unscheduled">
+                    <span class="wo-demand-stat-count">@woUnscheduledLines.Count</span>
+                    <span class="wo-demand-stat-label">Not Yet Scheduled</span>
+                </div>
+                <div class="wo-demand-stat">
+                    <span class="wo-demand-stat-count">@templatesAvailable</span>
+                    <span class="wo-demand-stat-label">Templates Available</span>
+                </div>
+                @if (templatesNeedingRecert > 0)
+                {
+                    <div class="wo-demand-stat wo-demand-stat--outstanding">
+                        <span class="wo-demand-stat-count">@templatesNeedingRecert</span>
+                        <span class="wo-demand-stat-label">⚠️ Needing Re-cert</span>
+                    </div>
+                }
+            </div>
+
+            @* ── Build Suggestions (Phase C) ── *@
+            @if (_suggestions != null && (_suggestions.TemplateSuggestions.Any(s => !_dismissedSuggestions.Contains($"t-{s.BuildTemplateId}-{s.PartId}")) || _suggestions.MixedBuildSuggestions.Any(s => !_dismissedSuggestions.Contains($"m-{string.Join(",", s.Parts.Select(p => p.PartId))}"))))
+            {
+                <div class="wo-suggestions-section">
+                    <h3 class="wo-suggestions-title">💡 Build Suggestions</h3>
+
+                    @foreach (var suggestion in _suggestions.TemplateSuggestions)
+                    {
+                        var key = $"t-{suggestion.BuildTemplateId}-{suggestion.PartId}";
+                        if (_dismissedSuggestions.Contains(key)) continue;
+
+                        <div class="wo-suggestion-card">
+                            <div class="wo-suggestion-card-info">
+                                <div class="wo-suggestion-card-header">
+                                    <span class="badge badge-success">✅ Template</span>
+                                    <strong>@suggestion.TemplateName</strong>
+                                </div>
+                                <div class="wo-suggestion-card-detail">
+                                    @suggestion.PartNumber — @suggestion.SuggestedQuantity pc · @suggestion.EstimatedDurationHours.ToString("F1")h · Used @suggestion.UseCount×
+                                </div>
+                                <div class="wo-suggestion-card-rationale">@suggestion.Rationale</div>
+                                @if (suggestion.FulfillsWorkOrders.Any())
+                                {
+                                    <div class="wo-suggestion-card-wos">
+                                        Fulfills: @string.Join(", ", suggestion.FulfillsWorkOrders.Select(w => $"{w.OrderNumber} ({w.QuantityFulfilled}pc)"))
+                                    </div>
+                                }
+                            </div>
+                            <div class="wo-suggestion-card-actions">
+                                <button class="btn btn-sm btn-primary" @onclick="() => ScheduleFromSuggestion(suggestion)" title="Schedule using this certified template">
+                                    📅 Schedule from Template
+                                </button>
+                                <button class="btn btn-sm btn-secondary" @onclick='() => _dismissedSuggestions.Add(key)' title="Dismiss this suggestion">
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    @foreach (var suggestion in _suggestions.MixedBuildSuggestions)
+                    {
+                        var key = $"m-{string.Join(",", suggestion.Parts.Select(p => p.PartId))}";
+                        if (_dismissedSuggestions.Contains(key)) continue;
+
+                        <div class="wo-suggestion-card wo-suggestion-card--mixed">
+                            <div class="wo-suggestion-card-info">
+                                <div class="wo-suggestion-card-header">
+                                    <span class="badge badge-info">🔀 Mixed Build</span>
+                                    @if (suggestion.MatchingTemplateName != null)
+                                    {
+                                        <strong>@suggestion.MatchingTemplateName</strong>
+                                    }
+                                </div>
+                                <div class="wo-suggestion-card-detail">
+                                    @string.Join(" + ", suggestion.Parts.Select(p => $"{p.PartNumber} ({p.SuggestedQuantity})")) · @suggestion.EstimatedDurationHours.ToString("F1")h
+                                </div>
+                                <div class="wo-suggestion-card-rationale">@suggestion.Rationale</div>
+                                @if (suggestion.FulfillsWorkOrders.Any())
+                                {
+                                    <div class="wo-suggestion-card-wos">
+                                        Fulfills: @string.Join(", ", suggestion.FulfillsWorkOrders.Select(w => $"{w.OrderNumber} ({w.QuantityFulfilled}pc)"))
+                                    </div>
+                                }
+                            </div>
+                            <div class="wo-suggestion-card-actions">
+                                @if (suggestion.MatchingTemplateId.HasValue)
+                                {
+                                    <button class="btn btn-sm btn-primary" @onclick="() => ScheduleFromMixedSuggestion(suggestion)" title="Schedule using the matching template">
+                                        📅 Schedule from Template
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-accent" @onclick="() => CreateMixedBuild(suggestion)" title="Create a new mixed build plate">
+                                        🆕 Create Mixed Build
+                                    </button>
+                                }
+                                <button class="btn btn-sm btn-secondary" @onclick='() => _dismissedSuggestions.Add(key)' title="Dismiss this suggestion">
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @* ── Work Order Cards ── *@
+            <div class="wo-demand-list">
+                @foreach (var wo in _workOrders.OrderBy(w => w.DueDate))
+                {
+                    var daysUntilDue = (wo.DueDate.Date - DateTime.UtcNow.Date).Days;
+                    var dueClass = daysUntilDue < 0 ? "wo-card--overdue" : (daysUntilDue <= 3 ? "wo-card--urgent" : "");
+                    var woOutstanding = wo.Lines.Sum(l => GetOutstanding(l));
+
+                    <div class="wo-demand-card @dueClass">
+                        <div class="wo-card-header">
+                            <div class="wo-card-title">
+                                <a href="/workorders/@wo.Id" class="wo-card-number">@wo.OrderNumber</a>
+                                <span class="wo-card-customer">@wo.CustomerName</span>
+                            </div>
+                            <div class="wo-card-meta">
+                                <span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span>
+                                <span class="badge badge-@(wo.Status == WorkOrderStatus.Released ? "primary" : "info")">@wo.Status</span>
+                                @if (daysUntilDue < 0)
+                                {
+                                    <span class="badge badge-danger">@Math.Abs(daysUntilDue)d OVERDUE</span>
+                                }
+                                else if (daysUntilDue <= 3)
+                                {
+                                    <span class="badge badge-warning">Due in @(daysUntilDue)d</span>
+                                }
+                                else
+                                {
+                                    <span class="wo-card-due">Due @wo.DueDate.ToString("MM/dd")</span>
+                                }
+                            </div>
+                        </div>
+
+                        @if (woOutstanding <= 0)
+                        {
+                            <div class="wo-card-fulfilled">
+                                <span>✅ All parts produced or scheduled</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="wo-card-lines">
+                                @foreach (var line in wo.Lines.OrderByDescending(l => GetOutstanding(l)))
+                                {
+                                    var outstanding = GetOutstanding(line);
+                                    var isAdditive = IsAdditiveLine(line);
+                                    var hasJobs = HasExistingJobs(line);
+                                    var inBuilds = GetInBuildQty(line);
+                                    var progressPct = line.Quantity > 0 ? Math.Min(100, line.ProducedQuantity * 100.0 / line.Quantity) : 0;
+                                    var buildPct = line.Quantity > 0 ? Math.Min(100, inBuilds * 100.0 / line.Quantity) : 0;
+
+                                    <div class="wo-line-row @(outstanding <= 0 ? "wo-line-row--done" : "")">
+                                        <div class="wo-line-info">
+                                            <div class="wo-line-part">
+                                                <span class="wo-line-type-badge @(isAdditive ? "wo-line-type--sls" : "wo-line-type--cnc")">
+                                                    @(isAdditive ? "🖨️ SLS" : "⚙️ CNC")
+                                                </span>
+                                                <span class="wo-line-partnum">@(line.Part?.PartNumber ?? "?")</span>
+                                                <span class="wo-line-partname">@(line.Part?.Name ?? "")</span>
+                                            </div>
+                                            <div class="wo-line-qty">
+                                                <span class="wo-line-qty-detail">@line.ProducedQuantity / @line.Quantity</span>
+                                                @if (inBuilds > 0)
+                                                {
+                                                    <span style="color: var(--accent); font-size: 0.75rem;">🖨️ @inBuilds in builds</span>
+                                                }
+                                                @if (outstanding > 0)
+                                                {
+                                                    <span class="wo-line-outstanding">@outstanding remaining</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="wo-line-complete">✅ Covered</span>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        @* Progress bar with produced (green) + build coverage (accent) *@
+                                        <div class="wo-line-progress">
+                                            <div style="display: flex; height: 100%;">
+                                                @if (progressPct > 0)
+                                                {
+                                                    <div class="wo-line-progress-fill" style="width: @progressPct.ToString("F0")%;"></div>
+                                                }
+                                                @if (buildPct > 0)
+                                                {
+                                                    <div style="width: @buildPct.ToString("F0")%; background: var(--accent); opacity: 0.6; border-radius: 0 4px 4px 0;"></div>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        @* Actions *@
+                                        @if (outstanding > 0)
+                                        {
+                                            <div class="wo-line-actions">
+                                                @if (hasJobs)
+                                                {
+                                                    <span class="badge badge-info" style="font-size:0.7rem;">Jobs exist</span>
+                                                }
+                                                @if (isAdditive)
+                                                {
+                                                    @* ── Certified Template Cards for SLS Lines ── *@
+                                                    var matchingTemplates = GetMatchingTemplates(line.PartId);
+                                                    var recertTemplates = GetRecertTemplates(line.PartId);
+                                                    @if (matchingTemplates.Any())
+                                                    {
+                                                        @foreach (var template in matchingTemplates)
+                                                        {
+                                                            <div class="wo-template-card">
+                                                                <div class="wo-template-card-info">
+                                                                    <span class="wo-template-card-name" title="@template.Name">✅ @template.Name</span>
+                                                                    <span class="wo-template-card-detail">@template.TotalPartCount parts · @template.EstimatedDurationHours.ToString("F1")h · Used @template.UseCount×</span>
+                                                                </div>
+                                                                <button class="btn btn-sm btn-primary" @onclick="() => ShowQuickScheduleModal(wo, line, template)" title="Schedule using this certified template">
+                                                                    📅 Schedule This Build
+                                                                </button>
+                                                            </div>
+                                                        }
+                                                    }
+                                                    @if (recertTemplates.Any())
+                                                    {
+                                                        @foreach (var template in recertTemplates)
+                                                        {
+                                                            <div class="wo-template-card wo-template-card--recert">
+                                                                <div class="wo-template-card-info">
+                                                                    <span class="wo-template-card-name">⚠️ @template.Name</span>
+                                                                    <span class="wo-template-card-detail">Needs re-certification (part updated)</span>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    }
+                                                    @if (!matchingTemplates.Any())
+                                                    {
+                                                        <button class="btn btn-sm btn-accent" @onclick='() => NavigateToNewBuild(line)' title="Create a new build for this part on the Builds page">
+                                                            🆕 New Build
+                                                        </button>
+                                                    }
+                                                    <button class="btn btn-sm btn-secondary" @onclick="() => ShowWoBuildModal(wo, line)" title="Create a build plate for this part">
+                                                        🖨️ Create Build
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    @if (!hasJobs)
+                                                    {
+                                                        <button class="btn btn-sm btn-accent" @onclick="() => ShowWoJobModal(wo, line)" title="Generate and auto-schedule a job for this part">
+                                                            ⚙️ Schedule Job
+                                                        </button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button class="btn btn-sm btn-secondary" @onclick="() => ShowWoJobModal(wo, line)" title="Create another job for remaining quantity">
+                                                            ⚙️ Add Job
+                                                        </button>
+                                                    }
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
             </div>
         }
     </div>
@@ -327,107 +792,75 @@ else if (_viewMode == "path")
                 }
                 else
                 {
-                    <div class="gantt-container" style="@GetGanttContainerStyle()">
-                        @* ── Header ── *@
-                        @if (IsDayLevel)
-                        {
-                            <div class="gantt-header">
-                                <div class="gantt-resource-label gantt-corner">Job / Part</div>
-                                @foreach (var slot in _ganttSlots)
+                    <div class="gantt-container gantt-viewport">
+                        <div class="gantt-inner" data-data-end="@_dataRangeEnd.ToString("o")" style="width: @(GetTotalInnerWidthPx())px; position: relative;">
+                            @* ── Time Header ── *@
+                            <div class="gantt-time-header">
+                                @foreach (var tick in GenerateTimeHeaders())
                                 {
-                                    var isToday = slot.Date == DateTime.UtcNow.Date;
-                                    var isWeekend = slot.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-                                    <div class="gantt-day-header @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")">
-                                        <span class="gantt-day-name">@slot.ToString("ddd")</span>
-                                        <span class="gantt-day-date">@slot.ToString("M/d")</span>
+                                    var tickLeft = GetBarLeftPx(tick.Time);
+                                    <div class="gantt-tick @(tick.IsMajor ? "gantt-tick-major" : "")" style="left: @(tickLeft)px;">
+                                        <span class="gantt-tick-label">@tick.Label</span>
                                     </div>
                                 }
                             </div>
-                        }
-                        else
-                        {
-                            <div class="gantt-header-group">
-                                <div class="gantt-header gantt-header-dates">
-                                    <div class="gantt-resource-label gantt-corner">Job / Part</div>
-                                    @foreach (var dg in GetDateGroups())
-                                    {
-                                        var isToday = dg.Date == DateTime.UtcNow.Date;
-                                        var isWeekend = dg.Date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-                                        <div class="gantt-date-group @(isWeekend ? "gantt-weekend" : "") @(isToday ? "gantt-today-header" : "")" style="grid-column: span @dg.Count;">
-                                            <span class="gantt-day-name">@dg.Date.ToString("ddd")</span>
-                                            <span class="gantt-day-date">@dg.Date.ToString("M/d")</span>
-                                        </div>
-                                    }
-                                </div>
-                                <div class="gantt-header gantt-header-times">
-                                    <div class="gantt-resource-label"></div>
-                                    @foreach (var slot in _ganttSlots)
-                                    {
-                                        <div class="gantt-slot-header">@FormatSlotTime(slot)</div>
-                                    }
-                                </div>
-                            </div>
-                        }
 
-                        @* ── Job rows ── *@
-                        @foreach (var group in jobGroups)
-                        {
-                            var job = group.Job!;
-                            var isOverdue = job.IsOverdue;
-                            var woId = job.WorkOrderLineId.HasValue ? job.WorkOrderLine?.WorkOrderId : (int?)null;
-                            <div class="gantt-row @(isOverdue ? "gantt-row-overdue" : "")">
-                                <div class="gantt-path-label">
-                                    <span class="gantt-path-part">@(job.PartNumber ?? $"Part #{job.PartId}")</span>
-                                    @if (woId.HasValue)
-                                    {
-                                        <a class="gantt-path-job" href="/workorders/@woId/jobs/@job.Id">@(job.JobNumber ?? $"J#{job.Id}")</a>
-                                    }
-                                    else
-                                    {
-                                        <span class="gantt-path-job" style="cursor:default;">@(job.JobNumber ?? $"J#{job.Id}")</span>
-                                    }
-                                    <span class="gantt-path-meta">
-                                        <span class="badge badge-@job.Priority.ToString().ToLower()" style="font-size:0.6rem;padding:1px 6px;">@job.Priority</span>
-                                        @(job.Quantity) qty
-                                    </span>
-                                </div>
-                                <div class="gantt-track" style="grid-column: 2 / span @_ganttSlots.Count;">
-                                    @* Today marker *@
-                                    @{ var todayPct = GetGanttPosition(DateTime.UtcNow); }
-                                    @if (todayPct > 0 && todayPct < 100)
-                                    {
-                                        <div class="gantt-today-line" style="left: @(todayPct)%;"></div>
-                                    }
-                                    @* Stage execution bars *@
-                                    @foreach (var exec in group.Execs)
-                                    {
-                                        var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dateFrom;
-                                        var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
-                                        var leftPct = GetGanttPosition(start);
-                                        var widthPct = GetGanttWidth(start, end);
-                                        var stageColor = exec.ProductionStage?.StageColor ?? "#3B82F6";
-                                        var statusClass = exec.Status switch
+                            @* ── Today line ── *@
+                            <div class="gantt-today-line" style="left: @(GetBarLeftPx(DateTime.UtcNow))px;"></div>
+
+                            @* ── Job rows ── *@
+                            @foreach (var group in jobGroups)
+                            {
+                                var job = group.Job!;
+                                var isOverdue = job.IsOverdue;
+                                var woId = job.WorkOrderLineId.HasValue ? job.WorkOrderLine?.WorkOrderId : (int?)null;
+                                <div class="gantt-row @(isOverdue ? "gantt-row-overdue" : "")">
+                                    <div class="gantt-path-label">
+                                        <span class="gantt-path-part">@(job.PartNumber ?? $"Part #{job.PartId}")</span>
+                                        @if (woId.HasValue)
                                         {
-                                            StageExecutionStatus.Completed => "gantt-bar-completed",
-                                            StageExecutionStatus.InProgress => "gantt-bar-inprogress",
-                                            StageExecutionStatus.Failed => "gantt-bar-failed",
-                                            StageExecutionStatus.NotStarted => "gantt-bar-notstarted",
-                                            _ => ""
-                                        };
-                                        var machineName = exec.Machine?.Name ?? "Unassigned";
-                                        var stageName = exec.ProductionStage?.Name ?? "Stage";
-                                        var tooltip = $"{stageName}\nMachine: {machineName}\n{start:MM/dd HH:mm} \u2192 {end:MM/dd HH:mm}\nEst: {exec.EstimatedHours?.ToString("F1") ?? "?"}h\nStatus: {exec.Status}";
-                                        if (exec.OperatorName != null) tooltip += $"\nOperator: {exec.OperatorName}";
-                                        <div class="gantt-bar gantt-bar-stage @statusClass"
-                                             style="left: @(leftPct)%; width: @(widthPct)%; --bar-accent: @stageColor;"
-                                             title="@tooltip"
-                                             @onclick="() => ShowReschedule(exec)">
-                                            <span class="gantt-bar-text">@stageName<span class="gantt-bar-machine">@machineName</span></span>
-                                        </div>
-                                    }
+                                            <a class="gantt-path-job" href="/workorders/@woId/jobs/@job.Id">@(job.JobNumber ?? $"J#{job.Id}")</a>
+                                        }
+                                        else
+                                        {
+                                            <span class="gantt-path-job" style="cursor:default;">@(job.JobNumber ?? $"J#{job.Id}")</span>
+                                        }
+                                        <span class="gantt-path-meta">
+                                            <span class="badge badge-@job.Priority.ToString().ToLower()" style="font-size:0.6rem;padding:1px 6px;">@job.Priority</span>
+                                            @(job.Quantity) qty
+                                        </span>
+                                    </div>
+                                    <div class="gantt-track">
+                                        @foreach (var exec in group.Execs)
+                                        {
+                                            var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? _dataRangeStart;
+                                            var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                            var barLeft = GetBarLeftPx(start);
+                                            var barWidth = GetBarWidthPx(start, end);
+                                            var stageColor = exec.ProductionStage?.StageColor ?? "#3B82F6";
+                                            var statusClass = exec.Status switch
+                                            {
+                                                StageExecutionStatus.Completed => "gantt-bar-completed",
+                                                StageExecutionStatus.InProgress => "gantt-bar-inprogress",
+                                                StageExecutionStatus.Failed => "gantt-bar-failed",
+                                                StageExecutionStatus.NotStarted => "gantt-bar-notstarted",
+                                                _ => ""
+                                            };
+                                            var machineName = exec.Machine?.Name ?? "Unassigned";
+                                            var stageName = exec.ProductionStage?.Name ?? "Stage";
+                                            var tooltip = $"{stageName}\nMachine: {machineName}\n{start:MM/dd HH:mm} \u2192 {end:MM/dd HH:mm}\nEst: {exec.EstimatedHours?.ToString("F1") ?? "?"}h\nStatus: {exec.Status}";
+                                            if (exec.OperatorName != null) tooltip += $"\nOperator: {exec.OperatorName}";
+                                            <div class="gantt-bar gantt-bar-stage @statusClass"
+                                                 style="left: @(barLeft)px; width: @(barWidth)px; --bar-accent: @stageColor;"
+                                                 title="@tooltip"
+                                                 @onclick="() => ShowReschedule(exec)">
+                                                <span class="gantt-bar-text">@stageName<span class="gantt-bar-machine">@machineName</span></span>
+                                            </div>
+                                        }
+                                    </div>
                                 </div>
-                            </div>
-                        }
+                            }
+                        </div>
                     </div>
 
                     @* Stage color legend *@
@@ -457,14 +890,15 @@ else if (_viewMode == "path")
                         @foreach (var exec in _unscheduled)
                         {
                             var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
-                            <div class="sched-sidebar-item" @onclick="() => AutoScheduleSingle(exec.Id)">
+                            <div class="sched-sidebar-item">
                                 <div class="sched-sidebar-priority sched-priority-@priorityClass"></div>
                                 <div class="sched-sidebar-info">
                                     <span class="sched-sidebar-part">@(exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}")</span>
                                     <span class="sched-sidebar-stage">@(exec.ProductionStage?.Name ?? "—")</span>
                                     <span class="sched-sidebar-est">@(exec.EstimatedHours?.ToString("F1") ?? "?")h est</span>
                                 </div>
-                                <span class="sched-sidebar-action" title="Auto-schedule this task">⚡</span>
+                                <span class="sched-sidebar-action" title="Manual schedule" @onclick="() => ManualScheduleSingle(exec)" @onclick:stopPropagation>📅</span>
+                                <span class="sched-sidebar-action" title="Auto-schedule" @onclick="() => AutoScheduleSingle(exec.Id)" @onclick:stopPropagation>⚡</span>
                             </div>
                         }
                     </div>
@@ -591,10 +1025,21 @@ else if (_viewMode == "table")
     <div class="card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <span>📋 Stage Executions — @_executions.Count scheduled · @(_executions.Sum(e => e.EstimatedHours ?? 0).ToString("F0"))h total</span>
-            @if (_unscheduled.Any())
-            {
-                <span class="badge badge-warning">⚠️ @_unscheduled.Count unscheduled</span>
-            }
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <input type="text" class="form-control" placeholder="Search part, stage, machine…"
+                       @bind="_tableSearch" @bind:event="oninput" style="width: 200px; height: 32px; font-size: 0.85rem;" />
+                <select class="form-control" @bind="_tableFilterStatus" style="width: 150px; height: 32px; font-size: 0.85rem;">
+                    <option value="">All statuses</option>
+                    @foreach (var s in Enum.GetValues<StageExecutionStatus>())
+                    {
+                        <option value="@s">@s</option>
+                    }
+                </select>
+                @if (_unscheduled.Any())
+                {
+                    <span class="badge badge-warning">⚠️ @_unscheduled.Count unscheduled</span>
+                }
+            </div>
         </div>
         @if (!_executions.Any() && !_unscheduled.Any())
         {
@@ -606,20 +1051,20 @@ else if (_viewMode == "table")
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Priority</th>
-                            <th>Part</th>
-                            <th>Stage</th>
-                            <th>Machine</th>
+                            <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Priority")'>Priority @TableSortIcon("Priority")</th>
+                            <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Part")'>Part @TableSortIcon("Part")</th>
+                            <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Stage")'>Stage @TableSortIcon("Stage")</th>
+                            <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Machine")'>Machine @TableSortIcon("Machine")</th>
                             <th>Operator</th>
-                            <th>Start</th>
-                            <th>End</th>
-                            <th>Est. Hrs</th>
-                            <th>Status</th>
+                            <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Start")'>Start @TableSortIcon("Start")</th>
+                            <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("End")'>End @TableSortIcon("End")</th>
+                            <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Hours")'>Est. Hrs @TableSortIcon("Hours")</th>
+                            <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Status")'>Status @TableSortIcon("Status")</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var exec in _executions.Concat(_unscheduled))
+                        @foreach (var exec in SortedTableExecutions)
                         {
                             var isMissing = exec.MachineId == null || exec.ScheduledStartAt == null;
                             <tr class="@(isMissing ? "sched-row-warn" : "")">
@@ -688,7 +1133,7 @@ else if (_viewMode == "table")
     <div class="modal-overlay" @onclick="() => _showReschedule = false">
         <div class="modal-content" @onclick:stopPropagation style="max-width: 500px;">
             <div class="modal-header">
-                <span class="modal-title">📅 Reschedule Execution</span>
+                <span class="modal-title">📅 @(_rescheduleExec.ScheduledStartAt == null ? "Schedule" : "Reschedule") Execution</span>
                 <button class="modal-close" @onclick="() => _showReschedule = false">&times;</button>
             </div>
             <div style="padding: 4px 0 12px; color: var(--text-muted); font-size: 0.85rem;">
@@ -781,34 +1226,248 @@ else if (_viewMode == "table")
     </div>
 }
 
+@* ── Create Build from WO Modal ── *@
+@if (_showWoBuildModal && _selectedWoLine != null)
+{
+    <div class="modal-overlay" @onclick="() => _showWoBuildModal = false">
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 500px;">
+            <div class="modal-header">
+                <span class="modal-title">🖨️ Create Build from Work Order</span>
+                <button class="modal-close" @onclick="() => _showWoBuildModal = false">&times;</button>
+            </div>
+            <div style="padding: 4px 0 12px; color: var(--text-muted); font-size: 0.85rem;">
+                WO: @(_selectedWo?.OrderNumber ?? "?") · @(_selectedWo?.CustomerName ?? "")
+            </div>
+            <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="wo-line-type-badge wo-line-type--sls">🖨️ SLS</span>
+                    <strong>@(_selectedWoLine.Part?.PartNumber ?? "?")</strong>
+                    <span style="color:var(--text-muted);">@(_selectedWoLine.Part?.Name ?? "")</span>
+                </div>
+                <div style="margin-top:6px;color:var(--text-secondary);">
+                    Ordered: @_selectedWoLine.Quantity · Produced: @_selectedWoLine.ProducedQuantity · Outstanding: @GetOutstanding(_selectedWoLine)
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Build Name <span style="color:var(--danger);">*</span></label>
+                <input class="form-control" @bind="_woBuildName" placeholder="e.g. Build-SUP-001-0615" />
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">SLS Machine <span style="color:var(--danger);">*</span></label>
+                    <select class="form-control" @bind="_woBuildMachineId">
+                        <option value="">Select machine...</option>
+                        @foreach (var m in SlsMachines)
+                        {
+                            <option value="@m.Id">@m.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Quantity</label>
+                    <input class="form-control" type="number" @bind="_woBuildQuantity" min="1" max="@GetOutstanding(_selectedWoLine)" />
+                </div>
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">
+                Build will be created in Draft status. Enter slicer data and schedule from the Builds page.
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-primary" @onclick="CreateBuildFromWo" disabled="@_creatingFromWo">
+                    @if (_creatingFromWo) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    📦 Create Build
+                </button>
+                <button class="btn btn-secondary" @onclick="() => _showWoBuildModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Schedule Job from WO Modal ── *@
+@if (_showWoJobModal && _selectedWoLine != null)
+{
+    <div class="modal-overlay" @onclick="() => _showWoJobModal = false">
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 500px;">
+            <div class="modal-header">
+                <span class="modal-title">⚙️ Schedule Job from Work Order</span>
+                <button class="modal-close" @onclick="() => _showWoJobModal = false">&times;</button>
+            </div>
+            <div style="padding: 4px 0 12px; color: var(--text-muted); font-size: 0.85rem;">
+                WO: @(_selectedWo?.OrderNumber ?? "?") · @(_selectedWo?.CustomerName ?? "")
+            </div>
+            <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="wo-line-type-badge wo-line-type--cnc">⚙️ CNC</span>
+                    <strong>@(_selectedWoLine.Part?.PartNumber ?? "?")</strong>
+                    <span style="color:var(--text-muted);">@(_selectedWoLine.Part?.Name ?? "")</span>
+                </div>
+                <div style="margin-top:6px;color:var(--text-secondary);">
+                    Ordered: @_selectedWoLine.Quantity · Produced: @_selectedWoLine.ProducedQuantity · Outstanding: @GetOutstanding(_selectedWoLine)
+                </div>
+            </div>
+            <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">
+                A job will be created from the part's routing and <strong>auto-scheduled</strong> to the earliest available machine slots.
+                Stage executions will be created for each step in the routing.
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-accent" @onclick="ScheduleJobFromWo" disabled="@_creatingFromWo">
+                    @if (_creatingFromWo) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    ⚡ Create & Auto-Schedule
+                </button>
+                <button class="btn btn-secondary" @onclick="() => _showWoJobModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Quick Schedule from Template Modal ── *@
+@if (_showQuickScheduleModal && _selectedTemplate != null && _quickScheduleWoLine != null)
+{
+    <div class="modal-overlay" @onclick="() => _showQuickScheduleModal = false">
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 550px;">
+            <div class="modal-header">
+                <span class="modal-title">📅 Quick Schedule from Template</span>
+                <button class="modal-close" @onclick="() => _showQuickScheduleModal = false">&times;</button>
+            </div>
+            <div style="padding: 4px 0 12px; color: var(--text-muted); font-size: 0.85rem;">
+                WO: @(_quickScheduleWo?.OrderNumber ?? "?") · @(_quickScheduleWo?.CustomerName ?? "")
+            </div>
+
+            @* Template Details *@
+            <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                    <span class="badge badge-success">✅ Certified</span>
+                    <strong>@_selectedTemplate.Name</strong>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;font-size:0.85rem;color:var(--text-secondary);">
+                    <div>📦 @_selectedTemplate.TotalPartCount parts (@_selectedTemplate.UniquePartCount unique)</div>
+                    <div>⏱ @_selectedTemplate.EstimatedDurationHours.ToString("F1") hours</div>
+                    <div>🔄 Used @_selectedTemplate.UseCount times</div>
+                    @if (_selectedTemplate.Material != null)
+                    {
+                        <div>🧪 @_selectedTemplate.Material.Name</div>
+                    }
+                </div>
+                @if (_selectedTemplate.Parts.Any())
+                {
+                    <div style="margin-top:8px;font-size:0.8rem;color:var(--text-secondary);">
+                        Parts: @string.Join(", ", _selectedTemplate.Parts.Select(p => $"{p.Part?.PartNumber ?? "?"} ×{p.Quantity}"))
+                    </div>
+                }
+            </div>
+
+            @* For part *@
+            <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="wo-line-type-badge wo-line-type--sls">🖨️ SLS</span>
+                    <strong>@(_quickScheduleWoLine.Part?.PartNumber ?? "?")</strong>
+                    <span style="color:var(--text-muted);">@(_quickScheduleWoLine.Part?.Name ?? "")</span>
+                </div>
+                <div style="margin-top:6px;color:var(--text-secondary);">
+                    Outstanding: @GetOutstanding(_quickScheduleWoLine)
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">SLS Machine <span style="color:var(--danger);">*</span></label>
+                    <select class="form-control" @bind="_quickScheduleMachineId">
+                        <option value="">Select machine...</option>
+                        @foreach (var m in SlsMachines)
+                        {
+                            <option value="@m.Id">@m.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Start After (optional)</label>
+                    <input class="form-control" type="datetime-local" @bind="_quickScheduleStartAfter" />
+                </div>
+            </div>
+
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">
+                A build package will be created from this certified template and scheduled on the selected machine.
+                The WO line will be automatically linked.
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-primary" @onclick="QuickScheduleBuild" disabled="@_creatingFromWo">
+                    @if (_creatingFromWo) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    📅 Schedule Build
+                </button>
+                <button class="btn btn-secondary" @onclick="() => _showQuickScheduleModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
     private bool _loading = true;
     private bool _scheduling;
     private bool _creatingJob;
+    private System.Threading.Timer? _autoRefreshTimer;
+    private DateTime _lastRefresh = DateTime.UtcNow;
+    private bool _autoRefreshEnabled = true;
     private List<StageExecution> _executions = new();
     private List<StageExecution> _unscheduled = new();
     private List<Machine> _machines = new();
     private List<Part>? _parts;
-    private List<DateTime> _ganttSlots = new();
     private List<ProductionStage> _stages = new();
     private HashSet<int> _expandedStages = new();
-    private DateTime _dateFrom = DateTime.UtcNow.Date;
-    private DateTime _dateTo = DateTime.UtcNow.Date.AddDays(14);
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? ViewParam { get; set; }
+
     private string _viewMode = "gantt";
-    private string _zoomLevel = "2W";
     private string _userName = "System";
 
-    // Zoom interop
-    private ElementReference _schedulerRef;
+    // Viewport (infinite scroll + fluid zoom)
+    private ElementReference _ganttContainerRef;
     private DotNetObjectReference<Index>? _dotNetRef;
-    private static readonly string[] ZoomLevels = { "30M", "1H", "2H", "6H", "12H", "1D", "3D", "1W", "2W", "1M" };
+    private IJSObjectReference? _ganttViewportModule;
+    private double _pixelsPerHour = 6.0;
+    private DateTime _viewportStart = DateTime.UtcNow.Date;
+    private DateTime _viewportEnd = DateTime.UtcNow.Date.AddDays(14);
+    private DateTime _dataRangeStart = DateTime.UtcNow.Date.AddDays(-7);
+    private DateTime _dataRangeEnd = DateTime.UtcNow.Date.AddDays(21);
 
     // Part Path filters
     private int _pathFilterPartId;
     private string? _pathFilterPriority;
     private string _pathSortMode = "schedule";
+
+    // Table view sorting & filtering
+    private string _tableSortCol = "Start";
+    private bool _tableSortAsc = true;
+    private StageExecutionStatus? _tableFilterStatus;
+    private string _tableSearch = "";
+
+    // Build packages
+    private List<BuildPackage> _buildPackages = new();
+    private Dictionary<int, List<MachineTimelineEntry>> _machineTimelines = new();
+
+    // Work orders
+    private List<WorkOrder> _workOrders = new();
+    private bool _showWoBuildModal;
+    private bool _showWoJobModal;
+    private bool _creatingFromWo;
+    private WorkOrderLine? _selectedWoLine;
+    private WorkOrder? _selectedWo;
+    private string _woBuildName = "";
+    private string _woBuildMachineId = "";
+    private int _woBuildQuantity;
+
+    // Build templates (Phase B)
+    private List<BuildTemplate> _buildTemplates = new();
+    private bool _showQuickScheduleModal;
+
+    // Build suggestions (Phase C)
+    private BuildSuggestionResult? _suggestions;
+    private HashSet<string> _dismissedSuggestions = new();
+    private BuildTemplate? _selectedTemplate;
+    private WorkOrderLine? _quickScheduleWoLine;
+    private WorkOrder? _quickScheduleWo;
+    private string _quickScheduleMachineId = "";
+    private DateTime? _quickScheduleStartAfter;
 
     // Create job
     private bool _showCreate;
@@ -825,6 +1484,9 @@ else if (_viewMode == "table")
 
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrEmpty(ViewParam))
+            _viewMode = ViewParam;
+
         if (AuthState != null)
         {
             var state = await AuthState;
@@ -835,7 +1497,9 @@ else if (_viewMode == "table")
             _parts = await PartService.GetAllPartsAsync();
             _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
             _stages = await StageService.GetAllStagesAsync(activeOnly: true);
+            _buildPackages = await BuildPlanning.GetAllPackagesAsync();
             await LoadData();
+            StartAutoRefreshTimer();
         }
         catch (Exception ex)
         {
@@ -849,7 +1513,22 @@ else if (_viewMode == "table")
         if (firstRender)
         {
             _dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("opcentrix.initSchedulerZoom", _dotNetRef, _schedulerRef);
+            _ganttViewportModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/gantt-viewport.js");
+        }
+    }
+
+    private async Task InitViewportAsync()
+    {
+        if (_ganttViewportModule != null)
+        {
+            try
+            {
+                await _ganttViewportModule.InvokeVoidAsync("initGanttViewport",
+                    _dotNetRef, _ganttContainerRef,
+                    _dataRangeStart.ToString("o"), _dataRangeEnd.ToString("o"),
+                    _pixelsPerHour);
+            }
+            catch (JSException) { /* container not yet in DOM */ }
         }
     }
 
@@ -859,9 +1538,13 @@ else if (_viewMode == "table")
         StateHasChanged();
         try
         {
-            _executions = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
+            _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
             _unscheduled = await StageService.GetUnscheduledExecutionsAsync();
-            BuildGanttSlots();
+            _buildPackages = await BuildPlanning.GetAllPackagesAsync();
+            _workOrders = await WorkOrderService.GetWorkOrdersByStatusesAsync(WorkOrderStatus.Released, WorkOrderStatus.InProgress);
+            _buildTemplates = await BuildTemplateService.GetAllAsync(BuildTemplateStatus.Certified);
+            _suggestions = await BuildSuggestionService.GetSuggestionsAsync();
+            await LoadMachineTimelinesAsync();
         }
         catch (Exception ex)
         {
@@ -870,220 +1553,250 @@ else if (_viewMode == "table")
         finally
         {
             _loading = false;
+            _lastRefresh = DateTime.UtcNow;
         }
     }
 
-    // ── Zoom Configuration ──
-
-    private bool IsDayLevel => _zoomLevel is "1W" or "2W" or "1M";
-
-    private (TimeSpan Range, TimeSpan Slot) GetZoomConfig() => _zoomLevel switch
+    private void StartAutoRefreshTimer()
     {
-        "30M" => (TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(1)),
-        "1H"  => (TimeSpan.FromHours(1), TimeSpan.FromMinutes(5)),
-        "2H"  => (TimeSpan.FromHours(2), TimeSpan.FromMinutes(5)),
-        "6H"  => (TimeSpan.FromHours(6), TimeSpan.FromMinutes(15)),
-        "12H" => (TimeSpan.FromHours(12), TimeSpan.FromMinutes(30)),
-        "1D"  => (TimeSpan.FromDays(1), TimeSpan.FromHours(1)),
-        "3D"  => (TimeSpan.FromDays(3), TimeSpan.FromHours(4)),
-        "1W"  => (TimeSpan.FromDays(7), TimeSpan.FromDays(1)),
-        "2W"  => (TimeSpan.FromDays(14), TimeSpan.FromDays(1)),
-        "1M"  => (TimeSpan.FromDays(30), TimeSpan.FromDays(1)),
-        _     => (TimeSpan.FromDays(14), TimeSpan.FromDays(1))
+        _autoRefreshTimer = new System.Threading.Timer(async _ =>
+        {
+            if (!_autoRefreshEnabled || _loading || _scheduling) return;
+            await InvokeAsync(async () =>
+            {
+                await LoadData();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private void ToggleAutoRefresh()
+    {
+        _autoRefreshEnabled = !_autoRefreshEnabled;
+    }
+
+    // ── Build Pipeline Helpers ──
+
+    private List<BuildPackage> ActiveBuilds => _buildPackages
+        .Where(b => b.Status != BuildPackageStatus.Cancelled && b.Status != BuildPackageStatus.Completed)
+        .OrderBy(b => b.Status).ThenByDescending(b => b.ScheduledDate ?? b.CreatedDate)
+        .ToList();
+
+    private List<BuildPackage> ReadyBuilds => _buildPackages
+        .Where(b => b.Status == BuildPackageStatus.Ready || (b.Status == BuildPackageStatus.Sliced && b.IsSlicerDataEntered))
+        .ToList();
+
+    private List<Machine> SlsMachines => _machines
+        .Where(m => m.IsAvailableForScheduling && m.MachineType is "SLS" or "sls" or "Additive")
+        .ToList();
+
+    private List<Machine> NonSlsMachines => _machines
+        .Where(m => m.IsAvailableForScheduling && m.MachineType is not "SLS" and not "sls" and not "Additive")
+        .ToList();
+
+    private async Task LoadMachineTimelinesAsync()
+    {
+        var timelines = new Dictionary<int, List<MachineTimelineEntry>>();
+        var machines = SlsMachines;
+
+        var tasks = machines.Select(async machine =>
+        {
+            try
+            {
+                var timeline = await BuildScheduling.GetMachineTimelineAsync(machine.Id, _dataRangeStart, _dataRangeEnd);
+                return (machine.Id, Timeline: timeline);
+            }
+            catch
+            {
+                return (machine.Id, Timeline: new List<MachineTimelineEntry>());
+            }
+        });
+
+        var results = await Task.WhenAll(tasks);
+        foreach (var (machineId, timeline) in results)
+        {
+            timelines[machineId] = timeline;
+        }
+
+        _machineTimelines = timelines;
+    }
+
+    private static string BuildStatusBadgeClass(BuildPackageStatus status) => status switch
+    {
+        BuildPackageStatus.Draft => "secondary",
+        BuildPackageStatus.Sliced => "info",
+        BuildPackageStatus.Ready => "warning",
+        BuildPackageStatus.Scheduled => "primary",
+        BuildPackageStatus.Printing => "accent",
+        BuildPackageStatus.PostPrint => "info",
+        BuildPackageStatus.Completed => "success",
+        BuildPackageStatus.Cancelled => "secondary",
+        _ => "secondary"
     };
 
-    private async Task SetZoom(string level)
+    private static string BuildStatusIcon(BuildPackageStatus status) => status switch
     {
-        _zoomLevel = level;
-        var (range, slot) = GetZoomConfig();
-        if (IsDayLevel)
+        BuildPackageStatus.Draft => "📝",
+        BuildPackageStatus.Sliced => "🔪",
+        BuildPackageStatus.Ready => "✅",
+        BuildPackageStatus.Scheduled => "📅",
+        BuildPackageStatus.Printing => "🖨️",
+        BuildPackageStatus.PostPrint => "🔥",
+        BuildPackageStatus.Completed => "✔️",
+        BuildPackageStatus.Cancelled => "❌",
+        _ => "📦"
+    };
+
+    // ── Machine Ordering ──
+
+    private static bool IsSls(Machine m) =>
+        m.MachineType.Equals("SLS", StringComparison.OrdinalIgnoreCase) ||
+        m.MachineType.Equals("Additive", StringComparison.OrdinalIgnoreCase);
+
+    private List<Machine> GetOrderedMachines() =>
+        _machines
+            .Where(m => m.IsAvailableForScheduling)
+            .OrderByDescending(m => IsSls(m))
+            .ThenBy(m => m.MachineType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(m => m.Priority)
+            .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    // ── Viewport (Infinite Scroll + Fluid Zoom) ──
+
+    [JSInvokable]
+    public async Task OnViewportChanged(string startIso, string endIso, double pixelsPerHour)
+    {
+        _viewportStart = DateTime.Parse(startIso, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        _viewportEnd = DateTime.Parse(endIso, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        _pixelsPerHour = pixelsPerHour;
+
+        // Check if we need more data
+        var buffer = TimeSpan.FromDays(1);
+        if (_viewportStart < _dataRangeStart + buffer || _viewportEnd > _dataRangeEnd - buffer)
         {
-            _dateFrom = _dateFrom.Date;
+            await ExtendDataRangeAsync();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ExtendDataRangeAsync()
+    {
+        var newStart = _viewportStart.AddDays(-7);
+        var newEnd = _viewportEnd.AddDays(7);
+        if (newStart >= _dataRangeStart && newEnd <= _dataRangeEnd) return;
+
+        _dataRangeStart = newStart < _dataRangeStart ? newStart : _dataRangeStart;
+        _dataRangeEnd = newEnd > _dataRangeEnd ? newEnd : _dataRangeEnd;
+
+        // Re-fetch data for the extended range
+        try
+        {
+            _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
+            await LoadMachineTimelinesAsync();
+
+            // Update JS module with the new data range
+            if (_ganttViewportModule != null)
+            {
+                await _ganttViewportModule.InvokeVoidAsync("updateDataRange",
+                    _dataRangeStart.ToString("o"), _dataRangeEnd.ToString("o"), _pixelsPerHour);
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to extend data range: {ex.Message}");
+        }
+    }
+
+    private double GetBarLeftPx(DateTime start) =>
+        (start - _dataRangeStart).TotalHours * _pixelsPerHour;
+
+    private double GetBarWidthPx(DateTime start, DateTime end) =>
+        Math.Max(2, (end - start).TotalHours * _pixelsPerHour);
+
+    private double GetTotalInnerWidthPx() =>
+        (_dataRangeEnd - _dataRangeStart).TotalHours * _pixelsPerHour;
+
+    private List<(DateTime Time, string Label, bool IsMajor)> GenerateTimeHeaders()
+    {
+        var headers = new List<(DateTime, string, bool)>();
+        var rangeStart = _dataRangeStart;
+        var rangeEnd = _dataRangeEnd;
+
+        if (_pixelsPerHour > 60)
+        {
+            // High zoom: 15-min ticks
+            var t = new DateTime(rangeStart.Year, rangeStart.Month, rangeStart.Day, rangeStart.Hour, rangeStart.Minute / 15 * 15, 0, DateTimeKind.Utc);
+            while (t < rangeEnd)
+            {
+                var isMajor = t.Minute == 0;
+                headers.Add((t, isMajor ? t.ToString("h tt").ToLower() : t.ToString(":mm"), isMajor));
+                t = t.AddMinutes(15);
+            }
+        }
+        else if (_pixelsPerHour >= 10)
+        {
+            // Medium zoom: hourly ticks with day headers
+            var t = rangeStart.Date.AddHours(rangeStart.Hour);
+            while (t < rangeEnd)
+            {
+                var isMajor = t.Hour == 0;
+                headers.Add((t, isMajor ? t.ToString("ddd M/d") : t.ToString("h tt").ToLower(), isMajor));
+                t = t.AddHours(1);
+            }
+        }
+        else if (_pixelsPerHour >= 2)
+        {
+            // Low zoom: day ticks
+            var t = rangeStart.Date;
+            while (t < rangeEnd)
+            {
+                headers.Add((t, t.ToString("ddd M/d"), true));
+                t = t.AddDays(1);
+            }
         }
         else
         {
-            var now = DateTime.UtcNow;
-            _dateFrom = now - TimeSpan.FromTicks(range.Ticks / 2);
-            if (slot.Ticks > 0)
+            // Very low zoom: week ticks with month headers
+            var t = rangeStart.Date;
+            // Snap to Monday
+            t = t.AddDays(-(int)t.DayOfWeek + (int)DayOfWeek.Monday);
+            if (t > rangeStart) t = t.AddDays(-7);
+            while (t < rangeEnd)
             {
-                var dayStart = _dateFrom.Date.Ticks;
-                var offset = _dateFrom.Ticks - dayStart;
-                _dateFrom = new DateTime(dayStart + (offset / slot.Ticks) * slot.Ticks, _dateFrom.Kind);
+                headers.Add((t, t.ToString("M/d"), true));
+                t = t.AddDays(7);
             }
         }
-        _dateTo = _dateFrom.Add(range);
-        await LoadData();
+
+        return headers;
     }
 
-    private async Task ShiftBack()
+    private async Task ScrollToNowAsync()
     {
-        var (range, _) = GetZoomConfig();
-        var shift = TimeSpan.FromTicks(range.Ticks / 2);
-        _dateFrom -= shift;
-        if (IsDayLevel) _dateFrom = _dateFrom.Date;
-        _dateTo = _dateFrom.Add(range);
-        await LoadData();
-    }
-
-    private async Task ShiftForward()
-    {
-        var (range, _) = GetZoomConfig();
-        var shift = TimeSpan.FromTicks(range.Ticks / 2);
-        _dateFrom += shift;
-        if (IsDayLevel) _dateFrom = _dateFrom.Date;
-        _dateTo = _dateFrom.Add(range);
-        await LoadData();
-    }
-
-    private async Task GoToNow()
-    {
-        var (range, _) = GetZoomConfig();
-        if (IsDayLevel)
+        if (_ganttViewportModule != null)
         {
-            _dateFrom = DateTime.UtcNow.Date;
-        }
-        else
-        {
-            _dateFrom = DateTime.UtcNow - TimeSpan.FromTicks(range.Ticks / 2);
-        }
-        _dateTo = _dateFrom.Add(range);
-        await LoadData();
-    }
-
-    private string ZoomBtnClass(string level) => _zoomLevel == level ? "btn-primary" : "btn-secondary";
-
-    private void BuildGanttSlots()
-    {
-        var (_, slotSize) = GetZoomConfig();
-        _ganttSlots = new List<DateTime>();
-        for (var t = _dateFrom; t < _dateTo; t = t.Add(slotSize))
-        {
-            _ganttSlots.Add(t);
-            if (_ganttSlots.Count >= 200) break;
+            await _ganttViewportModule.InvokeVoidAsync("scrollToTime", DateTime.UtcNow.ToString("o"));
         }
     }
 
-    private string FormatSlotTime(DateTime slot)
+    private async Task ShiftViewportAsync(int direction)
     {
-        var (_, slotSize) = GetZoomConfig();
-        if (slotSize >= TimeSpan.FromHours(1))
-            return slot.ToString("h tt").ToLower().Replace(" ", "");
-        if (slot.Minute == 0)
-            return slot.ToString("h tt").ToLower().Replace(" ", "");
-        return ":" + slot.ToString("mm");
+        if (_ganttViewportModule == null) return;
+        // Shift by half viewport width worth of time
+        var viewportHours = (_viewportEnd - _viewportStart).TotalHours;
+        var shiftHours = viewportHours * 0.5 * direction;
+        var targetTime = _viewportStart.AddHours(viewportHours / 2 + shiftHours);
+        await _ganttViewportModule.InvokeVoidAsync("scrollToTime", targetTime.ToString("o"));
     }
 
-    private List<(DateTime Date, int Count)> GetDateGroups()
+    private async Task JumpToDateAsync(DateTime date)
     {
-        var groups = new List<(DateTime Date, int Count)>();
-        if (!_ganttSlots.Any()) return groups;
-        var currentDate = _ganttSlots[0].Date;
-        var count = 0;
-        foreach (var slot in _ganttSlots)
+        if (_ganttViewportModule != null)
         {
-            if (slot.Date != currentDate)
-            {
-                groups.Add((currentDate, count));
-                currentDate = slot.Date;
-                count = 0;
-            }
-            count++;
+            await _ganttViewportModule.InvokeVoidAsync("scrollToTime", date.ToString("o"));
         }
-        groups.Add((currentDate, count));
-        return groups;
-    }
-
-    private int GetColumnMinWidth() => _zoomLevel switch
-    {
-        "30M" => 32,
-        "1H"  => 48,
-        "2H"  => 36,
-        "6H"  => 40,
-        "12H" => 44,
-        "1D"  => 80,
-        "3D"  => 60,
-        "1W"  => 120,
-        "2W"  => 100,
-        "1M"  => 56,
-        _     => 80
-    };
-
-    private string GetGanttContainerStyle()
-    {
-        var colMin = GetColumnMinWidth();
-        var style = $"--gantt-cols: {_ganttSlots.Count};";
-        if (colMin > 0)
-            style += $" --gantt-col-min: {colMin}px; min-width: calc(var(--gantt-label-w) + {_ganttSlots.Count * colMin}px);";
-        return style;
-    }
-
-    private double GetGanttPosition(DateTime dt)
-    {
-        var totalSpan = (_dateTo - _dateFrom).TotalHours;
-        if (totalSpan <= 0) return 0;
-        var offset = (dt - _dateFrom).TotalHours;
-        return Math.Clamp(offset / totalSpan * 100, 0, 100);
-    }
-
-    private double GetGanttWidth(DateTime start, DateTime end)
-    {
-        var totalSpan = (_dateTo - _dateFrom).TotalHours;
-        if (totalSpan <= 0) return 1;
-        var width = (end - start).TotalHours / totalSpan * 100;
-        var minWidth = IsDayLevel ? 0.3 : 1.5;
-        return Math.Clamp(width, minWidth, 100);
-    }
-
-    // ── JS Interop Zoom (mouse wheel + touch pinch) ──
-
-    [JSInvokable]
-    public async Task JsZoomIn(double cursorPct)
-    {
-        if (StepZoom(-1, cursorPct))
-        {
-            await LoadData();
-            StateHasChanged();
-        }
-    }
-
-    [JSInvokable]
-    public async Task JsZoomOut(double cursorPct)
-    {
-        if (StepZoom(1, cursorPct))
-        {
-            await LoadData();
-            StateHasChanged();
-        }
-    }
-
-    private bool StepZoom(int direction, double cursorPct)
-    {
-        var currentIdx = Array.IndexOf(ZoomLevels, _zoomLevel);
-        var newIdx = currentIdx + direction;
-        if (newIdx < 0 || newIdx >= ZoomLevels.Length) return false;
-
-        // Time at cursor position (anchor point)
-        var totalSpan = _dateTo - _dateFrom;
-        var cursorTime = _dateFrom + TimeSpan.FromTicks((long)(totalSpan.Ticks * Math.Clamp(cursorPct, 0, 1)));
-
-        // Change zoom level
-        _zoomLevel = ZoomLevels[newIdx];
-        var (newRange, slot) = GetZoomConfig();
-
-        // Reposition so cursor stays over the same time
-        _dateFrom = cursorTime - TimeSpan.FromTicks((long)(newRange.Ticks * cursorPct));
-        if (IsDayLevel)
-        {
-            _dateFrom = _dateFrom.Date;
-        }
-        else if (slot.Ticks > 0)
-        {
-            var dayStart = _dateFrom.Date.Ticks;
-            var offset = _dateFrom.Ticks - dayStart;
-            _dateFrom = new DateTime(dayStart + (offset / slot.Ticks) * slot.Ticks, _dateFrom.Kind);
-        }
-        _dateTo = _dateFrom.Add(newRange);
-        return true;
     }
 
     private bool HasOverlap(int machineId, StageExecution current, List<StageExecution> machineExecs)
@@ -1133,6 +1846,26 @@ else if (_viewMode == "table")
         _rescheduleMachineId = exec.MachineId?.ToString() ?? "";
         _rescheduleStart = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? DateTime.UtcNow;
         _rescheduleEnd = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? DateTime.UtcNow.AddHours(4);
+        _showReschedule = true;
+    }
+
+    private void ManualScheduleSingle(StageExecution exec)
+    {
+        _rescheduleExec = exec;
+        _rescheduleMachineId = "";
+        _rescheduleStart = DateTime.UtcNow;
+        _rescheduleEnd = DateTime.UtcNow.AddHours(exec.EstimatedHours ?? 4);
+
+        // Pre-select a compatible machine if the stage requires one
+        if (exec.ProductionStage?.RequiresMachineAssignment == true)
+        {
+            var compatibleMachine = _machines.FirstOrDefault(m =>
+                m.IsAvailableForScheduling &&
+                m.MachineType.Equals(exec.ProductionStage.Department ?? "", StringComparison.OrdinalIgnoreCase));
+            if (compatibleMachine != null)
+                _rescheduleMachineId = compatibleMachine.Id.ToString();
+        }
+
         _showReschedule = true;
     }
 
@@ -1188,7 +1921,42 @@ else if (_viewMode == "table")
         try
         {
             var count = await Scheduler.AutoScheduleAllAsync();
-            Toast.ShowSuccess($"Auto-scheduled {count} job(s)");
+
+            // Also schedule any Ready builds on SLS machines with load balancing
+            var readyBuilds = ReadyBuilds.Where(b => b.Status == BuildPackageStatus.Ready).ToList();
+            var buildCount = 0;
+            var slsMachineList = SlsMachines;
+            foreach (var build in readyBuilds)
+            {
+                try
+                {
+                    // Find the SLS machine with the earliest available slot
+                    Machine? bestMachine = null;
+                    var bestEnd = DateTime.MaxValue;
+                    foreach (var machine in slsMachineList)
+                    {
+                        var slot = await BuildScheduling.FindEarliestBuildSlotAsync(
+                            machine.Id,
+                            build.EstimatedDurationHours ?? 24,
+                            DateTime.UtcNow);
+                        if (slot.PrintEnd < bestEnd)
+                        {
+                            bestMachine = machine;
+                            bestEnd = slot.PrintEnd;
+                        }
+                    }
+                    if (bestMachine != null)
+                    {
+                        await BuildScheduling.ScheduleBuildAsync(build.Id, bestMachine.Id);
+                        buildCount++;
+                    }
+                }
+                catch { /* skip builds that can't be scheduled */ }
+            }
+
+            var msg = $"Auto-scheduled {count} job(s)";
+            if (buildCount > 0) msg += $" + {buildCount} build(s)";
+            Toast.ShowSuccess(msg);
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
@@ -1235,8 +2003,323 @@ else if (_viewMode == "table")
         finally { _creatingJob = false; }
     }
 
-    public void Dispose()
+    // ── Work Order Demand Helpers ──
+
+    private int GetOutstanding(WorkOrderLine line)
     {
+        var produced = line.ProducedQuantity;
+        var inBuilds = GetInBuildQty(line);
+        var ordered = line.Quantity;
+        return Math.Max(0, ordered - produced - inBuilds);
+    }
+
+    private static int GetInBuildQty(WorkOrderLine line)
+    {
+        if (line.BuildPackageParts == null) return 0;
+        return line.BuildPackageParts
+            .Where(bp => bp.BuildPackage != null
+                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
+                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
+            .Sum(bp => bp.Quantity);
+    }
+
+    private bool IsAdditiveLine(WorkOrderLine line) =>
+        line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
+
+    private bool HasExistingJobs(WorkOrderLine line) =>
+        line.Jobs?.Any() == true;
+
+    private void ShowWoBuildModal(WorkOrder wo, WorkOrderLine line)
+    {
+        _selectedWo = wo;
+        _selectedWoLine = line;
+        _woBuildName = $"Build-{line.Part?.PartNumber ?? "?"}-{DateTime.UtcNow:MMdd}";
+        _woBuildMachineId = SlsMachines.FirstOrDefault()?.Id.ToString() ?? "";
+        _woBuildQuantity = GetOutstanding(line);
+        _showWoBuildModal = true;
+    }
+
+    private void ShowWoJobModal(WorkOrder wo, WorkOrderLine line)
+    {
+        _selectedWo = wo;
+        _selectedWoLine = line;
+        _showWoJobModal = true;
+    }
+
+    private async Task CreateBuildFromWo()
+    {
+        if (_selectedWoLine == null || string.IsNullOrWhiteSpace(_woBuildName)) return;
+        if (!int.TryParse(_woBuildMachineId, out var machineIntId)) return;
+
+        _creatingFromWo = true;
+        StateHasChanged();
+        try
+        {
+            // Find Machine.MachineId (string) from int Id
+            var machine = _machines.FirstOrDefault(m => m.Id == machineIntId);
+            if (machine == null) { Toast.ShowError("Select a valid SLS machine."); return; }
+
+            var pkg = new BuildPackage
+            {
+                Name = _woBuildName,
+                MachineId = machine.MachineId,
+                Status = BuildPackageStatus.Draft,
+                Material = _selectedWoLine.Part?.Material,
+                CreatedBy = _userName,
+                LastModifiedBy = _userName
+            };
+            var created = await BuildPlanning.CreatePackageAsync(pkg);
+            await BuildPlanning.AddPartToPackageAsync(created.Id, _selectedWoLine.PartId, _woBuildQuantity, _selectedWoLine.Id);
+
+            Toast.ShowSuccess($"Build '{_woBuildName}' created with {_woBuildQuantity}× {_selectedWoLine.Part?.PartNumber}");
+            _showWoBuildModal = false;
+            _selectedWoLine = null;
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _creatingFromWo = false; }
+    }
+
+    private async Task ScheduleJobFromWo()
+    {
+        if (_selectedWoLine == null) return;
+        _creatingFromWo = true;
+        StateHasChanged();
+        try
+        {
+            var job = await WorkOrderService.GenerateJobForLineAsync(_selectedWoLine.Id, _userName);
+            Toast.ShowSuccess($"Job {job.JobNumber} created and auto-scheduled for {_selectedWoLine.Part?.PartNumber}");
+            _showWoJobModal = false;
+            _selectedWoLine = null;
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _creatingFromWo = false; }
+    }
+
+    // ── Template Matching Helpers ──
+
+    private List<BuildTemplate> GetMatchingTemplates(int partId) =>
+        _buildTemplates
+            .Where(t => t.IsCertified && t.Parts.Any(p => p.PartId == partId))
+            .ToList();
+
+    private List<BuildTemplate> GetRecertTemplates(int partId) =>
+        _buildTemplates
+            .Where(t => t.NeedsRecertification && t.Parts.Any(p => p.PartId == partId))
+            .ToList();
+
+    // ── Quick Schedule from Template ──
+
+    private void ShowQuickScheduleModal(WorkOrder wo, WorkOrderLine line, BuildTemplate template)
+    {
+        _quickScheduleWo = wo;
+        _quickScheduleWoLine = line;
+        _selectedTemplate = template;
+        _quickScheduleMachineId = SlsMachines.FirstOrDefault()?.Id.ToString() ?? "";
+        _quickScheduleStartAfter = null;
+        _showQuickScheduleModal = true;
+    }
+
+    private async Task QuickScheduleBuild()
+    {
+        if (_selectedTemplate == null || _quickScheduleWoLine == null) return;
+        if (!int.TryParse(_quickScheduleMachineId, out var machineIntId))
+        {
+            Toast.ShowError("Select a valid SLS machine.");
+            return;
+        }
+
+        _creatingFromWo = true;
+        StateHasChanged();
+        try
+        {
+            // Instantiate a BuildPackage from the certified template
+            var machine = _machines.FirstOrDefault(m => m.Id == machineIntId);
+            if (machine == null) { Toast.ShowError("Machine not found."); return; }
+
+            var package = await BuildTemplateService.InstantiateAsync(
+                _selectedTemplate.Id,
+                machine.MachineId,
+                _userName,
+                _quickScheduleWoLine.Id);
+
+            // Schedule the instantiated build
+            var result = await BuildScheduling.ScheduleBuildAsync(
+                package.Id,
+                machineIntId,
+                _quickScheduleStartAfter);
+
+            Toast.ShowSuccess($"Build '{package.Name}' scheduled on {machine.Name} at {result.Slot.PrintStart:g}");
+            _showQuickScheduleModal = false;
+            _selectedTemplate = null;
+            _quickScheduleWoLine = null;
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _creatingFromWo = false; }
+    }
+
+    // ── Navigate to New Build ──
+
+    private void NavigateToNewBuild(WorkOrderLine line)
+    {
+        var url = $"/builds?newForPart={line.PartId}&woLineId={line.Id}&returnTo=/scheduler?view=orders";
+        JS.InvokeVoidAsync("open", url, "_self");
+    }
+
+    // ── Build Suggestion Actions (Phase C) ──
+
+    private void ScheduleFromSuggestion(TemplateSuggestion suggestion)
+    {
+        // Find the first WO line this suggestion fulfills to pre-select in the quick schedule modal
+        var woRef = suggestion.FulfillsWorkOrders.FirstOrDefault();
+        if (woRef == null) return;
+
+        var wo = _workOrders.FirstOrDefault(w => w.Id == woRef.WorkOrderId);
+        var line = wo?.Lines.FirstOrDefault(l => l.Id == woRef.WorkOrderLineId);
+        var template = _buildTemplates.FirstOrDefault(t => t.Id == suggestion.BuildTemplateId);
+        if (wo == null || line == null || template == null) return;
+
+        ShowQuickScheduleModal(wo, line, template);
+    }
+
+    private void ScheduleFromMixedSuggestion(MixedBuildSuggestion suggestion)
+    {
+        if (!suggestion.MatchingTemplateId.HasValue) return;
+
+        var woRef = suggestion.FulfillsWorkOrders.FirstOrDefault();
+        if (woRef == null) return;
+
+        var wo = _workOrders.FirstOrDefault(w => w.Id == woRef.WorkOrderId);
+        var line = wo?.Lines.FirstOrDefault(l => l.Id == woRef.WorkOrderLineId);
+        var template = _buildTemplates.FirstOrDefault(t => t.Id == suggestion.MatchingTemplateId.Value);
+        if (wo == null || line == null || template == null) return;
+
+        ShowQuickScheduleModal(wo, line, template);
+    }
+
+    private async Task CreateMixedBuild(MixedBuildSuggestion suggestion)
+    {
+        _creatingFromWo = true;
+        StateHasChanged();
+        try
+        {
+            var partNames = string.Join("+", suggestion.Parts.Select(p => p.PartNumber));
+            var package = await BuildPlanning.CreatePackageAsync(new BuildPackage
+            {
+                Name = $"Mixed-{partNames}-{DateTime.UtcNow:MMdd}",
+                Status = BuildPackageStatus.Draft,
+                EstimatedDurationHours = suggestion.EstimatedDurationHours,
+                CreatedBy = _userName,
+                LastModifiedBy = _userName
+            });
+
+            foreach (var part in suggestion.Parts)
+            {
+                // Find matching WO line to link
+                var woRef = suggestion.FulfillsWorkOrders.FirstOrDefault(w =>
+                {
+                    var wo = _workOrders.FirstOrDefault(o => o.Id == w.WorkOrderId);
+                    return wo?.Lines.Any(l => l.Id == w.WorkOrderLineId && l.PartId == part.PartId) == true;
+                });
+
+                await BuildPlanning.AddPartToPackageAsync(
+                    package.Id,
+                    part.PartId,
+                    part.SuggestedQuantity,
+                    woRef?.WorkOrderLineId);
+            }
+
+            Toast.ShowSuccess($"Mixed build '{package.Name}' created with {suggestion.Parts.Count} parts. Enter slicer data on the Builds page.");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _creatingFromWo = false; }
+    }
+
+    private string PriorityBadgeClass(JobPriority p) => p.ToString().ToLower();
+
+    // ── Table Sorting & Filtering ──
+
+    private void ToggleTableSort(string column)
+    {
+        if (_tableSortCol == column)
+            _tableSortAsc = !_tableSortAsc;
+        else
+        {
+            _tableSortCol = column;
+            _tableSortAsc = true;
+        }
+    }
+
+    private IEnumerable<StageExecution> SortedTableExecutions
+    {
+        get
+        {
+            var all = _executions.Concat(_unscheduled).AsEnumerable();
+
+            // Apply status filter
+            if (_tableFilterStatus.HasValue)
+                all = all.Where(e => e.Status == _tableFilterStatus.Value);
+
+            // Apply text search
+            if (!string.IsNullOrWhiteSpace(_tableSearch))
+            {
+                var term = _tableSearch.Trim();
+                all = all.Where(e =>
+                    (e.Job?.Part?.PartNumber?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.BuildPackage?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.ProductionStage?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.Machine?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.OperatorName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            // Apply sort
+            all = _tableSortCol switch
+            {
+                "Priority" => _tableSortAsc
+                    ? all.OrderBy(e => e.Job?.Priority ?? JobPriority.Normal)
+                    : all.OrderByDescending(e => e.Job?.Priority ?? JobPriority.Normal),
+                "Part" => _tableSortAsc
+                    ? all.OrderBy(e => e.Job?.Part?.PartNumber ?? e.BuildPackage?.Name ?? "")
+                    : all.OrderByDescending(e => e.Job?.Part?.PartNumber ?? e.BuildPackage?.Name ?? ""),
+                "Stage" => _tableSortAsc
+                    ? all.OrderBy(e => e.ProductionStage?.Name ?? "")
+                    : all.OrderByDescending(e => e.ProductionStage?.Name ?? ""),
+                "Machine" => _tableSortAsc
+                    ? all.OrderBy(e => e.Machine?.Name ?? "zzz")
+                    : all.OrderByDescending(e => e.Machine?.Name ?? "zzz"),
+                "End" => _tableSortAsc
+                    ? all.OrderBy(e => e.ScheduledEndAt ?? DateTime.MaxValue)
+                    : all.OrderByDescending(e => e.ScheduledEndAt ?? DateTime.MaxValue),
+                "Hours" => _tableSortAsc
+                    ? all.OrderBy(e => e.EstimatedHours ?? 0)
+                    : all.OrderByDescending(e => e.EstimatedHours ?? 0),
+                "Status" => _tableSortAsc
+                    ? all.OrderBy(e => e.Status)
+                    : all.OrderByDescending(e => e.Status),
+                _ => _tableSortAsc
+                    ? all.OrderBy(e => e.ScheduledStartAt ?? DateTime.MaxValue)
+                    : all.OrderByDescending(e => e.ScheduledStartAt ?? DateTime.MaxValue),
+            };
+
+            return all;
+        }
+    }
+
+    private string TableSortIcon(string column) =>
+        _tableSortCol != column ? "⇅" : _tableSortAsc ? "↑" : "↓";
+
+    public async ValueTask DisposeAsync()
+    {
+        _autoRefreshTimer?.Dispose();
+        if (_ganttViewportModule != null)
+        {
+            try { await _ganttViewportModule.InvokeVoidAsync("dispose"); }
+            catch (JSDisconnectedException) { }
+            await _ganttViewportModule.DisposeAsync();
+        }
         _dotNetRef?.Dispose();
     }
 }

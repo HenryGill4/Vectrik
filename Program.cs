@@ -62,6 +62,7 @@ builder.Services.AddScoped<ITenantService, TenantService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddScoped<TabManagerService>();
 
 // Tenant services
 builder.Services.AddScoped<IPartService, PartService>();
@@ -81,6 +82,8 @@ builder.Services.AddScoped<IManufacturingApproachService, ManufacturingApproachS
 builder.Services.AddScoped<IMachineService, MachineService>();
 builder.Services.AddScoped<IOperatorRoleService, OperatorRoleService>();
 builder.Services.AddScoped<IExternalOperationService, ExternalOperationService>();
+builder.Services.AddScoped<IBuildTemplateService, BuildTemplateService>();
+builder.Services.AddScoped<IBuildSuggestionService, BuildSuggestionService>();
 builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
 
 // Customization Foundation (Stage 0.5)
@@ -143,6 +146,15 @@ using (var scope = app.Services.CreateScope())
     {
         var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
         tenantService.CreateTenantAsync("demo", "Demo Manufacturing", "System").GetAwaiter().GetResult();
+    }
+    else
+    {
+        // Ensure existing tenants have seeded data (handles deleted/recreated tenant DBs)
+        var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
+        foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
+        {
+            tenantService.SeedTenantDatabaseAsync(tenant.Code).GetAwaiter().GetResult();
+        }
     }
 
     // Seed default feature flags for demo tenant

@@ -7,10 +7,12 @@ namespace Opcentrix_V3.Services;
 public class PartService : IPartService
 {
     private readonly TenantDbContext _db;
+    private readonly IBuildTemplateService _buildTemplateService;
 
-    public PartService(TenantDbContext db)
+    public PartService(TenantDbContext db, IBuildTemplateService buildTemplateService)
     {
         _db = db;
+        _buildTemplateService = buildTemplateService;
     }
 
     public async Task<List<Part>> GetAllPartsAsync(bool activeOnly = true)
@@ -61,6 +63,9 @@ public class PartService : IPartService
         part.LastModifiedDate = DateTime.UtcNow;
         _db.Parts.Update(part);
         await _db.SaveChangesAsync();
+
+        await _buildTemplateService.InvalidateTemplatesForPartAsync(part.Id);
+
         return part;
     }
 

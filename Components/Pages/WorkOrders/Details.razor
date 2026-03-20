@@ -1,5 +1,4 @@
 @page "/workorders/{Id:int}"
-@rendermode InteractiveServer
 @inject IWorkOrderService WorkOrderService
 @inject IPartService PartService
 @inject ITenantFeatureService Features
@@ -58,6 +57,14 @@ else
 
     <!-- Info Cards -->
     <div class="kpi-grid" style="margin-bottom: 16px;">
+        @{
+            var totalQty = _order.Lines.Sum(l => l.Quantity);
+            var producedQty = _order.Lines.Sum(l => l.ProducedQuantity);
+            var shippedQty = _order.Lines.Sum(l => l.ShippedQuantity);
+            var inBuildsQty = _order.Lines.Sum(l => GetInBuildQuantity(l));
+            var inProductionQty = _order.Lines.Sum(l => l.PartInstances?.Count(pi => !string.Equals(pi.Status.ToString(), "Completed", StringComparison.OrdinalIgnoreCase)) ?? 0);
+            var pct = totalQty > 0 ? (int)(producedQty * 100.0 / totalQty) : 0;
+        }
         <div class="kpi-card">
             <div class="kpi-label">Due Date</div>
             <div class="kpi-value" style="font-size: 1.2rem; color: @(_order.DueDate < DateTime.UtcNow && _order.Status != WorkOrderStatus.Complete ? "var(--danger)" : "var(--text-primary)")">@_order.DueDate.ToString("MMM dd, yyyy")</div>
@@ -67,19 +74,34 @@ else
             <div class="kpi-value" style="font-size: 1.2rem;"><span class="badge badge-@_order.Priority.ToString().ToLower()">@_order.Priority</span></div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-label">Lines</div>
-            <div class="kpi-value" style="font-size: 1.4rem;">@_order.Lines.Count</div>
-        </div>
-        <div class="kpi-card">
             <div class="kpi-label">Fulfillment</div>
-            @{
-                var totalQty = _order.Lines.Sum(l => l.Quantity);
-                var producedQty = _order.Lines.Sum(l => l.ProducedQuantity);
-                var pct = totalQty > 0 ? (int)(producedQty * 100.0 / totalQty) : 0;
-            }
             <div class="kpi-value" style="font-size: 1.4rem;">@pct%</div>
             <div class="kpi-sub">@producedQty / @totalQty produced</div>
         </div>
+        @if (inBuildsQty > 0)
+        {
+            <div class="kpi-card" style="border-left: 3px solid var(--accent);">
+                <div class="kpi-label">In Builds</div>
+                <div class="kpi-value" style="font-size: 1.4rem; color: var(--accent);">@inBuildsQty</div>
+                <div class="kpi-sub">parts on build plates</div>
+            </div>
+        }
+        @if (inProductionQty > 0)
+        {
+            <div class="kpi-card" style="border-left: 3px solid var(--info);">
+                <div class="kpi-label">In Production</div>
+                <div class="kpi-value" style="font-size: 1.4rem; color: var(--info);">@inProductionQty</div>
+                <div class="kpi-sub">parts in process</div>
+            </div>
+        }
+        @if (shippedQty > 0)
+        {
+            <div class="kpi-card" style="border-left: 3px solid var(--success);">
+                <div class="kpi-label">Shipped</div>
+                <div class="kpi-value" style="font-size: 1.4rem; color: var(--success);">@shippedQty</div>
+                <div class="kpi-sub">of @totalQty total</div>
+            </div>
+        }
     </div>
 
     <!-- Tabs -->
@@ -103,10 +125,9 @@ else
                 <thead>
                     <tr>
                         <th>Part</th>
-                        <th>Ordered</th>
-                        <th>Produced</th>
-                        <th>Shipped</th>
-                        <th>Jobs</th>
+                        <th style="text-align:center">Ordered</th>
+                        <th style="text-align:center">Production Status</th>
+                        <th>Builds / Jobs</th>
                         <th>Status</th>
                         <th></th>
                     </tr>
@@ -114,26 +135,135 @@ else
                 <tbody>
                     @foreach (var line in _order.Lines)
                     {
+                        var lineInBuilds = GetInBuildQuantity(line);
+                        var lineProduced = line.ProducedQuantity;
+                        var lineShipped = line.ShippedQuantity;
+                        var lineRemaining = Math.Max(0, line.Quantity - lineProduced - lineInBuilds);
+                        var lineProgressPct = line.Quantity > 0 ? Math.Min(100, (int)((lineProduced + lineInBuilds) * 100.0 / line.Quantity)) : 0;
+                        var isAdditive = line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
+                        var activeBuildParts = line.BuildPackageParts?
+                            .Where(bp => bp.BuildPackage != null
+                                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
+                                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
+                            .ToList() ?? new();
+
                         <tr>
-                            <td><strong>@line.Part?.PartNumber</strong> — @line.Part?.Name</td>
-                            <td>@line.Quantity</td>
-                            <td>@line.ProducedQuantity</td>
-                            <td>@line.ShippedQuantity</td>
-                            <td>@line.Jobs.Count</td>
+                            <td>
+                                <div>
+                                    <strong>@(line.Part?.PartNumber ?? "?")</strong>
+                                    <span style="color: var(--text-secondary);"> — @(line.Part?.Name ?? "")</span>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                                    @if (isAdditive)
+                                    {
+                                        <span class="badge badge-accent" style="font-size: 0.65rem; padding: 1px 6px;">🖨️ SLS</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-info" style="font-size: 0.65rem; padding: 1px 6px;">⚙️ CNC</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(line.Part?.Material))
+                                    {
+                                        <span style="margin-left: 4px;">@(line.Part.MaterialEntity?.Name ?? line.Part.Material)</span>
+                                    }
+                                </div>
+                            </td>
+                            <td style="text-align:center;">
+                                <div style="font-size: 1.1rem; font-weight: 600;">@line.Quantity</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; flex-direction: column; gap: 4px; min-width: 180px;">
+                                    @* Progress bar showing produced + in-builds *@
+                                    <div style="display: flex; gap: 6px; font-size: 0.78rem; color: var(--text-secondary);">
+                                        @if (lineProduced > 0)
+                                        {
+                                            <span style="color: var(--success);">✅ @lineProduced produced</span>
+                                        }
+                                        @if (lineInBuilds > 0)
+                                        {
+                                            <span style="color: var(--accent);">🖨️ @lineInBuilds in builds</span>
+                                        }
+                                        @if (lineShipped > 0)
+                                        {
+                                            <span style="color: var(--info);">📦 @lineShipped shipped</span>
+                                        }
+                                        @if (lineRemaining > 0)
+                                        {
+                                            <span>@lineRemaining remaining</span>
+                                        }
+                                    </div>
+                                    <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                                        @{
+                                            var producedPct = line.Quantity > 0 ? lineProduced * 100.0 / line.Quantity : 0;
+                                            var buildPct = line.Quantity > 0 ? lineInBuilds * 100.0 / line.Quantity : 0;
+                                        }
+                                        <div style="display: flex; height: 100%;">
+                                            @if (producedPct > 0)
+                                            {
+                                                <div style="width: @producedPct.ToString("F1")%; background: var(--success);"></div>
+                                            }
+                                            @if (buildPct > 0)
+                                            {
+                                                <div style="width: @buildPct.ToString("F1")%; background: var(--accent); opacity: 0.7;"></div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div style="display: flex; flex-direction: column; gap: 3px;">
+                                    @* Show active builds *@
+                                    @foreach (var bp in activeBuildParts)
+                                    {
+                                        var buildStatusClass = bp.BuildPackage!.Status switch
+                                        {
+                                            BuildPackageStatus.Printing => "accent",
+                                            BuildPackageStatus.Scheduled => "primary",
+                                            BuildPackageStatus.PostPrint => "info",
+                                            BuildPackageStatus.Ready => "warning",
+                                            _ => "secondary"
+                                        };
+                                        var buildIcon = bp.BuildPackage.Status switch
+                                        {
+                                            BuildPackageStatus.Printing => "🖨️",
+                                            BuildPackageStatus.Scheduled => "📅",
+                                            BuildPackageStatus.PostPrint => "🔥",
+                                            BuildPackageStatus.Ready => "✅",
+                                            _ => "📦"
+                                        };
+                                        <a href="/builds" style="text-decoration:none;">
+                                            <span class="badge badge-@buildStatusClass" style="font-size: 0.7rem;">@buildIcon @(bp.BuildPackage.Name) ×@bp.Quantity</span>
+                                        </a>
+                                    }
+                                    @* Show jobs *@
+                                    @foreach (var job in line.Jobs.Take(3))
+                                    {
+                                        <a href="/workorders/@_order.Id/jobs/@job.Id" style="text-decoration:none;">
+                                            <span class="badge badge-secondary" style="font-size: 0.7rem;">🔧 Job #@job.Id</span>
+                                        </a>
+                                    }
+                                    @if (line.Jobs.Count > 3)
+                                    {
+                                        <span style="font-size: 0.7rem; color: var(--text-muted);">+@(line.Jobs.Count - 3) more</span>
+                                    }
+                                    @if (!activeBuildParts.Any() && !line.Jobs.Any() && _order.Status != WorkOrderStatus.Draft)
+                                    {
+                                        <span style="font-size: 0.75rem; color: var(--text-muted);">No builds or jobs yet</span>
+                                    }
+                                </div>
+                            </td>
                             <td><span class="badge @GetBadge(line.Status)">@line.Status</span></td>
-                            <td style="display: flex; gap: 4px;">
-                                @if (line.Jobs.Count == 0 && _order.Status != WorkOrderStatus.Draft)
-                                {
-                                    <button class="btn btn-sm btn-primary" @onclick="() => GenerateJobs(line.Id)">Generate Jobs</button>
-                                }
-                                @foreach (var job in line.Jobs.Take(3))
-                                {
-                                    <a href="/workorders/@_order.Id/jobs/@job.Id" class="btn btn-sm btn-secondary">Job #@job.Id</a>
-                                }
-                                @if (_order.Status == WorkOrderStatus.Draft)
-                                {
-                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(line.Id)">✕</button>
-                                }
+                            <td>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                    @if (line.Jobs.Count == 0 && !activeBuildParts.Any() && _order.Status != WorkOrderStatus.Draft)
+                                    {
+                                        <button class="btn btn-sm btn-primary" @onclick="() => GenerateJobs(line.Id)">Generate Jobs</button>
+                                    }
+                                    @if (_order.Status == WorkOrderStatus.Draft)
+                                    {
+                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(line.Id)">✕</button>
+                                    }
+                                </div>
                             </td>
                         </tr>
                     }
@@ -362,6 +492,13 @@ else
             await LoadOrder();
             var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
             Toast.ShowSuccess($"Work order released — {jobCount} job(s) generated from routing");
+
+            // Navigate to the next step based on part types
+            var hasAdditiveParts = _order?.Lines.Any(l => l.Part?.ManufacturingApproach?.RequiresBuildPlate == true) ?? false;
+            if (hasAdditiveParts)
+                Nav.NavigateTo("/builds");
+            else
+                Nav.NavigateTo("/scheduler");
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
@@ -375,6 +512,12 @@ else
             _pendingApproval = null;
             var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
             Toast.ShowSuccess($"Approved! Work order released — {jobCount} job(s) generated.");
+
+            var hasAdditiveParts = _order?.Lines.Any(l => l.Part?.ManufacturingApproach?.RequiresBuildPlate == true) ?? false;
+            if (hasAdditiveParts)
+                Nav.NavigateTo("/builds");
+            else
+                Nav.NavigateTo("/scheduler");
         }
         else
         {
@@ -560,4 +703,14 @@ else
         WorkOrderStatus.OnHold => "badge-warning",
         _ => ""
     };
+
+    private static int GetInBuildQuantity(WorkOrderLine line)
+    {
+        if (line.BuildPackageParts == null) return 0;
+        return line.BuildPackageParts
+            .Where(bp => bp.BuildPackage != null
+                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
+                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
+            .Sum(bp => bp.Quantity);
+    }
 }

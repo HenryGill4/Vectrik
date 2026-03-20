@@ -344,6 +344,117 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("BuildPackageRevisions");
                 });
 
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("BuildParameters")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CertifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CertifiedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("EstimatedDurationHours")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("LastModifiedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastModifiedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastUsedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MaterialId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("NeedsRecertification")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PartVersionHash")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("SourceBuildPackageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StackLevel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UseCount")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MaterialId");
+
+                    b.HasIndex("SourceBuildPackageId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("BuildTemplates");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplatePart", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BuildTemplateId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PositionNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StackLevel")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartId");
+
+                    b.HasIndex("BuildTemplateId", "PartId");
+
+                    b.ToTable("BuildTemplateParts");
+                });
+
             modelBuilder.Entity("Opcentrix_V3.Models.CorrectiveAction", b =>
                 {
                     b.Property<int>("Id")
@@ -4052,7 +4163,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .IsRequired();
 
                     b.HasOne("Opcentrix_V3.Models.WorkOrderLine", "WorkOrderLine")
-                        .WithMany()
+                        .WithMany("BuildPackageParts")
                         .HasForeignKey("WorkOrderLineId");
 
                     b.Navigation("BuildPackage");
@@ -4071,6 +4182,42 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .IsRequired();
 
                     b.Navigation("BuildPackage");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplate", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.Material", "Material")
+                        .WithMany()
+                        .HasForeignKey("MaterialId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Opcentrix_V3.Models.BuildPackage", "SourceBuildPackage")
+                        .WithMany()
+                        .HasForeignKey("SourceBuildPackageId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Material");
+
+                    b.Navigation("SourceBuildPackage");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplatePart", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.BuildTemplate", "BuildTemplate")
+                        .WithMany("Parts")
+                        .HasForeignKey("BuildTemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BuildTemplate");
+
+                    b.Navigation("Part");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.DelayLog", b =>
@@ -4838,6 +4985,11 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Revisions");
                 });
 
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplate", b =>
+                {
+                    b.Navigation("Parts");
+                });
+
             modelBuilder.Entity("Opcentrix_V3.Models.InspectionPlan", b =>
                 {
                     b.Navigation("Characteristics");
@@ -4963,6 +5115,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderLine", b =>
                 {
+                    b.Navigation("BuildPackageParts");
+
                     b.Navigation("Jobs");
 
                     b.Navigation("PartInstances");

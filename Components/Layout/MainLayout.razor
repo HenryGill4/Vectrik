@@ -1,6 +1,9 @@
 ﻿@inherits LayoutComponentBase
 @inject IJSRuntime JS
 @inject IUserSettingsService SettingsService
+@inject TabManagerService TabManager
+@inject NavigationManager Nav
+@implements IDisposable
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 
@@ -29,6 +32,8 @@
             <button class="btn-topbar" @onclick="ToggleDarkMode" title="@ThemeTooltip">@ThemeIcon</button>
         </header>
 
+        <TabStrip />
+
         <main class="content-area">
             @Body
         </main>
@@ -52,16 +57,55 @@
     private string _themePreference = "dark";
     private int _userId;
 
+    /// <summary>
+    /// Route-to-tab mapping. Every navigation auto-creates a tab.
+    /// </summary>
+    private static readonly Dictionary<string, (string Title, string Icon)> _routeMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [""] = ("Dashboard", "📊"),
+        ["scheduler"] = ("Scheduler", "📅"),
+        ["scheduler/capacity"] = ("Capacity", "📊"),
+        ["workorders"] = ("Work Orders", "📋"),
+        ["builds"] = ("Build Planning", "🏗️"),
+        ["parts"] = ("Parts Library", "🔩"),
+        ["shopfloor"] = ("Operator Queue", "🏭"),
+        ["tracking"] = ("Part Tracker", "🔍"),
+        ["machines"] = ("Machines", "🖥️"),
+        ["analytics"] = ("Analytics", "📈"),
+        ["analytics/on-time-delivery"] = ("On-Time Delivery", "⏱️"),
+        ["analytics/quality"] = ("Quality Metrics", "✅"),
+        ["analytics/oee"] = ("Machine OEE", "⚙️"),
+        ["analytics/cost"] = ("Cost Analysis", "💲"),
+        ["search"] = ("Search", "🔎"),
+        ["quotes"] = ("Quotes", "💰"),
+        ["quotes/rfq-inbox"] = ("RFQ Inbox", "📥"),
+        ["maintenance"] = ("Maintenance", "🔧"),
+        ["maintenance/workorders"] = ("Maint. Orders", "📝"),
+        ["maintenance/rules"] = ("Maint. Rules", "📐"),
+        ["inventory"] = ("Inventory", "📦"),
+        ["inventory/items"] = ("Inventory Items", "📋"),
+        ["inventory/receive"] = ("Receive Stock", "📥"),
+        ["quality"] = ("Quality", "🔍"),
+        ["quality/ncr"] = ("NCR Management", "📋"),
+        ["quality/capa"] = ("CAPA Board", "🔧"),
+        ["quality/spc"] = ("SPC Charts", "📈"),
+        ["admin"] = ("Admin", "⚙️"),
+        ["admin/stages"] = ("Stage Config", "🔧"),
+    };
+
+    protected override void OnInitialized()
+    {
+        TabManager.EnsureHomeTab();
+        SyncTabFromCurrentUrl();
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
 
         try
         {
-            // Read stored preference and always re-apply to DOM.
-            // Enhanced navigation may have reset data-theme to the
-            // hardcoded default in App.razor, so we must push the
-            // correct value back every time a circuit starts.
             _themePreference = await JS.InvokeAsync<string>("opcentrix.getTheme") ?? "dark";
             await JS.InvokeVoidAsync("opcentrix.setTheme", _themePreference);
         }
@@ -78,7 +122,6 @@
                 {
                     var settings = await SettingsService.GetSettingsAsync(uid);
 
-                    // DB is authoritative — override localStorage if they disagree
                     if (settings.Theme != _themePreference)
                     {
                         _themePreference = settings.Theme;
@@ -93,6 +136,50 @@
         }
 
         StateHasChanged();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        SyncTabFromCurrentUrl();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SyncTabFromCurrentUrl()
+    {
+        var relativePath = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0];
+
+        // Skip auth pages — don't create tabs for login/logout
+        if (relativePath.StartsWith("account", StringComparison.OrdinalIgnoreCase)) return;
+
+        // Try exact match first, then pattern matches for detail pages
+        if (_routeMap.TryGetValue(relativePath, out var info))
+        {
+            TabManager.Open(info.Title, info.Icon, "/" + relativePath, pinned: relativePath == "");
+        }
+        else
+        {
+            // Detail pages: workorders/5, parts/12, etc.
+            var (title, icon) = ResolveDetailTab(relativePath);
+            TabManager.Open(title, icon, "/" + relativePath);
+        }
+    }
+
+    private static (string Title, string Icon) ResolveDetailTab(string path)
+    {
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        return segments switch
+        {
+            ["workorders", _] => ($"WO #{segments[1]}", "📋"),
+            ["parts", _] => ($"Part #{segments[1]}", "🔩"),
+            ["parts", _, "edit"] => ($"Edit Part #{segments[1]}", "✏️"),
+            ["quotes", _] => ($"Quote #{segments[1]}", "💰"),
+            ["machines", _] => ($"Machine #{segments[1]}", "🖥️"),
+            ["builds", _] => ($"Build #{segments[1]}", "🏗️"),
+            ["shopfloor", "stage", var slug] => ($"Stage: {slug}", "🏭"),
+            ["quality", "ncr", _] => ($"NCR #{segments[2]}", "📋"),
+            _ => (path.Split('/')[^1], "📄"),
+        };
     }
 
     private string ThemeIcon => _themePreference switch
@@ -133,4 +220,8 @@
         }
     }
 
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
     }

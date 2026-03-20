@@ -1,11 +1,12 @@
 @page "/builds"
 @inject IBuildPlanningService BuildPlanningService
 @inject IBuildSchedulingService BuildScheduling
+@inject IBuildTemplateService BuildTemplateService
 @inject IMachineService MachineService
 @inject IPartService PartService
 @inject ToastService Toast
 @inject ITenantFeatureService Features
-@rendermode InteractiveServer
+@inject NavigationManager Navigation
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
 
@@ -32,13 +33,86 @@
     </div>
 </div>
 
-@if (_packages == null) { <div class="loading"><span class="spinner"></span></div> }
-else if (!_filteredPackages.Any())
+@if (_packages == null)
+{
+    <div class="loading"><span class="spinner"></span></div>
+}
+else if (!_filteredPackages.Any() && string.IsNullOrEmpty(_statusFilter))
 {
     <div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-text">No build packages found. Create one to start planning SLS builds.</div></div>
 }
 else
 {
+    @* ── Build Pipeline Summary ── *@
+    <div class="builds-pipeline-summary" style="margin-bottom: 16px;">
+        @{
+            var allPkgs = _packages!;
+            var draftCount = allPkgs.Count(p => p.Status == BuildPackageStatus.Draft);
+            var slicedCount = allPkgs.Count(p => p.Status == BuildPackageStatus.Sliced);
+            var readyCount = allPkgs.Count(p => p.Status == BuildPackageStatus.Ready);
+            var scheduledCount = allPkgs.Count(p => p.Status == BuildPackageStatus.Scheduled);
+            var printingCount = allPkgs.Count(p => p.Status == BuildPackageStatus.Printing);
+            var postPrintCount = allPkgs.Count(p => p.Status == BuildPackageStatus.PostPrint);
+            var completedCount = allPkgs.Count(p => p.Status == BuildPackageStatus.Completed);
+            var totalParts = allPkgs.Where(p => p.Status != BuildPackageStatus.Cancelled && p.Status != BuildPackageStatus.Completed).Sum(p => p.TotalPartCount);
+        }
+        <div class="builds-pipeline-stat" @onclick="ClearFilter" style="cursor:pointer;" title="All builds">
+            <span class="builds-pipeline-count">@allPkgs.Count(p => p.Status != BuildPackageStatus.Cancelled)</span>
+            <span class="builds-pipeline-label">Total Builds</span>
+        </div>
+        @if (draftCount > 0)
+        {
+            <div class="builds-pipeline-stat" @onclick='() => _statusFilter = "Draft"' style="cursor:pointer;" title="Filter: Draft">
+                <span class="builds-pipeline-count">@draftCount</span>
+                <span class="builds-pipeline-label">📝 Draft</span>
+            </div>
+        }
+        @if (slicedCount > 0)
+        {
+            <div class="builds-pipeline-stat" @onclick='() => _statusFilter = "Sliced"' style="cursor:pointer;" title="Filter: Sliced">
+                <span class="builds-pipeline-count">@slicedCount</span>
+                <span class="builds-pipeline-label">📐 Sliced</span>
+            </div>
+        }
+        @if (readyCount > 0)
+        {
+            <div class="builds-pipeline-stat builds-pipeline-stat--ready" @onclick='() => _statusFilter = "Ready"' style="cursor:pointer;" title="Filter: Ready">
+                <span class="builds-pipeline-count">@readyCount</span>
+                <span class="builds-pipeline-label">✅ Ready</span>
+            </div>
+        }
+        @if (scheduledCount > 0)
+        {
+            <div class="builds-pipeline-stat" @onclick='() => _statusFilter = "Scheduled"' style="cursor:pointer;" title="Filter: Scheduled">
+                <span class="builds-pipeline-count">@scheduledCount</span>
+                <span class="builds-pipeline-label">📅 Scheduled</span>
+            </div>
+        }
+        @if (printingCount > 0)
+        {
+            <div class="builds-pipeline-stat builds-pipeline-stat--printing" @onclick='() => _statusFilter = "Printing"' style="cursor:pointer;" title="Filter: Printing">
+                <span class="builds-pipeline-count">@printingCount</span>
+                <span class="builds-pipeline-label">🖨️ Printing</span>
+            </div>
+        }
+        @if (postPrintCount > 0)
+        {
+            <div class="builds-pipeline-stat builds-pipeline-stat--post" @onclick='() => _statusFilter = "PostPrint"' style="cursor:pointer;" title="Filter: Post-Print">
+                <span class="builds-pipeline-count">@postPrintCount</span>
+                <span class="builds-pipeline-label">🔥 Post-Print</span>
+            </div>
+        }
+        <div class="builds-pipeline-stat">
+            <span class="builds-pipeline-count">@totalParts</span>
+            <span class="builds-pipeline-label">Parts Active</span>
+        </div>
+    </div>
+
+    @if (!_filteredPackages.Any())
+    {
+        <div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">No builds match the selected filter.</div></div>
+    }
+
     @foreach (var pkg in _filteredPackages)
     {
         <div class="card" style="margin-bottom:1rem">
@@ -84,6 +158,10 @@ else
                     {
                         <button class="btn btn-sm btn-outline-secondary" @onclick="() => UnlockBuild(pkg)" title="Unlock / Reopen" disabled="@_processing">🔓</button>
                     }
+                    @if (pkg.Status == BuildPackageStatus.Completed)
+                    {
+                        <button class="btn btn-sm btn-success" @onclick="() => ShowCertifyAsTemplate(pkg)" title="Create a reusable template from this build" disabled="@_processing">✅ Certify as Template</button>
+                    }
                     @if (pkg.Status != BuildPackageStatus.Completed && pkg.Status != BuildPackageStatus.Cancelled)
                     {
                         <button class="btn btn-sm btn-danger" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Cancelled)" title="Cancel" disabled="@_processing">❌</button>
@@ -92,11 +170,39 @@ else
             </div>
 
             @* ── Build Summary Grid ── *@
+            @{
+                var partMaterials = pkg.Parts
+                    .Select(pp => pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material)
+                    .Where(m => !string.IsNullOrWhiteSpace(m))
+                    .Distinct()
+                    .ToList();
+                var derivedMaterial = partMaterials.Any() ? string.Join(", ", partMaterials) : pkg.Material;
+                var woLinks = pkg.Parts
+                    .Where(pp => pp.WorkOrderLine?.WorkOrder != null)
+                    .Select(pp => pp.WorkOrderLine!.WorkOrder)
+                    .DistinctBy(wo => wo.Id)
+                    .ToList();
+            }
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px;">
                 <div><span class="form-label">Machine</span><div>@(_machineNames.GetValueOrDefault(pkg.MachineId, pkg.MachineId))</div></div>
                 <div><span class="form-label">Parts on Plate</span><div>@pkg.TotalPartCount total (@pkg.UniquePartCount unique)</div></div>
                 <div><span class="form-label">Est. Duration</span><div>@(pkg.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div></div>
-                @if (!string.IsNullOrWhiteSpace(pkg.Material)) { <div><span class="form-label">Material</span><div>@pkg.Material</div></div> }
+                @if (!string.IsNullOrWhiteSpace(derivedMaterial))
+                {
+                    <div><span class="form-label">Material</span><div>@derivedMaterial</div></div>
+                }
+                @if (woLinks.Any())
+                {
+                    <div>
+                        <span class="form-label">Work Orders</span>
+                        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                            @foreach (var wo in woLinks)
+                            {
+                                <a href="/workorders/@wo.Id" class="badge badge-info" style="font-size:0.72rem;text-decoration:none;">@wo.OrderNumber</a>
+                            }
+                        </div>
+                    </div>
+                }
                 @if (pkg.ScheduledDate.HasValue) { <div><span class="form-label">Scheduled</span><div>@pkg.ScheduledDate.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
                 @if (pkg.PrintStartedAt.HasValue) { <div><span class="form-label">Print Started</span><div>@pkg.PrintStartedAt.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
                 @if (pkg.PrintCompletedAt.HasValue) { <div><span class="form-label">Print Completed</span><div>@pkg.PrintCompletedAt.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
@@ -132,13 +238,23 @@ else
                                             <strong>@(pp.Part?.PartNumber ?? $"#{pp.PartId}")</strong>
                                             @if (!string.IsNullOrEmpty(pp.Part?.Name)) { <span style="color:var(--text-secondary)"> — @pp.Part.Name</span> }
                                         </div>
-                                        @if (partConfig != null)
-                                        {
-                                            <div style="font-size:0.75rem;color:var(--text-secondary);">
-                                                Plan: @(partConfig.PlannedPartsPerBuildSingle)/plate
-                                                @if (partConfig.AllowStacking) { <span> · Stacking: up to @(partConfig.MaxStackCount)x</span> }
-                                            </div>
-                                        }
+                                        <div style="font-size:0.75rem;color:var(--text-secondary);display:flex;gap:8px;flex-wrap:wrap;">
+                                            @if (!string.IsNullOrEmpty(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material))
+                                            {
+                                                <span>🧪 @(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material)</span>
+                                            }
+                                            @if (partConfig != null)
+                                            {
+                                                <span>Plan: @(partConfig.PlannedPartsPerBuildSingle)/plate</span>
+                                                @if (partConfig.AllowStacking) { <span>· Stacking: up to @(partConfig.MaxStackCount)x</span> }
+                                            }
+                                            @if (pp.WorkOrderLine?.WorkOrder != null)
+                                            {
+                                                <a href="/workorders/@pp.WorkOrderLine.WorkOrder.Id" style="text-decoration:none;">
+                                                    <span class="badge badge-info" style="font-size:0.65rem;padding:1px 5px;">WO: @pp.WorkOrderLine.WorkOrder.OrderNumber</span>
+                                                </a>
+                                            }
+                                        </div>
                                     </td>
                                     @if (isEditing && pkg.Status == BuildPackageStatus.Draft)
                                     {
@@ -291,8 +407,8 @@ else
                     }
                 </select>
             </div>
-            <div class="form-group"><label class="form-label">Material</label><input class="form-control" @bind="_newMaterial" placeholder="e.g. Nylon PA12" /></div>
             <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" @bind="_newNotes"></textarea></div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Material will be detected from parts added to this build.</div>
             <button class="btn btn-primary" @onclick="Create" disabled="@_creating">
                 @if (_creating) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
                 Create
@@ -356,6 +472,57 @@ else
     </div>
 }
 
+@* ── Return Banner (from Scheduler redirect) ── *@
+@if (!string.IsNullOrEmpty(ReturnTo))
+{
+    <div style="background: var(--bg-tertiary); border: 1px solid var(--accent); border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+        <span>🔗</span>
+        <span style="font-size: 0.9rem;">You were redirected from the scheduler.</span>
+        <a href="@ReturnTo" class="btn btn-sm btn-primary" style="margin-left: auto;">Return to Work Orders</a>
+    </div>
+}
+
+@* ── Certify as Template Modal ── *@
+@if (_showCertifyModal && _certifyTemplate != null)
+{
+    <div class="modal-overlay" @onclick="() => _showCertifyModal = false">
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 500px;">
+            <div class="modal-header">
+                <span class="modal-title">✅ Certify as Reusable Template</span>
+                <button class="modal-close" @onclick="() => _showCertifyModal = false">&times;</button>
+            </div>
+            <div style="padding: 4px 0 12px; color: var(--text-muted); font-size: 0.85rem;">
+                Create a certified build template from this completed build. It can be reused to schedule future builds instantly.
+            </div>
+            <div class="form-group">
+                <label class="form-label">Template Name <span style="color:var(--danger);">*</span></label>
+                <input class="form-control" @bind="_certifyName" placeholder="e.g. SUP-TUBE Single Stack 76pc" />
+            </div>
+            @if (_certifyTemplate.Parts.Any())
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem;">
+                    <div class="form-label" style="margin-bottom:4px">Template will include:</div>
+                    @foreach (var p in _certifyTemplate.Parts)
+                    {
+                        <div>@(p.Part?.PartNumber ?? "?") ×@p.Quantity (stack @(p.StackLevel)x)</div>
+                    }
+                    <div style="margin-top:6px;color:var(--text-secondary);">Duration: @(_certifyTemplate.EstimatedDurationHours.ToString("F1")) hrs</div>
+                </div>
+            }
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-success" @onclick="CertifyTemplateNow" disabled="@_processing">
+                    @if (_processing) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    ✅ Certify Now
+                </button>
+                <button class="btn btn-primary" @onclick="SaveTemplateAsDraft" disabled="@_processing">
+                    Save as Draft
+                </button>
+                <button class="btn btn-secondary" @onclick="() => _showCertifyModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
 </FeatureGate>
 
 @code {
@@ -367,7 +534,7 @@ else
     private bool _showCreate;
     private bool _processing;
     private bool _creating;
-    private string _newName = "", _newMachineId = "", _newMaterial = "", _newNotes = "";
+    private string _newName = "", _newMachineId = "", _newNotes = "";
     private string _statusFilter = "";
     private int _addPartId;
     private int _addPartQty = 1;
@@ -375,6 +542,16 @@ else
     private ConfirmDialog _confirmDialog = null!;
     private HashSet<int> _expandedRevisions = new();
     private Dictionary<int, List<BuildPackageRevision>> _revisionCache = new();
+
+    // Query parameters for scheduler redirect flow
+    [SupplyParameterFromQuery(Name = "newForPart")]
+    public int? NewForPart { get; set; }
+
+    [SupplyParameterFromQuery(Name = "woLineId")]
+    public int? WoLineId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnTo")]
+    public string? ReturnTo { get; set; }
 
     // Inline part editing
     private int? _editingPartId;
@@ -389,6 +566,8 @@ else
 
     private IEnumerable<BuildPackage> _filteredPackages =>
         _packages?.Where(p => string.IsNullOrEmpty(_statusFilter) || p.Status.ToString() == _statusFilter) ?? Enumerable.Empty<BuildPackage>();
+
+    private void ClearFilter() => _statusFilter = "";
 
     private IEnumerable<Part> FilteredAdditiveParts
     {
@@ -414,6 +593,19 @@ else
                 .Where(p => p.ManufacturingApproach?.RequiresBuildPlate == true)
                 .ToList();
             await LoadPackages();
+
+            // Auto-open create modal if redirected from scheduler with newForPart
+            if (NewForPart.HasValue)
+            {
+                var part = allParts.FirstOrDefault(p => p.Id == NewForPart.Value);
+                if (part != null)
+                {
+                    _newName = $"Build-{part.PartNumber}-{DateTime.UtcNow:MMdd}";
+                    _addPartId = part.Id;
+                    _addPartQty = 1;
+                    _showCreate = true;
+                }
+            }
         }
         catch (Exception ex) { Toast.ShowError($"Failed to load build planning: {ex.Message}"); }
     }
@@ -427,7 +619,7 @@ else
 
     private void ShowCreate()
     {
-        _newName = ""; _newMachineId = ""; _newMaterial = ""; _newNotes = "";
+        _newName = ""; _newMachineId = ""; _newNotes = "";
         _showCreate = true;
     }
 
@@ -442,7 +634,6 @@ else
             {
                 Name = _newName,
                 MachineId = _newMachineId,
-                Material = _newMaterial,
                 Notes = _newNotes,
                 CreatedBy = _currentUser,
                 LastModifiedBy = _currentUser
@@ -643,7 +834,7 @@ else
                 msg += $"\n⚠️ {result.ChangeoverInfo.SuggestedAction}";
 
             Toast.ShowSuccess(msg);
-            await LoadPackages();
+            Navigation.NavigateTo("/scheduler?view=builds");
         }
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
         finally { _processing = false; }
@@ -680,6 +871,59 @@ else
             await LoadPackages();
         }
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _processing = false; }
+    }
+
+    // ── Certify as Template ─────────────────────────────────────────
+
+    private bool _showCertifyModal;
+    private BuildTemplate? _certifyTemplate;
+    private string _certifyName = "";
+    private BuildPackage? _certifySourcePackage;
+
+    private async Task ShowCertifyAsTemplate(BuildPackage pkg)
+    {
+        try
+        {
+            _certifySourcePackage = pkg;
+            var template = await BuildTemplateService.CreateFromBuildPackageAsync(pkg.Id, _currentUser);
+            _certifyTemplate = template;
+            _certifyName = template.Name;
+            _showCertifyModal = true;
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to create template: {ex.Message}"); }
+    }
+
+    private async Task CertifyTemplateNow()
+    {
+        if (_certifyTemplate == null || string.IsNullOrWhiteSpace(_certifyName)) return;
+        _processing = true;
+        try
+        {
+            _certifyTemplate.Name = _certifyName;
+            await BuildTemplateService.UpdateAsync(_certifyTemplate);
+            await BuildTemplateService.CertifyAsync(_certifyTemplate.Id, _currentUser);
+            Toast.ShowSuccess($"Template '{_certifyName}' certified and ready for reuse!");
+            _showCertifyModal = false;
+            _certifyTemplate = null;
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to certify: {ex.Message}"); }
+        finally { _processing = false; }
+    }
+
+    private async Task SaveTemplateAsDraft()
+    {
+        if (_certifyTemplate == null || string.IsNullOrWhiteSpace(_certifyName)) return;
+        _processing = true;
+        try
+        {
+            _certifyTemplate.Name = _certifyName;
+            await BuildTemplateService.UpdateAsync(_certifyTemplate);
+            Toast.ShowSuccess($"Template '{_certifyName}' saved as Draft.");
+            _showCertifyModal = false;
+            _certifyTemplate = null;
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to save: {ex.Message}"); }
         finally { _processing = false; }
     }
 }

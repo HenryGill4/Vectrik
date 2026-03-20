@@ -14,7 +14,7 @@ public class PartServiceTests : IDisposable
     public PartServiceTests()
     {
         _db = TestDbContextFactory.Create();
-        _sut = new PartService(_db);
+        _sut = new PartService(_db, new BuildTemplateService(_db));
     }
 
     public void Dispose() => _db.Dispose();

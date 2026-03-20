@@ -121,6 +121,10 @@ public class TenantDbContext : DbContext
     // External Operations (Phase 6)
     public DbSet<ExternalOperation> ExternalOperations { get; set; }
 
+    // Build Templates (Scheduler Overhaul Phase A)
+    public DbSet<BuildTemplate> BuildTemplates { get; set; }
+    public DbSet<BuildTemplatePart> BuildTemplateParts { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -425,7 +429,7 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.PartId);
             entity.HasOne(e => e.WorkOrderLine)
-                .WithMany()
+                .WithMany(e => e.BuildPackageParts)
                 .HasForeignKey(e => e.WorkOrderLineId);
         });
 
@@ -741,6 +745,37 @@ public class TenantDbContext : DbContext
                 .WithOne(f => f.Step)
                 .HasForeignKey(f => f.WorkInstructionStepId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // BuildTemplate
+        modelBuilder.Entity<BuildTemplate>(entity =>
+        {
+            entity.HasMany(e => e.Parts)
+                .WithOne(e => e.BuildTemplate)
+                .HasForeignKey(e => e.BuildTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.SourceBuildPackage)
+                .WithMany()
+                .HasForeignKey(e => e.SourceBuildPackageId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.Material)
+                .WithMany()
+                .HasForeignKey(e => e.MaterialId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => e.Status);
+        });
+
+        // BuildTemplatePart
+        modelBuilder.Entity<BuildTemplatePart>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId);
+
+            entity.HasIndex(e => new { e.BuildTemplateId, e.PartId });
         });
     }
 }

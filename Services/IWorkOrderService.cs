@@ -6,6 +6,12 @@ namespace Opcentrix_V3.Services;
 public interface IWorkOrderService
 {
     Task<List<WorkOrder>> GetAllWorkOrdersAsync(WorkOrderStatus? statusFilter = null);
+
+    /// <summary>
+    /// Retrieves work orders matching any of the specified statuses in a single query.
+    /// </summary>
+    Task<List<WorkOrder>> GetWorkOrdersByStatusesAsync(params WorkOrderStatus[] statuses);
+
     Task<WorkOrder?> GetWorkOrderByIdAsync(int id);
     Task<WorkOrder?> GetWorkOrderDetailAsync(int id);
     Task<WorkOrder?> GetWorkOrderByNumberAsync(string orderNumber);
