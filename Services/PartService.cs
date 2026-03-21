@@ -359,7 +359,7 @@ public class PartService : IPartService
                 IsActive = true,
                 AllowParallelExecution = sr.AllowParallelExecution,
                 IsBlocking = sr.IsBlocking,
-                EstimatedHours = sr.EstimatedHours,
+                EstimatedMinutes = sr.EstimatedMinutes,
                 SetupTimeMinutes = sr.SetupTimeMinutes,
                 HourlyRateOverride = sr.HourlyRateOverride,
                 EstimatedCost = sr.EstimatedCost,
@@ -420,5 +420,174 @@ public class PartService : IPartService
         item.IsActive = false;
         item.LastModifiedDate = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+    }
+
+    // --- BOM Tree, Costing & Where-Used ---
+
+    public async Task<BomTreeNode> GetBomTreeAsync(int partId, int maxDepth = 10)
+    {
+        var part = await _db.Parts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == partId)
+            ?? throw new InvalidOperationException($"Part {partId} not found.");
+
+        var visited = new HashSet<int>();
+        return await BuildBomNodeAsync(part.Id, part.PartNumber, part.Name, 1m, 0, maxDepth, visited);
+    }
+
+    private async Task<BomTreeNode> BuildBomNodeAsync(
+        int partId, string partNumber, string partName,
+        decimal quantityPer, int level, int maxDepth, HashSet<int> visited)
+    {
+        var node = new BomTreeNode
+        {
+            PartId = partId,
+            PartNumber = partNumber,
+            PartName = partName,
+            QuantityPer = quantityPer,
+            Level = level
+        };
+
+        if (level >= maxDepth || !visited.Add(partId))
+            return node; // max depth or circular ref — stop expanding
+
+        var bomItems = await _db.PartBomItems
+            .Include(b => b.Material)
+            .Include(b => b.InventoryItem)
+            .Include(b => b.ChildPart)
+            .Where(b => b.PartId == partId && b.IsActive)
+            .OrderBy(b => b.SortOrder)
+            .AsNoTracking()
+            .ToListAsync();
+
+        node.BomItems = bomItems;
+
+        // Recursively expand sub-parts
+        foreach (var item in bomItems.Where(b => b.ItemType == Models.Enums.BomItemType.SubPart && b.ChildPartId.HasValue))
+        {
+            var childPart = item.ChildPart;
+            if (childPart == null) continue;
+
+            var childNode = await BuildBomNodeAsync(
+                childPart.Id, childPart.PartNumber, childPart.Name,
+                item.QuantityRequired, level + 1, maxDepth, visited);
+
+            node.Children.Add(childNode);
+        }
+
+        // Calculate total material cost for this node
+        decimal directCost = 0m;
+        foreach (var item in bomItems)
+        {
+            if (item.ItemType == Models.Enums.BomItemType.SubPart)
+            {
+                var childNode = node.Children.FirstOrDefault(c => c.PartId == item.ChildPartId);
+                if (childNode != null)
+                    directCost += item.GetExtendedCost(childNode.TotalMaterialCost);
+            }
+            else
+            {
+                directCost += item.GetExtendedCost();
+            }
+        }
+        node.TotalMaterialCost = directCost;
+
+        visited.Remove(partId); // allow same part in different branches
+        return node;
+    }
+
+    public async Task<BomCostSummary> CalculateBomCostAsync(int partId)
+    {
+        var tree = await GetBomTreeAsync(partId);
+
+        var rawMaterialCost = 0m;
+        var inventoryItemCost = 0m;
+        var subPartCost = 0m;
+        var totalLines = 0;
+
+        AccumulateCosts(tree, ref rawMaterialCost, ref inventoryItemCost, ref subPartCost, ref totalLines);
+
+        return new BomCostSummary(
+            partId,
+            rawMaterialCost,
+            inventoryItemCost,
+            subPartCost,
+            tree.TotalMaterialCost,
+            totalLines,
+            GetTreeDepth(tree));
+    }
+
+    private static void AccumulateCosts(BomTreeNode node,
+        ref decimal rawMaterial, ref decimal inventory, ref decimal subPart, ref int lineCount)
+    {
+        foreach (var item in node.BomItems)
+        {
+            lineCount++;
+            switch (item.ItemType)
+            {
+                case Models.Enums.BomItemType.RawMaterial:
+                    rawMaterial += item.GetExtendedCost();
+                    break;
+                case Models.Enums.BomItemType.InventoryItem:
+                    inventory += item.GetExtendedCost();
+                    break;
+                case Models.Enums.BomItemType.SubPart:
+                    var childNode = node.Children.FirstOrDefault(c => c.PartId == item.ChildPartId);
+                    if (childNode != null)
+                        subPart += item.GetExtendedCost(childNode.TotalMaterialCost);
+                    break;
+            }
+        }
+
+        foreach (var child in node.Children)
+            AccumulateCosts(child, ref rawMaterial, ref inventory, ref subPart, ref lineCount);
+    }
+
+    private static int GetTreeDepth(BomTreeNode node)
+    {
+        if (node.Children.Count == 0) return 0;
+        return 1 + node.Children.Max(GetTreeDepth);
+    }
+
+    public async Task<List<WhereUsedEntry>> GetWhereUsedAsync(int partId)
+    {
+        return await _db.PartBomItems
+            .Include(b => b.Part)
+            .Where(b => b.ChildPartId == partId && b.IsActive && b.ItemType == Models.Enums.BomItemType.SubPart)
+            .Select(b => new WhereUsedEntry(
+                b.PartId,
+                b.Part.PartNumber,
+                b.Part.Name,
+                b.QuantityRequired,
+                b.ReferenceDesignator))
+            .AsNoTracking()
+            .ToListAsync();
+    }
+
+    public async Task<bool> WouldCreateCircularBomAsync(int parentPartId, int childPartId)
+    {
+        if (parentPartId == childPartId) return true;
+
+        // Walk the child's BOM tree to see if parentPartId appears anywhere
+        var visited = new HashSet<int> { parentPartId };
+        return await HasAncestorAsync(childPartId, visited);
+    }
+
+    private async Task<bool> HasAncestorAsync(int partId, HashSet<int> ancestors)
+    {
+        if (ancestors.Contains(partId)) return true;
+
+        var childPartIds = await _db.PartBomItems
+            .Where(b => b.PartId == partId && b.IsActive
+                && b.ItemType == Models.Enums.BomItemType.SubPart
+                && b.ChildPartId.HasValue)
+            .Select(b => b.ChildPartId!.Value)
+            .ToListAsync();
+
+        foreach (var childId in childPartIds)
+        {
+            if (await HasAncestorAsync(childId, ancestors))
+                return true;
+        }
+
+        return false;
     }
 }

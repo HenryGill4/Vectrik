@@ -211,10 +211,10 @@ public class BuildTemplateService : IBuildTemplateService
     // ── Instantiation ─────────────────────────────────────────
 
     public async Task<BuildPackage> InstantiateAsync(
-        int templateId, string machineId, string createdBy, int? workOrderLineId = null)
+        int templateId, int machineId, string createdBy, int? workOrderLineId = null)
     {
-        if (string.IsNullOrWhiteSpace(machineId))
-            throw new ArgumentException("MachineId is required.", nameof(machineId));
+        if (machineId <= 0)
+            throw new ArgumentException("MachineId must be a valid machine ID.", nameof(machineId));
 
         var template = await _db.BuildTemplates
             .Include(t => t.Parts).ThenInclude(p => p.Part)

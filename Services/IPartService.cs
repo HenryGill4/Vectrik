@@ -34,7 +34,74 @@ public interface IPartService
     Task<PartBomItem> AddBomItemAsync(PartBomItem item);
     Task<PartBomItem> UpdateBomItemAsync(PartBomItem item);
     Task RemoveBomItemAsync(int itemId);
+
+    // BOM Costing & Assembly
+    /// <summary>
+    /// Builds the full BOM tree for a part, resolving sub-part references recursively.
+    /// Detects and prevents circular references.
+    /// </summary>
+    Task<BomTreeNode> GetBomTreeAsync(int partId, int maxDepth = 10);
+
+    /// <summary>
+    /// Calculates the total BOM material cost for one unit of a part.
+    /// Recursively rolls up sub-part costs from the BOM tree.
+    /// </summary>
+    Task<BomCostSummary> CalculateBomCostAsync(int partId);
+
+    /// <summary>
+    /// Reverse lookup: finds all parent assemblies that reference this part in their BOM.
+    /// </summary>
+    Task<List<WhereUsedEntry>> GetWhereUsedAsync(int partId);
+
+    /// <summary>
+    /// Validates that adding childPartId to parentPartId's BOM won't create a circular reference.
+    /// </summary>
+    Task<bool> WouldCreateCircularBomAsync(int parentPartId, int childPartId);
 }
+
+/// <summary>
+/// Represents one node in a multi-level BOM tree.
+/// </summary>
+public class BomTreeNode
+{
+    public int PartId { get; set; }
+    public string PartNumber { get; set; } = string.Empty;
+    public string PartName { get; set; } = string.Empty;
+    public decimal QuantityPer { get; set; } = 1m;
+    public int Level { get; set; }
+    public bool IsLeaf => Children.Count == 0 && BomItems.All(b => b.ItemType != Opcentrix_V3.Models.Enums.BomItemType.SubPart);
+
+    /// <summary>Direct BOM items for this part (materials, inventory items, and sub-part references).</summary>
+    public List<PartBomItem> BomItems { get; set; } = [];
+
+    /// <summary>Expanded sub-part children (recursive BOM tree nodes).</summary>
+    public List<BomTreeNode> Children { get; set; } = [];
+
+    /// <summary>Total material cost for one unit of this part (rolled up from children + direct items).</summary>
+    public decimal TotalMaterialCost { get; set; }
+}
+
+/// <summary>
+/// Summary of BOM material costs for a single part.
+/// </summary>
+public record BomCostSummary(
+    int PartId,
+    decimal RawMaterialCost,
+    decimal InventoryItemCost,
+    decimal SubPartCost,
+    decimal TotalBomCost,
+    int TotalLineItems,
+    int TreeDepth);
+
+/// <summary>
+/// Reverse BOM lookup entry: shows which parent assembly uses a part.
+/// </summary>
+public record WhereUsedEntry(
+    int ParentPartId,
+    string ParentPartNumber,
+    string ParentPartName,
+    decimal QuantityPer,
+    string? ReferenceDesignator);
 
 public class PartUsageSummary
 {

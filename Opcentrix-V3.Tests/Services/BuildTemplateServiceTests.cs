@@ -49,6 +49,22 @@ public class BuildTemplateServiceTests : IDisposable
             LastModifiedBy = "test-user"
         };
 
+    private async Task<Machine> SeedMachineAsync(string machineId = "M4-1", string name = "Machine 4-1")
+    {
+        var machine = new Machine
+        {
+            MachineId = machineId,
+            Name = name,
+            MachineType = "SLS",
+            IsActive = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.Machines.Add(machine);
+        await _db.SaveChangesAsync();
+        return machine;
+    }
+
     private async Task<BuildTemplate> CreateCertifiedTemplateAsync(string name = "Certified Template")
     {
         var part = await SavePartAsync();
@@ -307,11 +323,12 @@ public class BuildTemplateServiceTests : IDisposable
     public async Task InstantiateAsync_CreatesBuildPackageFromCertifiedTemplate()
     {
         var certified = await CreateCertifiedTemplateAsync();
+        var machine = await SeedMachineAsync();
 
-        var result = await _sut.InstantiateAsync(certified.Id, "M4-1", "scheduler");
+        var result = await _sut.InstantiateAsync(certified.Id, machine.Id, "scheduler");
 
         Assert.True(result.Id > 0);
-        Assert.Equal("M4-1", result.MachineId);
+        Assert.Equal(machine.Id, result.MachineId);
         Assert.Equal(BuildPackageStatus.Sliced, result.Status);
         Assert.True(result.IsSlicerDataEntered);
         Assert.Equal(certified.EstimatedDurationHours, result.EstimatedDurationHours);
@@ -326,9 +343,10 @@ public class BuildTemplateServiceTests : IDisposable
     public async Task InstantiateAsync_IncrementsUseCount()
     {
         var certified = await CreateCertifiedTemplateAsync();
+        var machine = await SeedMachineAsync();
         Assert.Equal(0, certified.UseCount);
 
-        await _sut.InstantiateAsync(certified.Id, "M4-1", "scheduler");
+        await _sut.InstantiateAsync(certified.Id, machine.Id, "scheduler");
 
         var template = await _sut.GetByIdAsync(certified.Id);
         Assert.Equal(1, template!.UseCount);
@@ -341,9 +359,10 @@ public class BuildTemplateServiceTests : IDisposable
         var template = await _sut.CreateAsync(CreateTestTemplate());
         var part = await SavePartAsync();
         await _sut.AddPartAsync(template.Id, part.Id, 10);
+        var machine = await SeedMachineAsync();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _sut.InstantiateAsync(template.Id, "M4-1", "scheduler"));
+            () => _sut.InstantiateAsync(template.Id, machine.Id, "scheduler"));
     }
 
     [Fact]
@@ -352,10 +371,11 @@ public class BuildTemplateServiceTests : IDisposable
         var certified = await CreateCertifiedTemplateAsync();
         var extraPart = await SavePartAsync("PN-002", "Extra");
         await _sut.AddPartAsync(certified.Id, extraPart.Id, 5);
+        var machine = await SeedMachineAsync();
 
         // NeedsRecertification was set by AddPartAsync
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _sut.InstantiateAsync(certified.Id, "M4-1", "scheduler"));
+            () => _sut.InstantiateAsync(certified.Id, machine.Id, "scheduler"));
     }
 
     [Fact]
@@ -382,7 +402,9 @@ public class BuildTemplateServiceTests : IDisposable
         _db.WorkOrderLines.Add(woLine);
         await _db.SaveChangesAsync();
 
-        var result = await _sut.InstantiateAsync(certified.Id, "M4-1", "scheduler", woLine.Id);
+        var machine = await SeedMachineAsync();
+
+        var result = await _sut.InstantiateAsync(certified.Id, machine.Id, "scheduler", woLine.Id);
 
         var buildParts = await _db.BuildPackageParts
             .Where(p => p.BuildPackageId == result.Id)
@@ -396,10 +418,11 @@ public class BuildTemplateServiceTests : IDisposable
     public async Task CreateFromBuildPackageAsync_CreatesTemplateFromCompletedBuild()
     {
         var part = await SavePartAsync();
+        var machine = await SeedMachineAsync();
         var build = new BuildPackage
         {
             Name = "Build Plate 1",
-            MachineId = "M4-1",
+            MachineId = machine.Id,
             Status = BuildPackageStatus.Completed,
             EstimatedDurationHours = 12.0,
             BuildParameters = "{\"power\": 200}",
@@ -438,10 +461,11 @@ public class BuildTemplateServiceTests : IDisposable
     [Fact]
     public async Task CreateFromBuildPackageAsync_WhenBuildNotCompleted_Throws()
     {
+        var machine = await SeedMachineAsync();
         var build = new BuildPackage
         {
             Name = "Incomplete Build",
-            MachineId = "M4-1",
+            MachineId = machine.Id,
             Status = BuildPackageStatus.Printing,
             CreatedBy = "test",
             LastModifiedBy = "test"

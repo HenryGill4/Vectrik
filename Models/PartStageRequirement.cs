@@ -23,7 +23,11 @@ public class PartStageRequirement
     public bool IsBlocking { get; set; } = true;
 
     // Timing & Cost Overrides
-    public double? EstimatedHours { get; set; }
+    /// <summary>
+    /// Estimated processing time in minutes for per-part stages.
+    /// Build-level stages get their duration from the build configuration.
+    /// </summary>
+    public int? EstimatedMinutes { get; set; }
     public int? SetupTimeMinutes { get; set; }
 
     [Column(TypeName = "decimal(8,2)")]
@@ -85,11 +89,34 @@ public class PartStageRequirement
     public virtual ProductionStage ProductionStage { get; set; } = null!;
 
     // Helper methods
+    /// <summary>
+    /// Returns the effective estimated time in hours for scheduling/costing.
+    /// Converts EstimatedMinutes to hours, or uses learned duration if available.
+    /// Build-level stages should get duration from build config instead.
+    /// </summary>
     public double GetEffectiveEstimatedHours()
     {
         if (ActualAverageDurationHours.HasValue && EstimateSource == "Auto")
             return ActualAverageDurationHours.Value;
-        return EstimatedHours ?? ProductionStage?.DefaultDurationHours ?? 1.0;
+
+        // Convert minutes to hours if set, otherwise use stage default
+        if (EstimatedMinutes.HasValue)
+            return EstimatedMinutes.Value / 60.0;
+
+        return ProductionStage?.DefaultDurationHours ?? 1.0;
+    }
+
+    /// <summary>
+    /// Returns the estimated minutes for display purposes.
+    /// </summary>
+    public int GetEffectiveEstimatedMinutes()
+    {
+        if (EstimatedMinutes.HasValue)
+            return EstimatedMinutes.Value;
+
+        // Convert stage default hours to minutes
+        var defaultHours = ProductionStage?.DefaultDurationHours ?? 1.0;
+        return (int)(defaultHours * 60);
     }
 
     public decimal GetEffectiveHourlyRate()

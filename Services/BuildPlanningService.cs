@@ -20,12 +20,17 @@ public class BuildPlanningService : IBuildPlanningService
     public async Task<List<BuildPackage>> GetAllPackagesAsync()
     {
         return await _db.BuildPackages
+            .Include(p => p.Machine)
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.Part)
                     .ThenInclude(part => part.AdditiveBuildConfig)
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.Part)
                     .ThenInclude(part => part.MaterialEntity)
+            .Include(p => p.Parts)
+                .ThenInclude(pp => pp.Part)
+                    .ThenInclude(part => part.StageRequirements)
+                        .ThenInclude(sr => sr.ProductionStage)
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.WorkOrderLine)
                     .ThenInclude(wl => wl!.WorkOrder)
@@ -34,9 +39,21 @@ public class BuildPlanningService : IBuildPlanningService
             .ToListAsync();
     }
 
+    public async Task<List<BuildPackage>> GetBuildsForPartAsync(int partId)
+    {
+        return await _db.BuildPackages
+            .Include(p => p.Machine)
+            .Include(p => p.Parts)
+                .ThenInclude(pp => pp.Part)
+            .Where(p => p.Parts.Any(pp => pp.PartId == partId))
+            .OrderByDescending(p => p.CreatedDate)
+            .ToListAsync();
+    }
+
     public async Task<BuildPackage?> GetPackageByIdAsync(int id)
     {
         return await _db.BuildPackages
+            .Include(p => p.Machine)
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.Part)
             .Include(p => p.Parts)
@@ -329,15 +346,13 @@ public class BuildPlanningService : IBuildPlanningService
             await _db.SaveChangesAsync();
         }
 
-        // Build a lookup from string MachineId → int Id for machine assignment
+        // Build a lookup from string MachineId → int Id for stage machine resolution
         var machineLookup = await _db.Machines
             .Where(m => m.IsActive)
             .ToDictionaryAsync(m => m.MachineId, m => m.Id);
 
-        // Resolve the build's SLS machine (for the print stage)
-        int? buildMachineIntId = null;
-        if (!string.IsNullOrEmpty(package.MachineId) && machineLookup.TryGetValue(package.MachineId, out var bmId))
-            buildMachineIntId = bmId;
+        // The build's SLS machine is already an int FK
+        int? buildMachineIntId = package.MachineId;
 
         var executions = new List<StageExecution>();
         var sortOrder = 0;
@@ -347,13 +362,28 @@ public class BuildPlanningService : IBuildPlanningService
         {
             var estimatedHours = stage.DefaultDurationHours;
 
-            // SLS printing stage gets duration from slice file or package estimate
-            if (stage.StageSlug == "sls-printing")
+            // Use custom durations from BuildPackage when set, otherwise fall back to stage defaults
+            switch (stage.StageSlug)
             {
-                if (package.BuildFileInfo?.EstimatedPrintTimeHours != null)
-                    estimatedHours = (double)package.BuildFileInfo.EstimatedPrintTimeHours.Value;
-                else if (package.EstimatedDurationHours.HasValue)
-                    estimatedHours = package.EstimatedDurationHours.Value;
+                case "sls-printing":
+                    // SLS printing stage gets duration from slice file or package estimate
+                    if (package.BuildFileInfo?.EstimatedPrintTimeHours != null)
+                        estimatedHours = (double)package.BuildFileInfo.EstimatedPrintTimeHours.Value;
+                    else if (package.EstimatedDurationHours.HasValue)
+                        estimatedHours = package.EstimatedDurationHours.Value;
+                    break;
+                case "depowdering":
+                    if (package.DepowderingHours.HasValue)
+                        estimatedHours = package.DepowderingHours.Value;
+                    break;
+                case "heat-treatment":
+                    if (package.HeatTreatmentHours.HasValue)
+                        estimatedHours = package.HeatTreatmentHours.Value;
+                    break;
+                case "wire-edm":
+                    if (package.WireEdmHours.HasValue)
+                        estimatedHours = package.WireEdmHours.Value;
+                    break;
             }
 
             // Resolve the correct machine for this stage
@@ -415,11 +445,19 @@ public class BuildPlanningService : IBuildPlanningService
             .Select(s => s.Id)
             .ToListAsync();
 
-        foreach (var bpPart in package.Parts)
+        // Group parts by (PartId, WorkOrderLineId) so we create 1 job per part-type per WO line
+        var partGroups = package.Parts
+            .GroupBy(p => new { p.PartId, p.WorkOrderLineId })
+            .ToList();
+
+        foreach (var group in partGroups)
         {
+            var representative = group.First();
+            var totalQuantity = group.Sum(p => p.Quantity);
+
             // Load the part's routing
             var routing = await _db.PartStageRequirements
-                .Where(r => r.PartId == bpPart.PartId && r.IsActive)
+                .Where(r => r.PartId == group.Key.PartId && r.IsActive)
                 .OrderBy(r => r.ExecutionOrder)
                 .Include(r => r.ProductionStage)
                 .ToListAsync();
@@ -428,50 +466,46 @@ public class BuildPlanningService : IBuildPlanningService
             var partStages = routing.Where(r => !buildLevelStageIds.Contains(r.ProductionStageId)).ToList();
             if (partStages.Count == 0) continue;
 
-            // Create one job per part-line for downstream stages
-            for (var unit = 0; unit < bpPart.Quantity; unit++)
+            var job = new Job
             {
-                var job = new Job
+                JobNumber = await _numberSeq.NextAsync("Job"),
+                PartId = group.Key.PartId,
+                WorkOrderLineId = group.Key.WorkOrderLineId,
+                Quantity = totalQuantity,
+                Status = JobStatus.Scheduled,
+                Priority = JobPriority.Normal,
+                ScheduledStart = DateTime.UtcNow,
+                ScheduledEnd = DateTime.UtcNow.AddDays(7),
+                EstimatedHours = partStages.Sum(r => r.GetEffectiveEstimatedHours()),
+                Notes = $"Post-build processing: {representative.Part.PartNumber} x{totalQuantity} (build plate {package.Name})",
+                CreatedBy = createdBy,
+                LastModifiedBy = createdBy,
+                CreatedDate = DateTime.UtcNow,
+                LastModifiedDate = DateTime.UtcNow
+            };
+            _db.Jobs.Add(job);
+            await _db.SaveChangesAsync(); // Need ID for stage executions
+
+            var sortOrder = 0;
+            foreach (var req in partStages)
+            {
+                var execution = new StageExecution
                 {
-                    JobNumber = await _numberSeq.NextAsync("Job"),
-                    PartId = bpPart.PartId,
-                    WorkOrderLineId = bpPart.WorkOrderLineId,
-                    Quantity = 1,
-                    Status = JobStatus.Scheduled,
-                    Priority = JobPriority.Normal,
-                    ScheduledStart = DateTime.UtcNow,
-                    ScheduledEnd = DateTime.UtcNow.AddDays(7),
-                    EstimatedHours = partStages.Sum(r => r.EstimatedHours ?? r.ProductionStage.DefaultDurationHours),
-                    Notes = $"Post-EDM processing: {bpPart.Part.PartNumber} (build plate {package.Name})",
+                    JobId = job.Id,
+                    ProductionStageId = req.ProductionStageId,
+                    Status = StageExecutionStatus.NotStarted,
+                    EstimatedHours = req.GetEffectiveEstimatedHours(),
+                    EstimatedCost = req.EstimatedCost,
+                    MaterialCost = req.MaterialCost,
+                    SetupHours = req.SetupTimeMinutes.HasValue ? req.SetupTimeMinutes.Value / 60.0 : req.ProductionStage.DefaultSetupMinutes / 60.0,
+                    QualityCheckRequired = req.ProductionStage.RequiresQualityCheck,
+                    SortOrder = sortOrder++,
                     CreatedBy = createdBy,
                     LastModifiedBy = createdBy,
                     CreatedDate = DateTime.UtcNow,
                     LastModifiedDate = DateTime.UtcNow
                 };
-                _db.Jobs.Add(job);
-                await _db.SaveChangesAsync(); // Need ID for stage executions
-
-                var sortOrder = 0;
-                foreach (var req in partStages)
-                {
-                    var execution = new StageExecution
-                    {
-                        JobId = job.Id,
-                        ProductionStageId = req.ProductionStageId,
-                        Status = StageExecutionStatus.NotStarted,
-                        EstimatedHours = req.EstimatedHours ?? req.ProductionStage.DefaultDurationHours,
-                        EstimatedCost = req.EstimatedCost,
-                        MaterialCost = req.MaterialCost,
-                        SetupHours = req.SetupTimeMinutes.HasValue ? req.SetupTimeMinutes.Value / 60.0 : req.ProductionStage.DefaultSetupMinutes / 60.0,
-                        QualityCheckRequired = req.ProductionStage.RequiresQualityCheck,
-                        SortOrder = sortOrder++,
-                        CreatedBy = createdBy,
-                        LastModifiedBy = createdBy,
-                        CreatedDate = DateTime.UtcNow,
-                        LastModifiedDate = DateTime.UtcNow
-                    };
-                    _db.StageExecutions.Add(execution);
-                }
+                _db.StageExecutions.Add(execution);
             }
         }
 

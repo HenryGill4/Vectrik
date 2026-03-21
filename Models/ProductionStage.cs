@@ -65,6 +65,20 @@ public class ProductionStage
     public double DefaultDurationHours { get; set; } = 1.0;
     public bool IsBatchStage { get; set; }
     public bool IsBuildLevelStage { get; set; }
+
+    /// <summary>
+    /// How many parts can be processed simultaneously at this stage.
+    /// E.g., laser engraver with a 6x6 grid can run 36 parts at once.
+    /// Default is 1 (one part at a time).
+    /// </summary>
+    public int BatchCapacity { get; set; } = 1;
+
+    /// <summary>
+    /// When a build-level stage execution with this stage completes, trigger plate release
+    /// for the associated build package (if any).
+    /// </summary>
+    public bool TriggerPlateRelease { get; set; }
+
     public bool IsExternalOperation { get; set; }
     public double? DefaultTurnaroundDays { get; set; }
     public bool IsActive { get; set; } = true;

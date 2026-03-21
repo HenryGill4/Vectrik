@@ -1,0 +1,364 @@
+@inject IJSRuntime JS
+
+@* ── Table View ── *@
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <span>📋 Stage Executions — @Executions.Count scheduled · @(Executions.Sum(e => e.EstimatedHours ?? 0).ToString("F0"))h total</span>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <input type="text" class="form-control" placeholder="Search WO, part, stage, machine…"
+                   @bind="_tableSearch" @bind:event="oninput" style="width: 220px; height: 32px; font-size: 0.85rem;" />
+            <div class="table-status-filter">
+                @foreach (var s in Enum.GetValues<StageExecutionStatus>())
+                {
+                    <label class="table-status-check">
+                        <input type="checkbox" checked="@IsStatusChecked(s)" @onchange="() => ToggleStatusFilter(s)" />
+                        <span class="badge badge-@s.ToString().ToLower()">@s</span>
+                    </label>
+                }
+            </div>
+            @if (Unscheduled.Any())
+            {
+                <span class="badge badge-warning">⚠️ @Unscheduled.Count unscheduled</span>
+            }
+        </div>
+    </div>
+
+    @* ── Bulk actions bar ── *@
+    @if (_selectedIds.Count > 0)
+    {
+        <div class="table-bulk-bar">
+            <span>@_selectedIds.Count selected</span>
+            <button class="btn btn-sm btn-warning" @onclick="BulkAutoScheduleAsync" disabled="@_bulkProcessing" title="Auto-schedule selected">
+                ⚡ Auto-schedule (@_selectedIds.Count)
+            </button>
+            <button class="btn btn-sm btn-secondary" @onclick="ClearSelection">✕ Clear</button>
+            <div style="margin-left:auto;">
+                <button class="btn btn-sm btn-secondary" @onclick="ExportCsvAsync" title="Export to CSV">📥 CSV</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="table-bulk-bar table-bulk-bar--subtle">
+            <span style="opacity:0.6;">No selection</span>
+            <div style="margin-left:auto;">
+                <button class="btn btn-sm btn-secondary" @onclick="ExportCsvAsync" title="Export to CSV">📥 CSV</button>
+            </div>
+        </div>
+    }
+
+    @if (!Executions.Any() && !Unscheduled.Any())
+    {
+        <div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No stage executions found</div></div>
+    }
+    else
+    {
+        <div style="overflow-x: auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:36px;">
+                            <input type="checkbox" checked="@_selectAll" @onchange="ToggleSelectAll" title="Select all" />
+                        </th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Priority")'>Priority @TableSortIcon("Priority")</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("WO")'>WO# @TableSortIcon("WO")</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Part")'>Part @TableSortIcon("Part")</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Stage")'>Stage @TableSortIcon("Stage")</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Machine")'>Machine @TableSortIcon("Machine")</th>
+                        <th>Operator</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Start")'>Start @TableSortIcon("Start")</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("End")'>End @TableSortIcon("End")</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Hours")'>Est. Hrs @TableSortIcon("Hours")</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Status")'>Status @TableSortIcon("Status")</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var exec in SortedTableExecutions)
+                    {
+                        var isMissing = exec.MachineId == null || exec.ScheduledStartAt == null;
+                        <tr class="@(isMissing ? "sched-row-warn" : "") @(_selectedIds.Contains(exec.Id) ? "sched-row-selected" : "")">
+                            <td>
+                                <input type="checkbox" checked="@_selectedIds.Contains(exec.Id)" @onchange="() => ToggleRow(exec.Id)" />
+                            </td>
+                            <td>
+                                <span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority ?? JobPriority.Normal)</span>
+                            </td>
+                            <td style="font-size:0.8rem;">
+                                @(exec.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "—")
+                            </td>
+                            <td style="font-weight: 600;">
+                                @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                {
+                                    <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
+                                }
+                                else
+                                {
+                                    @(exec.Job?.Part?.PartNumber ?? "—")
+                                }
+                            </td>
+                            <td>
+                                @if (exec.ProductionStage != null)
+                                {
+                                    <span style="display:inline-flex;align-items:center;gap:4px;">
+                                        <span style="width:8px;height:8px;border-radius:50%;background:@(exec.ProductionStage.StageColor);display:inline-block;"></span>
+                                        @ResolveStageIcon(exec.ProductionStage.StageIcon) @exec.ProductionStage.Name
+                                    </span>
+                                }
+                                else { <span>—</span> }
+                            </td>
+                            <td>
+                                @if (exec.Machine != null)
+                                {
+                                    @exec.Machine.Name
+                                }
+                                else
+                                {
+                                    <span style="color:var(--warning)">Unassigned</span>
+                                }
+                            </td>
+                            <td>@(exec.OperatorName ?? "—")</td>
+                            <td>@((exec.ScheduledStartAt ?? exec.Job?.ScheduledStart)?.ToString("MM/dd HH:mm") ?? "—")</td>
+                            <td>@((exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd)?.ToString("MM/dd HH:mm") ?? "—")</td>
+                            <td>@(exec.EstimatedHours?.ToString("F1") ?? "—")</td>
+                            <td><span class="badge badge-@exec.Status.ToString().ToLower()">@exec.Status</span></td>
+                            <td class="sched-table-actions">
+                                @if (exec.Status == StageExecutionStatus.NotStarted)
+                                {
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OnShowReschedule.InvokeAsync(exec)" title="Reschedule">📅</button>
+                                    @if (exec.MachineId == null || exec.ScheduledStartAt == null)
+                                    {
+                                        <button class="btn btn-sm btn-warning" @onclick="() => OnAutoSchedule.InvokeAsync(exec.Id)" title="Auto-schedule">⚡</button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
+    [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
+    [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
+    [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
+    [Parameter] public EventCallback OnRefreshRequested { get; set; }
+
+    private string _tableSortCol = "Start";
+    private bool _tableSortAsc = true;
+    private string _tableSearch = "";
+    private bool _bulkProcessing;
+
+    // Multi-status filter: null = all statuses shown, otherwise only checked statuses
+    private HashSet<StageExecutionStatus>? _statusFilter;
+
+    // Bulk selection
+    private HashSet<int> _selectedIds = [];
+    private bool _selectAll;
+
+    private bool IsStatusChecked(StageExecutionStatus s) =>
+        _statusFilter == null || _statusFilter.Contains(s);
+
+    private void ToggleStatusFilter(StageExecutionStatus s)
+    {
+        if (_statusFilter == null)
+        {
+            // First uncheck: show all EXCEPT this one
+            _statusFilter = new HashSet<StageExecutionStatus>(Enum.GetValues<StageExecutionStatus>());
+            _statusFilter.Remove(s);
+        }
+        else if (_statusFilter.Contains(s))
+        {
+            _statusFilter.Remove(s);
+            // If nothing is checked, go back to "all"
+            if (_statusFilter.Count == 0)
+                _statusFilter = null;
+        }
+        else
+        {
+            _statusFilter.Add(s);
+            // If all are checked, go back to "all"
+            if (_statusFilter.Count == Enum.GetValues<StageExecutionStatus>().Length)
+                _statusFilter = null;
+        }
+    }
+
+    private void ToggleTableSort(string column)
+    {
+        if (_tableSortCol == column)
+            _tableSortAsc = !_tableSortAsc;
+        else
+        {
+            _tableSortCol = column;
+            _tableSortAsc = true;
+        }
+    }
+
+    private IEnumerable<StageExecution> SortedTableExecutions
+    {
+        get
+        {
+            var all = Executions.Concat(Unscheduled).AsEnumerable();
+
+            // Multi-status filter
+            if (_statusFilter != null)
+                all = all.Where(e => _statusFilter.Contains(e.Status));
+
+            if (!string.IsNullOrWhiteSpace(_tableSearch))
+            {
+                var term = _tableSearch.Trim();
+                all = all.Where(e =>
+                    (e.Job?.Part?.PartNumber?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.BuildPackage?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.ProductionStage?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.Machine?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.OperatorName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            all = _tableSortCol switch
+            {
+                "Priority" => _tableSortAsc
+                    ? all.OrderBy(e => e.Job?.Priority ?? JobPriority.Normal)
+                    : all.OrderByDescending(e => e.Job?.Priority ?? JobPriority.Normal),
+                "WO" => _tableSortAsc
+                    ? all.OrderBy(e => e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "zzz")
+                    : all.OrderByDescending(e => e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? ""),
+                "Part" => _tableSortAsc
+                    ? all.OrderBy(e => e.Job?.Part?.PartNumber ?? e.BuildPackage?.Name ?? "")
+                    : all.OrderByDescending(e => e.Job?.Part?.PartNumber ?? e.BuildPackage?.Name ?? ""),
+                "Stage" => _tableSortAsc
+                    ? all.OrderBy(e => e.ProductionStage?.Name ?? "")
+                    : all.OrderByDescending(e => e.ProductionStage?.Name ?? ""),
+                "Machine" => _tableSortAsc
+                    ? all.OrderBy(e => e.Machine?.Name ?? "zzz")
+                    : all.OrderByDescending(e => e.Machine?.Name ?? "zzz"),
+                "End" => _tableSortAsc
+                    ? all.OrderBy(e => e.ScheduledEndAt ?? DateTime.MaxValue)
+                    : all.OrderByDescending(e => e.ScheduledEndAt ?? DateTime.MaxValue),
+                "Hours" => _tableSortAsc
+                    ? all.OrderBy(e => e.EstimatedHours ?? 0)
+                    : all.OrderByDescending(e => e.EstimatedHours ?? 0),
+                "Status" => _tableSortAsc
+                    ? all.OrderBy(e => e.Status)
+                    : all.OrderByDescending(e => e.Status),
+                _ => _tableSortAsc
+                    ? all.OrderBy(e => e.ScheduledStartAt ?? DateTime.MaxValue)
+                    : all.OrderByDescending(e => e.ScheduledStartAt ?? DateTime.MaxValue),
+            };
+
+            return all;
+        }
+    }
+
+    // ── Selection ──
+
+    private void ToggleRow(int id)
+    {
+        if (!_selectedIds.Remove(id))
+            _selectedIds.Add(id);
+        _selectAll = _selectedIds.Count == SortedTableExecutions.Count();
+    }
+
+    private void ToggleSelectAll()
+    {
+        if (_selectAll)
+        {
+            _selectedIds.Clear();
+            _selectAll = false;
+        }
+        else
+        {
+            _selectedIds = SortedTableExecutions.Select(e => e.Id).ToHashSet();
+            _selectAll = true;
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selectedIds.Clear();
+        _selectAll = false;
+    }
+
+    // ── Bulk actions ──
+
+    private async Task BulkAutoScheduleAsync()
+    {
+        _bulkProcessing = true;
+        StateHasChanged();
+        try
+        {
+            var count = 0;
+            foreach (var id in _selectedIds.ToList())
+            {
+                try
+                {
+                    await OnAutoSchedule.InvokeAsync(id);
+                    count++;
+                }
+                catch { /* skip failures, parent handles toast */ }
+            }
+            _selectedIds.Clear();
+            _selectAll = false;
+            await OnRefreshRequested.InvokeAsync();
+        }
+        finally
+        {
+            _bulkProcessing = false;
+        }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        var rows = SortedTableExecutions.ToList();
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Priority,WO#,Part,Stage,Machine,Operator,Start,End,Est.Hours,Status");
+        foreach (var e in rows)
+        {
+            var priority = e.Job?.Priority ?? JobPriority.Normal;
+            var wo = Escape(e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "");
+            var part = e.BuildPackageId != null && e.ProductionStage?.IsBuildLevelStage == true
+                ? Escape(e.BuildPackage?.Name ?? $"Build #{e.BuildPackageId}")
+                : Escape(e.Job?.Part?.PartNumber ?? "");
+            var stage = Escape(e.ProductionStage?.Name ?? "");
+            var machine = Escape(e.Machine?.Name ?? "Unassigned");
+            var op = Escape(e.OperatorName ?? "");
+            var start = (e.ScheduledStartAt ?? e.Job?.ScheduledStart)?.ToString("yyyy-MM-dd HH:mm") ?? "";
+            var end = (e.ScheduledEndAt ?? e.Job?.ScheduledEnd)?.ToString("yyyy-MM-dd HH:mm") ?? "";
+            var hours = e.EstimatedHours?.ToString("F1") ?? "";
+            sb.AppendLine($"{priority},{wo},{part},{stage},{machine},{op},{start},{end},{hours},{e.Status}");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var base64 = Convert.ToBase64String(bytes);
+        await JS.InvokeVoidAsync("eval", $"{{ const a=document.createElement('a'); a.href='data:text/csv;base64,{base64}'; a.download='schedule-export.csv'; a.click(); }}");
+    }
+
+    private static string Escape(string value) =>
+        value.Contains(',') || value.Contains('"') ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
+
+    private string TableSortIcon(string column) =>
+        _tableSortCol != column ? "⇅" : _tableSortAsc ? "↑" : "↓";
+
+    private static string ResolveStageIcon(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return "⚙️";
+        if (!icon.StartsWith("fas ") && !icon.StartsWith("far ") && !icon.StartsWith("fa-")) return icon;
+        return icon switch
+        {
+            "fas fa-print"           => "🖨️",
+            "fas fa-wind"            => "💨",
+            "fas fa-fire"            => "🔥",
+            "fas fa-bolt"            => "⚡",
+            "fas fa-cog"             => "⚙️",
+            "fas fa-pen-nib"         => "✒️",
+            "fas fa-spray-can"       => "🎨",
+            "fas fa-clipboard-check" => "✅",
+            "fas fa-truck"           => "🚚",
+            _                        => "⚙️"
+        };
+    }
+}

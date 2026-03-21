@@ -13,8 +13,11 @@ public class Job
 
     public int PartId { get; set; }
 
-    [MaxLength(50)]
-    public string? MachineId { get; set; }
+    /// <summary>
+    /// FK to Machine.Id — the default machine for this job.
+    /// Null when unassigned. Individual stage executions may use different machines.
+    /// </summary>
+    public int? MachineId { get; set; }
 
     public int? WorkOrderLineId { get; set; }
 
@@ -66,6 +69,7 @@ public class Job
 
     // Navigation
     public virtual Part Part { get; set; } = null!;
+    public virtual Machine? Machine { get; set; }
     public virtual Job? PredecessorJob { get; set; }
     public virtual User? OperatorUser { get; set; }
     public virtual WorkOrderLine? WorkOrderLine { get; set; }

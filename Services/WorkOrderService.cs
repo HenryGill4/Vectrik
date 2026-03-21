@@ -44,6 +44,9 @@ public class WorkOrderService : IWorkOrderService
                 .ThenInclude(l => l.Part)
                     .ThenInclude(p => p.ManufacturingApproach)
             .Include(w => w.Lines)
+                .ThenInclude(l => l.Part)
+                    .ThenInclude(p => p.AdditiveBuildConfig)
+            .Include(w => w.Lines)
                 .ThenInclude(l => l.Jobs)
             .Include(w => w.Lines)
                 .ThenInclude(l => l.BuildPackageParts)
@@ -152,6 +155,8 @@ public class WorkOrderService : IWorkOrderService
     {
         var wo = await _db.WorkOrders
             .Include(w => w.Lines)
+                .ThenInclude(l => l.Part)
+                    .ThenInclude(p => p.ManufacturingApproach)
             .FirstOrDefaultAsync(w => w.Id == workOrderId);
 
         if (wo == null) throw new InvalidOperationException("Work order not found.");
@@ -168,9 +173,15 @@ public class WorkOrderService : IWorkOrderService
                 line.Status = WorkOrderStatus.Released;
             }
 
-            // Auto-generate jobs for lines that don't have them yet
+            // Auto-generate jobs only for non-build-plate lines (CNC path).
+            // SLS/additive parts that require a build plate stay in Pending —
+            // they get jobs when a BuildPackage is created and plate is released.
             foreach (var line in wo.Lines)
             {
+                var requiresBuildPlate = line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
+                if (requiresBuildPlate)
+                    continue;
+
                 var hasJobs = await _db.Jobs.AnyAsync(j => j.WorkOrderLineId == line.Id);
                 if (!hasJobs)
                     await GenerateJobForLineAsync(line.Id, updatedBy);
@@ -240,13 +251,13 @@ public class WorkOrderService : IWorkOrderService
                 $"Part '{line.Part.PartNumber}' has no active routing. " +
                 "Add stage requirements in Parts → Edit before generating jobs.");
 
-        // Build machine lookup: string MachineId → int Id
+        // Build machine lookup: string MachineId → int Id for stage machine resolution
         var machineLookup = await _db.Machines
+            .Where(m => m.IsActive)
             .ToDictionaryAsync(m => m.MachineId, m => m.Id);
 
         // Single job for the entire routing
-        var totalEstHours = routing.Sum(r =>
-            r.EstimatedHours ?? r.ProductionStage.DefaultDurationHours);
+        var totalEstHours = routing.Sum(r => r.GetEffectiveEstimatedHours());
 
         var job = new Job
         {
@@ -282,7 +293,7 @@ public class WorkOrderService : IWorkOrderService
                 JobId = job.Id,
                 ProductionStageId = stage.ProductionStageId,
                 SortOrder = stage.ExecutionOrder,
-                EstimatedHours = stage.EstimatedHours ?? stage.ProductionStage.DefaultDurationHours,
+                EstimatedHours = stage.GetEffectiveEstimatedHours(),
                 EstimatedCost = stage.EstimatedCost,
                 MaterialCost = stage.MaterialCost,
                 SetupHours = stage.SetupTimeMinutes.HasValue ? stage.SetupTimeMinutes.Value / 60.0 : null,

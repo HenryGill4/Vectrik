@@ -11,7 +11,7 @@
     <div class="card" style="margin-bottom: 16px;">
         <div class="card-header">📦 Build Plate: @_buildPackage.Name</div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
-            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? _buildPackage.MachineId)</div></div>
+            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? _buildPackage.Machine?.Name ?? "—")</div></div>
             <div><span class="form-label">Material</span><div>@(_buildPackage.Material ?? "—")</div></div>
             <div><span class="form-label">Total Parts</span><div>@_buildPackage.TotalPartCount (@_buildPackage.UniquePartCount unique)</div></div>
             <div><span class="form-label">Est. Duration</span><div>@(_buildPackage.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div></div>
@@ -84,7 +84,7 @@ else
     <div class="card" style="margin-bottom: 16px;">
         <div class="card-header">🖨️ SLS/LPBF Printing Details</div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? Execution?.Job?.MachineId ?? "—")</div></div>
+            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? Execution?.Job?.Machine?.Name ?? "—")</div></div>
             <div><span class="form-label">Material</span><div>@(Execution?.Job?.SlsMaterial ?? "—")</div></div>
             <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
             <div><span class="form-label">Stack Level</span><div>@(Execution?.Job?.StackLevel?.ToString() ?? "—")x</div></div>

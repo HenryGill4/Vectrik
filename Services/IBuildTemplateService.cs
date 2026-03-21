@@ -24,7 +24,7 @@ public interface IBuildTemplateService
     /// <summary>
     /// Create a BuildPackage from a certified template, optionally linked to a work order line.
     /// </summary>
-    Task<BuildPackage> InstantiateAsync(int templateId, string machineId, string createdBy, int? workOrderLineId = null);
+    Task<BuildPackage> InstantiateAsync(int templateId, int machineId, string createdBy, int? workOrderLineId = null);
 
     /// <summary>
     /// Create a draft template from a completed build for re-use.

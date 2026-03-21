@@ -5,6 +5,7 @@ namespace Opcentrix_V3.Services;
 public interface IBuildPlanningService
 {
     Task<List<BuildPackage>> GetAllPackagesAsync();
+    Task<List<BuildPackage>> GetBuildsForPartAsync(int partId);
     Task<BuildPackage?> GetPackageByIdAsync(int id);
     Task<BuildPackage> CreatePackageAsync(BuildPackage package);
     Task<BuildPackage> UpdatePackageAsync(BuildPackage package);

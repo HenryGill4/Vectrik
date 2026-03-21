@@ -14,8 +14,11 @@ public class BuildPackage
     [MaxLength(500)]
     public string? Description { get; set; }
 
-    [Required, MaxLength(50)]
-    public string MachineId { get; set; } = string.Empty;
+    /// <summary>
+    /// FK to Machine.Id — the SLS machine assigned to this build.
+    /// Null for Draft builds that haven't been assigned yet.
+    /// </summary>
+    public int? MachineId { get; set; }
 
     public BuildPackageStatus Status { get; set; } = BuildPackageStatus.Draft;
 
@@ -47,6 +50,22 @@ public class BuildPackage
     public DateTime? PrintCompletedAt { get; set; }
     public DateTime? PlateReleasedAt { get; set; }
 
+    /// <summary>
+    /// Estimated duration in hours for depowdering stage (build-level).
+    /// Used when creating stage executions on plate release.
+    /// </summary>
+    public double? DepowderingHours { get; set; }
+
+    /// <summary>
+    /// Estimated duration in hours for heat treatment stage (build-level).
+    /// </summary>
+    public double? HeatTreatmentHours { get; set; }
+
+    /// <summary>
+    /// Estimated duration in hours for wire EDM stage (build-level).
+    /// </summary>
+    public double? WireEdmHours { get; set; }
+
     // Changeover chain: links to the build that was printing before this one
     public int? PredecessorBuildPackageId { get; set; }
 
@@ -60,6 +79,7 @@ public class BuildPackage
     public string LastModifiedBy { get; set; } = string.Empty;
 
     // Navigation
+    public virtual Machine? Machine { get; set; }
     public virtual ICollection<BuildPackagePart> Parts { get; set; } = new List<BuildPackagePart>();
     public virtual ICollection<BuildPackageRevision> Revisions { get; set; } = new List<BuildPackageRevision>();
     public virtual BuildFileInfo? BuildFileInfo { get; set; }

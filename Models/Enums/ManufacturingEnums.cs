@@ -118,6 +118,13 @@ public enum MaterialRequestStatus
     Pending, PartiallyFulfilled, Fulfilled, Cancelled
 }
 
+public enum BomItemType
+{
+    RawMaterial,
+    InventoryItem,
+    SubPart
+}
+
 public enum BuildTemplateStatus
 {
     Draft,

@@ -29,24 +29,9 @@ public class DataSeedingService : IDataSeedingService
         await SeedTestUsersAsync(tenantDb);
         await SeedDocumentTemplatesAsync(tenantDb);
 
-        // Parts + routing (depends on stages, machines, materials)
-        await SeedTestPartsAsync(tenantDb);
-
         // Inventory (depends on materials)
         await SeedStockLocationsAsync(tenantDb);
         await SeedInventoryItemsAsync(tenantDb);
-
-        // Quotes (depends on parts)
-        await SeedTestQuotesAsync(tenantDb);
-
-        // Work orders, jobs, stage executions (depends on parts, stages, machines, users)
-        await SeedTestWorkOrdersAsync(tenantDb);
-
-        // Build packages (depends on parts, work order lines, machines)
-        await SeedTestBuildPackagesAsync(tenantDb);
-
-        // Quality data (depends on jobs, parts, users)
-        await SeedTestQualityDataAsync(tenantDb);
     }
 
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
@@ -55,6 +40,7 @@ public class DataSeedingService : IDataSeedingService
 
         var stages = new List<ProductionStage>
         {
+            // === BUILD-LEVEL STAGES (durations come from build, BatchCapacity N/A) ===
             new()
             {
                 Name = "SLS/LPBF Printing", StageSlug = "sls-printing", Department = "SLS",
@@ -85,16 +71,20 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Wire EDM", StageSlug = "wire-edm", Department = "EDM",
-                DefaultDurationHours = 2.0, IsBatchStage = false, IsBuildLevelStage = true, HasBuiltInPage = true,
+                DefaultDurationHours = 2.0, IsBatchStage = false, IsBuildLevelStage = true, TriggerPlateRelease = true, HasBuiltInPage = true,
                 DisplayOrder = 4, StageIcon = "⚡", StageColor = "#8B5CF6",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "EDM1", AssignedMachineIds = "EDM1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
+
+            // === PER-PART STAGES (DefaultDurationHours in minutes equivalent, BatchCapacity matters) ===
             new()
             {
                 Name = "CNC Machining", StageSlug = "cnc-machining", Department = "Machining",
-                DefaultDurationHours = 3.0, IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.5, // 30 min per part default
+                BatchCapacity = 1, // One part at a time
+                IsBatchStage = false, HasBuiltInPage = true,
                 DisplayOrder = 5, StageIcon = "⚙️", StageColor = "#06B6D4",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "CNC1", AssignedMachineIds = "CNC1",
@@ -103,7 +93,9 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Laser Engraving", StageSlug = "laser-engraving", Department = "Engraving",
-                DefaultDurationHours = 0.5, IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.25, // 15 min per batch (multiple parts)
+                BatchCapacity = 36, // 6x6 grid on engraver
+                IsBatchStage = true, HasBuiltInPage = true,
                 RequiresSerialNumber = true,
                 DisplayOrder = 6, StageIcon = "✒️", StageColor = "#10B981",
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -111,14 +103,18 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Surface Finishing", StageSlug = "surface-finishing", Department = "Finishing",
-                DefaultDurationHours = 1.5, IsBatchStage = true, HasBuiltInPage = true,
+                DefaultDurationHours = 0.33, // 20 min per batch
+                BatchCapacity = 50, // Tumbling basket holds 50
+                IsBatchStage = true, HasBuiltInPage = true,
                 DisplayOrder = 7, StageIcon = "🎨", StageColor = "#EC4899",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 Name = "Quality Control", StageSlug = "qc", Department = "Quality",
-                DefaultDurationHours = 0.5, IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.083, // 5 min per part
+                BatchCapacity = 1,
+                IsBatchStage = false, HasBuiltInPage = true,
                 DisplayOrder = 8, StageIcon = "✅", StageColor = "#14B8A6",
                 RequiresQualityCheck = true,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -126,7 +122,9 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Shipping", StageSlug = "shipping", Department = "Shipping",
-                DefaultDurationHours = 0.5, IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.083, // 5 min per part
+                BatchCapacity = 100, // Batch shipping
+                IsBatchStage = true, HasBuiltInPage = true,
                 DisplayOrder = 9, StageIcon = "🚚", StageColor = "#6366F1",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -134,7 +132,9 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "CNC Turning", StageSlug = "cnc-turning", Department = "Machining",
-                DefaultDurationHours = 2.0, IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.33, // 20 min per part
+                BatchCapacity = 1,
+                IsBatchStage = false, HasBuiltInPage = true,
                 DisplayOrder = 10, StageIcon = "🔩", StageColor = "#0891B2",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "LATHE1", AssignedMachineIds = "LATHE1",
@@ -143,7 +143,9 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Assembly", StageSlug = "assembly", Department = "Assembly",
-                DefaultDurationHours = 1.0, IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.167, // 10 min per part
+                BatchCapacity = 1,
+                IsBatchStage = false, HasBuiltInPage = true,
                 DisplayOrder = 11, StageIcon = "🔧", StageColor = "#7C3AED",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -151,7 +153,9 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Sandblasting", StageSlug = "sandblasting", Department = "Finishing",
-                DefaultDurationHours = 1.0, IsBatchStage = true,
+                DefaultDurationHours = 0.25, // 15 min per batch
+                BatchCapacity = 20, // Cabinet holds ~20 small parts
+                IsBatchStage = true,
                 DisplayOrder = 12, StageIcon = "🌪️", StageColor = "#A3A3A3",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -160,6 +164,7 @@ public class DataSeedingService : IDataSeedingService
             {
                 Name = "External Coating", StageSlug = "external-coating", Department = "External",
                 DefaultDurationHours = 0, IsExternalOperation = true, DefaultTurnaroundDays = 14,
+                BatchCapacity = 200, // External vendor handles batches
                 DisplayOrder = 13, StageIcon = "🏢", StageColor = "#D97706",
                 RequiresQualityCheck = true,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -167,7 +172,9 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Oil & Sleeve Assembly", StageSlug = "oil-sleeve", Department = "Assembly",
-                DefaultDurationHours = 0.5, IsBatchStage = false,
+                DefaultDurationHours = 0.083, // 5 min per part
+                BatchCapacity = 1,
+                IsBatchStage = false,
                 DisplayOrder = 14, StageIcon = "🛢️", StageColor = "#059669",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -175,7 +182,9 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Packaging & Shipping", StageSlug = "packaging", Department = "Shipping",
-                DefaultDurationHours = 0.5, IsBatchStage = false,
+                DefaultDurationHours = 0.05, // 3 min per part
+                BatchCapacity = 50,
+                IsBatchStage = true,
                 DisplayOrder = 15, StageIcon = "📦", StageColor = "#7C3AED",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -501,307 +510,6 @@ public class DataSeedingService : IDataSeedingService
         };
 
         db.Users.AddRange(testUsers);
-        await db.SaveChangesAsync();
-    }
-
-    private static async Task SeedTestPartsAsync(TenantDbContext db)
-    {
-        if (await db.Parts.AnyAsync()) return;
-
-        // Get stage IDs for building stage requirements
-        var stages = await db.ProductionStages.ToListAsync();
-        var slsPrinting = stages.FirstOrDefault(s => s.StageSlug == "sls-printing");
-        var depowdering = stages.FirstOrDefault(s => s.StageSlug == "depowdering");
-        var heatTreatment = stages.FirstOrDefault(s => s.StageSlug == "heat-treatment");
-        var wireEdm = stages.FirstOrDefault(s => s.StageSlug == "wire-edm");
-        var cncMachining = stages.FirstOrDefault(s => s.StageSlug == "cnc-machining");
-        var cncTurning = stages.FirstOrDefault(s => s.StageSlug == "cnc-turning");
-        var laserEngraving = stages.FirstOrDefault(s => s.StageSlug == "laser-engraving");
-        var surfaceFinishing = stages.FirstOrDefault(s => s.StageSlug == "surface-finishing");
-        var assembly = stages.FirstOrDefault(s => s.StageSlug == "assembly");
-        var qc = stages.FirstOrDefault(s => s.StageSlug == "qc");
-        var shipping = stages.FirstOrDefault(s => s.StageSlug == "shipping");
-
-        if (slsPrinting == null) return;
-
-        var materialLookup = await db.Materials.ToDictionaryAsync(m => m.Name, m => (int?)m.Id);
-        var approachLookup = await db.ManufacturingApproaches.ToDictionaryAsync(a => a.Slug, a => (int?)a.Id);
-
-        // ── 8 Suppressor Parts ──
-        var parts = new List<Part>
-        {
-            // Part 1: Outer tube — CNC turned from Ti-6Al-4V bar stock
-            new()
-            {
-                PartNumber = "SUP-TUBE-001",
-                Name = "Titanium Outer Tube",
-                Description = "Precision CNC-turned outer housing tube from Ti-6Al-4V bar stock. 1.375\" OD x 1.125\" ID x 7.5\" overall length. Threads 1.375-24 TPI both ends for end cap engagement. Wall thickness optimized for strength-to-weight ratio in rifle-caliber suppressor applications.",
-                Material = "Ti-6Al-4V Grade 5",
-                MaterialId = materialLookup.GetValueOrDefault("Ti-6Al-4V Grade 5"),
-                ManufacturingApproachId = approachLookup.GetValueOrDefault("cnc-turning"),
-                Revision = "B",
-                RevisionDate = DateTime.UtcNow.AddDays(-45),
-                EstimatedWeightKg = 0.28,
-                IsDefensePart = true,
-                ItarClassification = ItarClassification.ITAR,
-                IsActive = true,
-                CreatedBy = "System", LastModifiedBy = "System"
-            },
-            // Part 2: Monocore baffle stack
-            new()
-            {
-                PartNumber = "SUP-MONO-002",
-                Name = "Monocore Baffle Stack",
-                Description = "Monolithic 6-cone K-baffle stack with integrated flow diffuser channels. SLS/LPBF printed as single unit in Inconel 718 for extreme heat and erosion resistance. Internal geometry impossible to manufacture subtractively — true additive-only design. Rated for 5.56 NATO / .300 BLK / 7.62 NATO.",
-                Material = "Inconel 718",
-                MaterialId = materialLookup.GetValueOrDefault("Inconel 718"),
-                ManufacturingApproachId = approachLookup.GetValueOrDefault("sls-based"),
-                Revision = "D",
-                RevisionDate = DateTime.UtcNow.AddDays(-10),
-                EstimatedWeightKg = 0.38,
-                IsDefensePart = true,
-                ItarClassification = ItarClassification.ITAR,
-                IsActive = true,
-                CreatedBy = "System", LastModifiedBy = "System"
-            },
-            // Part 3: Front end cap — CNC machined from 17-4PH
-            new()
-            {
-                PartNumber = "SUP-ECAP-003",
-                Name = "Front End Cap",
-                Description = "Muzzle-side end cap with integrated blast chamber pocket. CNC machined from 17-4PH stainless steel bar, condition H900 for maximum hardness. 1.375-24 TPI external thread for tube engagement, 0.375\" bore for projectile clearance with 0.010\" radial tolerance.",
-                Material = "17-4PH Stainless Steel",
-                MaterialId = materialLookup.GetValueOrDefault("17-4PH Stainless Steel"),
-                ManufacturingApproachId = approachLookup.GetValueOrDefault("cnc-machining"),
-                Revision = "A",
-                RevisionDate = DateTime.UtcNow.AddDays(-60),
-                EstimatedWeightKg = 0.15,
-                IsActive = true,
-                CreatedBy = "System", LastModifiedBy = "System"
-            },
-            // Part 4: Rear end cap — CNC machined from 17-4PH, serialized
-            new()
-            {
-                PartNumber = "SUP-RCAP-004",
-                Name = "Rear End Cap (Mount Interface)",
-                Description = "Rear mount-side end cap with adapter thread interface. 1.375-24 TPI external for tube, internal 1.375-24 TPI for adapter retention. Laser-engraved with serial number, manufacturer, and caliber designation per ATF requirements. 17-4PH H900 condition.",
-                Material = "17-4PH Stainless Steel",
-                MaterialId = materialLookup.GetValueOrDefault("17-4PH Stainless Steel"),
-                ManufacturingApproachId = approachLookup.GetValueOrDefault("cnc-machining"),
-                Revision = "B",
-                RevisionDate = DateTime.UtcNow.AddDays(-30),
-                EstimatedWeightKg = 0.18,
-                IsDefensePart = true,
-                ItarClassification = ItarClassification.ITAR,
-                IsActive = true,
-                CreatedBy = "System", LastModifiedBy = "System"
-            },
-            // Part 5: Muzzle adapter
-            new()
-            {
-                PartNumber = "SUP-ADPT-005",
-                Name = "Direct Thread Muzzle Adapter (1/2x28)",
-                Description = "Direct thread muzzle adapter for 5.56 NATO / .223 Rem host barrels. 1/2-28 UNEF male thread (barrel side), 1.375-24 TPI male thread (suppressor side). 316L stainless steel for corrosion resistance. Includes crush washer detent groove.",
-                Material = "316L Stainless Steel",
-                MaterialId = materialLookup.GetValueOrDefault("316L Stainless Steel"),
-                ManufacturingApproachId = approachLookup.GetValueOrDefault("cnc-turning"),
-                Revision = "C",
-                RevisionDate = DateTime.UtcNow.AddDays(-20),
-                EstimatedWeightKg = 0.09,
-                IsActive = true,
-                CreatedBy = "System", LastModifiedBy = "System"
-            },
-            // Part 6: Blast baffle — SLS + CNC finish (Additive+Subtractive)
-            new()
-            {
-                PartNumber = "SUP-BBAF-006",
-                Name = "Blast Baffle",
-                Description = "First-contact blast baffle with reinforced stellite-tipped cone geometry. SLS printed in Inconel 718 then CNC finish-machined for critical bore tolerance (0.375\" +0.002/-0.000). Takes the highest thermal and erosive loading in the suppressor stack. Designed for 50,000+ round service life.",
-                Material = "Inconel 718",
-                MaterialId = materialLookup.GetValueOrDefault("Inconel 718"),
-                ManufacturingApproachId = approachLookup.GetValueOrDefault("additive-subtractive"),
-                Revision = "B",
-                RevisionDate = DateTime.UtcNow.AddDays(-15),
-                EstimatedWeightKg = 0.12,
-                IsActive = true,
-                CreatedBy = "System", LastModifiedBy = "System"
-            },
-            // Part 7: Retention clips
-            new()
-            {
-                PartNumber = "SUP-CLIP-007",
-                Name = "Baffle Retention Spring Clip",
-                Description = "Wire EDM cut retention clip from 0.040\" Ti-6Al-4V sheet. C-clip design with spring detent that locks monocore baffle stack inside outer tube. 2 clips required per suppressor assembly. Designed for tool-free disassembly during cleaning.",
-                Material = "Ti-6Al-4V Grade 5",
-                MaterialId = materialLookup.GetValueOrDefault("Ti-6Al-4V Grade 5"),
-                ManufacturingApproachId = approachLookup.GetValueOrDefault("wire-edm"),
-                Revision = "A",
-                RevisionDate = DateTime.UtcNow.AddDays(-90),
-                EstimatedWeightKg = 0.02,
-                IsActive = true,
-                CreatedBy = "System", LastModifiedBy = "System"
-            },
-            // Part 8: Complete suppressor assembly
-            new()
-            {
-                PartNumber = "SUP-ASSY-008",
-                Name = "Complete Suppressor Assembly",
-                Description = "Final assembled suppressor unit: outer tube, monocore baffle stack, blast baffle, front end cap, rear end cap, muzzle adapter, and 2x retention clips. Full functional test, sound reduction verification, and serialization. Rated for 5.56 NATO, .300 BLK subsonic/supersonic, 7.62 NATO.",
-                Material = "Ti-6Al-4V Grade 5",
-                MaterialId = materialLookup.GetValueOrDefault("Ti-6Al-4V Grade 5"),
-                ManufacturingApproachId = approachLookup.GetValueOrDefault("assembly"),
-                Revision = "A",
-                RevisionDate = DateTime.UtcNow,
-                EstimatedWeightKg = 0.72,
-                IsDefensePart = true,
-                ItarClassification = ItarClassification.ITAR,
-                IsActive = true,
-                CreatedBy = "System", LastModifiedBy = "System"
-            }
-        };
-
-        db.Parts.AddRange(parts);
-        await db.SaveChangesAsync();
-
-        var tube = parts[0];      // SUP-TUBE-001
-        var monocore = parts[1];  // SUP-MONO-002
-        var frontCap = parts[2];  // SUP-ECAP-003
-        var rearCap = parts[3];   // SUP-RCAP-004
-        var adapter = parts[4];   // SUP-ADPT-005
-        var blastBaffle = parts[5]; // SUP-BBAF-006
-        var clip = parts[6];      // SUP-CLIP-007
-        var assy = parts[7];      // SUP-ASSY-008
-
-        // Additive build configs for SLS/additive parts
-        var additiveConfigs = new List<PartAdditiveBuildConfig>
-        {
-            // SUP-MONO-002: Monocore (SLS-Based) — single or double stack
-            new()
-            {
-                PartId = monocore.Id,
-                AllowStacking = true,
-                MaxStackCount = 2,
-                EnableDoubleStack = true,
-                PlannedPartsPerBuildSingle = 1,
-                PlannedPartsPerBuildDouble = 2,
-                SingleStackDurationHours = 14.0,
-                DoubleStackDurationHours = 22.0,
-                DepowderingDurationHours = 2.5,
-                DepowderingPartsPerBatch = 4,
-                HeatTreatmentDurationHours = 8.0,
-                HeatTreatmentPartsPerBatch = 8,
-                WireEdmDurationHours = 1.5,
-                WireEdmPartsPerSession = 2
-            },
-            // SUP-BBAF-006: Blast Baffle (Additive+Subtractive) — single or double stack
-            new()
-            {
-                PartId = blastBaffle.Id,
-                AllowStacking = true,
-                MaxStackCount = 2,
-                EnableDoubleStack = true,
-                PlannedPartsPerBuildSingle = 2,
-                PlannedPartsPerBuildDouble = 4,
-                SingleStackDurationHours = 8.0,
-                DoubleStackDurationHours = 13.0,
-                DepowderingDurationHours = 1.0,
-                DepowderingPartsPerBatch = 8,
-                HeatTreatmentDurationHours = 8.0,
-                HeatTreatmentPartsPerBatch = 16
-            }
-        };
-
-        db.PartAdditiveBuildConfigs.AddRange(additiveConfigs);
-        await db.SaveChangesAsync();
-
-        var requirements = new List<PartStageRequirement>();
-
-        // SUP-TUBE-001: CNC Turning → Surface Finishing → Laser Engraving → QC → Shipping
-        if (cncTurning != null)
-        {
-            requirements.AddRange(new[]
-            {
-                new PartStageRequirement { PartId = tube.Id, ProductionStageId = cncTurning.Id, ExecutionOrder = 1, EstimatedHours = 1.5, SetupTimeMinutes = 30, AssignedMachineId = "LATHE1", RequiresSpecificMachine = true, EstimatedCost = 142.50m, MaterialCost = 98.00m, SpecialInstructions = "Ti-6Al-4V bar stock 1.500\" OD. Use flood coolant, 200 SFM, 0.004 IPR feed. Bore ID to 1.125\" ±0.001\". Thread both ends 1.375-24 TPI, class 3A.", CreatedBy = "System", LastModifiedBy = "System" },
-                new PartStageRequirement { PartId = tube.Id, ProductionStageId = surfaceFinishing!.Id, ExecutionOrder = 2, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Tumble deburr and bead blast to uniform matte finish. No media entrapment in threads.", CreatedBy = "System", LastModifiedBy = "System" },
-                new PartStageRequirement { PartId = tube.Id, ProductionStageId = laserEngraving!.Id, ExecutionOrder = 3, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Engrave serial number, caliber, and manufacturer per ATF markings requirement. Depth 0.003\" min.", CreatedBy = "System", LastModifiedBy = "System" },
-                new PartStageRequirement { PartId = tube.Id, ProductionStageId = qc!.Id, ExecutionOrder = 4, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Verify OD/ID concentricity ≤0.002\" TIR. Thread gauge both ends. Visual inspect bore for tool marks.", CreatedBy = "System", LastModifiedBy = "System" },
-                new PartStageRequirement { PartId = tube.Id, ProductionStageId = shipping!.Id, ExecutionOrder = 5, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
-            });
-        }
-
-        // SUP-MONO-002: SLS → Depowder → Heat Treat → Wire EDM → Surface Finishing → QC → Shipping
-        requirements.AddRange(new[]
-        {
-            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 14.0, SetupTimeMinutes = 60, AssignedMachineId = "M4-1", EstimatedCost = 2100.00m, MaterialCost = 45.60m, SpecialInstructions = "Inconel 718 powder, 30μm layer thickness. Orientation: vertical with cone apexes pointing up. Support structure on base plate interface only — internal channels are self-supporting at 45° minimum.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = depowdering!.Id, ExecutionOrder = 2, EstimatedHours = 2.5, EstimatedCost = 212.50m, SpecialInstructions = "Extended depowdering cycle required — internal K-baffle channels trap powder. Use compressed air + ultrasonic agitation. Verify all 6 cone passages are clear with borescope before proceeding.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = heatTreatment!.Id, ExecutionOrder = 3, EstimatedHours = 8.0, EstimatedCost = 680.00m, SpecialInstructions = "Solution anneal 1750°F / 1hr, air cool. Age harden 1325°F / 8hr, furnace cool to 1150°F / 8hr, air cool. Argon atmosphere required. Verify Rockwell C 38-44 post-treatment.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = wireEdm!.Id, ExecutionOrder = 4, EstimatedHours = 1.5, AssignedMachineId = "EDM1", EstimatedCost = 127.50m, SpecialInstructions = "Wire EDM cut from build plate. Leave 0.5mm stock on interface face for final dress on surface grinder.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 5, EstimatedHours = 1.0, EstimatedCost = 85.00m, SpecialInstructions = "Vibratory tumble to remove loose particles and break sharp edges. Passivate per AMS 2700. Do NOT plug bore openings — media must flow through.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = qc.Id, ExecutionOrder = 6, EstimatedHours = 1.0, EstimatedCost = 85.00m, SpecialInstructions = "CMM inspect OD profile. Borescope all 6 internal channels. CT scan sample (1 per lot of 10). Measure bore alignment ≤0.005\" over full length. Weigh and record.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = monocore.Id, ProductionStageId = shipping.Id, ExecutionOrder = 7, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
-        });
-
-        // SUP-ECAP-003: CNC Machining → Surface Finishing → QC → Shipping
-        requirements.AddRange(new[]
-        {
-            new PartStageRequirement { PartId = frontCap.Id, ProductionStageId = cncMachining!.Id, ExecutionOrder = 1, EstimatedHours = 1.0, SetupTimeMinutes = 20, AssignedMachineId = "CNC1", EstimatedCost = 95.00m, MaterialCost = 7.00m, SpecialInstructions = "17-4PH bar stock 1.500\" OD, H900 condition. Two-op: OP10 turn OD + thread 1.375-24, OP20 flip and bore blast chamber pocket 0.750\" Ø x 0.250\" deep + through-bore 0.375\" +0.002/-0.000.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = frontCap.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 2, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Tumble deburr. Black oxide finish per MIL-DTL-13924, Class 1.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = frontCap.Id, ProductionStageId = qc.Id, ExecutionOrder = 3, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Thread gauge 1.375-24. Pin gauge bore 0.375\". Visual inspect blast chamber for tool marks.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = frontCap.Id, ProductionStageId = shipping.Id, ExecutionOrder = 4, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
-        });
-
-        // SUP-RCAP-004: CNC Machining → Laser Engraving → QC → Shipping
-        requirements.AddRange(new[]
-        {
-            new PartStageRequirement { PartId = rearCap.Id, ProductionStageId = cncMachining.Id, ExecutionOrder = 1, EstimatedHours = 1.25, SetupTimeMinutes = 20, AssignedMachineId = "CNC1", EstimatedCost = 118.75m, MaterialCost = 8.00m, SpecialInstructions = "17-4PH bar stock 1.500\" OD, H900 condition. OP10 turn OD + external thread 1.375-24. OP20 bore internal thread 1.375-24 for adapter retention. Concentricity ≤0.001\" TIR.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = rearCap.Id, ProductionStageId = laserEngraving.Id, ExecutionOrder = 2, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Engrave serial number (unique per unit), manufacturer name, caliber marking, and model designation per ATF markings requirements. Depth 0.003\" minimum, 0.070\" character height.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = rearCap.Id, ProductionStageId = qc.Id, ExecutionOrder = 3, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Thread gauge both internal and external threads. Verify engraving legibility and depth. Check concentricity.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = rearCap.Id, ProductionStageId = shipping.Id, ExecutionOrder = 4, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
-        });
-
-        // SUP-ADPT-005: CNC Turning → QC → Shipping
-        if (cncTurning != null)
-        {
-            requirements.AddRange(new[]
-            {
-                new PartStageRequirement { PartId = adapter.Id, ProductionStageId = cncTurning.Id, ExecutionOrder = 1, EstimatedHours = 0.75, SetupTimeMinutes = 15, AssignedMachineId = "LATHE1", EstimatedCost = 71.25m, MaterialCost = 6.40m, SpecialInstructions = "316L SS bar stock 1.000\" OD. Turn OD profile, cut 1/2-28 UNEF male thread (barrel side), 1.375-24 TPI male thread (suppressor side). Crush washer groove 0.030\" wide x 0.015\" deep.", CreatedBy = "System", LastModifiedBy = "System" },
-                new PartStageRequirement { PartId = adapter.Id, ProductionStageId = qc.Id, ExecutionOrder = 2, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Thread gauge both ends. Verify crush washer groove depth. Check runout ≤0.001\" TIR.", CreatedBy = "System", LastModifiedBy = "System" },
-                new PartStageRequirement { PartId = adapter.Id, ProductionStageId = shipping.Id, ExecutionOrder = 3, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
-            });
-        }
-
-        // SUP-BBAF-006: SLS → Depowder → Heat Treat → CNC Machining → QC → Shipping
-        requirements.AddRange(new[]
-        {
-            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = slsPrinting.Id, ExecutionOrder = 1, EstimatedHours = 8.0, SetupTimeMinutes = 45, AssignedMachineId = "M4-2", EstimatedCost = 1200.00m, MaterialCost = 14.40m, SpecialInstructions = "Inconel 718, 30μm layers. Print 2 per plate in single-stack configuration. Cone apex up, 45° internal overhang is self-supporting. Reinforce base with 3mm support block.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = depowdering.Id, ExecutionOrder = 2, EstimatedHours = 1.0, EstimatedCost = 85.00m, SpecialInstructions = "Standard depowdering — single cone chamber, no complex internal channels. Compressed air sufficient.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = heatTreatment.Id, ExecutionOrder = 3, EstimatedHours = 8.0, EstimatedCost = 680.00m, SpecialInstructions = "Same heat treat cycle as monocore: solution anneal + double age. Argon atmosphere. Verify HRC 38-44.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = cncMachining.Id, ExecutionOrder = 4, EstimatedHours = 0.75, SetupTimeMinutes = 15, AssignedMachineId = "CNC1", EstimatedCost = 71.25m, SpecialInstructions = "Finish-machine bore to 0.375\" +0.002/-0.000. Face both ends. This is the critical tolerance — bore alignment affects accuracy.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = qc.Id, ExecutionOrder = 5, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Pin gauge bore. Verify hardness. Visual inspect cone geometry for print defects.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = blastBaffle.Id, ProductionStageId = shipping.Id, ExecutionOrder = 6, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
-        });
-
-        // SUP-CLIP-007: Wire EDM → Surface Finishing → QC → Shipping
-        requirements.AddRange(new[]
-        {
-            new PartStageRequirement { PartId = clip.Id, ProductionStageId = wireEdm.Id, ExecutionOrder = 1, EstimatedHours = 0.5, SetupTimeMinutes = 15, AssignedMachineId = "EDM1", EstimatedCost = 42.50m, MaterialCost = 12.00m, SpecialInstructions = "Wire EDM cut from 0.040\" Ti-6Al-4V sheet. Nest 8 clips per sheet for efficiency. 0.010\" wire, 2-pass (rough + skim) for clean edge.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = clip.Id, ProductionStageId = surfaceFinishing.Id, ExecutionOrder = 2, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Tumble deburr to remove EDM recast layer and break edges. Clips must flex without cracking.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = clip.Id, ProductionStageId = qc.Id, ExecutionOrder = 3, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Verify spring force 5-8 lbf. Go/no-go gauge fit check in dummy tube section. Visual for cracks.", CreatedBy = "System", LastModifiedBy = "System" },
-            new PartStageRequirement { PartId = clip.Id, ProductionStageId = shipping.Id, ExecutionOrder = 4, EstimatedHours = 0.25, EstimatedCost = 21.25m, CreatedBy = "System", LastModifiedBy = "System" }
-        });
-
-        // SUP-ASSY-008: Assembly → QC → Shipping
-        if (assembly != null)
-        {
-            requirements.AddRange(new[]
-            {
-                new PartStageRequirement { PartId = assy.Id, ProductionStageId = assembly.Id, ExecutionOrder = 1, EstimatedHours = 0.75, SetupTimeMinutes = 10, EstimatedCost = 63.75m, SpecialInstructions = "Assembly sequence: (1) Insert blast baffle into tube, (2) Insert monocore stack, (3) Install retention clips, (4) Thread front end cap, (5) Thread rear end cap, (6) Thread muzzle adapter into rear cap. Torque end caps to 25 ft-lbs with anti-seize on threads.", CreatedBy = "System", LastModifiedBy = "System" },
-                new PartStageRequirement { PartId = assy.Id, ProductionStageId = qc.Id, ExecutionOrder = 2, EstimatedHours = 0.5, EstimatedCost = 42.50m, SpecialInstructions = "Bore alignment check with alignment rod — must pass freely. Shake test for loose internals. Weigh complete unit (spec: 0.72 ±0.05 kg). Record serial number from rear end cap.", CreatedBy = "System", LastModifiedBy = "System" },
-                new PartStageRequirement { PartId = assy.Id, ProductionStageId = shipping.Id, ExecutionOrder = 3, EstimatedHours = 0.25, EstimatedCost = 21.25m, SpecialInstructions = "Individual protective case with foam insert. Include CoC, test report, and user manual. ITAR-controlled shipment — verify end-user documentation.", CreatedBy = "System", LastModifiedBy = "System" }
-            });
-        }
-
-        db.PartStageRequirements.AddRange(requirements);
         await db.SaveChangesAsync();
     }
 
@@ -1206,200 +914,4 @@ public class DataSeedingService : IDataSeedingService
         await db.SaveChangesAsync();
     }
 
-    // ──────────────────────────────────────────────
-    //  Quotes
-    // ──────────────────────────────────────────────
-    private static async Task SeedTestQuotesAsync(TenantDbContext db)
-    {
-        if (await db.Quotes.AnyAsync()) return;
-
-        var parts = await db.Parts.ToListAsync();
-        if (parts.Count < 8) return;
-
-        var monocore = parts.First(p => p.PartNumber == "SUP-MONO-002");
-        var frontCap = parts.First(p => p.PartNumber == "SUP-ECAP-003");
-        var rearCap = parts.First(p => p.PartNumber == "SUP-RCAP-004");
-        var blastBaffle = parts.First(p => p.PartNumber == "SUP-BBAF-006");
-        var clip = parts.First(p => p.PartNumber == "SUP-CLIP-007");
-        var tube = parts.First(p => p.PartNumber == "SUP-TUBE-001");
-        var adapter = parts.First(p => p.PartNumber == "SUP-ADPT-005");
-        var assy = parts.First(p => p.PartNumber == "SUP-ASSY-008");
-
-        var quotes = new List<Quote>
-        {
-            // Quote 1 — Accepted (defense contract for complete suppressor kits)
-            new()
-            {
-                QuoteNumber = "QT-00001",
-                CustomerName = "Vanguard Defense Systems",
-                CustomerEmail = "contracts@vanguarddefense.com",
-                CustomerPhone = "703-555-8800",
-                Status = QuoteStatus.Accepted,
-                CreatedDate = DateTime.UtcNow.AddDays(-30),
-                ExpirationDate = DateTime.UtcNow.AddDays(60),
-                TotalEstimatedCost = 82500.00m,
-                QuotedPrice = 115500.00m,
-                Markup = 40m,
-                EstimatedLaborCost = 42000.00m,
-                EstimatedMaterialCost = 18500.00m,
-                EstimatedOverheadCost = 22000.00m,
-                TargetMarginPct = 40m,
-                RevisionNumber = 2,
-                SentAt = DateTime.UtcNow.AddDays(-28),
-                AcceptedAt = DateTime.UtcNow.AddDays(-20),
-                CreatedBy = "admin",
-                LastModifiedBy = "admin",
-                Notes = "24x complete suppressor kits for SOCOM evaluation program. ITAR controlled — no foreign nationals. Includes monocore, blast baffles, end caps, and retention hardware. Excludes tubes and adapters (GFE).",
-                IsDefenseContract = true,
-                ContractNumber = "W56HZV-26-C-0187"
-            },
-            // Quote 2 — Sent (commercial replacement parts)
-            new()
-            {
-                QuoteNumber = "QT-00002",
-                CustomerName = "Summit Firearms LLC",
-                CustomerEmail = "orders@summitfirearms.com",
-                CustomerPhone = "406-555-2200",
-                Status = QuoteStatus.Sent,
-                CreatedDate = DateTime.UtcNow.AddDays(-7),
-                ExpirationDate = DateTime.UtcNow.AddDays(23),
-                TotalEstimatedCost = 38200.00m,
-                QuotedPrice = 49660.00m,
-                Markup = 30m,
-                EstimatedLaborCost = 20000.00m,
-                EstimatedMaterialCost = 8200.00m,
-                EstimatedOverheadCost = 10000.00m,
-                TargetMarginPct = 30m,
-                RevisionNumber = 1,
-                SentAt = DateTime.UtcNow.AddDays(-5),
-                CreatedBy = "admin",
-                LastModifiedBy = "admin",
-                Notes = "Replacement monocore and blast baffle inventory for Summit's suppressor refurbishment program. Commercial sale — standard FFL/SOT transfer."
-            },
-            // Quote 3 — Draft (R&D prototype)
-            new()
-            {
-                QuoteNumber = "QT-00003",
-                CustomerName = "Precision Arms Research",
-                CustomerEmail = "engineering@precisionarms.com",
-                CustomerPhone = "480-555-7100",
-                Status = QuoteStatus.Draft,
-                CreatedDate = DateTime.UtcNow.AddDays(-2),
-                ExpirationDate = DateTime.UtcNow.AddDays(28),
-                TotalEstimatedCost = 14400.00m,
-                QuotedPrice = 0m,
-                EstimatedLaborCost = 7200.00m,
-                EstimatedMaterialCost = 3200.00m,
-                EstimatedOverheadCost = 4000.00m,
-                TargetMarginPct = 35m,
-                RevisionNumber = 1,
-                CreatedBy = "admin",
-                LastModifiedBy = "admin",
-                Notes = "R&D prototype: 6x complete suppressor sets for .308 caliber testing. Custom bore diameter (0.390\" vs standard 0.375\"). Monocore baffle geometry TBD after first article test."
-            }
-        };
-
-        db.Quotes.AddRange(quotes);
-        await db.SaveChangesAsync();
-
-        var lines = new List<QuoteLine>
-        {
-            // QT-00001 lines (defense kit — 4 part types)
-            new()
-            {
-                QuoteId = quotes[0].Id, PartId = monocore.Id, Quantity = 24,
-                EstimatedCostPerPart = 2400.00m, QuotedPricePerPart = 3360.00m,
-                LaborMinutes = 420, SetupMinutes = 60, MaterialCostEach = 45.60m,
-                Notes = "Inconel 718 monocore — full SLS + post-process routing. 14hr build per unit, 2 per double-stack."
-            },
-            new()
-            {
-                QuoteId = quotes[0].Id, PartId = blastBaffle.Id, Quantity = 24,
-                EstimatedCostPerPart = 850.00m, QuotedPricePerPart = 1190.00m,
-                LaborMinutes = 180, SetupMinutes = 45, MaterialCostEach = 14.40m,
-                Notes = "Inconel 718 blast baffle — SLS printed + CNC finish bore to 0.375\" +0.002/-0.000."
-            },
-            new()
-            {
-                QuoteId = quotes[0].Id, PartId = frontCap.Id, Quantity = 24,
-                EstimatedCostPerPart = 85.00m, QuotedPricePerPart = 119.00m,
-                LaborMinutes = 60, SetupMinutes = 20, MaterialCostEach = 7.00m,
-                Notes = "17-4PH front end cap with blast chamber pocket. CNC milled, black oxide finish."
-            },
-            new()
-            {
-                QuoteId = quotes[0].Id, PartId = rearCap.Id, Quantity = 24,
-                EstimatedCostPerPart = 120.00m, QuotedPricePerPart = 168.00m,
-                LaborMinutes = 75, SetupMinutes = 20, MaterialCostEach = 8.00m,
-                Notes = "17-4PH rear end cap — serialized per ATF requirements. Laser-engraved markings."
-            },
-            // QT-00002 lines (commercial replacements)
-            new()
-            {
-                QuoteId = quotes[1].Id, PartId = monocore.Id, Quantity = 50,
-                EstimatedCostPerPart = 620.00m, QuotedPricePerPart = 806.00m,
-                LaborMinutes = 420, SetupMinutes = 60, MaterialCostEach = 45.60m,
-                Notes = "Volume pricing — double-stack builds to maximize throughput. Est. 25 build cycles."
-            },
-            new()
-            {
-                QuoteId = quotes[1].Id, PartId = blastBaffle.Id, Quantity = 50,
-                EstimatedCostPerPart = 144.00m, QuotedPricePerPart = 187.20m,
-                LaborMinutes = 180, SetupMinutes = 45, MaterialCostEach = 14.40m,
-                Notes = "Volume blast baffle batch — 25 build cycles at 2 per plate."
-            },
-            // QT-00003 lines (R&D prototype)
-            new()
-            {
-                QuoteId = quotes[2].Id, PartId = monocore.Id, Quantity = 6,
-                EstimatedCostPerPart = 1800.00m, QuotedPricePerPart = 0m,
-                LaborMinutes = 480, SetupMinutes = 90, MaterialCostEach = 45.60m,
-                Notes = "Custom .308 bore diameter (0.390\"). Modified baffle geometry — requires new build file. First article inspection mandatory."
-            },
-            new()
-            {
-                QuoteId = quotes[2].Id, PartId = tube.Id, Quantity = 6,
-                EstimatedCostPerPart = 350.00m, QuotedPricePerPart = 0m,
-                LaborMinutes = 90, SetupMinutes = 30, MaterialCostEach = 98.00m,
-                Notes = "Ti-6Al-4V tubes with enlarged bore for .308 clearance."
-            },
-            new()
-            {
-                QuoteId = quotes[2].Id, PartId = adapter.Id, Quantity = 6,
-                EstimatedCostPerPart = 80.00m, QuotedPricePerPart = 0m,
-                LaborMinutes = 45, SetupMinutes = 15, MaterialCostEach = 6.40m,
-                Notes = "5/8-24 UNEF thread (standard .308 muzzle thread) instead of 1/2-28."
-            }
-        };
-
-        db.QuoteLines.AddRange(lines);
-        await db.SaveChangesAsync();
     }
-
-    // ──────────────────────────────────────────────
-    //  Work Orders, Jobs & Stage Executions
-    // ──────────────────────────────────────────────
-    private static async Task SeedTestWorkOrdersAsync(TenantDbContext db)
-    {
-        // Intentionally empty — user creates work orders, jobs, and schedules manually.
-        await Task.CompletedTask;
-    }
-
-    // ──────────────────────────────────────────────
-    //  Build Packages (SLS multi-part build plates)
-    // ──────────────────────────────────────────────
-    private static async Task SeedTestBuildPackagesAsync(TenantDbContext db)
-    {
-        // Intentionally empty — user creates builds and schedules them manually.
-        await Task.CompletedTask;
-    }
-
-    // ──────────────────────────────────────────────
-    //  Quality Data (NCRs, CAPAs, Inspections, SPC)
-    // ──────────────────────────────────────────────
-    private static async Task SeedTestQualityDataAsync(TenantDbContext db)
-    {
-        // Intentionally empty — quality data created from real production runs.
-        await Task.CompletedTask;
-    }
-}

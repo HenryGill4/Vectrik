@@ -1,0 +1,124 @@
+@inject IJobService JobService
+@inject IPartService PartService
+@inject ToastService Toast
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 520px;">
+            <div class="modal-header">
+                <span class="modal-title">New Job</span>
+                <button class="modal-close" @onclick="Close">&times;</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            <div class="form-group">
+                <label class="form-label">Part <span style="color:var(--danger);">*</span></label>
+                <select class="form-control" @bind="_newJob.PartId" @bind:after="OnPartSelectedAsync">
+                    <option value="0">Select part...</option>
+                    @if (Parts != null) { @foreach (var p in Parts) { <option value="@p.Id">@p.PartNumber — @p.Name</option> } }
+                </select>
+            </div>
+            @if (_selectedPartRouting.Any())
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 0.82rem;">
+                    <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">📋 Routing Preview</div>
+                    @foreach (var r in _selectedPartRouting)
+                    {
+                        <div style="display: flex; gap: 8px; padding: 2px 0; align-items: center;">
+                            <span style="width:8px;height:8px;border-radius:50%;background:@(r.ProductionStage?.StageColor ?? "var(--accent)");display:inline-block;flex-shrink:0;"></span>
+                            <span style="flex:1;">@(r.ProductionStage?.Name ?? "Stage")</span>
+                            <span style="color:var(--text-muted);">@(r.GetEffectiveEstimatedMinutes())m</span>
+                            <span style="color:var(--text-muted);">@(r.AssignedMachineId ?? r.ProductionStage?.DefaultMachineId ?? "Auto")</span>
+                        </div>
+                    }
+                    <div style="margin-top: 6px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 6px;">
+                        Total est: @(_selectedPartRouting.Sum(r => r.GetEffectiveEstimatedHours()).ToString("F1"))h
+                        · Machines will be auto-assigned for optimal scheduling
+                    </div>
+                </div>
+            }
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Quantity <span style="color:var(--danger);">*</span></label>
+                    <input class="form-control" type="number" @bind="_newJob.Quantity" min="1" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Priority</label>
+                    <select class="form-control" @bind="_newJob.Priority">
+                        @foreach (var p in Enum.GetValues<JobPriority>()) { <option value="@p">@p</option> }
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Earliest Start</label>
+                <input class="form-control" type="datetime-local" @bind="_newJob.ScheduledStart" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" @bind="_newJob.Notes" rows="2" placeholder="Optional notes..."></textarea>
+            </div>
+            <button class="btn btn-primary" @onclick="CreateJobAsync" disabled="@(_creatingJob)">
+                @if (_creatingJob) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                Create & Auto-Schedule
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public bool IsVisible { get; set; }
+    [Parameter] public List<Part>? Parts { get; set; }
+    [Parameter, EditorRequired] public string UserName { get; set; } = "System";
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnCreated { get; set; }
+
+    private Job _newJob = NewJob();
+    private List<PartStageRequirement> _selectedPartRouting = [];
+    private string? _error;
+    private bool _creatingJob;
+
+    private static Job NewJob() =>
+        new() { ScheduledStart = DateTime.UtcNow, EstimatedHours = 8, Quantity = 1, Priority = JobPriority.Normal };
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task OnPartSelectedAsync()
+    {
+        _selectedPartRouting = [];
+        if (_newJob.PartId > 0)
+        {
+            var part = Parts?.FirstOrDefault(p => p.Id == _newJob.PartId);
+            if (part != null)
+            {
+                _selectedPartRouting = await PartService.GetStageRequirementsAsync(part.Id);
+                _newJob.EstimatedHours = _selectedPartRouting.Sum(r => r.GetEffectiveEstimatedHours());
+            }
+        }
+    }
+
+    private async Task CreateJobAsync()
+    {
+        _error = null;
+        if (_newJob.PartId <= 0) { _error = "Please select a part."; return; }
+        if (_newJob.Quantity < 1) { _error = "Quantity must be at least 1."; return; }
+
+        _creatingJob = true;
+        StateHasChanged();
+        try
+        {
+            _newJob.ScheduledEnd = _newJob.ScheduledStart.AddHours(_newJob.EstimatedHours);
+            _newJob.CreatedBy = UserName;
+            _newJob.LastModifiedBy = UserName;
+            await JobService.CreateJobAsync(_newJob);
+            Toast.ShowSuccess("Job created and auto-scheduled");
+            _newJob = NewJob();
+            _selectedPartRouting = [];
+            await OnCreated.InvokeAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _creatingJob = false; }
+    }
+}

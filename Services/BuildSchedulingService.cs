@@ -10,12 +10,14 @@ public class BuildSchedulingService : IBuildSchedulingService
     private readonly TenantDbContext _db;
     private readonly IBuildPlanningService _buildPlanning;
     private readonly ISerialNumberService _serialNumberService;
+    private readonly ISchedulingService _scheduling;
 
-    public BuildSchedulingService(TenantDbContext db, IBuildPlanningService buildPlanning, ISerialNumberService serialNumberService)
+    public BuildSchedulingService(TenantDbContext db, IBuildPlanningService buildPlanning, ISerialNumberService serialNumberService, ISchedulingService scheduling)
     {
         _db = db;
         _buildPlanning = buildPlanning;
         _serialNumberService = serialNumberService;
+        _scheduling = scheduling;
     }
 
     public async Task<BuildScheduleResult> ScheduleBuildAsync(
@@ -51,12 +53,12 @@ public class BuildSchedulingService : IBuildSchedulingService
         package.ScheduledDate = slot.PrintStart;
         package.Status = BuildPackageStatus.Scheduled;
         package.IsLocked = true;
-        package.MachineId = machine.MachineId;
+        package.MachineId = machine.Id;
         package.LastModifiedDate = DateTime.UtcNow;
 
         // Link predecessor: find the last scheduled/printing build on this machine
         var lastBuild = await _db.BuildPackages
-            .Where(bp => bp.MachineId == machine.MachineId
+            .Where(bp => bp.MachineId == machine.Id
                 && bp.Id != package.Id
                 && (bp.Status == BuildPackageStatus.Scheduled || bp.Status == BuildPackageStatus.Printing))
             .OrderByDescending(bp => bp.ScheduledDate)
@@ -87,7 +89,7 @@ public class BuildSchedulingService : IBuildSchedulingService
 
         // Get scheduled builds on this machine (not stage executions — builds ARE the schedule unit)
         var existingBuilds = await _db.BuildPackages
-            .Where(bp => bp.MachineId == machine.MachineId
+            .Where(bp => bp.MachineId == machine.Id
                 && bp.ScheduledDate != null
                 && bp.EstimatedDurationHours != null
                 && bp.Status != BuildPackageStatus.Completed
@@ -140,7 +142,7 @@ public class BuildSchedulingService : IBuildSchedulingService
         var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
 
         var builds = await _db.BuildPackages
-            .Where(bp => bp.MachineId == machine.MachineId
+            .Where(bp => bp.MachineId == machine.Id
                 && bp.ScheduledDate != null
                 && bp.Status != BuildPackageStatus.Cancelled)
             .OrderBy(bp => bp.ScheduledDate)
@@ -302,6 +304,19 @@ public class BuildSchedulingService : IBuildSchedulingService
         package.LastModifiedDate = DateTime.UtcNow;
         package.LastModifiedBy = releasedBy;
 
+        // Complete the build-level Job (it was Scheduled when build was scheduled)
+        if (package.ScheduledJobId.HasValue)
+        {
+            var buildJob = await _db.Jobs.FindAsync(package.ScheduledJobId.Value);
+            if (buildJob != null && buildJob.Status != JobStatus.Completed)
+            {
+                buildJob.Status = JobStatus.Completed;
+                buildJob.ActualEnd = DateTime.UtcNow;
+                buildJob.LastModifiedDate = DateTime.UtcNow;
+                buildJob.LastModifiedBy = releasedBy;
+            }
+        }
+
         await _db.SaveChangesAsync();
 
         // Create per-part stage executions via existing planning service
@@ -312,6 +327,20 @@ public class BuildSchedulingService : IBuildSchedulingService
             .Where(j => j.Notes != null && j.Notes.Contains(package.Name) && j.CreatedDate >= DateTime.UtcNow.AddMinutes(-1))
             .ToListAsync();
         createdJobs.AddRange(jobIds);
+
+        // Auto-schedule each newly created per-part job
+        foreach (var job in createdJobs)
+        {
+            try
+            {
+                await _scheduling.AutoScheduleJobAsync(job.Id, DateTime.UtcNow);
+            }
+            catch (Exception)
+            {
+                // Job could not be auto-scheduled (no capable machines, etc.)
+                // It will appear as unscheduled in the scheduler for manual assignment
+            }
+        }
 
         await _buildPlanning.CreateRevisionAsync(buildPackageId, releasedBy,
             $"Plate released: {createdInstances.Count} part instance(s) created");

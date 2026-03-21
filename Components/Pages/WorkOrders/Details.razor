@@ -493,12 +493,7 @@ else
             var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
             Toast.ShowSuccess($"Work order released — {jobCount} job(s) generated from routing");
 
-            // Navigate to the next step based on part types
-            var hasAdditiveParts = _order?.Lines.Any(l => l.Part?.ManufacturingApproach?.RequiresBuildPlate == true) ?? false;
-            if (hasAdditiveParts)
-                Nav.NavigateTo("/builds");
-            else
-                Nav.NavigateTo("/scheduler");
+            Nav.NavigateTo("/scheduler?view=orders");
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
@@ -513,11 +508,7 @@ else
             var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
             Toast.ShowSuccess($"Approved! Work order released — {jobCount} job(s) generated.");
 
-            var hasAdditiveParts = _order?.Lines.Any(l => l.Part?.ManufacturingApproach?.RequiresBuildPlate == true) ?? false;
-            if (hasAdditiveParts)
-                Nav.NavigateTo("/builds");
-            else
-                Nav.NavigateTo("/scheduler");
+            Nav.NavigateTo("/scheduler?view=orders");
         }
         else
         {

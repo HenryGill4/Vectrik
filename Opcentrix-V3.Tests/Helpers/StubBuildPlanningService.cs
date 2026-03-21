@@ -10,6 +10,7 @@ namespace Opcentrix_V3.Tests.Helpers;
 internal sealed class StubBuildPlanningService : IBuildPlanningService
 {
     public Task<List<BuildPackage>> GetAllPackagesAsync() => Task.FromResult(new List<BuildPackage>());
+    public Task<List<BuildPackage>> GetBuildsForPartAsync(int partId) => Task.FromResult(new List<BuildPackage>());
     public Task<BuildPackage?> GetPackageByIdAsync(int id) => Task.FromResult<BuildPackage?>(null);
     public Task<BuildPackage> CreatePackageAsync(BuildPackage package) => Task.FromResult(package);
     public Task<BuildPackage> UpdatePackageAsync(BuildPackage package) => Task.FromResult(package);

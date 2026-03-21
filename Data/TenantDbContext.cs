@@ -125,6 +125,9 @@ public class TenantDbContext : DbContext
     public DbSet<BuildTemplate> BuildTemplates { get; set; }
     public DbSet<BuildTemplatePart> BuildTemplateParts { get; set; }
 
+    // Dev Issue Tracking
+    public DbSet<DevIssue> DevIssues { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -170,6 +173,15 @@ public class TenantDbContext : DbContext
         modelBuilder.Entity<Machine>(entity =>
         {
             entity.HasIndex(e => e.MachineId).IsUnique();
+        });
+
+        // BuildPackage
+        modelBuilder.Entity<BuildPackage>(entity =>
+        {
+            entity.HasOne(e => e.Machine)
+                .WithMany()
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // Part
@@ -240,6 +252,10 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.MaterialId)
                 .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ChildPart)
+                .WithMany()
+                .HasForeignKey(e => e.ChildPartId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // PartStageRequirement
@@ -329,6 +345,10 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Part)
                 .WithMany(e => e.Jobs)
                 .HasForeignKey(e => e.PartId);
+            entity.HasOne(e => e.Machine)
+                .WithMany()
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.PredecessorJob)
                 .WithMany()
                 .HasForeignKey(e => e.PredecessorJobId);

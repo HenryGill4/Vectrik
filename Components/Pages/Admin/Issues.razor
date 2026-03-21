@@ -1,0 +1,675 @@
+@page "/admin/issues"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject IDevIssueService IssueService
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>Copilot Prompt Workshop - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">🎯 Copilot Prompt Workshop</h1>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ New Issue</button>
+</div>
+
+@if (_issues is null)
+{
+    <p style="color: var(--text-secondary);">Loading…</p>
+}
+else
+{
+    <!-- Stats -->
+    <div class="issue-stats">
+        <div class="issue-stat">
+            <span class="issue-stat-count" style="color: var(--danger);">@_issues.Count(i => i.Status == DevIssueStatus.InProgress)</span>
+            <span class="issue-stat-label">Active</span>
+        </div>
+        <div class="issue-stat">
+            <span class="issue-stat-count" style="color: var(--warning);">@_issues.Count(i => i.Status == DevIssueStatus.Open)</span>
+            <span class="issue-stat-label">Queued</span>
+        </div>
+        <div class="issue-stat">
+            <span class="issue-stat-count" style="color: var(--success);">@_issues.Count(i => i.Status == DevIssueStatus.Fixed)</span>
+            <span class="issue-stat-label">Fixed</span>
+        </div>
+        <div class="issue-stat">
+            <span class="issue-stat-count" style="color: var(--accent);">@_issues.Count(i => i.Status == DevIssueStatus.Verified)</span>
+            <span class="issue-stat-label">Verified</span>
+        </div>
+    </div>
+
+    <!-- ═══ CURRENT ISSUE — Full Prompt View ═══ -->
+    @if (_currentIssue is not null)
+    {
+        <div class="card pw-active">
+            <div class="pw-active-header">
+                <span class="pw-active-label">🔥 WORKING ON</span>
+                <span class="issue-badge issue-badge-@_currentIssue.Type.ToString().ToLowerInvariant()">@TypeIcon(_currentIssue.Type) @_currentIssue.Type</span>
+                <span class="issue-badge issue-badge-priority-@_currentIssue.Priority.ToString().ToLowerInvariant()">@_currentIssue.Priority</span>
+                @if (!string.IsNullOrWhiteSpace(_currentIssue.SystemArea))
+                {
+                    <span class="pw-area-badge">@_currentIssue.SystemArea</span>
+                }
+                <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);">⏱️ @FormatAgo(_currentIssue.StartedAt)</span>
+            </div>
+
+            <!-- Prompt Preview (the actual thing you copy) -->
+            <div class="pw-prompt-box">
+                <div class="pw-prompt-header">
+                    <span>📋 COPILOT PROMPT</span>
+                    <button class="btn btn-sm btn-primary" @onclick="() => CopyPromptAsync(_currentIssue)">Copy to Clipboard</button>
+                </div>
+                <pre class="pw-prompt-text">@GeneratePrompt(_currentIssue)</pre>
+            </div>
+
+            <div class="pw-active-actions">
+                <button class="btn btn-sm btn-success" @onclick="() => OpenResolve(_currentIssue)">✅ Mark Fixed</button>
+                <button class="btn btn-sm btn-secondary" @onclick="() => OpenEdit(_currentIssue)">✏️ Edit</button>
+                <button class="btn btn-sm btn-secondary" @onclick="() => WontFixAsync(_currentIssue)">🚫 Won't Fix</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card pw-empty">
+            No issue active. Pick one from the queue and hit <strong>▶ Start</strong> to focus on it.
+        </div>
+    }
+
+    <!-- ═══ QUEUE ═══ -->
+    @if (_queueIssues.Count > 0)
+    {
+        <h3 class="issue-section-title">📋 Queue (@_queueIssues.Count)</h3>
+        <div class="pw-queue">
+            @foreach (var issue in _queueIssues)
+            {
+                <div class="card pw-card" @onclick="() => TogglePreview(issue.Id)">
+                    <div class="pw-card-top">
+                        <span class="issue-badge issue-badge-@issue.Type.ToString().ToLowerInvariant()">@TypeIcon(issue.Type) @issue.Type</span>
+                        <span class="issue-badge issue-badge-priority-@issue.Priority.ToString().ToLowerInvariant()">@issue.Priority</span>
+                        @if (!string.IsNullOrWhiteSpace(issue.SystemArea))
+                        {
+                            <span class="pw-area-badge">@issue.SystemArea</span>
+                        }
+                        <span class="pw-card-id">#@issue.Id</span>
+                    </div>
+                    <div class="pw-card-title">@issue.Title</div>
+                    @if (!string.IsNullOrWhiteSpace(issue.AffectedPage))
+                    {
+                        <div class="pw-card-page">@issue.AffectedPage</div>
+                    }
+
+                    @* Expandable prompt preview *@
+                    @if (_previewId == issue.Id)
+                    {
+                        <div class="pw-card-preview" @onclick:stopPropagation>
+                            <pre class="pw-prompt-text pw-prompt-text-sm">@GeneratePrompt(issue)</pre>
+                        </div>
+                    }
+
+                    <div class="pw-card-actions" @onclick:stopPropagation>
+                        <button class="btn btn-sm btn-primary" @onclick="() => StartAsync(issue.Id)">▶ Start</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => CopyPromptAsync(issue)">📋 Copy</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => OpenEdit(issue)">✏️</button>
+                        <button class="btn btn-sm btn-danger-outline" @onclick="() => DeleteAsync(issue.Id)">🗑️</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- ═══ FIXED — Awaiting Verification ═══ -->
+    @if (_fixedIssues.Count > 0)
+    {
+        <h3 class="issue-section-title">🔧 Fixed — Verify on Device (@_fixedIssues.Count)</h3>
+        <div class="pw-queue">
+            @foreach (var issue in _fixedIssues)
+            {
+                <div class="card pw-card pw-card-fixed">
+                    <div class="pw-card-top">
+                        <span class="issue-badge issue-badge-@issue.Type.ToString().ToLowerInvariant()">@TypeIcon(issue.Type)</span>
+                        <span class="pw-card-id">#@issue.Id</span>
+                    </div>
+                    <div class="pw-card-title">@issue.Title</div>
+                    @if (!string.IsNullOrWhiteSpace(issue.Resolution))
+                    {
+                        <div class="pw-card-resolution">💬 @issue.Resolution</div>
+                    }
+                    <div class="pw-card-actions">
+                        <button class="btn btn-sm btn-success" @onclick="() => VerifyAsync(issue.Id)">✅ Verified</button>
+                        <button class="btn btn-sm btn-warning" @onclick="() => ReopenAsync(issue.Id)">🔄 Reopen</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- ═══ RESOLVED HISTORY ═══ -->
+    @if (_resolvedIssues.Count > 0)
+    {
+        <details class="issue-history">
+            <summary class="issue-section-title" style="cursor:pointer;">
+                📜 Resolved (@_resolvedIssues.Count)
+            </summary>
+            <table class="data-table" style="margin-top: 8px;">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Type</th>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>Resolved</th>
+                        <th>Resolution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var issue in _resolvedIssues)
+                    {
+                        <tr>
+                            <td>@issue.Id</td>
+                            <td>@TypeIcon(issue.Type)</td>
+                            <td>@issue.Title</td>
+                            <td>
+                                @if (issue.Status == DevIssueStatus.Verified)
+                                {
+                                    <span style="color:var(--success);">✅</span>
+                                }
+                                else
+                                {
+                                    <span style="color:var(--text-muted);">🚫</span>
+                                }
+                            </td>
+                            <td>@issue.ResolvedAt?.ToString("MMM dd")</td>
+                            <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@issue.Resolution</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+    }
+}
+
+<!-- ═══ CREATE / EDIT MODAL (Prompt Builder) ═══ -->
+@if (_showModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal-content pw-modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3>@(_editingIssue.Id == 0 ? "📝 New Issue" : "✏️ Edit #" + _editingIssue.Id)</h3>
+                <button class="modal-close" @onclick="CloseModal">✕</button>
+            </div>
+
+            <div class="pw-builder">
+                <!-- Left: Form fields -->
+                <div class="pw-builder-form">
+                    <!-- Type -->
+                    <div class="form-group">
+                        <label>Type</label>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            @foreach (var t in Enum.GetValues<DevIssueType>())
+                            {
+                                <button class="btn btn-sm @(_editingIssue.Type == t ? "btn-primary" : "btn-secondary")"
+                                        @onclick="() => _editingIssue.Type = t">
+                                    @TypeIcon(t) @t
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Priority + System Area (side by side) -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <div class="form-group">
+                            <label>Priority</label>
+                            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                @foreach (var p in Enum.GetValues<DevIssuePriority>())
+                                {
+                                    <button class="btn btn-sm @(_editingIssue.Priority == p ? "btn-primary" : "btn-secondary")"
+                                            @onclick="() => _editingIssue.Priority = p"
+                                            style="padding:4px 10px; font-size:0.75rem;">
+                                        @p
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>System Area</label>
+                            <select class="form-control" @bind="_editingIssue.SystemArea">
+                                <option value="">— select —</option>
+                                @foreach (var area in SystemAreas)
+                                {
+                                    <option value="@area">@area</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Title -->
+                    <div class="form-group">
+                        <label>Title <span class="pw-hint">Short, specific — this becomes the prompt heading</span></label>
+                        <input type="text" class="form-control" @bind="_editingIssue.Title" @bind:event="oninput"
+                               placeholder="e.g. Gantt build bars don't show changeover gaps" />
+                    </div>
+
+                    <!-- Affected Page -->
+                    <div class="form-group">
+                        <label>Affected Page <span class="pw-hint">auto-filled from report button</span></label>
+                        <input type="text" class="form-control" @bind="_editingIssue.AffectedPage" @bind:event="oninput"
+                               placeholder="/scheduler, /parts/edit/5" />
+                    </div>
+
+                    <!-- Description (type-adaptive) -->
+                    <div class="form-group">
+                        <label>@DescriptionLabel(_editingIssue.Type) <span class="pw-hint">be specific — this is the core of the prompt</span></label>
+                        <textarea class="form-control" rows="3" @bind="_editingIssue.Description" @bind:event="oninput"
+                                  placeholder="@DescriptionPlaceholder(_editingIssue.Type)"></textarea>
+                    </div>
+
+                    <!-- Expected -->
+                    <div class="form-group">
+                        <label>@ExpectedLabel(_editingIssue.Type)</label>
+                        <textarea class="form-control" rows="2" @bind="_editingIssue.Expected" @bind:event="oninput"
+                                  placeholder="@ExpectedPlaceholder(_editingIssue.Type)"></textarea>
+                    </div>
+
+                    <!-- Steps / Element -->
+                    <div class="form-group">
+                        <label>@StepsLabel(_editingIssue.Type)</label>
+                        <textarea class="form-control" rows="2" @bind="_editingIssue.StepsOrElement" @bind:event="oninput"
+                                  placeholder="@StepsPlaceholder(_editingIssue.Type)"></textarea>
+                    </div>
+
+                    <!-- Related Files -->
+                    <div class="form-group">
+                        <label>Related Files <span class="pw-hint">helps Copilot find the right code</span></label>
+                        <textarea class="form-control" rows="2" @bind="_editingIssue.RelatedFiles" @bind:event="oninput"
+                                  placeholder="Components/Pages/Scheduler/Views/GanttView.razor&#10;Services/SchedulingService.cs"></textarea>
+                    </div>
+
+                    <!-- Acceptance Criteria -->
+                    <div class="form-group">
+                        <label>Done When <span class="pw-hint">how you'll verify the fix</span></label>
+                        <textarea class="form-control" rows="2" @bind="_editingIssue.AcceptanceCriteria" @bind:event="oninput"
+                                  placeholder="- Build bars appear on SLS machine rows&#10;- Click bar shows details popover"></textarea>
+                    </div>
+                </div>
+
+                <!-- Right: Live Prompt Preview -->
+                <div class="pw-builder-preview">
+                    <div class="pw-preview-header">📋 Live Prompt Preview</div>
+                    <pre class="pw-prompt-text">@GeneratePrompt(_editingIssue)</pre>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                <button class="btn btn-secondary" @onclick="() => CopyPromptAsync(_editingIssue)">📋 Copy Prompt</button>
+                <button class="btn btn-primary" @onclick="SaveAsync" disabled="@string.IsNullOrWhiteSpace(_editingIssue.Title)">
+                    @(_editingIssue.Id == 0 ? "💾 Save to Queue" : "💾 Save")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Resolve Modal -->
+@if (_showResolve)
+{
+    <div class="modal-overlay" @onclick="() => _showResolve = false">
+        <div class="modal-content" style="max-width: 500px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3>Mark Fixed: @_resolvingIssue?.Title</h3>
+                <button class="modal-close" @onclick="() => _showResolve = false">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>What was done to fix it?</label>
+                    <textarea class="form-control" rows="3" @bind="_resolutionText"
+                              placeholder="Brief description of the fix — files changed, approach taken"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="() => _showResolve = false">Cancel</button>
+                <button class="btn btn-success" @onclick="ConfirmResolveAsync">✅ Mark Fixed</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<DevIssue>? _issues;
+
+    private DevIssue? _currentIssue;
+    private List<DevIssue> _queueIssues = [];
+    private List<DevIssue> _fixedIssues = [];
+    private List<DevIssue> _resolvedIssues = [];
+
+    private bool _showModal;
+    private DevIssue _editingIssue = new();
+    private int? _previewId;
+
+    private bool _showResolve;
+    private DevIssue? _resolvingIssue;
+    private string _resolutionText = "";
+
+    private static readonly string[] SystemAreas =
+    [
+        "Scheduler — Gantt",
+        "Scheduler — Builds",
+        "Scheduler — Orders",
+        "Scheduler — PartPath",
+        "Scheduler — Stages",
+        "Scheduler — Table",
+        "Scheduler — Toolbar",
+        "Work Orders",
+        "Parts",
+        "Builds / SLS Pipeline",
+        "Shop Floor",
+        "Tracking",
+        "Quality",
+        "Analytics",
+        "Inventory",
+        "Maintenance",
+        "Quotes",
+        "Admin",
+        "Layout / Nav",
+        "CSS / Styling",
+        "Service Layer",
+        "Database / Migrations"
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _issues = await IssueService.GetAllAsync();
+        _currentIssue = _issues.FirstOrDefault(i => i.Status == DevIssueStatus.InProgress);
+        _queueIssues = _issues.Where(i => i.Status == DevIssueStatus.Open).ToList();
+        _fixedIssues = _issues.Where(i => i.Status == DevIssueStatus.Fixed).ToList();
+        _resolvedIssues = _issues
+            .Where(i => i.Status is DevIssueStatus.Verified or DevIssueStatus.WontFix)
+            .OrderByDescending(i => i.ResolvedAt)
+            .ToList();
+    }
+
+    // --- CRUD ---
+
+    private void OpenCreate()
+    {
+        _editingIssue = new DevIssue();
+        _showModal = true;
+    }
+
+    private void OpenEdit(DevIssue issue)
+    {
+        _editingIssue = new DevIssue
+        {
+            Id = issue.Id,
+            Title = issue.Title,
+            Type = issue.Type,
+            Priority = issue.Priority,
+            SystemArea = issue.SystemArea,
+            Description = issue.Description,
+            Expected = issue.Expected,
+            StepsOrElement = issue.StepsOrElement,
+            RelatedFiles = issue.RelatedFiles,
+            AcceptanceCriteria = issue.AcceptanceCriteria,
+            AffectedPage = issue.AffectedPage,
+            EnvironmentContext = issue.EnvironmentContext,
+            Status = issue.Status,
+            SortOrder = issue.SortOrder,
+            CreatedAt = issue.CreatedAt,
+            StartedAt = issue.StartedAt,
+            ResolvedAt = issue.ResolvedAt,
+            Resolution = issue.Resolution
+        };
+        _showModal = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_editingIssue.Title)) return;
+
+        if (_editingIssue.Id == 0)
+        {
+            await IssueService.CreateAsync(_editingIssue);
+            Toast.ShowSuccess("Issue queued");
+        }
+        else
+        {
+            await IssueService.UpdateAsync(_editingIssue);
+            Toast.ShowSuccess("Issue updated");
+        }
+
+        _showModal = false;
+        await LoadAsync();
+    }
+
+    private void CloseModal() => _showModal = false;
+
+    private void TogglePreview(int id) =>
+        _previewId = _previewId == id ? null : id;
+
+    // --- Status transitions ---
+
+    private async Task StartAsync(int id)
+    {
+        await IssueService.StartAsync(id);
+        Toast.ShowInfo("Issue started — prompt is ready above");
+        await LoadAsync();
+    }
+
+    private void OpenResolve(DevIssue issue)
+    {
+        _resolvingIssue = issue;
+        _resolutionText = "";
+        _showResolve = true;
+    }
+
+    private async Task ConfirmResolveAsync()
+    {
+        if (_resolvingIssue is null) return;
+        await IssueService.ResolveAsync(_resolvingIssue.Id, _resolutionText);
+        _showResolve = false;
+        Toast.ShowSuccess("Marked fixed — verify on device when ready");
+        await LoadAsync();
+    }
+
+    private async Task VerifyAsync(int id)
+    {
+        await IssueService.VerifyAsync(id);
+        Toast.ShowSuccess("Verified and closed");
+        await LoadAsync();
+    }
+
+    private async Task WontFixAsync(DevIssue issue)
+    {
+        await IssueService.WontFixAsync(issue.Id, "Won't fix");
+        Toast.ShowInfo("Closed as won't fix");
+        await LoadAsync();
+    }
+
+    private async Task ReopenAsync(int id)
+    {
+        await IssueService.ReopenAsync(id);
+        Toast.ShowWarning("Reopened — back in queue");
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await IssueService.DeleteAsync(id);
+        Toast.ShowInfo("Deleted");
+        await LoadAsync();
+    }
+
+    // --- Prompt Generator ---
+
+    private async Task CopyPromptAsync(DevIssue issue)
+    {
+        var prompt = GeneratePrompt(issue);
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", prompt);
+            Toast.ShowSuccess("Prompt copied — paste into Copilot");
+        }
+        catch
+        {
+            Toast.ShowError("Copy failed — check browser permissions");
+        }
+    }
+
+    private static string GeneratePrompt(DevIssue issue)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        // Header
+        var typeTag = issue.Type switch
+        {
+            DevIssueType.Bug => "BUG FIX",
+            DevIssueType.Change => "CHANGE REQUEST",
+            DevIssueType.Styling => "STYLING FIX",
+            _ => "ISSUE"
+        };
+        sb.AppendLine($"{typeTag}: {issue.Title}");
+        sb.AppendLine();
+
+        // Location context
+        var hasArea = !string.IsNullOrWhiteSpace(issue.SystemArea);
+        var hasPage = !string.IsNullOrWhiteSpace(issue.AffectedPage);
+        if (hasArea || hasPage)
+        {
+            if (hasArea) sb.AppendLine($"System area: {issue.SystemArea}");
+            if (hasPage) sb.AppendLine($"Affected page: {issue.AffectedPage}");
+            sb.AppendLine();
+        }
+
+        // Core content (type-adaptive)
+        switch (issue.Type)
+        {
+            case DevIssueType.Bug:
+                AppendSection(sb, "What happens (bug):", issue.Description);
+                AppendSection(sb, "Expected behavior:", issue.Expected);
+                AppendSection(sb, "Steps to reproduce:", issue.StepsOrElement);
+                break;
+            case DevIssueType.Change:
+                AppendSection(sb, "Current behavior:", issue.Description);
+                AppendSection(sb, "Desired behavior:", issue.Expected);
+                if (!string.IsNullOrWhiteSpace(issue.StepsOrElement))
+                    AppendSection(sb, "Additional context:", issue.StepsOrElement);
+                break;
+            case DevIssueType.Styling:
+                AppendSection(sb, "What looks wrong:", issue.Description);
+                AppendSection(sb, "Affected element:", issue.StepsOrElement);
+                if (!string.IsNullOrWhiteSpace(issue.Expected))
+                    AppendSection(sb, "How it should look:", issue.Expected);
+                if (!string.IsNullOrWhiteSpace(issue.EnvironmentContext))
+                    sb.AppendLine($"Environment: {issue.EnvironmentContext}");
+                break;
+        }
+
+        // Related files
+        if (!string.IsNullOrWhiteSpace(issue.RelatedFiles))
+        {
+            sb.AppendLine("Files to look at:");
+            foreach (var file in issue.RelatedFiles.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                sb.AppendLine($"- {file}");
+            }
+            sb.AppendLine();
+        }
+
+        // Acceptance criteria
+        if (!string.IsNullOrWhiteSpace(issue.AcceptanceCriteria))
+        {
+            sb.AppendLine("Done when:");
+            foreach (var line in issue.AcceptanceCriteria.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var trimmed = line.TrimStart('-', ' ');
+                sb.AppendLine($"- {trimmed}");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"Priority: {issue.Priority}");
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static void AppendSection(System.Text.StringBuilder sb, string heading, string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return;
+        sb.AppendLine(heading);
+        sb.AppendLine(content);
+        sb.AppendLine();
+    }
+
+    // --- Helpers ---
+
+    private static string TypeIcon(DevIssueType type) => type switch
+    {
+        DevIssueType.Bug => "🐛",
+        DevIssueType.Change => "💡",
+        DevIssueType.Styling => "🎨",
+        _ => "📝"
+    };
+
+    private static string DescriptionLabel(DevIssueType type) => type switch
+    {
+        DevIssueType.Bug => "What happened?",
+        DevIssueType.Change => "Current behavior",
+        DevIssueType.Styling => "What looks wrong?",
+        _ => "Description"
+    };
+
+    private static string ExpectedLabel(DevIssueType type) => type switch
+    {
+        DevIssueType.Bug => "Expected behavior",
+        DevIssueType.Change => "Desired behavior",
+        DevIssueType.Styling => "How it should look",
+        _ => "Expected"
+    };
+
+    private static string StepsLabel(DevIssueType type) => type switch
+    {
+        DevIssueType.Bug => "Steps to reproduce",
+        DevIssueType.Change => "Additional context",
+        DevIssueType.Styling => "Affected element / area",
+        _ => "Details"
+    };
+
+    private static string DescriptionPlaceholder(DevIssueType type) => type switch
+    {
+        DevIssueType.Bug => "Describe what goes wrong — be specific about what you see",
+        DevIssueType.Change => "How does it work right now?",
+        DevIssueType.Styling => "Describe exactly what looks off",
+        _ => "Describe the issue"
+    };
+
+    private static string ExpectedPlaceholder(DevIssueType type) => type switch
+    {
+        DevIssueType.Bug => "What should happen instead?",
+        DevIssueType.Change => "How should it work? Be specific about the behavior you want.",
+        DevIssueType.Styling => "What should it look like? Reference other parts of the UI if helpful.",
+        _ => "Expected outcome"
+    };
+
+    private static string StepsPlaceholder(DevIssueType type) => type switch
+    {
+        DevIssueType.Bug => "1. Go to /scheduler\n2. Click a build bar\n3. Nothing happens",
+        DevIssueType.Change => "Any related context — other pages that already do this right, etc.",
+        DevIssueType.Styling => "e.g. sidebar nav items, Gantt time header, card borders",
+        _ => "Additional details"
+    };
+
+    private static string FormatAgo(DateTime? dt)
+    {
+        if (dt is null) return "—";
+        var diff = DateTime.UtcNow - dt.Value;
+        if (diff.TotalMinutes < 1) return "just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        return $"{(int)diff.TotalDays}d ago";
+    }
+}

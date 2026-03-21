@@ -1,0 +1,27 @@
+@using System.Globalization
+
+@{
+    var stageColor = FirstExec.ProductionStage?.StageColor ?? "";
+    var pkgName = FirstExec.BuildPackage?.Name ?? $"Build #{FirstExec.BuildPackageId}";
+    var stageName = FirstExec.ProductionStage?.Name ?? "Stage";
+}
+<div class="gantt-bar gantt-bar-normal"
+     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};") border: 2px solid var(--accent);"
+     title="📦 @pkgName — @stageName&#10;Parts: @PartList&#10;@Start.ToString("MM/dd HH:mm") → @End.ToString("MM/dd HH:mm")&#10;Est: @(FirstExec.EstimatedHours?.ToString("F1") ?? "?")h"
+     @onclick="HandleClick">
+    <span class="gantt-bar-text">📦 @pkgName · @stageName</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public StageExecution FirstExec { get; set; } = default!;
+    [Parameter, EditorRequired] public double BarLeftPx { get; set; }
+    [Parameter, EditorRequired] public double BarWidthPx { get; set; }
+    [Parameter, EditorRequired] public DateTime Start { get; set; }
+    [Parameter, EditorRequired] public DateTime End { get; set; }
+    [Parameter, EditorRequired] public string PartList { get; set; } = "";
+    [Parameter] public EventCallback<StageExecution> OnClick { get; set; }
+
+    private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
+
+    private Task HandleClick() => OnClick.InvokeAsync(FirstExec);
+}

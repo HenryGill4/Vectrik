@@ -3,6 +3,7 @@
 @inject IPartFileService FileService
 @inject ICustomFieldService CustomFieldService
 @inject ITenantFeatureService Features
+@inject IBuildPlanningService BuildPlanningService
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using System.Security.Claims
@@ -123,8 +124,46 @@ else
     <!-- Routing Tab -->
     @if (_tab == "routing")
     {
+        var routingBuild = _routingBuildId > 0 ? _buildsForPart?.FirstOrDefault(b => b.Id == _routingBuildId) : null;
+
         <div class="card">
-            <h3 class="card-title">Stage Routing</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 class="card-title" style="margin: 0;">Stage Routing</h3>
+
+                @* Build duration selector for additive parts *@
+                @if (_buildsForPart?.Any() == true)
+                {
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 0.85rem; color: var(--text-muted); white-space: nowrap;">
+                            📦 Show durations from:
+                        </label>
+                        <select class="form-control form-control-sm" style="width: auto; min-width: 200px;" @bind="_routingBuildId">
+                            <option value="0">— Config defaults —</option>
+                            @foreach (var build in _buildsForPart.OrderByDescending(b => b.CreatedDate))
+                            {
+                                var statusIcon = build.Status switch
+                                {
+                                    BuildPackageStatus.Completed => "✅",
+                                    BuildPackageStatus.PostPrint => "📦",
+                                    BuildPackageStatus.Printing => "🖨️",
+                                    BuildPackageStatus.Scheduled => "📅",
+                                    _ => "📝"
+                                };
+                                var partQty = build.Parts?.FirstOrDefault(p => p.PartId == _part!.Id)?.Quantity ?? 0;
+                                <option value="@build.Id">@statusIcon @build.Name (@partQty pcs) — @build.Status</option>
+                            }
+                        </select>
+                    </div>
+                }
+                else if (HasAdditiveConfig() && _part.StageRequirements?.Any(sr => sr.ProductionStage?.IsBuildLevelStage == true) == true)
+                {
+                    <div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--warning-bg, rgba(245, 158, 11, 0.1)); border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.3)); border-radius: 6px;">
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">⚠️ No builds exist — build stage durations use defaults</span>
+                        <button class="btn btn-sm btn-accent" @onclick='() => Nav.NavigateTo("/scheduler?tab=orders")'>📦 Create Build</button>
+                    </div>
+                }
+            </div>
+
             @if (_part.StageRequirements == null || !_part.StageRequirements.Any())
             {
                 <p style="color: var(--text-muted);">No routing stages defined. Edit this part to add stages.</p>
@@ -137,8 +176,9 @@ else
                             <th>Order</th>
                             <th>Stage</th>
                             <th>Department</th>
-                            <th>Est. Hours</th>
+                            <th>Est. Duration</th>
                             <th>Setup (min)</th>
+                            <th>Batch</th>
                             <th>Est. Cost</th>
                             <th>Material Cost</th>
                             <th>Machine</th>
@@ -148,16 +188,81 @@ else
                     <tbody>
                         @foreach (var sr in _part.StageRequirements.OrderBy(s => s.ExecutionOrder))
                         {
+                            var slug = sr.ProductionStage?.StageSlug?.ToLowerInvariant() ?? "";
                             <tr>
                                 <td>@sr.ExecutionOrder</td>
                                 <td>
                                     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: @(sr.ProductionStage?.StageColor ?? "var(--accent)"); margin-right: 6px;"></span>
                                     @(sr.ProductionStage?.Name ?? $"Stage {sr.ProductionStageId}")
+                                    @if (sr.ProductionStage?.IsBuildLevelStage == true)
+                                    {
+                                        <span style="margin-left: 4px; font-size: 0.7rem; background: var(--accent); color: white; padding: 1px 4px; border-radius: 3px;">BUILD</span>
+                                    }
                                 </td>
                                 <td>@(sr.ProductionStage?.Department ?? "—")</td>
-                                <td>@(sr.EstimatedHours?.ToString("F1") ?? sr.ProductionStage?.DefaultDurationHours.ToString("F1") ?? "—")</td>
-                                <td>@(sr.SetupTimeMinutes?.ToString() ?? "—")</td>
-                                <td>@(sr.CalculateTotalEstimatedCost() > 0 ? sr.CalculateTotalEstimatedCost().ToString("C") : "—")</td>
+                                <td>
+                                    @if (sr.ProductionStage?.IsBuildLevelStage == true)
+                                    {
+                                        @* Show build-level durations from selected build or config *@
+                                        @if (routingBuild != null)
+                                        {
+                                            var buildDuration = GetBuildStageDuration(routingBuild, slug);
+                                            @if (buildDuration.HasValue)
+                                            {
+                                                <span style="color: var(--primary); font-weight: 500;" title="From build: @routingBuild.Name">
+                                                    @FormatDurationFromHours(buildDuration.Value)
+                                                    <span style="font-size: 0.7rem; margin-left: 4px;">📦</span>
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span style="color: var(--text-muted);">— (not set)</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            @* Fall back to config or default *@
+                                            var configDuration = GetConfigStageDuration(slug);
+                                            @if (configDuration.HasValue)
+                                            {
+                                                <span title="From part config">
+                                                    @FormatDurationFromHours(configDuration.Value)
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span title="Stage default">
+                                                    @FormatDurationFromHours(sr.ProductionStage?.DefaultDurationHours ?? 1)
+                                                </span>
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        @FormatDuration(sr.EstimatedMinutes ?? (sr.ProductionStage?.DefaultDurationHours ?? 1) * 60)
+                                    }
+                                </td>
+                                <td>@(sr.SetupTimeMinutes.HasValue ? FormatDuration(sr.SetupTimeMinutes.Value) : "—")</td>
+                                <td>@(sr.ProductionStage?.BatchCapacity ?? 1)×</td>
+                                <td>
+                                    @{
+                                        decimal stageCost;
+                                        if (sr.ProductionStage?.IsBuildLevelStage == true && routingBuild != null)
+                                        {
+                                            // Use build duration for cost calculation
+                                            var buildDurationHours = GetBuildStageDuration(routingBuild, slug);
+                                            var hourlyRate = sr.HourlyRateOverride ?? sr.ProductionStage?.DefaultHourlyRate ?? 85.00m;
+                                            stageCost = buildDurationHours.HasValue 
+                                                ? (hourlyRate * (decimal)buildDurationHours.Value) + sr.MaterialCost 
+                                                : 0;
+                                        }
+                                        else
+                                        {
+                                            stageCost = sr.CalculateTotalEstimatedCost();
+                                        }
+                                    }
+                                    @(stageCost > 0 ? stageCost.ToString("C") : "—")
+                                </td>
                                 <td>@(sr.MaterialCost > 0 ? sr.MaterialCost.ToString("C") : "—")</td>
                                 <td>@(sr.AssignedMachineId ?? "Any")</td>
                                 <td><span class="badge @(sr.IsRequired ? "badge-active" : "badge-info")">@(sr.IsRequired ? "Required" : "Optional")</span></td>
@@ -165,6 +270,96 @@ else
                         }
                     </tbody>
                 </table>
+
+                @* Cost per part summary *@
+
+                @if (routingBuild != null)
+                {
+                    var totalBuildHours = (routingBuild.EstimatedDurationHours ?? 0) +
+                                          (routingBuild.DepowderingHours ?? 0) +
+                                          (routingBuild.HeatTreatmentHours ?? 0) +
+                                          (routingBuild.WireEdmHours ?? 0);
+                    var bpq = routingBuild.Parts?.FirstOrDefault(p => p.PartId == _part!.Id)?.Quantity ?? 0;
+
+                    <div style="margin-top: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Build:</span>
+                            <span style="font-weight: 600;">@routingBuild.Name</span>
+                            <span class="badge badge-info" style="margin-left: 4px;">@routingBuild.Status</span>
+                        </div>
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Print:</span>
+                            <span>@(routingBuild.EstimatedDurationHours.HasValue ? FormatDurationFromHours(routingBuild.EstimatedDurationHours.Value) : "—")</span>
+                        </div>
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Depowder:</span>
+                            <span>@(routingBuild.DepowderingHours.HasValue ? FormatDurationFromHours(routingBuild.DepowderingHours.Value) : "—")</span>
+                        </div>
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Heat Treat:</span>
+                            <span>@(routingBuild.HeatTreatmentHours.HasValue ? FormatDurationFromHours(routingBuild.HeatTreatmentHours.Value) : "—")</span>
+                        </div>
+                        <div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Wire EDM:</span>
+                            <span>@(routingBuild.WireEdmHours.HasValue ? FormatDurationFromHours(routingBuild.WireEdmHours.Value) : "—")</span>
+                        </div>
+                        <div style="border-left: 1px solid var(--border-color); padding-left: 24px;">
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Total Build:</span>
+                            <span style="font-weight: 600;">@FormatDurationFromHours(totalBuildHours)</span>
+                            @if (bpq > 0)
+                            {
+                                <span style="margin-left: 8px; color: var(--text-muted);">(@bpq parts)</span>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* Total cost per part *@
+                <div style="margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;">
+                    @{ var costSummary = CalculateRoutingCostPerPart(routingBuild); }
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                        <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+                            <div>
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">Total Time / Part:</span>
+                                <span style="font-weight: 600; margin-left: 4px;">@FormatDuration(costSummary.durationMinutes)</span>
+                            </div>
+                            <div>
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">Stages:</span>
+                                <span style="margin-left: 4px;">@_part.StageRequirements.Count</span>
+                            </div>
+                            @if (_bomCost != null && _bomCost.TotalBomCost > 0)
+                            {
+                                <div>
+                                    <span style="font-size: 0.8rem; color: var(--text-muted);">BOM Material:</span>
+                                    <span style="margin-left: 4px;">@_bomCost.TotalBomCost.ToString("C2")</span>
+                                </div>
+                            }
+                            @if (routingBuild != null)
+                            {
+                                var pqty = routingBuild.Parts?.FirstOrDefault(p => p.PartId == _part!.Id)?.Quantity ?? 0;
+                                <div>
+                                    <span style="font-size: 0.8rem; color: var(--text-muted);">Using build:</span>
+                                    <span style="margin-left: 4px;">@routingBuild.Name (@pqty pcs)</span>
+                                </div>
+                            }
+                        </div>
+                        <div style="text-align: right;">
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Est. Cost / Part</span>
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary);">
+                                @{
+                                    var totalWithBom = costSummary.cost + (_bomCost?.TotalBomCost ?? 0);
+                                }
+                                @(totalWithBom > 0 ? totalWithBom.ToString("C") : "—")
+                            </div>
+                            @if (_bomCost != null && _bomCost.TotalBomCost > 0 && costSummary.cost > 0)
+                            {
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                    Routing: @costSummary.cost.ToString("C2") + BOM: @_bomCost.TotalBomCost.ToString("C2")
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
             }
         </div>
     }
@@ -190,9 +385,13 @@ else
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th>Material / Item</th>
-                            <th>Quantity</th>
+                            <th>Type</th>
+                            <th>Item</th>
+                            <th style="text-align: right;">Qty</th>
                             <th>UoM</th>
+                            <th style="text-align: right;">Unit Cost</th>
+                            <th style="text-align: right;">Scrap %</th>
+                            <th style="text-align: right;">Ext. Cost</th>
                             <th>Notes</th>
                         </tr>
                     </thead>
@@ -201,16 +400,120 @@ else
                         {
                             <tr>
                                 <td>@item.SortOrder</td>
-                                <td style="font-weight: 600;">@(item.Material?.Name ?? item.InventoryItem?.Name ?? $"Item #{item.Id}")</td>
-                                <td>@item.QuantityRequired.ToString("F2")</td>
+                                <td>
+                                    @switch (item.ItemType)
+                                    {
+                                        case BomItemType.RawMaterial:
+                                            <span class="badge badge-info">Material</span>
+                                            break;
+                                        case BomItemType.InventoryItem:
+                                            <span class="badge badge-secondary">Inventory</span>
+                                            break;
+                                        case BomItemType.SubPart:
+                                            <span class="badge badge-primary">Sub-Part</span>
+                                            break;
+                                    }
+                                </td>
+                                <td style="font-weight: 600;">
+                                    @switch (item.ItemType)
+                                    {
+                                        case BomItemType.RawMaterial:
+                                            @(item.Material?.Name ?? $"Material #{item.MaterialId}")
+                                            break;
+                                        case BomItemType.InventoryItem:
+                                            @(item.InventoryItem != null ? $"{item.InventoryItem.ItemNumber} — {item.InventoryItem.Name}" : $"Item #{item.InventoryItemId}")
+                                            break;
+                                        case BomItemType.SubPart:
+                                            @if (item.ChildPart != null)
+                                            {
+                                                <a href="/parts/@item.ChildPartId">@item.ChildPart.PartNumber — @item.ChildPart.Description</a>
+                                            }
+                                            else
+                                            {
+                                                @($"Part #{item.ChildPartId}")
+                                            }
+                                            @if (!string.IsNullOrEmpty(item.ReferenceDesignator))
+                                            {
+                                                <span style="color: var(--text-muted); margin-left: 4px;">[@item.ReferenceDesignator]</span>
+                                            }
+                                            break;
+                                    }
+                                </td>
+                                <td style="text-align: right;">@item.QuantityRequired.ToString("F2")</td>
                                 <td>@item.UnitOfMeasure</td>
+                                <td style="text-align: right;">
+                                    @if (item.UnitCost.HasValue)
+                                    {
+                                        <span title="Manual override">@item.UnitCost.Value.ToString("C2") ✏️</span>
+                                    }
+                                    else if (item.ItemType == BomItemType.SubPart)
+                                    {
+                                        <span style="color: var(--text-muted);" title="Resolved from sub-part BOM">roll-up</span>
+                                    }
+                                    else
+                                    {
+                                        @item.GetResolvedUnitCost().ToString("C2")
+                                    }
+                                </td>
+                                <td style="text-align: right;">@(item.ScrapFactorPct > 0 ? $"{item.ScrapFactorPct:F1}%" : "—")</td>
+                                <td style="text-align: right; font-weight: 600;">
+                                    @if (item.ItemType == BomItemType.SubPart && !item.UnitCost.HasValue)
+                                    {
+                                        @if (_bomCost != null)
+                                        {
+                                            var childNode = _bomCost.TreeDepth > 0 ? null : _bomCost; // Use full summary
+                                            <span style="color: var(--text-muted);" title="See total below">incl.</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--text-muted);">—</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        @item.GetExtendedCost().ToString("C2")
+                                    }
+                                </td>
                                 <td style="color: var(--text-muted);">@(item.Notes ?? "—")</td>
                             </tr>
                         }
                     </tbody>
                 </table>
-                <div style="margin-top: 12px; padding: 10px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.85rem; color: var(--text-muted);">
-                    @_bomItems.Count item(s) · Total qty: @_bomItems.Sum(b => b.QuantityRequired).ToString("F2")
+
+                @* BOM Cost Summary *@
+                <div style="margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                        <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap; font-size: 0.85rem;">
+                            <div>
+                                <span style="color: var(--text-muted);">Items:</span>
+                                <span style="font-weight: 600; margin-left: 4px;">@_bomItems.Count</span>
+                            </div>
+                            @if (_bomCost != null)
+                            {
+                                <div>
+                                    <span style="color: var(--text-muted);">Raw Material:</span>
+                                    <span style="margin-left: 4px;">@_bomCost.RawMaterialCost.ToString("C2")</span>
+                                </div>
+                                <div>
+                                    <span style="color: var(--text-muted);">Inventory:</span>
+                                    <span style="margin-left: 4px;">@_bomCost.InventoryItemCost.ToString("C2")</span>
+                                </div>
+                                @if (_bomCost.SubPartCost > 0)
+                                {
+                                    <div>
+                                        <span style="color: var(--text-muted);">Sub-Parts:</span>
+                                        <span style="margin-left: 4px;">@_bomCost.SubPartCost.ToString("C2")</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div style="text-align: right;">
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Total BOM Cost</span>
+                            <div style="font-size: 1.3rem; font-weight: 700; color: var(--primary);">
+                                @(_bomCost != null ? _bomCost.TotalBomCost.ToString("C2") : "—")
+                            </div>
+                        </div>
+                    </div>
                 </div>
             }
         </div>
@@ -220,6 +523,8 @@ else
     @if (_tab == "sls" && HasAdditiveConfig())
     {
         var cfg = _part.AdditiveBuildConfig!;
+        var selectedBuild = _selectedBuildId > 0 ? _buildsForPart?.FirstOrDefault(b => b.Id == _selectedBuildId) : null;
+
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div class="card">
                 <h3 class="card-title">Stacking Configuration</h3>
@@ -263,6 +568,114 @@ else
                     }
                 </div>
             </div>
+
+            @* Build Comparison Section *@
+            @if (_buildsForPart?.Any() == true)
+            {
+                <div class="card" style="grid-column: span 2;">
+                    <h3 class="card-title">📊 Build Comparison</h3>
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                        <label class="form-label" style="margin: 0; white-space: nowrap;">
+                            Compare with build:
+                        </label>
+                        <select class="form-control" style="max-width: 400px;" @bind="_selectedBuildId">
+                            <option value="0">Select a build...</option>
+                            @foreach (var build in _buildsForPart)
+                            {
+                                var statusIcon = build.Status switch
+                                {
+                                    BuildPackageStatus.Completed => "✅",
+                                    BuildPackageStatus.PostPrint => "📦",
+                                    BuildPackageStatus.Printing => "🖨️",
+                                    BuildPackageStatus.Scheduled => "📅",
+                                    _ => "📝"
+                                };
+                                var partCount = build.Parts?.Sum(p => p.Quantity) ?? 0;
+                                <option value="@build.Id">@statusIcon @build.Name — @partCount parts — @build.Status</option>
+                            }
+                        </select>
+                    </div>
+
+                    @if (selectedBuild != null)
+                    {
+                        var buildPartQty = selectedBuild.Parts?.FirstOrDefault(p => p.PartId == _part.Id)?.Quantity ?? 0;
+                        var printCostPerPart = selectedBuild.EstimatedDurationHours.HasValue && buildPartQty > 0
+                            ? selectedBuild.EstimatedDurationHours.Value / buildPartQty
+                            : (double?)null;
+                        var depowderCostPerPart = selectedBuild.DepowderingHours.HasValue && buildPartQty > 0
+                            ? selectedBuild.DepowderingHours.Value / buildPartQty
+                            : (double?)null;
+                        var heatTreatCostPerPart = selectedBuild.HeatTreatmentHours.HasValue && buildPartQty > 0
+                            ? selectedBuild.HeatTreatmentHours.Value / buildPartQty
+                            : (double?)null;
+                        var edmCostPerPart = selectedBuild.WireEdmHours.HasValue && buildPartQty > 0
+                            ? selectedBuild.WireEdmHours.Value / buildPartQty
+                            : (double?)null;
+                        var totalBuildHours = (selectedBuild.EstimatedDurationHours ?? 0) +
+                                              (selectedBuild.DepowderingHours ?? 0) +
+                                              (selectedBuild.HeatTreatmentHours ?? 0) +
+                                              (selectedBuild.WireEdmHours ?? 0);
+                        var totalCostPerPart = buildPartQty > 0 ? totalBuildHours / buildPartQty : (double?)null;
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Build Details</div>
+                                <div class="detail-grid" style="gap: 4px 12px;">
+                                    <div class="detail-label">Name</div><div class="detail-value" style="font-weight: 600;">@selectedBuild.Name</div>
+                                    <div class="detail-label">Status</div><div class="detail-value"><span class="badge badge-info">@selectedBuild.Status</span></div>
+                                    <div class="detail-label">Machine</div><div class="detail-value">@(selectedBuild.Machine?.Name ?? "Not assigned")</div>
+                                    <div class="detail-label">Parts of this type</div><div class="detail-value">@buildPartQty</div>
+                                </div>
+                            </div>
+
+                            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Build Durations (Total)</div>
+                                <div class="detail-grid" style="gap: 4px 12px;">
+                                    <div class="detail-label">Print</div><div class="detail-value">@(selectedBuild.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div>
+                                    <div class="detail-label">Depowdering</div><div class="detail-value">@(selectedBuild.DepowderingHours?.ToString("F1") ?? "—") hrs</div>
+                                    <div class="detail-label">Heat Treatment</div><div class="detail-value">@(selectedBuild.HeatTreatmentHours?.ToString("F1") ?? "—") hrs</div>
+                                    <div class="detail-label">Wire EDM</div><div class="detail-value">@(selectedBuild.WireEdmHours?.ToString("F1") ?? "—") hrs</div>
+                                    <div class="detail-label" style="font-weight: 600;">Total</div><div class="detail-value" style="font-weight: 600;">@totalBuildHours.ToString("F1") hrs</div>
+                                </div>
+                            </div>
+
+                            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Cost Per Part (hrs/part)</div>
+                                <div class="detail-grid" style="gap: 4px 12px;">
+                                    <div class="detail-label">Print</div><div class="detail-value">@(printCostPerPart?.ToString("F2") ?? "—") hrs</div>
+                                    <div class="detail-label">Depowdering</div><div class="detail-value">@(depowderCostPerPart?.ToString("F2") ?? "—") hrs</div>
+                                    <div class="detail-label">Heat Treatment</div><div class="detail-value">@(heatTreatCostPerPart?.ToString("F2") ?? "—") hrs</div>
+                                    <div class="detail-label">Wire EDM</div><div class="detail-value">@(edmCostPerPart?.ToString("F2") ?? "—") hrs</div>
+                                    <div class="detail-label" style="font-weight: 600;">Total/Part</div><div class="detail-value" style="font-weight: 600; color: var(--primary);">@(totalCostPerPart?.ToString("F2") ?? "—") hrs</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        @* Comparison vs Config *@
+                        @if (cfg.SingleStackDurationHours.HasValue && buildPartQty > 0)
+                        {
+                            var configCostPerPart = cfg.SingleStackDurationHours.Value / cfg.PlannedPartsPerBuildSingle;
+                            var diff = (totalCostPerPart ?? 0) - configCostPerPart;
+                            var diffPct = configCostPerPart > 0 ? (diff / configCostPerPart) * 100 : 0;
+                            var diffColor = diff < 0 ? "var(--success)" : (diff > 0 ? "var(--danger)" : "var(--text-muted)");
+                            var diffIcon = diff < 0 ? "📉" : (diff > 0 ? "📈" : "➖");
+
+                            <div style="margin-top: 12px; padding: 10px; background: var(--bg-tertiary); border-radius: 6px; display: flex; align-items: center; gap: 12px;">
+                                <span>@diffIcon</span>
+                                <span style="color: var(--text-muted);">vs Config Estimate:</span>
+                                <span style="font-weight: 600;">@configCostPerPart.ToString("F2") hrs/part</span>
+                                <span style="color: @diffColor; font-weight: 600;">
+                                    @(diff >= 0 ? "+" : "")@diff.ToString("F2") hrs/part (@(diffPct >= 0 ? "+" : "")@diffPct.ToString("F1")%)
+                                </span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p style="color: var(--text-muted); font-style: italic;">Select a build to compare durations and cost per part.</p>
+                    }
+                </div>
+            }
         </div>
     }
 
@@ -626,6 +1039,7 @@ else
 
     // BOM
     private List<PartBomItem>? _bomItems;
+    private BomCostSummary? _bomCost;
 
     // Drawings
     private List<PartDrawing> _drawings = new();
@@ -658,6 +1072,11 @@ else
     private List<CustomFieldDefinition> _customFieldDefs = new();
     private Dictionary<string, string> _customFieldValues = new();
 
+    // Build comparison
+    private List<BuildPackage>? _buildsForPart;
+    private int _selectedBuildId;
+    private int _routingBuildId; // For routing tab, defaults to latest build
+
     protected override async Task OnInitializedAsync()
     {
         if (AuthState != null)
@@ -673,10 +1092,23 @@ else
         {
             _drawings = await FileService.GetDrawingsAsync(Id);
             _bomItems = await PartService.GetBomItemsAsync(Id);
+            try { _bomCost = await PartService.CalculateBomCostAsync(Id); } catch { /* BOM cost optional */ }
             if (!string.IsNullOrEmpty(_part.CustomFieldValues))
             {
                 try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_part.CustomFieldValues) ?? new(); }
                 catch { _customFieldValues = new(); }
+            }
+
+            // Load builds for comparison (additive parts only)
+            if (HasAdditiveConfig())
+            {
+                _buildsForPart = await BuildPlanningService.GetBuildsForPartAsync(Id);
+                // Default routing tab to latest completed/printing build
+                var latestBuild = _buildsForPart
+                    .Where(b => b.Status == BuildPackageStatus.Completed || b.Status == BuildPackageStatus.Printing || b.Status == BuildPackageStatus.PostPrint)
+                    .OrderByDescending(b => b.CreatedDate)
+                    .FirstOrDefault();
+                _routingBuildId = latestBuild?.Id ?? (_buildsForPart.FirstOrDefault()?.Id ?? 0);
             }
         }
         _loading = false;
@@ -897,5 +1329,99 @@ else
     private void GoToEdit()
     {
         Nav.NavigateTo($"/parts/{Id}/edit");
+    }
+
+    /// <summary>
+    /// Gets the duration (in hours) for a build-level stage from the selected build.
+    /// </summary>
+    private double? GetBuildStageDuration(BuildPackage build, string stageSlug)
+    {
+        return stageSlug switch
+        {
+            "sls-printing" or "sls-print" or "printing" or "print" => build.EstimatedDurationHours,
+            "depowder" or "depowdering" => build.DepowderingHours,
+            "heat-treat" or "heat-treatment" => build.HeatTreatmentHours,
+            "wire-edm" or "edm" => build.WireEdmHours,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Gets the duration (in hours) for a build-level stage from the part's AdditiveBuildConfig.
+    /// </summary>
+    private double? GetConfigStageDuration(string stageSlug)
+    {
+        var config = _part?.AdditiveBuildConfig;
+        if (config == null) return null;
+
+        return stageSlug switch
+        {
+            "sls-printing" or "sls-print" or "printing" or "print" => config.SingleStackDurationHours,
+            "depowder" or "depowdering" => config.DepowderingDurationHours,
+            "heat-treat" or "heat-treatment" => config.HeatTreatmentDurationHours,
+            "wire-edm" or "edm" => config.WireEdmDurationHours,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Formats minutes as "Xh Ym" if >= 60, otherwise "X min".
+    /// </summary>
+    private static string FormatDuration(double minutes)
+    {
+        if (minutes < 60)
+            return $"{minutes:F0} min";
+
+        var hours = (int)(minutes / 60);
+        var mins = (int)(minutes % 60);
+        return mins > 0 ? $"{hours}h {mins}m" : $"{hours}h";
+    }
+
+    /// <summary>
+    /// Formats hours as "Xh Ym" if has fractional part, otherwise "Xh".
+    /// </summary>
+    private static string FormatDurationFromHours(double hours)
+    {
+        return FormatDuration(hours * 60);
+    }
+
+    /// <summary>
+    /// Calculates total cost per part and total duration per part across all routing stages.
+    /// Build-level stage costs are divided by the build's part quantity.
+    /// </summary>
+    private (decimal cost, double durationMinutes) CalculateRoutingCostPerPart(BuildPackage? build)
+    {
+        if (_part?.StageRequirements == null) return (0, 0);
+
+        decimal totalCost = 0;
+        double totalMinutes = 0;
+        int buildPartQty = build?.Parts?.FirstOrDefault(p => p.PartId == _part.Id)?.Quantity ?? 1;
+
+        foreach (var sr in _part.StageRequirements)
+        {
+            var slug = sr.ProductionStage?.StageSlug?.ToLowerInvariant() ?? "";
+
+            if (sr.ProductionStage?.IsBuildLevelStage == true)
+            {
+                double? durationHours = build != null
+                    ? GetBuildStageDuration(build, slug)
+                    : GetConfigStageDuration(slug) ?? sr.ProductionStage?.DefaultDurationHours;
+
+                if (durationHours.HasValue)
+                {
+                    var rate = sr.HourlyRateOverride ?? sr.ProductionStage?.DefaultHourlyRate ?? 85.00m;
+                    var buildStageCost = (rate * (decimal)durationHours.Value) + sr.MaterialCost;
+                    totalCost += buildPartQty > 0 ? buildStageCost / buildPartQty : 0;
+                    totalMinutes += buildPartQty > 0 ? (durationHours.Value * 60) / buildPartQty : 0;
+                }
+            }
+            else
+            {
+                totalCost += sr.CalculateTotalEstimatedCost();
+                totalMinutes += sr.EstimatedMinutes ?? (sr.ProductionStage?.DefaultDurationHours ?? 1) * 60;
+            }
+        }
+
+        return (totalCost, totalMinutes);
     }
 }

@@ -14,20 +14,20 @@ public class PartStageRequirementTests
         {
             EstimateSource = "Auto",
             ActualAverageDurationHours = 2.5,
-            EstimatedHours = 3.0
+            EstimatedMinutes = 180 // 3.0 hours
         };
 
         Assert.Equal(2.5, req.GetEffectiveEstimatedHours());
     }
 
     [Fact]
-    public void GetEffectiveEstimatedHours_WhenManual_ReturnsEstimatedHours()
+    public void GetEffectiveEstimatedHours_WhenManual_ReturnsMinutesConvertedToHours()
     {
         var req = new PartStageRequirement
         {
             EstimateSource = "Manual",
             ActualAverageDurationHours = 2.5,
-            EstimatedHours = 3.0
+            EstimatedMinutes = 180 // 3.0 hours
         };
 
         Assert.Equal(3.0, req.GetEffectiveEstimatedHours());
@@ -89,7 +89,7 @@ public class PartStageRequirementTests
         var req = new PartStageRequirement
         {
             HourlyRateOverride = 100.00m,
-            EstimatedHours = 2.0,
+            EstimatedMinutes = 120, // 2.0 hours
             EstimateSource = "Manual",
             MaterialCost = 50.00m
         };

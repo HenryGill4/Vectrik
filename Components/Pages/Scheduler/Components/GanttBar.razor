@@ -1,0 +1,37 @@
+@using System.Globalization
+
+@{
+    var barClass = IsUnassigned ? "unassigned" : (Exec.Job?.Priority.ToString().ToLower() ?? "normal");
+    var stageColor = Exec.ProductionStage?.StageColor ?? "";
+}
+<div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "")"
+     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
+     title="@ComputeTooltip()"
+     @onclick="HandleClick">
+    <span class="gantt-bar-text">@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public StageExecution Exec { get; set; } = default!;
+    [Parameter, EditorRequired] public double BarLeftPx { get; set; }
+    [Parameter, EditorRequired] public double BarWidthPx { get; set; }
+    [Parameter, EditorRequired] public DateTime Start { get; set; }
+    [Parameter, EditorRequired] public DateTime End { get; set; }
+    [Parameter] public bool IsConflict { get; set; }
+    [Parameter] public bool IsUnassigned { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnClick { get; set; }
+
+    private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
+
+    private Task HandleClick() => OnClick.InvokeAsync(Exec);
+
+    private string ComputeTooltip()
+    {
+        var part = Exec.Job?.Part?.PartNumber ?? "?";
+        var stage = Exec.ProductionStage?.Name ?? "";
+        if (IsUnassigned)
+            return $"UNASSIGNED — {part} · {stage}";
+
+        return $"{part} — {(string.IsNullOrEmpty(stage) ? "Stage" : stage)}\n{Start:MM/dd HH:mm} → {End:MM/dd HH:mm}\nEst: {Exec.EstimatedHours?.ToString("F1") ?? "?"}h | Priority: {Exec.Job?.Priority}";
+    }
+}

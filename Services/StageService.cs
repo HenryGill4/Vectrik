@@ -9,11 +9,13 @@ public class StageService : IStageService
 {
     private readonly TenantDbContext _db;
     private readonly IBuildPlanningService _buildPlanning;
+    private readonly IWorkOrderService _workOrderService;
 
-    public StageService(TenantDbContext db, IBuildPlanningService buildPlanning)
+    public StageService(TenantDbContext db, IBuildPlanningService buildPlanning, IWorkOrderService workOrderService)
     {
         _db = db;
         _buildPlanning = buildPlanning;
+        _workOrderService = workOrderService;
     }
 
     // ── Stage CRUD ──────────────────────────────────────────────
@@ -71,6 +73,8 @@ public class StageService : IStageService
             .Include(e => e.Job)
                 .ThenInclude(j => j!.Part)
             .Include(e => e.Job)
+                .ThenInclude(j => j!.Machine)
+            .Include(e => e.Job)
                 .ThenInclude(j => j!.WorkOrderLine)
                     .ThenInclude(wl => wl!.WorkOrder)
             .Include(e => e.Machine)
@@ -85,6 +89,8 @@ public class StageService : IStageService
         return await _db.StageExecutions
             .Include(e => e.Job)
                 .ThenInclude(j => j!.Part)
+            .Include(e => e.Job)
+                .ThenInclude(j => j!.Machine)
             .Include(e => e.Operator)
             .Include(e => e.Machine)
             .Where(e => e.ProductionStageId == stageId
@@ -215,15 +221,22 @@ public class StageService : IStageService
                     execution.Job.LastModifiedDate = DateTime.UtcNow;
                 }
             }
+
+            // Auto-update WO fulfillment when a job completes with a WO line link
+            if (execution.Job.Status == JobStatus.Completed && execution.Job.WorkOrderLineId.HasValue)
+            {
+                var qty = execution.Job.Quantity > 0 ? execution.Job.Quantity : 1;
+                await _workOrderService.UpdateFulfillmentAsync(
+                    execution.Job.WorkOrderLineId.Value, producedDelta: qty, shippedDelta: 0);
+            }
         }
 
         await _db.SaveChangesAsync();
 
-        // If this was the Wire EDM build-level stage completing, spawn per-part jobs
+        // If this build-level stage is configured to trigger plate release, spawn per-part jobs
         if (execution.BuildPackageId.HasValue
             && execution.ProductionStage != null
-            && execution.ProductionStage.IsBuildLevelStage
-            && execution.ProductionStage.StageSlug == "wire-edm")
+            && execution.ProductionStage.TriggerPlateRelease)
         {
             await _buildPlanning.CreatePartStageExecutionsAsync(
                 execution.BuildPackageId.Value,
@@ -470,6 +483,9 @@ public class StageService : IStageService
         return await _db.StageExecutions
             .Include(e => e.Job)
                 .ThenInclude(j => j!.Part)
+            .Include(e => e.Job)
+                .ThenInclude(j => j!.WorkOrderLine)
+                    .ThenInclude(wl => wl!.WorkOrder)
             .Include(e => e.ProductionStage)
             .Include(e => e.Operator)
             .Include(e => e.Machine)
@@ -488,6 +504,9 @@ public class StageService : IStageService
         return await _db.StageExecutions
             .Include(e => e.Job)
                 .ThenInclude(j => j!.Part)
+            .Include(e => e.Job)
+                .ThenInclude(j => j!.WorkOrderLine)
+                    .ThenInclude(wl => wl!.WorkOrder)
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
             .Where(e => e.Status == StageExecutionStatus.NotStarted

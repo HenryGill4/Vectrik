@@ -282,7 +282,7 @@ public class PartServiceTests : IDisposable
             PartId = part.Id,
             ProductionStageId = stage.Id,
             ExecutionOrder = 1,
-            EstimatedHours = 3.0,
+            EstimatedMinutes = 180, // 3.0 hours
             CreatedBy = "test-user",
             LastModifiedBy = "test-user"
         };
@@ -439,7 +439,7 @@ public class PartServiceTests : IDisposable
             PartId = source.Id,
             ProductionStageId = stage.Id,
             ExecutionOrder = 1,
-            EstimatedHours = 5.0,
+            EstimatedMinutes = 300, // 5.0 hours
             CreatedBy = "test-user",
             LastModifiedBy = "test-user"
         });
@@ -448,7 +448,7 @@ public class PartServiceTests : IDisposable
 
         var cloneReqs = await _sut.GetStageRequirementsAsync(clone.Id);
         Assert.Single(cloneReqs);
-        Assert.Equal(5.0, cloneReqs[0].EstimatedHours);
+        Assert.Equal(300, cloneReqs[0].EstimatedMinutes);
         Assert.Equal(stage.Id, cloneReqs[0].ProductionStageId);
     }
 
@@ -586,16 +586,16 @@ public class PartServiceTests : IDisposable
             PartId = part.Id,
             ProductionStageId = stage.Id,
             ExecutionOrder = 1,
-            EstimatedHours = 2.0,
+            EstimatedMinutes = 120, // 2.0 hours
             CreatedBy = "test",
             LastModifiedBy = "test"
         });
 
-        req.EstimatedHours = 5.0;
+        req.EstimatedMinutes = 300; // 5.0 hours
         req.ExecutionOrder = 3;
         var result = await _sut.UpdateStageRequirementAsync(req);
 
-        Assert.Equal(5.0, result.EstimatedHours);
+        Assert.Equal(300, result.EstimatedMinutes);
         Assert.Equal(3, result.ExecutionOrder);
     }
 

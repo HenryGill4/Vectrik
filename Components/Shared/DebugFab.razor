@@ -1,5 +1,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject IDevIssueService IssueService
+@inject ToastService Toast
 @implements IDisposable
 
 @if (_visible)
@@ -71,13 +73,15 @@
                         </div>
                     </details>
 
-                    @if (_copyState == CopyState.Done)
+                    @if (_saved)
                     {
-                        <div class="dfab-ok">✅ Copied to clipboard!</div>
+                        <div class="dfab-ok">✅ Saved! <a href="/admin/issues" style="color:var(--accent);">View Issues →</a></div>
                     }
 
                     <div class="dfab-actions">
-                        <button class="dfab-btn dfab-btn-go" @onclick="CopyAsync">📋 Copy to Clipboard</button>
+                        <button class="dfab-btn dfab-btn-go" @onclick="SaveIssueAsync" disabled="@_saving">
+                            @(_saving ? "Saving…" : "💾 Submit Issue")
+                        </button>
                         <button class="dfab-btn dfab-btn-alt" @onclick="Close">Cancel</button>
                     </div>
                 </div>
@@ -101,11 +105,10 @@
 
 @code {
     private enum View { Closed, Menu, Form }
-    private enum CopyState { Idle, Done }
-
     private bool _visible;
     private View _view;
-    private CopyState _copyState;
+    private bool _saving;
+    private bool _saved;
 
     private string _formType = "";
     private string _formTitle = "";
@@ -176,7 +179,8 @@
     private async Task OpenFormAsync(string type)
     {
         _view = View.Form;
-        _copyState = CopyState.Idle;
+        _saving = false;
+        _saved = false;
         _description = "";
         _expected = "";
         _steps = "";
@@ -211,99 +215,91 @@
     private void Close()
     {
         _view = View.Closed;
-        _copyState = CopyState.Idle;
+        _saving = false;
+        _saved = false;
     }
 
-    private async Task CopyAsync()
+    private async Task SaveIssueAsync()
     {
-        var text = _formType switch
-        {
-            "bug"    => BuildBugReport(),
-            "change" => BuildChangeRequest(),
-            "style"  => BuildStyleReport(),
-            _        => BuildGenericReport()
-        };
+        if (string.IsNullOrWhiteSpace(_description)) return;
 
+        _saving = true;
         try
         {
-            await JS.InvokeVoidAsync("opcentrix.debugFab.copyText", text);
-            _copyState = CopyState.Done;
+            var envParts = new List<string>();
+            if (!string.IsNullOrEmpty(_ctxViewport)) envParts.Add($"Viewport: {_ctxViewport} ({_ctxBreakpoint})");
+            if (!string.IsNullOrEmpty(_ctxTheme)) envParts.Add($"Theme: {_ctxTheme}");
+            if (!string.IsNullOrEmpty(_ctxUserAgent)) envParts.Add($"UA: {_ctxUserAgent}");
+
+            var issue = new DevIssue
+            {
+                Type = _formType switch
+                {
+                    "bug" => DevIssueType.Bug,
+                    "change" => DevIssueType.Change,
+                    "style" => DevIssueType.Styling,
+                    _ => DevIssueType.Bug
+                },
+                Title = _formType switch
+                {
+                    "bug" => Truncate(_description, 200),
+                    "change" => Truncate(_description, 200),
+                    "style" => Truncate($"Styling: {_element} — {_description}", 200),
+                    _ => Truncate(_description, 200)
+                },
+                Description = _description,
+                Expected = _expected,
+                StepsOrElement = _formType == "style" ? _element : _steps,
+                AffectedPage = ExtractPath(_ctxUrl),
+                SystemArea = InferSystemArea(ExtractPath(_ctxUrl)),
+                EnvironmentContext = string.Join(" · ", envParts)
+            };
+
+            await IssueService.CreateAsync(issue);
+            _saved = true;
+            Toast.ShowSuccess("Issue saved to tracker");
         }
-        catch (JSException)
+        catch
         {
-            _copyState = CopyState.Idle;
+            Toast.ShowError("Failed to save issue");
         }
-        catch (JSDisconnectedException) { }
+        finally
+        {
+            _saving = false;
+        }
     }
 
-    private string BuildBugReport() => $"""
-        ## 🐛 BUG REPORT
+    private static string Truncate(string text, int max)
+        => text.Length <= max ? text : string.Concat(text.AsSpan(0, max), "…");
 
-        **Page:** `{_ctxUrl}`
+    private static string ExtractPath(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return uri.PathAndQuery;
+        return url;
+    }
 
-        **What happened:**
-        {_description}
-
-        **Expected behavior:**
-        {_expected}
-
-        **Steps to reproduce:**
-        {_steps}
-
-        **Environment:**
-        - Viewport: {_ctxViewport} ({_ctxBreakpoint})
-        - Theme: {_ctxTheme}
-        - Scroll: {_ctxScrollY}px
-        - DPR: {_ctxPixelRatio}
-        - Time: {_ctxTime}
-        - UA: {_ctxUserAgent}
-        """;
-
-    private string BuildChangeRequest() => $"""
-        ## 💡 CHANGE REQUEST
-
-        **Page:** `{_ctxUrl}`
-
-        **Current behavior:**
-        {_description}
-
-        **Desired behavior:**
-        {_expected}
-
-        **Context:**
-        - Time: {_ctxTime}
-        """;
-
-    private string BuildStyleReport() => $"""
-        ## 🎨 STYLING ISSUE
-
-        **Page:** `{_ctxUrl}`
-        **Element:** {_element}
-
-        **What looks wrong:**
-        {_description}
-
-        **Environment:**
-        - Viewport: {_ctxViewport} ({_ctxBreakpoint})
-        - Theme: {_ctxTheme}
-        - DPR: {_ctxPixelRatio}
-        - Scroll: {_ctxScrollY}px
-        - UA: {_ctxUserAgent}
-        """;
-
-    private string BuildGenericReport() => $"""
-        ## 📝 FEEDBACK
-
-        **Page:** `{_ctxUrl}`
-
-        **Description:**
-        {_description}
-
-        **Context:**
-        - Viewport: {_ctxViewport}
-        - Theme: {_ctxTheme}
-        - Time: {_ctxTime}
-        """;
+    /// <summary>Maps a URL path to a system area matching the Issues.razor dropdown.</summary>
+    private static string InferSystemArea(string path)
+    {
+        var lower = path.ToLowerInvariant().TrimEnd('/');
+        return lower switch
+        {
+            _ when lower.StartsWith("/scheduler") => "Scheduler — Gantt",
+            _ when lower.StartsWith("/parts") => "Parts",
+            _ when lower.StartsWith("/workorders") || lower.StartsWith("/work-orders") => "Work Orders",
+            _ when lower.StartsWith("/builds") => "Builds / SLS Pipeline",
+            _ when lower.StartsWith("/shopfloor") || lower.StartsWith("/shop-floor") => "Shop Floor",
+            _ when lower.StartsWith("/tracking") => "Tracking",
+            _ when lower.StartsWith("/quality") => "Quality",
+            _ when lower.StartsWith("/analytics") => "Analytics",
+            _ when lower.StartsWith("/inventory") => "Inventory",
+            _ when lower.StartsWith("/maintenance") => "Maintenance",
+            _ when lower.StartsWith("/quotes") => "Quotes",
+            _ when lower.StartsWith("/admin") => "Admin",
+            _ => ""
+        };
+    }
 
     public void Dispose()
     {

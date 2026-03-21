@@ -1,0 +1,149 @@
+@using Opcentrix_V3.Models
+
+<div class="page-header">
+    <h1 class="page-title">📅 Production Scheduler</h1>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <a href="/builds" class="btn btn-secondary">📦 Builds</a>
+        <a href="scheduler/capacity" class="btn btn-secondary">📊 Capacity</a>
+        @if (ShowAutoSchedule)
+        {
+            <button class="btn btn-warning" @onclick="OnAutoScheduleAll" disabled="@Scheduling">
+                @if (Scheduling) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                ⚡ Auto-Schedule (@AutoScheduleCount)
+            </button>
+        }
+        <button class="btn btn-primary" @onclick="OnNewJob">+ New Job</button>
+    </div>
+</div>
+
+<div class="sched-controls">
+    <div class="sched-controls-left">
+        @if (HasGanttViewport)
+        {
+            <div class="sched-viewport-info">
+                <span class="sched-viewport-date" title="Click to jump to a date">
+                    @ViewportStart.ToString("MMM d") &mdash; @ViewportEnd.ToString("MMM d, yyyy")
+                </span>
+                <span class="sched-viewport-zoom" title="Zoom level">
+                    @(PixelsPerHour.ToString("F1")) px/hr
+                </span>
+            </div>
+            <div class="sched-nav-btns">
+                <button class="btn btn-sm btn-secondary" @onclick="@(() => OnShiftViewport.InvokeAsync(-1))" title="Pan back">◀</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnScrollToNow" title="Jump to now">Now</button>
+                <button class="btn btn-sm btn-secondary" @onclick="@(() => OnShiftViewport.InvokeAsync(1))" title="Pan forward">▶</button>
+            </div>
+            <div class="sched-nav-btns">
+                <button class="btn btn-sm btn-secondary" @onclick="OnZoomOut" title="Zoom out">➖</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnZoomIn" title="Zoom in">➕</button>
+            </div>
+        }
+
+        @* ── Context-Aware Quick Filters (C5) ── *@
+        @if (ViewMode == "gantt")
+        {
+            <div class="sched-quick-filters">
+                <button class="btn btn-sm @(ShowConflictsOnly ? "btn-warning" : "btn-secondary")"
+                        @onclick="ToggleConflictsOnly"
+                        title="Show only overlapping/conflicting executions">
+                    ⚠️ Conflicts Only
+                </button>
+            </div>
+        }
+        else if (ViewMode == "builds")
+        {
+            <div class="sched-quick-filters sched-status-pills">
+                <button class="btn btn-sm @(BuildStatusFilter == null ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetBuildStatusFilter(null)"
+                        title="Show all builds">All</button>
+                <button class="btn btn-sm @(BuildStatusFilter == BuildPackageStatus.Draft ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetBuildStatusFilter(BuildPackageStatus.Draft)"
+                        title="Show Draft builds">Draft</button>
+                <button class="btn btn-sm @(BuildStatusFilter == BuildPackageStatus.Ready ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetBuildStatusFilter(BuildPackageStatus.Ready)"
+                        title="Show Ready builds">Ready</button>
+                <button class="btn btn-sm @(BuildStatusFilter == BuildPackageStatus.Scheduled ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetBuildStatusFilter(BuildPackageStatus.Scheduled)"
+                        title="Show Scheduled builds">Scheduled</button>
+                <button class="btn btn-sm @(BuildStatusFilter == BuildPackageStatus.Printing ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetBuildStatusFilter(BuildPackageStatus.Printing)"
+                        title="Show Printing builds">Printing</button>
+            </div>
+        }
+        else if (ViewMode == "orders")
+        {
+            <div class="sched-quick-filters">
+                <button class="btn btn-sm @(ShowOverdueOnly ? "btn-danger" : "btn-secondary")"
+                        @onclick="ToggleOverdueOnly"
+                        title="Show only overdue work orders">
+                    🔴 Overdue Only
+                </button>
+            </div>
+        }
+    </div>
+    <div class="sched-controls-right">
+        <div class="sched-view-toggle">
+            <button class="btn btn-sm @(ViewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("gantt"))'>📊 Machines</button>
+            <button class="btn btn-sm @(ViewMode == "builds" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("builds"))'>📦 SLS Builds</button>
+            <button class="btn btn-sm @(ViewMode == "orders" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("orders"))'>📋 Work Orders</button>
+            <button class="btn btn-sm @(ViewMode == "path" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("path"))'>🔀 Part Path</button>
+            <button class="btn btn-sm @(ViewMode == "stages" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("stages"))'>🔧 Stages</button>
+            <button class="btn btn-sm @(ViewMode == "table" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("table"))'>📋 Table</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" @onclick="OnManualRefresh" title="Refresh now">🔄</button>
+        <button class="btn btn-sm @(AutoRefreshEnabled ? "btn-accent" : "btn-secondary")" @onclick="OnToggleAutoRefresh"
+                title="@(AutoRefreshEnabled ? "Auto-refresh ON (30s)" : "Auto-refresh OFF")">
+            @(AutoRefreshEnabled ? "⏱ ON" : "⏱ OFF")
+        </button>
+        <span style="font-size: 0.7rem; color: var(--text-muted); white-space: nowrap;">@LastRefresh.ToLocalTime().ToString("HH:mm:ss")</span>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string ViewMode { get; set; } = "gantt";
+    [Parameter] public DateTime ViewportStart { get; set; }
+    [Parameter] public DateTime ViewportEnd { get; set; }
+    [Parameter] public double PixelsPerHour { get; set; }
+    [Parameter] public bool Scheduling { get; set; }
+    [Parameter] public bool AutoRefreshEnabled { get; set; }
+    [Parameter] public DateTime LastRefresh { get; set; }
+    [Parameter] public bool ShowAutoSchedule { get; set; }
+    [Parameter] public int AutoScheduleCount { get; set; }
+
+    // C5: Quick filter state parameters
+    [Parameter] public bool ShowConflictsOnly { get; set; }
+    [Parameter] public BuildPackageStatus? BuildStatusFilter { get; set; }
+    [Parameter] public bool ShowOverdueOnly { get; set; }
+
+    private bool HasGanttViewport => ViewMode is "gantt" or "builds" or "path";
+
+    [Parameter] public EventCallback<string> OnViewModeChanged { get; set; }
+    [Parameter] public EventCallback<int> OnShiftViewport { get; set; }
+    [Parameter] public EventCallback OnScrollToNow { get; set; }
+    [Parameter] public EventCallback OnZoomIn { get; set; }
+    [Parameter] public EventCallback OnZoomOut { get; set; }
+    [Parameter] public EventCallback OnManualRefresh { get; set; }
+    [Parameter] public EventCallback OnToggleAutoRefresh { get; set; }
+    [Parameter] public EventCallback OnAutoScheduleAll { get; set; }
+    [Parameter] public EventCallback OnNewJob { get; set; }
+
+    // C5: Quick filter EventCallbacks
+    [Parameter] public EventCallback<bool> OnShowConflictsOnlyChanged { get; set; }
+    [Parameter] public EventCallback<BuildPackageStatus?> OnBuildStatusFilterChanged { get; set; }
+    [Parameter] public EventCallback<bool> OnShowOverdueOnlyChanged { get; set; }
+
+    private async Task ToggleConflictsOnly()
+    {
+        await OnShowConflictsOnlyChanged.InvokeAsync(!ShowConflictsOnly);
+    }
+
+    private async Task SetBuildStatusFilter(BuildPackageStatus? status)
+    {
+        await OnBuildStatusFilterChanged.InvokeAsync(status);
+    }
+
+    private async Task ToggleOverdueOnly()
+    {
+        await OnShowOverdueOnlyChanged.InvokeAsync(!ShowOverdueOnly);
+    }
+}

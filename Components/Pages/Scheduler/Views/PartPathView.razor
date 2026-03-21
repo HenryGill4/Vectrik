@@ -1,0 +1,231 @@
+@* ── Part Path View: rows = jobs, bars = stage executions colored by stage ── *@
+@using Opcentrix_V3.Components.Pages.Scheduler.Components
+@using System.Globalization
+<div class="sched-layout">
+    <div class="sched-gantt-panel">
+        @* Filter bar *@
+        <div class="sched-path-filters">
+            <select class="form-control" @bind="_pathFilterPartId" @bind:after="StateHasChanged">
+                <option value="0">All Parts</option>
+                @if (Parts != null) { @foreach (var p in Parts) { <option value="@p.Id">@p.PartNumber — @p.Name</option> } }
+            </select>
+            <select class="form-control" @bind="_pathFilterPriority" @bind:after="StateHasChanged">
+                <option value="">All Priorities</option>
+                @foreach (var p in Enum.GetValues<JobPriority>()) { <option value="@p">@p</option> }
+            </select>
+            <select class="form-control" @bind="_pathSortMode" @bind:after="StateHasChanged">
+                <option value="schedule">Sort: Schedule</option>
+                <option value="priority">Sort: Priority</option>
+                <option value="part">Sort: Part Number</option>
+            </select>
+        </div>
+
+        <div class="card sched-gantt-card">
+            @{
+                var jobGroups = Executions
+                    .Where(e => e.JobId.HasValue)
+                    .GroupBy(e => e.JobId!.Value)
+                    .Select(g => new { JobId = g.Key, Job = g.First().Job, Execs = g.OrderBy(e => e.SortOrder).ToList() })
+                    .Where(g => g.Job != null)
+                    .ToList();
+
+                if (_pathFilterPartId > 0)
+                    jobGroups = jobGroups.Where(g => g.Job!.PartId == _pathFilterPartId).ToList();
+                if (!string.IsNullOrEmpty(_pathFilterPriority) && Enum.TryParse<JobPriority>(_pathFilterPriority, out var filterPri))
+                    jobGroups = jobGroups.Where(g => g.Job!.Priority == filterPri).ToList();
+
+                jobGroups = _pathSortMode switch
+                {
+                    "priority" => jobGroups.OrderByDescending(g => g.Job!.Priority).ThenBy(g => g.Job!.ScheduledStart).ToList(),
+                    "part" => jobGroups.OrderBy(g => g.Job!.PartNumber).ThenBy(g => g.Job!.ScheduledStart).ToList(),
+                    _ => jobGroups.OrderBy(g => g.Execs.Min(e => e.ScheduledStartAt ?? DateTime.MaxValue)).ToList()
+                };
+            }
+
+            @if (!jobGroups.Any())
+            {
+                <div class="empty-state"><div class="empty-state-icon">🔀</div><div class="empty-state-text">No scheduled jobs in this date range</div></div>
+            }
+            else
+            {
+                @* Build predecessor lookup for SVG connector lines *@
+                var jobRowIndex = new Dictionary<int, int>();
+                for (var ri = 0; ri < jobGroups.Count; ri++)
+                    jobRowIndex[jobGroups[ri].JobId] = ri;
+
+                <GanttViewport @ref="Viewport"
+                               DataRangeStart="DataRangeStart"
+                               DataRangeEnd="DataRangeEnd"
+                               PixelsPerHour="PixelsPerHour"
+                               OnPixelsPerHourChanged="OnPixelsPerHourChanged"
+                               OnViewportBoundsChanged="OnViewportBoundsChanged"
+                               OnDataRangeExtensionNeeded="OnDataRangeExtensionNeeded">
+                    <div style="position:relative;">
+                        @* ── Job rows ── *@
+                        @foreach (var group in jobGroups)
+                        {
+                            var job = group.Job!;
+                            var isOverdue = job.IsOverdue;
+                            var woId = job.WorkOrderLineId.HasValue ? job.WorkOrderLine?.WorkOrderId : (int?)null;
+                            <div class="gantt-row @(isOverdue ? "gantt-row-overdue" : "")">
+                                <div class="gantt-path-label">
+                                    <span class="gantt-path-part">@(job.PartNumber ?? $"Part #{job.PartId}")</span>
+                                    @if (woId.HasValue)
+                                    {
+                                        <a class="gantt-path-job" href="/workorders/@woId/jobs/@job.Id">@(job.JobNumber ?? $"J#{job.Id}")</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="gantt-path-job" style="cursor:default;">@(job.JobNumber ?? $"J#{job.Id}")</span>
+                                    }
+                                    <span class="gantt-path-meta">
+                                        <span class="badge badge-@job.Priority.ToString().ToLower()" style="font-size:0.6rem;padding:1px 6px;">@job.Priority</span>
+                                        @(job.Quantity) qty
+                                    </span>
+                                </div>
+                                <div class="gantt-track">
+                                    @foreach (var exec in group.Execs)
+                                    {
+                                        var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? DataRangeStart;
+                                        var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                        var barLeft = GetBarLeftPx(start);
+                                        var barWidth = GetBarWidthPx(start, end);
+                                        var stageColor = exec.ProductionStage?.StageColor ?? "#3B82F6";
+                                        var statusClass = exec.Status switch
+                                        {
+                                            StageExecutionStatus.Completed => "gantt-bar-completed",
+                                            StageExecutionStatus.InProgress => "gantt-bar-inprogress",
+                                            StageExecutionStatus.Failed => "gantt-bar-failed",
+                                            StageExecutionStatus.NotStarted => "gantt-bar-notstarted",
+                                            _ => ""
+                                        };
+                                        var machineName = exec.Machine?.Name ?? "Unassigned";
+                                        var stageName = exec.ProductionStage?.Name ?? "Stage";
+                                        var tooltip = $"{stageName}\nMachine: {machineName}\n{start:MM/dd HH:mm} → {end:MM/dd HH:mm}\nEst: {exec.EstimatedHours?.ToString("F1") ?? "?"}h\nStatus: {exec.Status}";
+                                        if (exec.OperatorName != null) tooltip += $"\nOperator: {exec.OperatorName}";
+                                        <div class="gantt-bar gantt-bar-stage @statusClass"
+                                             style="left: @(FormatPx(barLeft))px; width: @(FormatPx(barWidth))px; --bar-accent: @stageColor;"
+                                             title="@tooltip"
+                                             @onclick="() => OnShowReschedule.InvokeAsync(exec)">
+                                            <span class="gantt-bar-text">@stageName<span class="gantt-bar-machine">@machineName</span></span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @* ── Predecessor connector lines ── *@
+                        @{
+                            const double rowHeight = 64.0;
+                            var connectors = new List<(double FromX, double FromY, double ToX, double ToY)>();
+
+                            foreach (var g in jobGroups)
+                            {
+                                if (!g.Job!.PredecessorJobId.HasValue
+                                    || !jobRowIndex.TryGetValue(g.Job.PredecessorJobId.Value, out var predIdx))
+                                    continue;
+
+                                var predGroup = jobGroups[predIdx];
+                                var succIdx = jobRowIndex[g.JobId];
+
+                                // Predecessor: right edge of last stage bar
+                                var predLast = predGroup.Execs.Last();
+                                var predEnd = predLast.ScheduledEndAt
+                                    ?? predLast.Job?.ScheduledEnd
+                                    ?? DataRangeStart.AddHours(4);
+                                var fromX = GetBarLeftPx(predEnd);
+
+                                // Successor: left edge of first stage bar
+                                var succFirst = g.Execs.First();
+                                var succStart = succFirst.ScheduledStartAt
+                                    ?? succFirst.Job?.ScheduledStart
+                                    ?? DataRangeStart;
+                                var toX = GetBarLeftPx(succStart);
+
+                                var fromY = predIdx * rowHeight + rowHeight / 2;
+                                var toY = succIdx * rowHeight + rowHeight / 2;
+                                connectors.Add((fromX, fromY, toX, toY));
+                            }
+                        }
+
+                        @if (connectors.Count > 0)
+                        {
+                            var svgH = jobGroups.Count * rowHeight;
+                            var ic = System.Globalization.CultureInfo.InvariantCulture;
+                            <svg class="gantt-predecessor-svg"
+                                 style="position:absolute;top:0;left:0;width:100%;height:@svgH.ToString("F0", ic)px;pointer-events:none;z-index:5;overflow:visible;">
+                                <defs>
+                                    <marker id="pred-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                                        <path d="M0,0 L8,3 L0,6 Z" fill="var(--text-muted, #9CA3AF)" />
+                                    </marker>
+                                </defs>
+                                @foreach (var c in connectors)
+                                {
+                                    <line x1="@c.FromX.ToString("F1", ic)" y1="@c.FromY.ToString("F1", ic)"
+                                          x2="@c.ToX.ToString("F1", ic)" y2="@c.ToY.ToString("F1", ic)"
+                                          stroke="var(--text-muted, #9CA3AF)" stroke-width="1.5"
+                                          stroke-dasharray="6,3" marker-end="url(#pred-arrow)" />
+                                }
+                            </svg>
+                        }
+                    </div>
+                    </GanttViewport>
+
+                    @* Stage color legend *@
+                <div class="gantt-path-legend">
+                    @foreach (var stage in Executions
+                        .Where(e => e.ProductionStage != null)
+                        .Select(e => e.ProductionStage!)
+                        .DistinctBy(s => s.Id)
+                        .OrderBy(s => s.DisplayOrder))
+                    {
+                        <span class="gantt-legend-item"><span class="gantt-path-legend-swatch" style="background:@stage.StageColor;"></span> @stage.Name</span>
+                    }
+                    <span class="gantt-legend-item">
+                        <svg width="20" height="12" style="vertical-align:middle;margin-right:4px;">
+                            <line x1="0" y1="6" x2="20" y2="6" stroke="var(--text-muted, #9CA3AF)" stroke-width="1.5" stroke-dasharray="4,2" />
+                        </svg>
+                        Predecessor
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <UnscheduledSidebar Executions="Unscheduled"
+                        Title="@($"📋 Unscheduled ({Unscheduled.Count})")"
+                        ShowManualSchedule="true"
+                        OnManualSchedule="OnManualSchedule"
+                        OnAutoSchedule="OnAutoSchedule" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
+    [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
+    [Parameter] public List<Part>? Parts { get; set; }
+    [Parameter] public DateTime DataRangeStart { get; set; }
+    [Parameter] public DateTime DataRangeEnd { get; set; }
+    [Parameter] public double PixelsPerHour { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnManualSchedule { get; set; }
+    [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
+    [Parameter] public EventCallback<double> OnPixelsPerHourChanged { get; set; }
+    [Parameter] public EventCallback<GanttViewport.ViewportBoundsChangedArgs> OnViewportBoundsChanged { get; set; }
+    [Parameter] public EventCallback OnDataRangeExtensionNeeded { get; set; }
+
+    /// <summary>Exposed for parent to route toolbar zoom/scroll controls.</summary>
+    public GanttViewport? Viewport { get; private set; }
+
+    private int _pathFilterPartId;
+    private string? _pathFilterPriority;
+    private string _pathSortMode = "schedule";
+
+    private double GetBarLeftPx(DateTime start) =>
+        (start - DataRangeStart).TotalHours * PixelsPerHour;
+
+    private double GetBarWidthPx(DateTime start, DateTime end) =>
+        Math.Max(2, (end - start).TotalHours * PixelsPerHour);
+
+    private static string FormatPx(double value) =>
+        value.ToString("F1", CultureInfo.InvariantCulture);
+}

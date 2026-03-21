@@ -135,7 +135,7 @@ public class AnalyticsService : IAnalyticsService
         foreach (var machine in machines)
         {
             var jobs = await _db.Jobs
-                .Where(j => j.MachineId == machine.MachineId
+                .Where(j => j.MachineId == machine.Id
                     && j.Status != JobStatus.Cancelled
                     && j.ScheduledStart < to
                     && j.ScheduledEnd > from)

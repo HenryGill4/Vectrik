@@ -132,19 +132,25 @@ else
                                     title="Enter Slicer Data" disabled="@(!pkg.Parts.Any() || _processing)">📐 Slicer Data</button>
                             break;
                         case BuildPackageStatus.Sliced:
-                            <button class="btn btn-sm btn-info" @onclick="() => ShowSlicerDataEntry(pkg)"
-                                    title="Edit Slicer Data" disabled="@_processing">📐 Edit Slicer</button>
-                            <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Ready)"
-                                    title="Mark Ready" disabled="@_processing">✓ Ready</button>
-                            break;
-                        case BuildPackageStatus.Ready:
-                            <button class="btn btn-sm btn-primary" @onclick="() => ScheduleBuild(pkg)"
-                                    title="Schedule" disabled="@_processing">📅 Schedule</button>
-                            break;
-                        case BuildPackageStatus.Scheduled:
-                            <button class="btn btn-sm btn-warning" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Printing)"
-                                    title="Start Print" disabled="@_processing">▶️ Print</button>
-                            break;
+                                <button class="btn btn-sm btn-info" @onclick="() => ShowSlicerDataEntry(pkg)"
+                                        title="Edit Slicer Data" disabled="@_processing">📐 Edit Slicer</button>
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShowPostPrintTiming(pkg)"
+                                        title="Configure Post-Print Stage Durations" disabled="@_processing">⏱️ Timing</button>
+                                <button class="btn btn-sm btn-success" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Ready)"
+                                        title="Mark Ready" disabled="@_processing">✓ Ready</button>
+                                break;
+                            case BuildPackageStatus.Ready:
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShowPostPrintTiming(pkg)"
+                                        title="Configure Post-Print Stage Durations" disabled="@_processing">⏱️ Timing</button>
+                                <button class="btn btn-sm btn-primary" @onclick="() => ScheduleBuild(pkg)"
+                                        title="Schedule" disabled="@_processing">📅 Schedule</button>
+                                break;
+                            case BuildPackageStatus.Scheduled:
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShowPostPrintTiming(pkg)"
+                                        title="Configure Post-Print Stage Durations" disabled="@_processing">⏱️ Timing</button>
+                                <button class="btn btn-sm btn-warning" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.Printing)"
+                                        title="Start Print" disabled="@_processing">▶️ Print</button>
+                                break;
                         case BuildPackageStatus.Printing:
                             <button class="btn btn-sm btn-info" @onclick="() => ChangeStatus(pkg, BuildPackageStatus.PostPrint)"
                                     title="Print Complete → Post-Print" disabled="@_processing">🔄 Post-Print</button>
@@ -184,9 +190,9 @@ else
                     .ToList();
             }
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px;">
-                <div><span class="form-label">Machine</span><div>@(_machineNames.GetValueOrDefault(pkg.MachineId, pkg.MachineId))</div></div>
+                <div><span class="form-label">Machine</span><div>@(pkg.Machine?.Name ?? "—")</div></div>
                 <div><span class="form-label">Parts on Plate</span><div>@pkg.TotalPartCount total (@pkg.UniquePartCount unique)</div></div>
-                <div><span class="form-label">Est. Duration</span><div>@(pkg.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div></div>
+                <div><span class="form-label">Est. Print</span><div>@(pkg.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div></div>
                 @if (!string.IsNullOrWhiteSpace(derivedMaterial))
                 {
                     <div><span class="form-label">Material</span><div>@derivedMaterial</div></div>
@@ -208,6 +214,30 @@ else
                 @if (pkg.PrintCompletedAt.HasValue) { <div><span class="form-label">Print Completed</span><div>@pkg.PrintCompletedAt.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
                 @if (pkg.PlateReleasedAt.HasValue) { <div><span class="form-label">Plate Released</span><div>@pkg.PlateReleasedAt.Value.ToString("yyyy-MM-dd HH:mm")</div></div> }
             </div>
+
+            @* ── Post-Print Stage Durations (show after slicer data entered) ── *@
+            @if (pkg.IsSlicerDataEntered && (pkg.DepowderingHours.HasValue || pkg.HeatTreatmentHours.HasValue || pkg.WireEdmHours.HasValue))
+            {
+                var totalPostPrint = (pkg.DepowderingHours ?? 0) + (pkg.HeatTreatmentHours ?? 0) + (pkg.WireEdmHours ?? 0);
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 0.85rem;">
+                    <span class="form-label" style="margin-bottom: 4px; display: block;">📦 Post-Print Stages</span>
+                    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                        @if (pkg.DepowderingHours.HasValue)
+                        {
+                            <span>Depowdering: <strong>@pkg.DepowderingHours.Value.ToString("F1")h</strong></span>
+                        }
+                        @if (pkg.HeatTreatmentHours.HasValue)
+                        {
+                            <span>Heat Treat: <strong>@pkg.HeatTreatmentHours.Value.ToString("F1")h</strong></span>
+                        }
+                        @if (pkg.WireEdmHours.HasValue)
+                        {
+                            <span>Wire EDM: <strong>@pkg.WireEdmHours.Value.ToString("F1")h</strong></span>
+                        }
+                        <span style="color: var(--text-muted);">Total: <strong>@totalPostPrint.ToString("F1")h</strong></span>
+                    </div>
+                </div>
+            }
 
             @* ── Nested Parts Table ── *@
             @if (pkg.Parts.Any())
@@ -232,6 +262,11 @@ else
                             {
                                 var partConfig = pp.Part?.AdditiveBuildConfig;
                                 var isEditing = _editingPartId == pp.Id;
+                                var partRouting = pp.Part?.StageRequirements?
+                                    .Where(sr => sr.IsActive)
+                                    .OrderBy(sr => sr.ExecutionOrder)
+                                    .Select(sr => sr.ProductionStage?.Name ?? sr.ProductionStage?.StageSlug ?? "?")
+                                    .ToList() ?? [];
                                 <tr>
                                     <td>
                                         <div>
@@ -255,6 +290,12 @@ else
                                                 </a>
                                             }
                                         </div>
+                                        @if (partRouting.Any())
+                                        {
+                                            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">
+                                                🔧 @string.Join(" → ", partRouting)
+                                            </div>
+                                        }
                                     </td>
                                     @if (isEditing && pkg.Status == BuildPackageStatus.Draft)
                                     {
@@ -400,10 +441,10 @@ else
             <div class="form-group">
                 <label class="form-label">Machine *</label>
                 <select class="form-control" @bind="_newMachineId">
-                    <option value="">Select machine...</option>
+                    <option value="0">Select machine...</option>
                     @if (_machines != null)
                     {
-                        @foreach (var m in _machines) { <option value="@m.MachineId">@m.Name (@m.MachineId)</option> }
+                        @foreach (var m in _machines) { <option value="@m.Id">@m.Name (@m.MachineId)</option> }
                     }
                 </select>
             </div>
@@ -421,13 +462,17 @@ else
 @if (_showSlicerEntry)
 {
     <div class="modal-overlay" @onclick="() => _showSlicerEntry = false">
-        <div class="modal-content" style="max-width:650px" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">Slicer Data — @(_slicerPackage?.Name)</span><button class="modal-close" @onclick="() => _showSlicerEntry = false">&times;</button></div>
+        <div class="modal-content" style="max-width:700px" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">Build Planning — @(_slicerPackage?.Name)</span><button class="modal-close" @onclick="() => _showSlicerEntry = false">&times;</button></div>
+
+            @* ── Print Duration Section ── *@
             <div class="form-group">
-                <label class="form-label">Estimated Build Duration (hours) *</label>
+                <label class="form-label">🖨️ Print Duration (hours) *</label>
                 <input class="form-control" type="number" step="0.1" min="0.1" @bind="_slicerDuration" />
-                <small style="color:var(--text-secondary)">Enter the total print duration from the slicer software</small>
+                <small style="color:var(--text-secondary)">Total print duration from slicer software</small>
             </div>
+
+            @* ── Part Nesting Table ── *@
             @if (_slicerPackage?.Parts != null)
             {
                 <div class="form-group">
@@ -466,8 +511,72 @@ else
                 </div>
             }
             <button class="btn btn-primary" @onclick="SaveSlicerData" disabled="@(_slicerDuration is null or <= 0)">
-                Save Slicer Data
+                Save Build Planning Data
             </button>
+        </div>
+    </div>
+}
+
+@* ── Post-Print Timing Modal ── *@
+@if (_showPostPrintTiming && _postPrintPackage != null)
+{
+    <div class="modal-overlay" @onclick="() => _showPostPrintTiming = false">
+        <div class="modal-content" style="max-width: 500px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">⏱️ Build Stage Timing — @_postPrintPackage.Name</span>
+                <button class="modal-close" @onclick="() => _showPostPrintTiming = false">&times;</button>
+            </div>
+            <div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">
+                Configure durations for build-level stages. These values affect scheduling estimates.
+            </div>
+
+            @if (_postPrintBuildStages.Any())
+            {
+                <div style="display: grid; gap: 12px;">
+                    @foreach (var stage in _postPrintBuildStages)
+                    {
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label">
+                                @if (!string.IsNullOrEmpty(stage.Icon))
+                                {
+                                    <i class="@stage.Icon" style="margin-right: 6px;"></i>
+                                }
+                                @stage.StageName (hours)
+                            </label>
+                            <input class="form-control" type="number" step="0.1" min="0"
+                                   value="@(_postPrintStageDurations.GetValueOrDefault(stage.StageId))"
+                                   @onchange="(e) => UpdateStageDuration(stage.StageId, e)"
+                                   placeholder="—" />
+                        </div>
+                    }
+                </div>
+
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-top: 12px; font-size: 0.85rem;">
+                    @if ((_postPrintPackage?.EstimatedDurationHours ?? 0) > 0)
+                    {
+                        <div>Print: <strong>@((_postPrintPackage?.EstimatedDurationHours ?? 0).ToString("F1"))h</strong></div>
+                    }
+                    <div>Post-print total: <strong>@GetPostPrintTotalHours().ToString("F1")h</strong></div>
+                    <div style="border-top: 1px solid var(--border-color); margin-top: 6px; padding-top: 6px;">
+                        Full build timeline: <strong>@(((_postPrintPackage?.EstimatedDurationHours ?? 0) + GetPostPrintTotalHours()).ToString("F1"))h</strong>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                    <p>No build-level stages configured for parts on this build.</p>
+                    <p style="font-size: 0.8rem;">Configure stage routing on the Part → Routing tab.</p>
+                </div>
+            }
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="SavePostPrintTiming" disabled="@(_processing || !_postPrintBuildStages.Any())">
+                    @if (_processing) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    Save Timing
+                </button>
+                <button class="btn btn-secondary" @onclick="() => _showPostPrintTiming = false">Cancel</button>
+            </div>
         </div>
     </div>
 }
@@ -530,11 +639,12 @@ else
     private List<BuildPackage>? _packages;
     private List<Machine>? _machines;
     private List<Part>? _additiveParts;
-    private Dictionary<string, string> _machineNames = new();
+    private Dictionary<int, string> _machineNames = new();
     private bool _showCreate;
     private bool _processing;
     private bool _creating;
-    private string _newName = "", _newMachineId = "", _newNotes = "";
+    private string _newName = "", _newNotes = "";
+    private int _newMachineId;
     private string _statusFilter = "";
     private int _addPartId;
     private int _addPartQty = 1;
@@ -564,6 +674,12 @@ else
     private BuildPackage? _slicerPackage;
     private double? _slicerDuration;
 
+    // Post-print timing modal
+    private bool _showPostPrintTiming;
+    private BuildPackage? _postPrintPackage;
+    private List<(int StageId, string StageName, string? Icon)> _postPrintBuildStages = [];
+    private Dictionary<int, double?> _postPrintStageDurations = new();
+
     private IEnumerable<BuildPackage> _filteredPackages =>
         _packages?.Where(p => string.IsNullOrEmpty(_statusFilter) || p.Status.ToString() == _statusFilter) ?? Enumerable.Empty<BuildPackage>();
 
@@ -587,7 +703,7 @@ else
         try
         {
             _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
-            _machineNames = _machines.ToDictionary(m => m.MachineId, m => m.Name);
+            _machineNames = _machines.ToDictionary(m => m.Id, m => m.Name);
             var allParts = await PartService.GetAllPartsAsync(activeOnly: true);
             _additiveParts = allParts
                 .Where(p => p.ManufacturingApproach?.RequiresBuildPlate == true)
@@ -619,14 +735,14 @@ else
 
     private void ShowCreate()
     {
-        _newName = ""; _newMachineId = ""; _newNotes = "";
+        _newName = ""; _newMachineId = 0; _newNotes = "";
         _showCreate = true;
     }
 
     private async Task Create()
     {
         if (string.IsNullOrWhiteSpace(_newName)) { Toast.ShowError("Package name is required."); return; }
-        if (string.IsNullOrWhiteSpace(_newMachineId)) { Toast.ShowError("Machine is required."); return; }
+        if (_newMachineId <= 0) { Toast.ShowError("Machine is required."); return; }
         _creating = true;
         try
         {
@@ -764,6 +880,58 @@ else
         _showSlicerEntry = true;
     }
 
+    private void ShowPostPrintTiming(BuildPackage pkg)
+    {
+        _postPrintPackage = pkg;
+        _postPrintStageDurations.Clear();
+        _postPrintBuildStages.Clear();
+
+        // Get all build-level stages from parts on this build (excluding print stage)
+        var buildLevelStages = pkg.Parts
+            .Where(pp => pp.Part?.StageRequirements != null)
+            .SelectMany(pp => pp.Part!.StageRequirements)
+            .Where(sr => sr.IsActive && sr.ProductionStage?.IsBuildLevelStage == true)
+            .Select(sr => sr.ProductionStage!)
+            .Where(ps => !ps.StageSlug.Contains("print", StringComparison.OrdinalIgnoreCase)) // Exclude print stage (handled by slicer)
+            .DistinctBy(ps => ps.Id)
+            .OrderBy(ps => ps.DisplayOrder)
+            .ToList();
+
+        foreach (var stage in buildLevelStages)
+        {
+            _postPrintBuildStages.Add((stage.Id, stage.Name, stage.StageIcon));
+
+            // Pre-fill from saved values if available (using slug-based lookup for backward compat)
+            double? savedDuration = stage.StageSlug.ToLower() switch
+            {
+                "depowdering" or "depowder" => pkg.DepowderingHours,
+                "heat-treatment" or "heat-treat" or "heattreat" => pkg.HeatTreatmentHours,
+                "wire-edm" or "wireedm" or "edm" => pkg.WireEdmHours,
+                _ => null
+            };
+
+            // If not saved on package, try first part's AdditiveBuildConfig
+            if (savedDuration == null)
+            {
+                var firstPartConfig = pkg.Parts.FirstOrDefault()?.Part?.AdditiveBuildConfig;
+                if (firstPartConfig != null)
+                {
+                    savedDuration = stage.StageSlug.ToLower() switch
+                    {
+                        "depowdering" or "depowder" => firstPartConfig.DepowderingDurationHours,
+                        "heat-treatment" or "heat-treat" or "heattreat" => firstPartConfig.HeatTreatmentDurationHours,
+                        "wire-edm" or "wireedm" or "edm" => firstPartConfig.WireEdmDurationHours,
+                        _ => stage.DefaultDurationHours > 0 ? stage.DefaultDurationHours : null
+                    };
+                }
+            }
+
+            _postPrintStageDurations[stage.Id] = savedDuration;
+        }
+
+        _showPostPrintTiming = true;
+    }
+
     private void UpdateSlicerQuantity(int partId, ChangeEventArgs e)
     {
         if (_slicerPackage == null) return;
@@ -788,6 +956,17 @@ else
             pp.SlicerNotes = e.Value?.ToString();
     }
 
+    private void UpdateStageDuration(int stageId, ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out var hours) && hours >= 0)
+            _postPrintStageDurations[stageId] = hours;
+        else
+            _postPrintStageDurations[stageId] = null;
+    }
+
+    private double GetPostPrintTotalHours() =>
+        _postPrintStageDurations.Values.Where(v => v.HasValue).Sum(v => v!.Value);
+
     private async Task SaveSlicerData()
     {
         if (_slicerPackage == null || _slicerDuration is null or <= 0) return;
@@ -798,6 +977,7 @@ else
             _slicerPackage.Status = BuildPackageStatus.Sliced;
             _slicerPackage.LastModifiedBy = _currentUser;
             _slicerPackage.LastModifiedDate = DateTime.UtcNow;
+
             await BuildPlanningService.UpdatePackageAsync(_slicerPackage);
 
             // Persist per-part slicer changes (qty, stack level, notes)
@@ -813,18 +993,52 @@ else
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
     }
 
+    private async Task SavePostPrintTiming()
+    {
+        if (_postPrintPackage == null) return;
+        _processing = true;
+        try
+        {
+            // Map dynamic stage durations back to BuildPackage fields (backward compat)
+            foreach (var stage in _postPrintBuildStages)
+            {
+                var duration = _postPrintStageDurations.GetValueOrDefault(stage.StageId);
+                var stageName = stage.StageName.ToLower();
+
+                // Match stage to BuildPackage field by name pattern
+                if (stageName.Contains("depowder"))
+                    _postPrintPackage.DepowderingHours = duration;
+                else if (stageName.Contains("heat") && stageName.Contains("treat"))
+                    _postPrintPackage.HeatTreatmentHours = duration;
+                else if (stageName.Contains("edm") || stageName.Contains("wire"))
+                    _postPrintPackage.WireEdmHours = duration;
+            }
+
+            _postPrintPackage.LastModifiedBy = _currentUser;
+            _postPrintPackage.LastModifiedDate = DateTime.UtcNow;
+
+            await BuildPlanningService.UpdatePackageAsync(_postPrintPackage);
+
+            Toast.ShowSuccess("Build stage timing saved.");
+            _showPostPrintTiming = false;
+            await LoadPackages();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _processing = false; }
+    }
+
     // ── Build Scheduling ────────────────────────────────────────
 
     private async Task ScheduleBuild(BuildPackage pkg)
     {
         var confirmed = await _confirmDialog.ShowAsync(
-            $"Schedule \"{pkg.Name}\" on machine {_machineNames.GetValueOrDefault(pkg.MachineId, pkg.MachineId)}?",
+            $"Schedule \"{pkg.Name}\" on machine {pkg.Machine?.Name ?? "—"}?",
             "Confirm Schedule");
         if (!confirmed) return;
         _processing = true;
         try
         {
-            var machine = _machines?.FirstOrDefault(m => m.MachineId == pkg.MachineId);
+            var machine = _machines?.FirstOrDefault(m => m.Id == pkg.MachineId);
             if (machine == null) { Toast.ShowError("Machine not found."); return; }
 
             var result = await BuildScheduling.ScheduleBuildAsync(pkg.Id, machine.Id);

@@ -189,12 +189,12 @@ public class JobServiceTests : IDisposable
 
         var start = DateTime.UtcNow.AddDays(1);
         var existing = CreateTestJob(part.Id, start);
-        existing.MachineId = machine.MachineId;
+        existing.MachineId = machine.Id;
         existing.Status = JobStatus.Scheduled;
         await _sut.CreateJobAsync(existing);
 
         var overlapping = CreateTestJob(part.Id, start.AddHours(1));
-        overlapping.MachineId = machine.MachineId;
+        overlapping.MachineId = machine.Id;
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateJobAsync(overlapping));
     }
@@ -380,13 +380,13 @@ public class JobServiceTests : IDisposable
         var start = DateTime.UtcNow.AddDays(1);
 
         var existing = CreateTestJob(part.Id, start);
-        existing.MachineId = machine.MachineId;
+        existing.MachineId = machine.Id;
         existing.ScheduledEnd = start.AddHours(8);
         existing.Status = JobStatus.Scheduled;
         await _sut.CreateJobAsync(existing);
 
         // Overlaps in the middle
-        Assert.True(await _sut.HasOverlapAsync(machine.MachineId, start.AddHours(2), start.AddHours(6)));
+        Assert.True(await _sut.HasOverlapAsync(machine.Id, start.AddHours(2), start.AddHours(6)));
     }
 
     [Fact]
@@ -397,13 +397,13 @@ public class JobServiceTests : IDisposable
         var start = DateTime.UtcNow.AddDays(1);
 
         var existing = CreateTestJob(part.Id, start);
-        existing.MachineId = machine.MachineId;
+        existing.MachineId = machine.Id;
         existing.ScheduledEnd = start.AddHours(4);
         existing.Status = JobStatus.Scheduled;
         await _sut.CreateJobAsync(existing);
 
         // After existing job
-        Assert.False(await _sut.HasOverlapAsync(machine.MachineId, start.AddHours(5), start.AddHours(8)));
+        Assert.False(await _sut.HasOverlapAsync(machine.Id, start.AddHours(5), start.AddHours(8)));
     }
 
     [Fact]
@@ -414,12 +414,12 @@ public class JobServiceTests : IDisposable
         var start = DateTime.UtcNow.AddDays(1);
 
         var cancelled = CreateTestJob(part.Id, start);
-        cancelled.MachineId = machine.MachineId;
+        cancelled.MachineId = machine.Id;
         cancelled.Status = JobStatus.Cancelled;
         _db.Jobs.Add(cancelled);
         await _db.SaveChangesAsync();
 
-        Assert.False(await _sut.HasOverlapAsync(machine.MachineId, start, start.AddHours(8)));
+        Assert.False(await _sut.HasOverlapAsync(machine.Id, start, start.AddHours(8)));
     }
 
     [Fact]
@@ -430,12 +430,12 @@ public class JobServiceTests : IDisposable
         var start = DateTime.UtcNow.AddDays(1);
 
         var job = CreateTestJob(part.Id, start);
-        job.MachineId = machine.MachineId;
+        job.MachineId = machine.Id;
         job.Status = JobStatus.Scheduled;
         var created = await _sut.CreateJobAsync(job);
 
         Assert.False(await _sut.HasOverlapAsync(
-            machine.MachineId, start, start.AddHours(8), excludeJobId: created.Id));
+            machine.Id, start, start.AddHours(8), excludeJobId: created.Id));
     }
 
     // ── GetJobsForSchedulerAsync ──────────────────────────────
@@ -484,15 +484,15 @@ public class JobServiceTests : IDisposable
         var machine = await SeedMachineAsync();
 
         var job1 = CreateTestJob(part.Id);
-        job1.MachineId = machine.MachineId;
+        job1.MachineId = machine.Id;
         _db.Jobs.Add(job1);
 
         var job2 = CreateTestJob(part.Id);
-        job2.MachineId = "OTHER-001";
+        job2.MachineId = 99999;
         _db.Jobs.Add(job2);
         await _db.SaveChangesAsync();
 
-        var result = await _sut.GetJobsByMachineAsync(machine.MachineId);
+        var result = await _sut.GetJobsByMachineAsync(machine.Id);
 
         Assert.Single(result);
     }
@@ -505,18 +505,18 @@ public class JobServiceTests : IDisposable
         var baseDate = DateTime.UtcNow.AddDays(10);
 
         var inRange = CreateTestJob(part.Id, baseDate);
-        inRange.MachineId = machine.MachineId;
+        inRange.MachineId = machine.Id;
         inRange.ScheduledEnd = baseDate.AddHours(4);
         _db.Jobs.Add(inRange);
 
         var outOfRange = CreateTestJob(part.Id, baseDate.AddDays(30));
-        outOfRange.MachineId = machine.MachineId;
+        outOfRange.MachineId = machine.Id;
         outOfRange.ScheduledEnd = baseDate.AddDays(30).AddHours(4);
         _db.Jobs.Add(outOfRange);
         await _db.SaveChangesAsync();
 
         var result = await _sut.GetJobsByMachineAsync(
-            machine.MachineId, from: baseDate.AddHours(-1), to: baseDate.AddHours(10));
+            machine.Id, from: baseDate.AddHours(-1), to: baseDate.AddHours(10));
 
         Assert.Single(result);
     }

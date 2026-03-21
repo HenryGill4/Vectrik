@@ -6,10 +6,12 @@ namespace Opcentrix_V3.Services;
 public class PricingEngineService : IPricingEngineService
 {
     private readonly TenantDbContext _db;
+    private readonly IPartService _partService;
 
-    public PricingEngineService(TenantDbContext db)
+    public PricingEngineService(TenantDbContext db, IPartService partService)
     {
         _db = db;
+        _partService = partService;
     }
 
     public async Task<PricingBreakdown> CalculatePartCostAsync(int partId, int quantity = 1)
@@ -45,7 +47,11 @@ public class PricingEngineService : IPricingEngineService
         var setupHours = breakdown.TotalSetupMinutes / 60.0;
         breakdown.SetupCost = (decimal)setupHours * laborRate;
 
-        // Raw material cost (from Part → Material FK)
+        // BOM material cost (preferred) — full roll-up from BOM tree
+        var bomCost = await _partService.CalculateBomCostAsync(partId);
+        breakdown.BomMaterialCost = bomCost.TotalBomCost * quantity;
+
+        // Legacy raw material cost (from Part → Material FK, used when BOM is empty)
         var part = await _db.Parts
             .Include(p => p.MaterialEntity)
             .FirstOrDefaultAsync(p => p.Id == partId);

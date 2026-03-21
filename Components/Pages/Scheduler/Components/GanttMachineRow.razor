@@ -1,0 +1,89 @@
+<div class="gantt-row">
+    <div class="gantt-resource-label">
+        <span class="gantt-machine-status gantt-status-@Machine.Status.ToString().ToLower()"></span>
+        <div class="gantt-machine-info">
+            <span class="gantt-machine-name">@Machine.Name</span>
+            <span class="gantt-machine-type">@Machine.MachineType</span>
+        </div>
+    </div>
+    <div class="gantt-track">
+        @* ── Build package bars (full build duration, behind stage bars) ── *@
+        @foreach (var entry in BuildTimeline)
+        {
+            var build = BuildPackages.FirstOrDefault(b => b.Id == entry.BuildPackageId);
+            if (build == null) continue;
+            var barLeft = GetBarLeftPx(entry.PrintStart);
+            var barWidth = GetBarWidthPx(entry.PrintStart, entry.PrintEnd);
+            <GanttBuildBar Build="build"
+                BarLeftPx="barLeft"
+                BarWidthPx="barWidth"
+                Start="entry.PrintStart"
+                End="entry.PrintEnd"
+                OnBuildAction="OnBuildAction" />
+        }
+        @* ── Build-level stage execution groups ── *@
+        @{
+            var buildGroups = Executions
+                .Where(e => e.BuildPackageId != null && e.ProductionStage?.IsBuildLevelStage == true)
+                .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId })
+                .ToList();
+            var buildGroupExecIds = buildGroups.SelectMany(g => g.Select(e => e.Id)).ToHashSet();
+            var individualExecs = Executions.Where(e => !buildGroupExecIds.Contains(e.Id)).ToList();
+        }
+        @foreach (var group in buildGroups)
+        {
+            var first = group.OrderBy(e => e.ScheduledStartAt ?? DateTime.MaxValue).First();
+            var last = group.OrderByDescending(e => e.ScheduledEndAt ?? DateTime.MinValue).First();
+            var start = first.ScheduledStartAt ?? first.Job?.ScheduledStart ?? DataRangeStart;
+            var end = last.ScheduledEndAt ?? last.Job?.ScheduledEnd ?? start.AddHours(first.EstimatedHours ?? 4);
+            var partList = string.Join(", ", group.Select(e => e.Job?.Part?.PartNumber ?? "?").Distinct());
+            <GanttBuildGroupBar FirstExec="first"
+                BarLeftPx="GetBarLeftPx(start)"
+                BarWidthPx="GetBarWidthPx(start, end)"
+                Start="start" End="end"
+                PartList="@partList"
+                OnClick="OnBarClick" />
+        }
+        @foreach (var exec in individualExecs)
+        {
+            var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? DataRangeStart;
+            var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
+            var isConflict = HasOverlap(exec);
+            <GanttBar Exec="exec"
+                BarLeftPx="GetBarLeftPx(start)"
+                BarWidthPx="GetBarWidthPx(start, end)"
+                Start="start" End="end"
+                IsConflict="isConflict"
+                OnClick="OnBarClick" />
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Machine Machine { get; set; } = default!;
+    [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
+    [Parameter, EditorRequired] public DateTime DataRangeStart { get; set; }
+    [Parameter, EditorRequired] public double PixelsPerHour { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnBarClick { get; set; }
+    [Parameter] public EventCallback<(BuildPackage Build, string Action)> OnBuildAction { get; set; }
+    [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
+    [Parameter] public List<MachineTimelineEntry> BuildTimeline { get; set; } = [];
+
+    private double GetBarLeftPx(DateTime start) =>
+        (start - DataRangeStart).TotalHours * PixelsPerHour;
+
+    private double GetBarWidthPx(DateTime start, DateTime end) =>
+        Math.Max(2, (end - start).TotalHours * PixelsPerHour);
+
+    private bool HasOverlap(StageExecution current)
+    {
+        var cStart = current.ScheduledStartAt;
+        var cEnd = current.ScheduledEndAt;
+        if (cStart == null || cEnd == null) return false;
+
+        return Executions.Any(e =>
+            e.Id != current.Id &&
+            e.ScheduledStartAt < cEnd &&
+            e.ScheduledEndAt > cStart);
+    }
+}

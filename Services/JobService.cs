@@ -28,7 +28,7 @@ public class JobService : IJobService
         return await query.OrderBy(j => j.ScheduledStart).ToListAsync();
     }
 
-    public async Task<List<Job>> GetJobsByMachineAsync(string machineId, DateTime? from = null, DateTime? to = null)
+    public async Task<List<Job>> GetJobsByMachineAsync(int machineId, DateTime? from = null, DateTime? to = null)
     {
         var query = _db.Jobs
             .Include(j => j.Part)
@@ -82,7 +82,7 @@ public class JobService : IJobService
         }
 
         // Check for overlaps
-        if (!string.IsNullOrEmpty(job.MachineId))
+        if (job.MachineId.HasValue)
         {
             var hasOverlap = await HasOverlapAsync(job.MachineId, job.ScheduledStart, job.ScheduledEnd);
             if (hasOverlap)
@@ -107,20 +107,17 @@ public class JobService : IJobService
 
             if (routing.Count > 0)
             {
-                // Build machine lookup: string MachineId → int Id
+                // Build machine lookup: string MachineId → int Id for stage machine resolution
                 var machineLookup = await _db.Machines
+                    .Where(m => m.IsActive)
                     .ToDictionaryAsync(m => m.MachineId, m => m.Id);
-
-                int? defaultMachineIntId = null;
-                if (!string.IsNullOrEmpty(job.MachineId) && machineLookup.TryGetValue(job.MachineId, out var mid))
-                    defaultMachineIntId = mid;
 
                 foreach (var stage in routing)
                 {
-                    var estHours = stage.EstimatedHours ?? stage.ProductionStage?.DefaultDurationHours ?? 1.0;
+                    var estHours = stage.GetEffectiveEstimatedHours();
 
-                    // Resolve stage-specific machine, fall back to job machine
-                    int? machineIntId = defaultMachineIntId;
+                    // Resolve stage-specific machine from routing config (string → int)
+                    int? machineIntId = job.MachineId;
                     if (!string.IsNullOrEmpty(stage.AssignedMachineId)
                         && machineLookup.TryGetValue(stage.AssignedMachineId, out var smid))
                     {
@@ -208,8 +205,10 @@ public class JobService : IJobService
         return job;
     }
 
-    public async Task<bool> HasOverlapAsync(string machineId, DateTime start, DateTime end, int? excludeJobId = null)
+    public async Task<bool> HasOverlapAsync(int? machineId, DateTime start, DateTime end, int? excludeJobId = null)
     {
+        if (!machineId.HasValue) return false;
+
         var query = _db.Jobs
             .Where(j => j.MachineId == machineId
                 && j.Status != JobStatus.Cancelled

@@ -1,0 +1,170 @@
+@* ── Gantt View: machines gantt chart with GanttViewport + machine rows ── *@
+@using Opcentrix_V3.Components.Pages.Scheduler.Components
+
+<div class="sched-layout">
+    @* ── Gantt Chart ── *@
+    <div class="sched-gantt-panel">
+        <div class="card sched-gantt-card">
+            @if (!Machines.Any())
+            {
+                <div class="empty-state"><div class="empty-state-text">No machines configured for scheduling</div></div>
+            }
+            else
+            {
+                <GanttViewport @ref="Viewport"
+                    DataRangeStart="DataRangeStart"
+                    DataRangeEnd="DataRangeEnd"
+                    PixelsPerHour="PixelsPerHour"
+                    OnPixelsPerHourChanged="OnPixelsPerHourChanged"
+                    OnViewportBoundsChanged="OnViewportBoundsChanged"
+                    OnDataRangeExtensionNeeded="OnDataRangeExtensionNeeded">
+                        @* ── Machine rows (grouped by type, ordered by priority) ── *@
+                        @{
+                            var orderedMachines = GetOrderedMachines();
+                            string? lastGroup = null;
+                        }
+                        @foreach (var machine in orderedMachines)
+                        {
+                            var groupLabel = IsSls(machine) ? "SLS / Additive" : (machine.MachineType ?? "Other");
+                            if (groupLabel != lastGroup)
+                            {
+                                lastGroup = groupLabel;
+                                <div class="gantt-group-header">
+                                    <span class="gantt-group-label">@groupLabel</span>
+                                </div>
+                            }
+                            <GanttMachineRow Machine="machine"
+                                    Executions="GetExecutionsForMachine(machine)"
+                                    DataRangeStart="DataRangeStart"
+                                    PixelsPerHour="PixelsPerHour"
+                                    OnBarClick="OnShowReschedule"
+                                OnBuildAction="OnBuildAction"
+                                BuildPackages="BuildPackages"
+                                BuildTimeline="GetTimelineForMachine(machine)" />
+                        }
+
+                        @* ── Unassigned row ── *@
+                        @{
+                            var unassignedScheduled = Executions.Where(e => e.MachineId == null && e.ScheduledStartAt != null).ToList();
+                        }
+                        @if (unassignedScheduled.Any())
+                        {
+                            <div class="gantt-row gantt-row-unassigned">
+                                <div class="gantt-resource-label">
+                                    <span class="gantt-machine-status" style="background: var(--warning);"></span>
+                                    <div class="gantt-machine-info">
+                                        <span class="gantt-machine-name">Unassigned</span>
+                                        <span class="gantt-machine-type">@unassignedScheduled.Count tasks</span>
+                                    </div>
+                                </div>
+                                <div class="gantt-track">
+                                    @foreach (var exec in unassignedScheduled)
+                                    {
+                                        var start = exec.ScheduledStartAt ?? DataRangeStart;
+                                        var end = exec.ScheduledEndAt ?? start.AddHours(exec.EstimatedHours ?? 4);
+                                        <GanttBar Exec="exec"
+                                            BarLeftPx="GetBarLeftPx(start)"
+                                            BarWidthPx="GetBarWidthPx(start, end)"
+                                            Start="start" End="end"
+                                            IsUnassigned="true"
+                                            OnClick="OnShowReschedule" />
+                                    }
+                                </div>
+                            </div>
+                        }
+                </GanttViewport>
+
+                @* Legend *@
+                <div class="gantt-legend">
+                    <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-emergency"></span> Emergency</span>
+                    <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-rush"></span> Rush</span>
+                    <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-high"></span> High</span>
+                    <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-normal"></span> Normal</span>
+                    <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-low"></span> Low</span>
+                    <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-build-scheduled"></span> Build</span>
+                    <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-conflict"></span> Conflict</span>
+                    <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-unassigned"></span> Unassigned</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <UnscheduledSidebar Executions="Unscheduled"
+                        Title="@($"📋 Unscheduled ({Unscheduled.Count})")"
+                        ShowManualSchedule="true"
+                        OnManualSchedule="OnManualSchedule"
+                        OnAutoSchedule="OnAutoSchedule" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
+    [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
+    [Parameter, EditorRequired] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
+    [Parameter] public Dictionary<int, List<MachineTimelineEntry>> MachineTimelines { get; set; } = new();
+    [Parameter] public DateTime DataRangeStart { get; set; }
+    [Parameter] public DateTime DataRangeEnd { get; set; }
+    [Parameter] public double PixelsPerHour { get; set; }
+    [Parameter] public bool ShowConflictsOnly { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
+    [Parameter] public EventCallback<(BuildPackage Build, string Action)> OnBuildAction { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnManualSchedule { get; set; }
+    [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
+    [Parameter] public EventCallback<double> OnPixelsPerHourChanged { get; set; }
+    [Parameter] public EventCallback<GanttViewport.ViewportBoundsChangedArgs> OnViewportBoundsChanged { get; set; }
+    [Parameter] public EventCallback OnDataRangeExtensionNeeded { get; set; }
+
+    /// <summary>Exposes the inner GanttViewport for direct method calls (zoom, scroll, save state).</summary>
+    public GanttViewport? Viewport { get; private set; }
+
+    private static bool IsSls(Machine m) =>
+        m.MachineType.Equals("SLS", StringComparison.OrdinalIgnoreCase) ||
+        m.MachineType.Equals("Additive", StringComparison.OrdinalIgnoreCase);
+
+    private List<Machine> GetOrderedMachines() =>
+        Machines
+            .Where(m => m.IsAvailableForScheduling)
+            .OrderByDescending(m => IsSls(m))
+            .ThenBy(m => m.MachineType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(m => m.Priority)
+            .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private List<StageExecution> GetExecutionsForMachine(Machine machine)
+    {
+        var execs = Executions.Where(e => e.MachineId == machine.Id).ToList();
+        if (!ShowConflictsOnly)
+            return execs;
+
+        // Filter to only conflicting executions
+        return execs.Where(e => HasOverlap(e, execs)).ToList();
+    }
+
+    private bool HasOverlap(StageExecution exec, List<StageExecution> allExecs)
+    {
+        var start = exec.ScheduledStartAt;
+        var end = exec.ScheduledEndAt;
+        if (start == null || end == null)
+            return false;
+
+        return allExecs.Any(other =>
+            other.Id != exec.Id &&
+            other.ScheduledStartAt != null &&
+            other.ScheduledEndAt != null &&
+            other.ScheduledStartAt < end &&
+            other.ScheduledEndAt > start);
+    }
+
+    private double GetBarLeftPx(DateTime start) =>
+        (start - DataRangeStart).TotalHours * PixelsPerHour;
+
+    private double GetBarWidthPx(DateTime start, DateTime end) =>
+        Math.Max(2, (end - start).TotalHours * PixelsPerHour);
+
+    private List<MachineTimelineEntry> GetTimelineForMachine(Machine machine)
+    {
+        if (MachineTimelines.TryGetValue(machine.Id, out var entries))
+            return entries;
+        return [];
+    }
+}
