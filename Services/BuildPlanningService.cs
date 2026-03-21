@@ -684,7 +684,6 @@ public class BuildPlanningService : IBuildPlanningService
                     MaterialCost = stage.MaterialCost,
                     QualityCheckRequired = stage.RequiresQualityCheck,
                     BatchPartCount = totalQuantity,
-                    BatchGroupId = $"{stage.ProductionStage.StageSlug.ToUpperInvariant()}-{buildPackageId}",
                     MachineId = stage.AssignedMachineId,
                     SortOrder = sortOrder++,
                     CreatedBy = createdBy,

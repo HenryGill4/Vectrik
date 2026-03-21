@@ -235,7 +235,8 @@ public class ManufacturingProcessService : IManufacturingProcessService
         _db.ManufacturingProcesses.Add(clone);
         await _db.SaveChangesAsync();
 
-        // Clone stages
+        // Clone stages — track which cloned stage maps to the plate release trigger
+        ProcessStage? plateReleaseClone = null;
         foreach (var sourceStage in source.Stages.OrderBy(s => s.ExecutionOrder))
         {
             var cloneStage = new ProcessStage
@@ -275,15 +276,17 @@ public class ManufacturingProcessService : IManufacturingProcessService
             };
             _db.ProcessStages.Add(cloneStage);
 
-            // Map plate release stage
             if (source.PlateReleaseStageId == sourceStage.Id)
-            {
-                await _db.SaveChangesAsync();
-                clone.PlateReleaseStageId = cloneStage.Id;
-            }
+                plateReleaseClone = cloneStage;
         }
 
+        // Single save generates all stage IDs, then set plate release FK
         await _db.SaveChangesAsync();
+        if (plateReleaseClone != null)
+        {
+            clone.PlateReleaseStageId = plateReleaseClone.Id;
+            await _db.SaveChangesAsync();
+        }
         return clone;
     }
 

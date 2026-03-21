@@ -149,12 +149,11 @@ public class BatchService : IBatchService
             .Where(pi => partInstanceIds.Contains(pi.Id))
             .ToListAsync();
 
-        // Remove from current batches
-        var currentBatchIds = partInstances
+        // Capture original batch assignments before nulling
+        var originalBatchMap = partInstances
             .Where(pi => pi.CurrentBatchId.HasValue)
-            .Select(pi => pi.CurrentBatchId!.Value)
-            .Distinct()
-            .ToList();
+            .GroupBy(pi => pi.CurrentBatchId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
 
         foreach (var pi in partInstances.Where(pi => pi.CurrentBatchId.HasValue))
         {
@@ -169,13 +168,14 @@ public class BatchService : IBatchService
             pi.CurrentBatchId = null;
         }
 
-        // Update old batch counts
+        // Update old batch counts using pre-captured map
         var oldBatches = await _db.ProductionBatches
-            .Where(b => currentBatchIds.Contains(b.Id))
+            .Where(b => originalBatchMap.Keys.Contains(b.Id))
             .ToListAsync();
         foreach (var batch in oldBatches)
         {
-            batch.CurrentPartCount = await _db.PartInstances.CountAsync(pi => pi.CurrentBatchId == batch.Id);
+            var removedCount = originalBatchMap.GetValueOrDefault(batch.Id, 0);
+            batch.CurrentPartCount = Math.Max(0, batch.CurrentPartCount - removedCount);
             batch.LastModifiedDate = DateTime.UtcNow;
         }
 
@@ -358,6 +358,9 @@ public class BatchService : IBatchService
     {
         var batch = await _db.ProductionBatches.FindAsync(batchId)
             ?? throw new InvalidOperationException("Batch not found.");
+
+        if (batch.Status == BatchStatus.Dissolved)
+            throw new InvalidOperationException("Cannot complete a dissolved batch.");
 
         batch.Status = BatchStatus.Completed;
         batch.LastModifiedDate = DateTime.UtcNow;
