@@ -121,8 +121,6 @@ public class ProductionStageTests
         Assert.False(stage.AllowSkip);
         Assert.False(stage.IsOptional);
         Assert.False(stage.RequiresMachineAssignment);
-        Assert.False(stage.IsBatchStage);
-        Assert.False(stage.IsBuildLevelStage);
         Assert.Equal(30, stage.DefaultSetupMinutes);
         Assert.Equal(85.00m, stage.DefaultHourlyRate);
         Assert.Equal(1.0, stage.DefaultDurationHours);

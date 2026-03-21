@@ -83,6 +83,16 @@ public class StageExecution
 
     public int? BatchPartCount { get; set; }
 
+    /// <summary>
+    /// FK to ProductionBatch — links this execution to a formal batch entity.
+    /// </summary>
+    public int? ProductionBatchId { get; set; }
+
+    /// <summary>
+    /// FK to ProcessStage — links this execution to the process stage definition that created it.
+    /// </summary>
+    public int? ProcessStageId { get; set; }
+
     // Audit
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
@@ -104,4 +114,7 @@ public class StageExecution
     // Build plate link (nullable — only set for build-level stage executions)
     public int? BuildPackageId { get; set; }
     public virtual BuildPackage? BuildPackage { get; set; }
+
+    public virtual ProductionBatch? ProductionBatch { get; set; }
+    public virtual ProcessStage? ProcessStage { get; set; }
 }

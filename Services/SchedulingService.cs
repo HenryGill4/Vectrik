@@ -18,6 +18,7 @@ public class SchedulingService : ISchedulingService
     {
         var job = await _db.Jobs
             .Include(j => j.Stages).ThenInclude(s => s.ProductionStage)
+            .Include(j => j.Stages).ThenInclude(s => s.ProcessStage)
             .Include(j => j.Part)
             .FirstOrDefaultAsync(j => j.Id == jobId);
 
@@ -31,7 +32,7 @@ public class SchedulingService : ISchedulingService
             .Where(m => m.IsActive && m.IsAvailableForScheduling)
             .ToListAsync();
 
-        // Load part stage requirements for machine preference resolution
+        // Load part stage requirements for machine preference resolution (legacy fallback)
         var routing = await _db.PartStageRequirements
             .Where(r => r.PartId == job.PartId && r.IsActive)
             .ToListAsync();
@@ -61,11 +62,11 @@ public class SchedulingService : ISchedulingService
             var setupHours = exec.SetupHours ?? 0;
             var totalDuration = duration + setupHours;
 
-            // Find the matching PartStageRequirement for machine preferences
+            // Find the matching PartStageRequirement for machine preferences (legacy fallback)
             var requirement = routing.FirstOrDefault(r => r.ProductionStageId == exec.ProductionStageId);
 
-            // Get capable machines, ordered by preference
-            var capableMachines = ResolveMachines(exec.ProductionStage, requirement, allMachines);
+            // Get capable machines, ordered by preference (ProcessStage takes priority over PartStageRequirement)
+            var capableMachines = ResolveMachines(exec.ProductionStage, requirement, exec.ProcessStage, allMachines);
 
             if (!capableMachines.Any())
             {
@@ -120,6 +121,7 @@ public class SchedulingService : ISchedulingService
     {
         var exec = await _db.StageExecutions
             .Include(e => e.ProductionStage)
+            .Include(e => e.ProcessStage)
             .Include(e => e.Job).ThenInclude(j => j!.Part)
             .FirstOrDefaultAsync(e => e.Id == executionId);
 
@@ -150,7 +152,7 @@ public class SchedulingService : ISchedulingService
         var setupHours = exec.SetupHours ?? 0;
         var totalDuration = duration + setupHours;
 
-        var capableMachines = ResolveMachines(exec.ProductionStage!, requirement, allMachines);
+        var capableMachines = ResolveMachines(exec.ProductionStage!, requirement, exec.ProcessStage, allMachines);
 
         if (capableMachines.Any())
         {
@@ -193,7 +195,7 @@ public class SchedulingService : ISchedulingService
             .Where(m => m.IsActive && m.IsAvailableForScheduling)
             .ToListAsync();
 
-        return ResolveMachines(stage, requirement, allMachines);
+        return ResolveMachines(stage, requirement, processStage: null, allMachines);
     }
 
     public async Task<int> AutoScheduleAllAsync()
@@ -276,21 +278,50 @@ public class SchedulingService : ISchedulingService
     }
 
     private List<Machine> ResolveMachines(
-        ProductionStage stage, PartStageRequirement? requirement, List<Machine> allMachines)
+        ProductionStage stage, PartStageRequirement? requirement, ProcessStage? processStage, List<Machine> allMachines)
     {
         var machineLookup = allMachines.ToDictionary(m => m.MachineId, m => m);
+        var machineIdLookup = allMachines.ToDictionary(m => m.Id, m => m);
         var result = new List<Machine>();
 
-        // 1. Specific assignment from PartStageRequirement
-        if (requirement != null && !string.IsNullOrEmpty(requirement.AssignedMachineId)
+        // 1. ProcessStage specific assignment (highest priority — new system)
+        if (processStage != null && processStage.AssignedMachineId.HasValue
+            && processStage.RequiresSpecificMachine)
+        {
+            if (machineIdLookup.TryGetValue(processStage.AssignedMachineId.Value, out var specific))
+                return new List<Machine> { specific };
+        }
+
+        // 2. ProcessStage preferred machines
+        if (processStage != null && !string.IsNullOrEmpty(processStage.PreferredMachineIds))
+        {
+            var preferredIds = processStage.PreferredMachineIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var pid in preferredIds)
+            {
+                if (int.TryParse(pid, out var intId) && machineIdLookup.TryGetValue(intId, out var m))
+                    result.Add(m);
+            }
+        }
+
+        // 3. ProcessStage assigned machine (non-required)
+        if (processStage != null && processStage.AssignedMachineId.HasValue
+            && !processStage.RequiresSpecificMachine)
+        {
+            if (machineIdLookup.TryGetValue(processStage.AssignedMachineId.Value, out var m) && !result.Contains(m))
+                result.Insert(0, m);
+        }
+
+        // 4. Specific assignment from PartStageRequirement (legacy fallback)
+        if (!result.Any() && requirement != null && !string.IsNullOrEmpty(requirement.AssignedMachineId)
             && requirement.RequiresSpecificMachine)
         {
             if (machineLookup.TryGetValue(requirement.AssignedMachineId, out var specific))
                 return new List<Machine> { specific };
         }
 
-        // 2. Preferred machines from PartStageRequirement
-        if (requirement != null && !string.IsNullOrEmpty(requirement.PreferredMachineIds))
+        // 5. Preferred machines from PartStageRequirement (legacy fallback)
+        if (!result.Any() && requirement != null && !string.IsNullOrEmpty(requirement.PreferredMachineIds))
         {
             var preferredIds = requirement.PreferredMachineIds
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -301,7 +332,7 @@ public class SchedulingService : ISchedulingService
             }
         }
 
-        // 3. Assigned machines from the stage definition
+        // 6. Assigned machines from the ProductionStage definition
         var stageCapable = stage.GetAssignedMachineIds();
         if (stageCapable.Any())
         {
@@ -312,20 +343,20 @@ public class SchedulingService : ISchedulingService
             }
         }
 
-        // 4. Default machine for stage
+        // 7. Default machine for ProductionStage
         if (!string.IsNullOrEmpty(stage.DefaultMachineId)
             && machineLookup.TryGetValue(stage.DefaultMachineId, out var def) && !result.Contains(def))
         {
             result.Insert(0, def); // high priority
         }
 
-        // 5. If still nothing, and stage doesn't require machine, use all machines
+        // 8. If still nothing, and stage doesn't require machine, use all machines
         if (!result.Any() && !stage.RequiresMachineAssignment)
         {
             result.AddRange(allMachines.OrderBy(m => m.Priority));
         }
 
-        // 6. If stage requires assignment but nothing found, return whatever is capable
+        // 9. If stage requires assignment but nothing found, return whatever is capable
         if (!result.Any() && stage.RequiresMachineAssignment)
         {
             result.AddRange(allMachines

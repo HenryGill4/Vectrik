@@ -10,9 +10,13 @@ public interface IPartService
     Task<Part> CreatePartAsync(Part part);
     Task<Part> UpdatePartAsync(Part part);
     Task DeletePartAsync(int id);
+    [Obsolete("Use IManufacturingProcessService.GetByPartIdAsync to load process stages.")]
     Task<List<PartStageRequirement>> GetStageRequirementsAsync(int partId);
+    [Obsolete("Use IManufacturingProcessService.AddStageAsync to add stages to a manufacturing process.")]
     Task<PartStageRequirement> AddStageRequirementAsync(PartStageRequirement requirement);
+    [Obsolete("Use IManufacturingProcessService.UpdateStageAsync to update process stages.")]
     Task<PartStageRequirement> UpdateStageRequirementAsync(PartStageRequirement requirement);
+    [Obsolete("Use IManufacturingProcessService.RemoveStageAsync to remove stages from a manufacturing process.")]
     Task RemoveStageRequirementAsync(int requirementId);
     Task<List<string>> ValidatePartAsync(Part part);
 

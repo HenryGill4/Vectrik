@@ -155,13 +155,6 @@ else
                         </select>
                     </div>
                 }
-                else if (HasAdditiveConfig() && _part.StageRequirements?.Any(sr => sr.ProductionStage?.IsBuildLevelStage == true) == true)
-                {
-                    <div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--warning-bg, rgba(245, 158, 11, 0.1)); border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.3)); border-radius: 6px;">
-                        <span style="font-size: 0.85rem; color: var(--text-muted);">⚠️ No builds exist — build stage durations use defaults</span>
-                        <button class="btn btn-sm btn-accent" @onclick='() => Nav.NavigateTo("/scheduler?tab=orders")'>📦 Create Build</button>
-                    </div>
-                }
             </div>
 
             @if (_part.StageRequirements == null || !_part.StageRequirements.Any())
@@ -194,72 +187,16 @@ else
                                 <td>
                                     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: @(sr.ProductionStage?.StageColor ?? "var(--accent)"); margin-right: 6px;"></span>
                                     @(sr.ProductionStage?.Name ?? $"Stage {sr.ProductionStageId}")
-                                    @if (sr.ProductionStage?.IsBuildLevelStage == true)
-                                    {
-                                        <span style="margin-left: 4px; font-size: 0.7rem; background: var(--accent); color: white; padding: 1px 4px; border-radius: 3px;">BUILD</span>
-                                    }
                                 </td>
                                 <td>@(sr.ProductionStage?.Department ?? "—")</td>
                                 <td>
-                                    @if (sr.ProductionStage?.IsBuildLevelStage == true)
-                                    {
-                                        @* Show build-level durations from selected build or config *@
-                                        @if (routingBuild != null)
-                                        {
-                                            var buildDuration = GetBuildStageDuration(routingBuild, slug);
-                                            @if (buildDuration.HasValue)
-                                            {
-                                                <span style="color: var(--primary); font-weight: 500;" title="From build: @routingBuild.Name">
-                                                    @FormatDurationFromHours(buildDuration.Value)
-                                                    <span style="font-size: 0.7rem; margin-left: 4px;">📦</span>
-                                                </span>
-                                            }
-                                            else
-                                            {
-                                                <span style="color: var(--text-muted);">— (not set)</span>
-                                            }
-                                        }
-                                        else
-                                        {
-                                            @* Fall back to config or default *@
-                                            var configDuration = GetConfigStageDuration(slug);
-                                            @if (configDuration.HasValue)
-                                            {
-                                                <span title="From part config">
-                                                    @FormatDurationFromHours(configDuration.Value)
-                                                </span>
-                                            }
-                                            else
-                                            {
-                                                <span title="Stage default">
-                                                    @FormatDurationFromHours(sr.ProductionStage?.DefaultDurationHours ?? 1)
-                                                </span>
-                                            }
-                                        }
-                                    }
-                                    else
-                                    {
-                                        @FormatDuration(sr.EstimatedMinutes ?? (sr.ProductionStage?.DefaultDurationHours ?? 1) * 60)
-                                    }
+                                    @FormatDuration(sr.EstimatedMinutes ?? (sr.ProductionStage?.DefaultDurationHours ?? 1) * 60)
                                 </td>
                                 <td>@(sr.SetupTimeMinutes.HasValue ? FormatDuration(sr.SetupTimeMinutes.Value) : "—")</td>
-                                <td>@(sr.ProductionStage?.BatchCapacity ?? 1)×</td>
+                                <td>—</td>
                                 <td>
                                     @{
-                                        decimal stageCost;
-                                        if (sr.ProductionStage?.IsBuildLevelStage == true && routingBuild != null)
-                                        {
-                                            // Use build duration for cost calculation
-                                            var buildDurationHours = GetBuildStageDuration(routingBuild, slug);
-                                            var hourlyRate = sr.HourlyRateOverride ?? sr.ProductionStage?.DefaultHourlyRate ?? 85.00m;
-                                            stageCost = buildDurationHours.HasValue 
-                                                ? (hourlyRate * (decimal)buildDurationHours.Value) + sr.MaterialCost 
-                                                : 0;
-                                        }
-                                        else
-                                        {
-                                            stageCost = sr.CalculateTotalEstimatedCost();
-                                        }
+                                        var stageCost = sr.CalculateTotalEstimatedCost();
                                     }
                                     @(stageCost > 0 ? stageCost.ToString("C") : "—")
                                 </td>
@@ -275,10 +212,6 @@ else
 
                 @if (routingBuild != null)
                 {
-                    var totalBuildHours = (routingBuild.EstimatedDurationHours ?? 0) +
-                                          (routingBuild.DepowderingHours ?? 0) +
-                                          (routingBuild.HeatTreatmentHours ?? 0) +
-                                          (routingBuild.WireEdmHours ?? 0);
                     var bpq = routingBuild.Parts?.FirstOrDefault(p => p.PartId == _part!.Id)?.Quantity ?? 0;
 
                     <div style="margin-top: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
@@ -291,26 +224,13 @@ else
                             <span style="font-size: 0.8rem; color: var(--text-muted);">Print:</span>
                             <span>@(routingBuild.EstimatedDurationHours.HasValue ? FormatDurationFromHours(routingBuild.EstimatedDurationHours.Value) : "—")</span>
                         </div>
-                        <div>
-                            <span style="font-size: 0.8rem; color: var(--text-muted);">Depowder:</span>
-                            <span>@(routingBuild.DepowderingHours.HasValue ? FormatDurationFromHours(routingBuild.DepowderingHours.Value) : "—")</span>
-                        </div>
-                        <div>
-                            <span style="font-size: 0.8rem; color: var(--text-muted);">Heat Treat:</span>
-                            <span>@(routingBuild.HeatTreatmentHours.HasValue ? FormatDurationFromHours(routingBuild.HeatTreatmentHours.Value) : "—")</span>
-                        </div>
-                        <div>
-                            <span style="font-size: 0.8rem; color: var(--text-muted);">Wire EDM:</span>
-                            <span>@(routingBuild.WireEdmHours.HasValue ? FormatDurationFromHours(routingBuild.WireEdmHours.Value) : "—")</span>
-                        </div>
-                        <div style="border-left: 1px solid var(--border-color); padding-left: 24px;">
-                            <span style="font-size: 0.8rem; color: var(--text-muted);">Total Build:</span>
-                            <span style="font-weight: 600;">@FormatDurationFromHours(totalBuildHours)</span>
-                            @if (bpq > 0)
-                            {
-                                <span style="margin-left: 8px; color: var(--text-muted);">(@bpq parts)</span>
-                            }
-                        </div>
+                        @if (bpq > 0)
+                        {
+                            <div>
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">Parts:</span>
+                                <span>@bpq</span>
+                            </div>
+                        }
                     </div>
                 }
 
@@ -547,28 +467,6 @@ else
                 </div>
             </div>
 
-            <div class="card">
-                <h3 class="card-title">Post-Print Batch Durations</h3>
-                <div class="detail-grid">
-                    @if (cfg.DepowderingDurationHours.HasValue)
-                    {
-                        <div class="detail-label">Depowdering</div><div class="detail-value">@cfg.DepowderingDurationHours.Value.ToString("F1") hrs (@(cfg.DepowderingPartsPerBatch ?? 0) parts/batch)</div>
-                    }
-                    @if (cfg.HeatTreatmentDurationHours.HasValue)
-                    {
-                        <div class="detail-label">Heat Treatment</div><div class="detail-value">@cfg.HeatTreatmentDurationHours.Value.ToString("F1") hrs (@(cfg.HeatTreatmentPartsPerBatch ?? 0) parts/batch)</div>
-                    }
-                    @if (cfg.WireEdmDurationHours.HasValue)
-                    {
-                        <div class="detail-label">Wire EDM</div><div class="detail-value">@cfg.WireEdmDurationHours.Value.ToString("F1") hrs (@(cfg.WireEdmPartsPerSession ?? 0) parts/session)</div>
-                    }
-                    @if (!cfg.DepowderingDurationHours.HasValue && !cfg.HeatTreatmentDurationHours.HasValue && !cfg.WireEdmDurationHours.HasValue)
-                    {
-                        <div class="detail-label" style="grid-column: span 2;">No batch durations configured — defaults will be used.</div>
-                    }
-                </div>
-            </div>
-
             @* Build Comparison Section *@
             @if (_buildsForPart?.Any() == true)
             {
@@ -602,22 +500,8 @@ else
                         var printCostPerPart = selectedBuild.EstimatedDurationHours.HasValue && buildPartQty > 0
                             ? selectedBuild.EstimatedDurationHours.Value / buildPartQty
                             : (double?)null;
-                        var depowderCostPerPart = selectedBuild.DepowderingHours.HasValue && buildPartQty > 0
-                            ? selectedBuild.DepowderingHours.Value / buildPartQty
-                            : (double?)null;
-                        var heatTreatCostPerPart = selectedBuild.HeatTreatmentHours.HasValue && buildPartQty > 0
-                            ? selectedBuild.HeatTreatmentHours.Value / buildPartQty
-                            : (double?)null;
-                        var edmCostPerPart = selectedBuild.WireEdmHours.HasValue && buildPartQty > 0
-                            ? selectedBuild.WireEdmHours.Value / buildPartQty
-                            : (double?)null;
-                        var totalBuildHours = (selectedBuild.EstimatedDurationHours ?? 0) +
-                                              (selectedBuild.DepowderingHours ?? 0) +
-                                              (selectedBuild.HeatTreatmentHours ?? 0) +
-                                              (selectedBuild.WireEdmHours ?? 0);
-                        var totalCostPerPart = buildPartQty > 0 ? totalBuildHours / buildPartQty : (double?)null;
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                             <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
                                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Build Details</div>
                                 <div class="detail-grid" style="gap: 4px 12px;">
@@ -629,24 +513,10 @@ else
                             </div>
 
                             <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
-                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Build Durations (Total)</div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Build Durations</div>
                                 <div class="detail-grid" style="gap: 4px 12px;">
                                     <div class="detail-label">Print</div><div class="detail-value">@(selectedBuild.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div>
-                                    <div class="detail-label">Depowdering</div><div class="detail-value">@(selectedBuild.DepowderingHours?.ToString("F1") ?? "—") hrs</div>
-                                    <div class="detail-label">Heat Treatment</div><div class="detail-value">@(selectedBuild.HeatTreatmentHours?.ToString("F1") ?? "—") hrs</div>
-                                    <div class="detail-label">Wire EDM</div><div class="detail-value">@(selectedBuild.WireEdmHours?.ToString("F1") ?? "—") hrs</div>
-                                    <div class="detail-label" style="font-weight: 600;">Total</div><div class="detail-value" style="font-weight: 600;">@totalBuildHours.ToString("F1") hrs</div>
-                                </div>
-                            </div>
-
-                            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
-                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Cost Per Part (hrs/part)</div>
-                                <div class="detail-grid" style="gap: 4px 12px;">
-                                    <div class="detail-label">Print</div><div class="detail-value">@(printCostPerPart?.ToString("F2") ?? "—") hrs</div>
-                                    <div class="detail-label">Depowdering</div><div class="detail-value">@(depowderCostPerPart?.ToString("F2") ?? "—") hrs</div>
-                                    <div class="detail-label">Heat Treatment</div><div class="detail-value">@(heatTreatCostPerPart?.ToString("F2") ?? "—") hrs</div>
-                                    <div class="detail-label">Wire EDM</div><div class="detail-value">@(edmCostPerPart?.ToString("F2") ?? "—") hrs</div>
-                                    <div class="detail-label" style="font-weight: 600;">Total/Part</div><div class="detail-value" style="font-weight: 600; color: var(--primary);">@(totalCostPerPart?.ToString("F2") ?? "—") hrs</div>
+                                    <div class="detail-label">Print/Part</div><div class="detail-value">@(printCostPerPart?.ToString("F2") ?? "—") hrs</div>
                                 </div>
                             </div>
                         </div>
@@ -655,7 +525,7 @@ else
                         @if (cfg.SingleStackDurationHours.HasValue && buildPartQty > 0)
                         {
                             var configCostPerPart = cfg.SingleStackDurationHours.Value / cfg.PlannedPartsPerBuildSingle;
-                            var diff = (totalCostPerPart ?? 0) - configCostPerPart;
+                            var diff = (printCostPerPart ?? 0) - configCostPerPart;
                             var diffPct = configCostPerPart > 0 ? (diff / configCostPerPart) * 100 : 0;
                             var diffColor = diff < 0 ? "var(--success)" : (diff > 0 ? "var(--danger)" : "var(--text-muted)");
                             var diffIcon = diff < 0 ? "📉" : (diff > 0 ? "📈" : "➖");
@@ -1332,39 +1202,6 @@ else
     }
 
     /// <summary>
-    /// Gets the duration (in hours) for a build-level stage from the selected build.
-    /// </summary>
-    private double? GetBuildStageDuration(BuildPackage build, string stageSlug)
-    {
-        return stageSlug switch
-        {
-            "sls-printing" or "sls-print" or "printing" or "print" => build.EstimatedDurationHours,
-            "depowder" or "depowdering" => build.DepowderingHours,
-            "heat-treat" or "heat-treatment" => build.HeatTreatmentHours,
-            "wire-edm" or "edm" => build.WireEdmHours,
-            _ => null
-        };
-    }
-
-    /// <summary>
-    /// Gets the duration (in hours) for a build-level stage from the part's AdditiveBuildConfig.
-    /// </summary>
-    private double? GetConfigStageDuration(string stageSlug)
-    {
-        var config = _part?.AdditiveBuildConfig;
-        if (config == null) return null;
-
-        return stageSlug switch
-        {
-            "sls-printing" or "sls-print" or "printing" or "print" => config.SingleStackDurationHours,
-            "depowder" or "depowdering" => config.DepowderingDurationHours,
-            "heat-treat" or "heat-treatment" => config.HeatTreatmentDurationHours,
-            "wire-edm" or "edm" => config.WireEdmDurationHours,
-            _ => null
-        };
-    }
-
-    /// <summary>
     /// Formats minutes as "Xh Ym" if >= 60, otherwise "X min".
     /// </summary>
     private static string FormatDuration(double minutes)
@@ -1395,31 +1232,11 @@ else
 
         decimal totalCost = 0;
         double totalMinutes = 0;
-        int buildPartQty = build?.Parts?.FirstOrDefault(p => p.PartId == _part.Id)?.Quantity ?? 1;
 
         foreach (var sr in _part.StageRequirements)
         {
-            var slug = sr.ProductionStage?.StageSlug?.ToLowerInvariant() ?? "";
-
-            if (sr.ProductionStage?.IsBuildLevelStage == true)
-            {
-                double? durationHours = build != null
-                    ? GetBuildStageDuration(build, slug)
-                    : GetConfigStageDuration(slug) ?? sr.ProductionStage?.DefaultDurationHours;
-
-                if (durationHours.HasValue)
-                {
-                    var rate = sr.HourlyRateOverride ?? sr.ProductionStage?.DefaultHourlyRate ?? 85.00m;
-                    var buildStageCost = (rate * (decimal)durationHours.Value) + sr.MaterialCost;
-                    totalCost += buildPartQty > 0 ? buildStageCost / buildPartQty : 0;
-                    totalMinutes += buildPartQty > 0 ? (durationHours.Value * 60) / buildPartQty : 0;
-                }
-            }
-            else
-            {
-                totalCost += sr.CalculateTotalEstimatedCost();
-                totalMinutes += sr.EstimatedMinutes ?? (sr.ProductionStage?.DefaultDurationHours ?? 1) * 60;
-            }
+            totalCost += sr.CalculateTotalEstimatedCost();
+            totalMinutes += sr.EstimatedMinutes ?? (sr.ProductionStage?.DefaultDurationHours ?? 1) * 60;
         }
 
         return (totalCost, totalMinutes);

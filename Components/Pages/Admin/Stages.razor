@@ -15,7 +15,7 @@ else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Department</th><th>Duration</th><th>Rate</th><th>Batch</th><th>Active</th><th></th></tr></thead>
+            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Department</th><th>Duration</th><th>Rate</th><th>Active</th><th></th></tr></thead>
             <tbody>
                 @foreach (var s in _stages)
                 {
@@ -26,7 +26,6 @@ else
                         <td>@s.Department</td>
                         <td>@s.DefaultDurationHours h</td>
                         <td>$@s.DefaultHourlyRate/hr</td>
-                        <td>@(s.IsBatchStage ? "Yes" : "No")</td>
                         <td><span class="badge @(s.IsActive ? "badge-active" : "badge-cancelled")">@(s.IsActive ? "Yes" : "No")</span></td>
                         <td><button class="btn btn-sm btn-secondary" @onclick="() => Edit(s)">Edit</button></td>
                     </tr>
@@ -68,8 +67,8 @@ else
 
             @if (_tab == "options")
             {
+                <p style="color: var(--text-muted); margin-bottom: 12px; font-size: 0.85rem;">⚠️ Batch stage, build-level, and plate release settings have moved to the per-part Manufacturing Process editor.</p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <label class="form-label"><input type="checkbox" @bind="_edit.IsBatchStage" style="margin-right: 6px;" />Batch Stage</label>
                     <label class="form-label"><input type="checkbox" @bind="_edit.RequiresMachineAssignment" style="margin-right: 6px;" />Requires Machine</label>
                     <label class="form-label"><input type="checkbox" @bind="_edit.RequiresSerialNumber" style="margin-right: 6px;" />Requires Serial Number</label>
                     <label class="form-label"><input type="checkbox" @bind="_edit.RequiresQualityCheck" style="margin-right: 6px;" />Requires QC</label>
@@ -77,8 +76,6 @@ else
                     <label class="form-label"><input type="checkbox" @bind="_edit.AllowSkip" style="margin-right: 6px;" />Allow Skip</label>
                     <label class="form-label"><input type="checkbox" @bind="_edit.IsOptional" style="margin-right: 6px;" />Optional</label>
                     <label class="form-label"><input type="checkbox" @bind="_edit.AllowParallelExecution" style="margin-right: 6px;" />Parallel Execution</label>
-                    <label class="form-label"><input type="checkbox" @bind="_edit.IsBuildLevelStage" style="margin-right: 6px;" />Build-Level Stage</label>
-                    <label class="form-label"><input type="checkbox" @bind="_edit.TriggerPlateRelease" style="margin-right: 6px;" />Trigger Plate Release</label>
                     <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
                 </div>
             }

@@ -86,6 +86,8 @@ builder.Services.AddScoped<IBuildTemplateService, BuildTemplateService>();
 builder.Services.AddScoped<IBuildSuggestionService, BuildSuggestionService>();
 builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
 builder.Services.AddScoped<IDevIssueService, DevIssueService>();
+builder.Services.AddScoped<IManufacturingProcessService, ManufacturingProcessService>();
+builder.Services.AddScoped<IBatchService, BatchService>();
 
 // Customization Foundation (Stage 0.5)
 builder.Services.AddScoped<ITenantFeatureService, TenantFeatureService>();

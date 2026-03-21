@@ -2,6 +2,52 @@
 
 > **Note**: This plan is a reference document for implementation in Visual Studio. It is not intended to be executed by Claude Code. All file paths, entity designs, and method signatures are provided for manual implementation.
 
+---
+
+## Implementation Progress
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| **Phase 1: Core Entities & Migration** | | | |
+| 1 | Add enums (`ProcessingLevel`, `DurationMode`, `BatchStatus`, `BatchAssignmentAction`, `JobScope`) to `ManufacturingEnums.cs` | ✅ Done | |
+| 2 | Create `ManufacturingProcess.cs` entity | ✅ Done | 1:1 with Part, plate release stage, default batch capacity, version tracking |
+| 3 | Create `ProcessStage.cs` entity | ✅ Done | Compound duration, batch settings, machine prefs, workflow flags, EMA |
+| 4 | Create `ProductionBatch.cs` entity | ✅ Done | Batch lifecycle, capacity, stage/machine tracking |
+| 5 | Create `BatchPartAssignment.cs` entity | ✅ Done | Immutable ITAR traceability record |
+| 6 | Modify `Part.cs` — add `ManufacturingProcess` nav | ✅ Done | |
+| 7 | Modify `Job.cs` — add `Scope`, `ProductionBatchId`, `ManufacturingProcessId` | ✅ Done | |
+| 8 | Modify `StageExecution.cs` — add `ProductionBatchId`, `ProcessStageId` | ✅ Done | |
+| 9 | Modify `PartInstance.cs` — add `CurrentBatchId` | ✅ Done | |
+| 10 | Mark `[Obsolete]` on `ProductionStage` (`IsBatchStage`, `IsBuildLevelStage`, `BatchCapacity`, `TriggerPlateRelease`) | ✅ Done | |
+| 11 | Mark `[Obsolete]` on `BuildPackage` (`DepowderingHours`, `HeatTreatmentHours`, `WireEdmHours`) | ✅ Done | |
+| 12 | Mark `[Obsolete]` on `PartAdditiveBuildConfig` (6 post-print batch fields) | ✅ Done | |
+| 13 | Update `TenantDbContext.cs` — DbSets + OnModelCreating | ✅ Done | 4 DbSets, unique indexes, cascades, FK relationships |
+| 14 | Register services in `Program.cs` | ✅ Done | `IManufacturingProcessService`, `IBatchService` |
+| 15 | Create `IManufacturingProcessService.cs` + `ManufacturingProcessService.cs` | ✅ Done | CRUD, stage mgmt, reorder, validate, duration calc, clone |
+| 16 | Create `IBatchService.cs` + `BatchService.cs` | ✅ Done | Create/assign/remove/rebatch, consolidate, seal/complete/dissolve, history |
+| 17 | Run EF migration | ⬜ Pending | `dotnet ef migrations add ManufacturingProcessRedesign --context TenantDbContext` |
+| **Phase 2: Service Layer Rewrites** | | | |
+| 18 | Rewrite `BuildPlanningService.CreateBuildStageExecutionsAsync` | ✅ Done | Loads ManufacturingProcess, iterates ProcessStages, uses CalculateStageDuration; legacy fallback preserved |
+| 19 | Rewrite `BuildPlanningService.CreatePartStageExecutionsAsync` | ✅ Done | Creates batch/part-level executions via ManufacturingProcess; legacy fallback preserved |
+| 20 | Mark `GetBuildStageDuration` as `[Obsolete]` | ✅ Done | Kept for legacy fallback path only |
+| 21 | Update `BuildSchedulingService.ReleasePlateAsync` | ✅ Done | Creates batches via IBatchService, assigns parts with ITAR history |
+| 22 | Update `BuildSchedulingService` constructor — inject new services | ✅ Done | Added IManufacturingProcessService + IBatchService |
+| 23 | Update `SchedulingService.ResolveMachines` — read from ProcessStage | ✅ Done | 9-tier priority: ProcessStage → PartStageRequirement → ProductionStage |
+| 24 | Update `StageService` plate release trigger | ✅ Done | Checks ProcessStageId vs PlateReleaseStageId, falls back to TriggerPlateRelease |
+| 25 | Add `SeedManufacturingProcessesAsync` to `DataSeedingService` | ✅ Done | Standard SLS process per part with compound durations |
+| **Phase 3: UI** | | | |
+| 26 | Create `ProcessEditor.razor` component | ✅ Done | Visual stage flow editor with compound duration, machine prefs, batch settings, duration preview calculator |
+| 27 | Create `Production/Batches.razor` page | ✅ Done | Batch list with status summary, detail modal with ITAR history, consolidation assistant, seal/complete/dissolve |
+| 28 | Modify `Parts/Edit.razor` — replace routing tab | ✅ Done | Added Process tab with ProcessEditor component; old routing tab preserved as "Legacy Routing" |
+| 29 | Modify `Builds/Index.razor` — remove hardcoded fields | ✅ Done | Added batch preview from ManufacturingProcess; legacy post-print fields marked as "(Legacy)" |
+| 30 | Modify `Admin/Stages.razor` — simplify to catalog | ✅ Done | Removed IsBatchStage, IsBuildLevelStage, TriggerPlateRelease from Options tab |
+| 31 | Modify Scheduler Views — add batch/scope support | ✅ Done | TableView: Scope column + CSV. StagesView: batch metrics. BuildsView: batch preview. GanttBar: batch styling |
+| **Phase 4: Cleanup** | | | |
+| 32 | Remove `[Obsolete]` fields + final migration | ✅ Done | Removed fields from `ProductionStage`, `BuildPackage`, `PartAdditiveBuildConfig`; cleaned all UI, services, seed data, tests; fixed broken method signatures |
+| 33 | Deprecate `PartStageRequirement` in services | ✅ Done | Marked class + 4 `IPartService` methods `[Obsolete]`; `SchedulingService.ResolveMachines` keeps as fallback |
+
+---
+
 ## Context
 
 The manufacturing workflow system has grown organically, resulting in:

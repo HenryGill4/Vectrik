@@ -128,6 +128,12 @@ public class TenantDbContext : DbContext
     // Dev Issue Tracking
     public DbSet<DevIssue> DevIssues { get; set; }
 
+    // Manufacturing Process Redesign
+    public DbSet<ManufacturingProcess> ManufacturingProcesses { get; set; }
+    public DbSet<ProcessStage> ProcessStages { get; set; }
+    public DbSet<ProductionBatch> ProductionBatches { get; set; }
+    public DbSet<BatchPartAssignment> BatchPartAssignments { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -796,6 +802,119 @@ public class TenantDbContext : DbContext
                 .HasForeignKey(e => e.PartId);
 
             entity.HasIndex(e => new { e.BuildTemplateId, e.PartId });
+        });
+
+        // ── Manufacturing Process Redesign ───────────────────────
+
+        // ManufacturingProcess (1:1 with Part)
+        modelBuilder.Entity<ManufacturingProcess>(entity =>
+        {
+            entity.HasIndex(e => e.PartId).IsUnique();
+            entity.HasOne(e => e.Part)
+                .WithOne(e => e.ManufacturingProcess)
+                .HasForeignKey<ManufacturingProcess>(e => e.PartId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ManufacturingApproach)
+                .WithMany()
+                .HasForeignKey(e => e.ManufacturingApproachId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.PlateReleaseStage)
+                .WithMany()
+                .HasForeignKey(e => e.PlateReleaseStageId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ProcessStage (many per ManufacturingProcess, references ProductionStage catalog)
+        modelBuilder.Entity<ProcessStage>(entity =>
+        {
+            entity.HasOne(e => e.ManufacturingProcess)
+                .WithMany(e => e.Stages)
+                .HasForeignKey(e => e.ManufacturingProcessId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ProductionStage)
+                .WithMany()
+                .HasForeignKey(e => e.ProductionStageId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.AssignedMachine)
+                .WithMany()
+                .HasForeignKey(e => e.AssignedMachineId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => new { e.ManufacturingProcessId, e.ExecutionOrder });
+        });
+
+        // ProductionBatch
+        modelBuilder.Entity<ProductionBatch>(entity =>
+        {
+            entity.HasIndex(e => e.BatchNumber).IsUnique();
+            entity.HasOne(e => e.OriginBuildPackage)
+                .WithMany()
+                .HasForeignKey(e => e.OriginBuildPackageId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.CurrentProcessStage)
+                .WithMany()
+                .HasForeignKey(e => e.CurrentProcessStageId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.AssignedMachine)
+                .WithMany()
+                .HasForeignKey(e => e.AssignedMachineId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.StageExecution)
+                .WithMany()
+                .HasForeignKey(e => e.StageExecutionId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // BatchPartAssignment (immutable history)
+        modelBuilder.Entity<BatchPartAssignment>(entity =>
+        {
+            entity.HasIndex(e => new { e.PartInstanceId, e.Timestamp });
+            entity.HasOne(e => e.ProductionBatch)
+                .WithMany(e => e.PartAssignments)
+                .HasForeignKey(e => e.ProductionBatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.PartInstance)
+                .WithMany()
+                .HasForeignKey(e => e.PartInstanceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.AtProcessStage)
+                .WithMany()
+                .HasForeignKey(e => e.AtProcessStageId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // PartInstance — CurrentBatch FK
+        modelBuilder.Entity<PartInstance>(entity =>
+        {
+            entity.HasOne(e => e.CurrentBatch)
+                .WithMany()
+                .HasForeignKey(e => e.CurrentBatchId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // Job — ProductionBatch and ManufacturingProcess FKs
+        modelBuilder.Entity<Job>(entity =>
+        {
+            entity.HasOne(e => e.ProductionBatch)
+                .WithMany()
+                .HasForeignKey(e => e.ProductionBatchId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ManufacturingProcess)
+                .WithMany()
+                .HasForeignKey(e => e.ManufacturingProcessId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // StageExecution — ProductionBatch and ProcessStage FKs
+        modelBuilder.Entity<StageExecution>(entity =>
+        {
+            entity.HasOne(e => e.ProductionBatch)
+                .WithMany()
+                .HasForeignKey(e => e.ProductionBatchId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ProcessStage)
+                .WithMany()
+                .HasForeignKey(e => e.ProcessStageId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

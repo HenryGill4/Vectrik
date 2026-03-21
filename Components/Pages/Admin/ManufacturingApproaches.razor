@@ -29,7 +29,7 @@ else
             <tbody>
                 @foreach (var a in _approaches)
                 {
-                    var routingSlugs = ParseRoutingTemplate(a.DefaultRoutingTemplate);
+                    var routingStages = a.ParsedRoutingTemplate;
                     <tr>
                         <td>@a.DisplayOrder</td>
                         <td><span style="font-size:1.2em;">@(a.IconEmoji)</span> <strong>@a.Name</strong></td>
@@ -37,21 +37,22 @@ else
                         <td>
                             @if (a.IsAdditive) { <span class="badge badge-info" title="Shows Stacking tab">🖨️ Additive</span> }
                             @if (a.RequiresBuildPlate) { <span class="badge badge-warning" title="Parts added to BuildPackages">📦 Build Plate</span> }
-                            @if (a.HasPostPrintBatching) { <span class="badge badge-secondary" title="Post-print batching enabled">🔄 Batching</span> }
+                            @if (a.DefaultBatchCapacity > 0) { <span class="badge badge-secondary" title="Default batch capacity">📦 @(a.DefaultBatchCapacity)/batch</span> }
                         </td>
                         <td>
-                            @if (routingSlugs.Count == 0)
+                            @if (routingStages.Count == 0)
                             {
                                 <span style="color:#999;font-style:italic;">No default routing</span>
                             }
                             else
                             {
                                 <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                                    @foreach (var slug in routingSlugs)
+                                    @foreach (var entry in routingStages)
                                     {
-                                        var stage = _allStages?.FirstOrDefault(s => s.StageSlug == slug);
+                                        var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
                                         <span class="routing-chip" style="@(stage != null ? $"background:{stage.StageColor}20;border-color:{stage.StageColor};" : "")">
-                                            @(stage?.StageIcon ?? "❓") @(stage?.Name ?? slug)
+                                            @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
+                                            <span style="font-size:0.7em;color:var(--text-muted);margin-left:2px;">@entry.Level.ToString()[0]</span>
                                         </span>
                                     }
                                 </div>
@@ -127,16 +128,6 @@ else
                             </div>
                         </div>
                     </label>
-                    <label class="flag-item @(_edit.HasPostPrintBatching ? "flag-active" : "")">
-                        <input type="checkbox" @bind="_edit.HasPostPrintBatching" />
-                        <div class="flag-content">
-                            <span class="flag-icon">🔄</span>
-                            <div>
-                                <strong>Post-Print Batching</strong>
-                                <small>Enable batch processing stages (depowdering, heat treat)</small>
-                            </div>
-                        </div>
-                    </label>
                     <label class="flag-item @(_edit.IsActive ? "flag-active" : "")">
                         <input type="checkbox" @bind="_edit.IsActive" />
                         <div class="flag-content">
@@ -148,65 +139,14 @@ else
                         </div>
                     </label>
                 </div>
-            </div>
-
-            @* ═══ BUILD-LEVEL STAGE DURATIONS (for SLS/Build Plate approaches) ═══ *@
-            @if (_edit.RequiresBuildPlate)
-            {
-                var buildStages = _allStages?.Where(s => s.IsBuildLevelStage && s.IsActive).OrderBy(s => s.DisplayOrder).ToList() ?? [];
-                <div class="approach-section">
-                    <h4>⏱️ Build-Level Stage Durations</h4>
-                    <p class="section-hint">
-                        Default durations for stages that run on the entire build plate before parts are released.
-                        Parts stay together until Wire EDM cuts them off.
-                    </p>
-
-                    @if (buildStages.Count == 0)
-                    {
-                        <div style="padding: 16px; background: var(--bg-tertiary); border-radius: 8px; color: var(--text-muted);">
-                            No build-level stages configured. Mark stages as "Build Level" in Production Stages admin.
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="build-stages-grid">
-                            @foreach (var stage in buildStages)
-                            {
-                                <div class="build-stage-card @(stage.TriggerPlateRelease ? "build-stage-card--trigger" : "")">
-                                    <div class="build-stage-header">
-                                        <span class="build-stage-icon" style="color:@stage.StageColor">@stage.StageIcon</span>
-                                        <span class="build-stage-name">@stage.Name</span>
-                                        @if (stage.TriggerPlateRelease)
-                                        {
-                                            <span class="build-stage-badge" title="Completing this stage triggers plate release">🔓 Release</span>
-                                        }
-                                    </div>
-                                    <div class="build-stage-duration">
-                                        <label>Default Duration</label>
-                                        <div style="display: flex; align-items: center; gap: 6px;">
-                                            <input type="number" step="0.25" min="0" max="48"
-                                                   value="@stage.DefaultDurationHours"
-                                                   @onchange="@(e => UpdateStageDurationAsync(stage, e))"
-                                                   class="form-control" style="width: 80px; text-align: right;" />
-                                            <span>hours</span>
-                                        </div>
-                                    </div>
-                                    <div class="build-stage-meta">
-                                        <span>Setup: @stage.DefaultSetupMinutes min</span>
-                                        @if (!string.IsNullOrEmpty(stage.Department))
-                                        {
-                                            <span>@stage.Department</span>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                        <p style="margin-top: 12px; font-size: 0.8rem; color: var(--text-muted);">
-                            💡 These are defaults. Operators can override durations when preparing each build.
-                        </p>
-                    }
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                    <div class="form-group">
+                        <label class="form-label">Default Batch Capacity</label>
+                        <input class="form-control" type="number" min="1" max="10000" @bind="_edit.DefaultBatchCapacity" />
+                        <small style="color:var(--text-muted);">Parts per batch/crate for this approach</small>
+                    </div>
                 </div>
-            }
+            </div>
 
             @* ═══ DEFAULT ROUTING TEMPLATE ═══ *@
             <div class="approach-section">
@@ -220,12 +160,11 @@ else
                         <div class="routing-list">
                             @if (_allStages != null)
                             {
-                                @foreach (var stage in _allStages.Where(s => !_selectedStageSlugs.Contains(s.StageSlug)))
+                                @foreach (var stage in _allStages.Where(s => !_selectedStages.Any(ss => ss.Slug == s.StageSlug)))
                                 {
                                     <div class="routing-stage-item" @onclick="() => AddStageToTemplate(stage.StageSlug)">
                                         <span class="stage-icon" style="color:@stage.StageColor">@stage.StageIcon</span>
                                         <span class="stage-name">@stage.Name</span>
-                                        @if (stage.IsBuildLevelStage) { <span class="stage-badge">Build</span> }
                                         <span class="add-btn">+</span>
                                     </div>
                                 }
@@ -239,26 +178,41 @@ else
                     @* SELECTED STAGES (ORDERED) *@
                     <div class="routing-column">
                         <div class="routing-header">Selected Stages (in order)</div>
-                        <div class="routing-list @(_selectedStageSlugs.Count == 0 ? "routing-list-empty" : "")">
-                            @if (_selectedStageSlugs.Count == 0)
+                        <div class="routing-list @(_selectedStages.Count == 0 ? "routing-list-empty" : "")">
+                            @if (_selectedStages.Count == 0)
                             {
                                 <div class="routing-empty">Click stages on the left to add them</div>
                             }
                             else
                             {
-                                @for (int i = 0; i < _selectedStageSlugs.Count; i++)
+                                @for (int i = 0; i < _selectedStages.Count; i++)
                                 {
                                     var idx = i;
-                                    var slug = _selectedStageSlugs[i];
-                                    var stage = _allStages?.FirstOrDefault(s => s.StageSlug == slug);
-                                    <div class="routing-stage-item routing-stage-selected">
-                                        <span class="stage-order">@(idx + 1)</span>
-                                        <span class="stage-icon" style="color:@(stage?.StageColor ?? "#666")">@(stage?.StageIcon ?? "❓")</span>
-                                        <span class="stage-name">@(stage?.Name ?? slug)</span>
-                                        <div class="stage-actions">
-                                            <button class="move-btn" disabled="@(idx == 0)" @onclick="() => MoveStageUp(idx)" title="Move up">▲</button>
-                                            <button class="move-btn" disabled="@(idx == _selectedStageSlugs.Count - 1)" @onclick="() => MoveStageDown(idx)" title="Move down">▼</button>
-                                            <button class="remove-btn" @onclick="() => RemoveStageFromTemplate(slug)" title="Remove">×</button>
+                                    var entry = _selectedStages[i];
+                                    var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                                    <div class="routing-stage-item routing-stage-selected" style="flex-direction:column;align-items:stretch;">
+                                        <div style="display:flex;align-items:center;gap:6px;">
+                                            <span class="stage-order">@(idx + 1)</span>
+                                            <span class="stage-icon" style="color:@(stage?.StageColor ?? "#666")">@(stage?.StageIcon ?? "❓")</span>
+                                            <span class="stage-name">@(stage?.Name ?? entry.Slug)</span>
+                                            <div class="stage-actions">
+                                                <button class="move-btn" disabled="@(idx == 0)" @onclick="() => MoveStageUp(idx)" title="Move up">▲</button>
+                                                <button class="move-btn" disabled="@(idx == _selectedStages.Count - 1)" @onclick="() => MoveStageDown(idx)" title="Move down">▼</button>
+                                                <button class="remove-btn" @onclick="() => RemoveStageFromTemplate(entry.Slug)" title="Remove">×</button>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex;gap:6px;margin-top:4px;padding-left:30px;flex-wrap:wrap;">
+                                            <select class="form-control" style="width:100px;height:28px;font-size:0.8em;padding:2px 4px;" value="@entry.Level" @onchange="e => entry.Level = Enum.Parse<ProcessingLevel>(e.Value?.ToString() ?? nameof(ProcessingLevel.Part))">
+                                                <option value="@ProcessingLevel.Build">Build</option>
+                                                <option value="@ProcessingLevel.Batch">Batch</option>
+                                                <option value="@ProcessingLevel.Part">Part</option>
+                                            </select>
+                                            <label style="font-size:0.8em;display:flex;align-items:center;gap:3px;">
+                                                <input type="checkbox" @bind="entry.DurationFromBuildConfig" /> Slicer
+                                            </label>
+                                            <label style="font-size:0.8em;display:flex;align-items:center;gap:3px;">
+                                                <input type="checkbox" @bind="entry.IsPlateReleaseTrigger" /> Plate Release
+                                            </label>
                                         </div>
                                     </div>
                                 }
@@ -276,23 +230,24 @@ else
                     <div class="preview-flags">
                         @if (_edit.IsAdditive) { <span class="badge badge-info">Additive</span> }
                         @if (_edit.RequiresBuildPlate) { <span class="badge badge-warning">Build Plate</span> }
-                        @if (_edit.HasPostPrintBatching) { <span class="badge badge-secondary">Batching</span> }
+                        @if (_edit.DefaultBatchCapacity > 0) { <span class="badge badge-secondary">@(_edit.DefaultBatchCapacity)/batch</span> }
                         @if (!_edit.IsActive) { <span class="badge badge-cancelled">Inactive</span> }
                     </div>
                     <div class="preview-routing">
-                        @if (_selectedStageSlugs.Count == 0)
+                        @if (_selectedStages.Count == 0)
                         {
                             <span style="color:#999;">No default routing</span>
                         }
                         else
                         {
-                            @for (int i = 0; i < _selectedStageSlugs.Count; i++)
+                            @for (int i = 0; i < _selectedStages.Count; i++)
                             {
-                                var slug = _selectedStageSlugs[i];
-                                var stage = _allStages?.FirstOrDefault(s => s.StageSlug == slug);
+                                var entry = _selectedStages[i];
+                                var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
                                 if (i > 0) { <span class="preview-arrow">→</span> }
                                 <span class="preview-stage" style="border-color:@(stage?.StageColor ?? "#ccc")">
-                                    @(stage?.StageIcon ?? "❓") @(stage?.Name ?? slug)
+                                    @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
+                                    <span style="font-size:0.7em;color:var(--text-muted);">(@entry.Level.ToString()[0])</span>
                                 </span>
                             }
                         }
@@ -312,7 +267,7 @@ else
     private List<ManufacturingApproach>? _approaches;
     private List<ProductionStage>? _allStages;
     private ManufacturingApproach? _edit;
-    private List<string> _selectedStageSlugs = new();
+    private List<RoutingTemplateStage> _selectedStages = new();
     private bool _showForm;
     private string? _error;
 
@@ -334,7 +289,7 @@ else
     private void NewApproach()
     {
         _edit = new ManufacturingApproach { DefaultRoutingTemplate = "[]", IsActive = true };
-        _selectedStageSlugs = [];
+        _selectedStages = [];
         _error = null;
         _showForm = true;
     }
@@ -342,67 +297,37 @@ else
     private void Edit(ManufacturingApproach a)
     {
         _edit = a;
-        _selectedStageSlugs = ParseRoutingTemplate(a.DefaultRoutingTemplate);
+        _selectedStages = a.ParsedRoutingTemplate;
         _error = null;
         _showForm = true;
     }
 
-    private List<string> ParseRoutingTemplate(string? template)
-    {
-        if (string.IsNullOrWhiteSpace(template)) return [];
-        try
-        {
-            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(template) ?? [];
-        }
-        catch { return []; }
-    }
-
     private void AddStageToTemplate(string slug)
     {
-        if (!_selectedStageSlugs.Contains(slug))
-            _selectedStageSlugs.Add(slug);
+        if (!_selectedStages.Any(s => s.Slug == slug))
+            _selectedStages.Add(new RoutingTemplateStage { Slug = slug });
     }
 
     private void RemoveStageFromTemplate(string slug)
     {
-        _selectedStageSlugs.Remove(slug);
+        _selectedStages.RemoveAll(s => s.Slug == slug);
     }
 
     private void MoveStageUp(int index)
     {
         if (index > 0)
         {
-            (_selectedStageSlugs[index - 1], _selectedStageSlugs[index]) =
-                (_selectedStageSlugs[index], _selectedStageSlugs[index - 1]);
+            (_selectedStages[index - 1], _selectedStages[index]) =
+                (_selectedStages[index], _selectedStages[index - 1]);
         }
     }
 
     private void MoveStageDown(int index)
     {
-        if (index < _selectedStageSlugs.Count - 1)
+        if (index < _selectedStages.Count - 1)
         {
-            (_selectedStageSlugs[index], _selectedStageSlugs[index + 1]) =
-                (_selectedStageSlugs[index + 1], _selectedStageSlugs[index]);
-        }
-    }
-
-    /// <summary>Updates a build-level stage's default duration.</summary>
-    private async Task UpdateStageDurationAsync(ProductionStage stage, ChangeEventArgs e)
-    {
-        if (!double.TryParse(e.Value?.ToString(), out var hours)) return;
-        hours = Math.Max(0, Math.Min(48, hours)); // Clamp to reasonable range
-
-        stage.DefaultDurationHours = hours;
-        stage.LastModifiedDate = DateTime.UtcNow;
-
-        try
-        {
-            await StageService.UpdateStageAsync(stage);
-            Toast.ShowSuccess($"{stage.Name} duration → {hours:F1}h");
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to save: {ex.Message}");
+            (_selectedStages[index], _selectedStages[index + 1]) =
+                (_selectedStages[index + 1], _selectedStages[index]);
         }
     }
 
@@ -423,7 +348,7 @@ else
         }
 
         // Update routing template from selected stages
-        _edit.DefaultRoutingTemplate = System.Text.Json.JsonSerializer.Serialize(_selectedStageSlugs);
+        _edit.SetRoutingTemplate(_selectedStages);
 
         try
         {

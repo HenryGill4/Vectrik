@@ -44,41 +44,7 @@ public class PartAdditiveBuildConfig
     public bool EnableDoubleStack { get; set; }
     public bool EnableTripleStack { get; set; }
 
-    // ── Post-Print Batch Durations ───────────────────────────
-    [Range(0.1, 500)]
-    public double? DepowderingDurationHours { get; set; }
-
-    [Range(1, 500)]
-    public int? DepowderingPartsPerBatch { get; set; }
-
-    [Range(0.1, 500)]
-    public double? HeatTreatmentDurationHours { get; set; }
-
-    [Range(1, 500)]
-    public int? HeatTreatmentPartsPerBatch { get; set; }
-
-    [Range(0.1, 500)]
-    public double? WireEdmDurationHours { get; set; }
-
-    [Range(1, 500)]
-    public int? WireEdmPartsPerSession { get; set; }
-
     // ── Computed (NotMapped) ─────────────────────────────────
-
-    [NotMapped]
-    public double? DepowderingPerPartHours => DepowderingDurationHours.HasValue && DepowderingPartsPerBatch.HasValue && DepowderingPartsPerBatch > 0
-        ? DepowderingDurationHours.Value / DepowderingPartsPerBatch.Value
-        : null;
-
-    [NotMapped]
-    public double? HeatTreatmentPerPartHours => HeatTreatmentDurationHours.HasValue && HeatTreatmentPartsPerBatch.HasValue && HeatTreatmentPartsPerBatch > 0
-        ? HeatTreatmentDurationHours.Value / HeatTreatmentPartsPerBatch.Value
-        : null;
-
-    [NotMapped]
-    public double? WireEdmPerPartHours => WireEdmDurationHours.HasValue && WireEdmPartsPerSession.HasValue && WireEdmPartsPerSession > 0
-        ? WireEdmDurationHours.Value / WireEdmPartsPerSession.Value
-        : null;
 
     [NotMapped]
     public bool HasStackingConfiguration => AllowStacking && SingleStackDurationHours.HasValue;

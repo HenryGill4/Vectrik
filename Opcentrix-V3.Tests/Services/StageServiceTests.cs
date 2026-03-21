@@ -25,15 +25,13 @@ public class StageServiceTests : IDisposable
     private async Task<ProductionStage> SeedStageAsync(
         string name = "SLS Printing",
         string slug = "sls",
-        double duration = 4.0,
-        bool isBuildLevel = false)
+        double duration = 4.0)
     {
         var stage = new ProductionStage
         {
             Name = name,
             StageSlug = slug,
             DefaultDurationHours = duration,
-            IsBuildLevelStage = isBuildLevel,
             IsActive = true,
             CreatedBy = "test",
             LastModifiedBy = "test"

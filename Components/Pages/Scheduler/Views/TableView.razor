@@ -61,6 +61,7 @@
                             <input type="checkbox" checked="@_selectAll" @onchange="ToggleSelectAll" title="Select all" />
                         </th>
                         <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Priority")'>Priority @TableSortIcon("Priority")</th>
+                        <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Scope")'>Scope @TableSortIcon("Scope")</th>
                         <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("WO")'>WO# @TableSortIcon("WO")</th>
                         <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Part")'>Part @TableSortIcon("Part")</th>
                         <th style="cursor:pointer;user-select:none;" @onclick='() => ToggleTableSort("Stage")'>Stage @TableSortIcon("Stage")</th>
@@ -84,11 +85,19 @@
                             <td>
                                 <span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority ?? JobPriority.Normal)</span>
                             </td>
+                            <td>
+                                @{ var scope = exec.Job?.Scope ?? (exec.BuildPackageId != null ? JobScope.Build : JobScope.Part); }
+                                <span class="badge" style="font-size: 0.7rem; @(scope switch { JobScope.Build => "background: var(--accent); color: white;", JobScope.Batch => "background: var(--warning); color: white;", _ => "background: var(--success); color: white;" })">@scope</span>
+                                @if (exec.ProductionBatchId != null)
+                                {
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);" title="Batch #@exec.ProductionBatchId">📦</span>
+                                }
+                            </td>
                             <td style="font-size:0.8rem;">
                                 @(exec.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "—")
                             </td>
                             <td style="font-weight: 600;">
-                                @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                @if (exec.BuildPackageId != null)
                                 {
                                     <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
                                 }
@@ -224,6 +233,9 @@
                 "Priority" => _tableSortAsc
                     ? all.OrderBy(e => e.Job?.Priority ?? JobPriority.Normal)
                     : all.OrderByDescending(e => e.Job?.Priority ?? JobPriority.Normal),
+                "Scope" => _tableSortAsc
+                    ? all.OrderBy(e => e.Job?.Scope ?? JobScope.Part)
+                    : all.OrderByDescending(e => e.Job?.Scope ?? JobScope.Part),
                 "WO" => _tableSortAsc
                     ? all.OrderBy(e => e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "zzz")
                     : all.OrderByDescending(e => e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? ""),
@@ -315,12 +327,13 @@
     {
         var rows = SortedTableExecutions.ToList();
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Priority,WO#,Part,Stage,Machine,Operator,Start,End,Est.Hours,Status");
+        sb.AppendLine("Priority,Scope,WO#,Part,Stage,Machine,Operator,Start,End,Est.Hours,Status");
         foreach (var e in rows)
         {
             var priority = e.Job?.Priority ?? JobPriority.Normal;
+            var jobScope = e.Job?.Scope ?? (e.BuildPackageId != null ? JobScope.Build : JobScope.Part);
             var wo = Escape(e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "");
-            var part = e.BuildPackageId != null && e.ProductionStage?.IsBuildLevelStage == true
+            var part = e.BuildPackageId != null
                 ? Escape(e.BuildPackage?.Name ?? $"Build #{e.BuildPackageId}")
                 : Escape(e.Job?.Part?.PartNumber ?? "");
             var stage = Escape(e.ProductionStage?.Name ?? "");
@@ -329,7 +342,7 @@
             var start = (e.ScheduledStartAt ?? e.Job?.ScheduledStart)?.ToString("yyyy-MM-dd HH:mm") ?? "";
             var end = (e.ScheduledEndAt ?? e.Job?.ScheduledEnd)?.ToString("yyyy-MM-dd HH:mm") ?? "";
             var hours = e.EstimatedHours?.ToString("F1") ?? "";
-            sb.AppendLine($"{priority},{wo},{part},{stage},{machine},{op},{start},{end},{hours},{e.Status}");
+            sb.AppendLine($"{priority},{jobScope},{wo},{part},{stage},{machine},{op},{start},{end},{hours},{e.Status}");
         }
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());

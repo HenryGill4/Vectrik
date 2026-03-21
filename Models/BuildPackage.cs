@@ -50,22 +50,6 @@ public class BuildPackage
     public DateTime? PrintCompletedAt { get; set; }
     public DateTime? PlateReleasedAt { get; set; }
 
-    /// <summary>
-    /// Estimated duration in hours for depowdering stage (build-level).
-    /// Used when creating stage executions on plate release.
-    /// </summary>
-    public double? DepowderingHours { get; set; }
-
-    /// <summary>
-    /// Estimated duration in hours for heat treatment stage (build-level).
-    /// </summary>
-    public double? HeatTreatmentHours { get; set; }
-
-    /// <summary>
-    /// Estimated duration in hours for wire EDM stage (build-level).
-    /// </summary>
-    public double? WireEdmHours { get; set; }
-
     // Changeover chain: links to the build that was printing before this one
     public int? PredecessorBuildPackageId { get; set; }
 

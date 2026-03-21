@@ -45,14 +45,14 @@
                         <div>
                             <span class="form-label">Part</span>
                             <div style="font-weight: 600;">
-                                @if (_currentExecution.BuildPackageId != null && _currentExecution.ProductionStage?.IsBuildLevelStage == true)
-                                {
-                                    <span>📦 @(_currentExecution.BuildPackage?.Name ?? $"Build #{_currentExecution.BuildPackageId}")</span>
-                                }
-                                else
-                                {
-                                    @(_currentExecution.Job?.Part?.PartNumber ?? "—")
-                                }
+                                @if (_currentExecution.BuildPackageId != null)
+                                        {
+                                            <span>📦 @(_currentExecution.BuildPackage?.Name ?? $"Build #{_currentExecution.BuildPackageId}")</span>
+                                        }
+                                        else
+                                        {
+                                            @(_currentExecution.Job?.Part?.PartNumber ?? "—")
+                                        }
                             </div>
                         </div>
                         <div>
@@ -142,7 +142,7 @@
                             {
                                 <tr>
                                     <td>
-                                        @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                        @if (exec.BuildPackageId != null)
                                         {
                                             <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
                                         }
@@ -186,7 +186,7 @@
                             {
                                 <tr>
                                     <td>
-                                        @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                        @if (exec.BuildPackageId != null)
                                         {
                                             <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
                                         }
@@ -408,7 +408,7 @@
             }
 
             // Build-level stage toast with context
-            if (_currentExecution?.BuildPackageId != null && _currentExecution.ProductionStage?.IsBuildLevelStage == true)
+            if (_currentExecution?.BuildPackageId != null)
             {
                 var nextStage = _currentExecution.ProductionStage.StageSlug switch
                 {

@@ -233,14 +233,28 @@ public class StageService : IStageService
 
         await _db.SaveChangesAsync();
 
-        // If this build-level stage is configured to trigger plate release, spawn per-part jobs
-        if (execution.BuildPackageId.HasValue
-            && execution.ProductionStage != null
-            && execution.ProductionStage.TriggerPlateRelease)
+        // Check if this build-level stage triggers plate release
+        if (execution.BuildPackageId.HasValue)
         {
-            await _buildPlanning.CreatePartStageExecutionsAsync(
-                execution.BuildPackageId.Value,
-                execution.OperatorName ?? execution.CreatedBy ?? "System");
+            var shouldRelease = false;
+
+            // Check ProcessStageId against ManufacturingProcess.PlateReleaseStageId
+            if (execution.ProcessStageId.HasValue)
+            {
+                var processStage = await _db.ProcessStages
+                    .Include(ps => ps.ManufacturingProcess)
+                    .FirstOrDefaultAsync(ps => ps.Id == execution.ProcessStageId.Value);
+
+                if (processStage?.ManufacturingProcess?.PlateReleaseStageId == processStage?.Id)
+                    shouldRelease = true;
+            }
+
+            if (shouldRelease)
+            {
+                await _buildPlanning.CreatePartStageExecutionsAsync(
+                    execution.BuildPackageId.Value,
+                    execution.OperatorName ?? execution.CreatedBy ?? "System");
+            }
         }
 
         return execution;

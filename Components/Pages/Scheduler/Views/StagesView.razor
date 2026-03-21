@@ -56,6 +56,17 @@
                     <span class="stage-metric-count">@queuedHours.ToString("F1")</span>
                     <span class="stage-metric-label">Hrs Queued</span>
                 </div>
+                @{
+                    var batchExecs = allForStage.Where(e => e.ProductionBatchId != null).ToList();
+                    var distinctBatches = batchExecs.Select(e => e.ProductionBatchId).Distinct().Count();
+                }
+                @if (distinctBatches > 0)
+                {
+                    <div class="stage-metric" style="border-left: 2px solid var(--warning); padding-left: 8px;">
+                        <span class="stage-metric-count">@distinctBatches</span>
+                        <span class="stage-metric-label">📦 Batches</span>
+                    </div>
+                }
             </div>
 
             @{
@@ -106,7 +117,7 @@
                         <div class="stage-queue-item @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item--active" : "")">
                             <span class="stage-queue-item-dot @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item-dot--active" : "")"></span>
                             <span class="stage-queue-item-part">
-                                @if (exec.BuildPackageId != null && exec.ProductionStage?.IsBuildLevelStage == true)
+                                @if (exec.BuildPackageId != null)
                                 {
                                     <text>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</text>
                                 }
@@ -116,6 +127,10 @@
                                 }
                             </span>
                             <span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority ?? JobPriority.Normal)</span>
+                            @if (exec.ProductionBatchId != null)
+                            {
+                                <span class="badge" style="font-size: 0.65rem; background: var(--warning); color: white;" title="Batch execution">📦 Batch</span>
+                            }
                             <span class="stage-queue-item-hours">@(exec.EstimatedHours?.ToString("F1") ?? "—")h</span>
                             @if (exec.Machine != null)
                             {

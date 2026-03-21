@@ -26,7 +26,6 @@
             var timelineBuildIds = BuildTimeline.Select(t => t.BuildPackageId).ToHashSet();
             var buildGroups = Executions
                 .Where(e => e.BuildPackageId != null
-                    && e.ProductionStage?.IsBuildLevelStage == true
                     && !timelineBuildIds.Contains(e.BuildPackageId!.Value))
                 .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId })
                 .ToList();

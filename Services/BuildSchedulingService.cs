@@ -11,13 +11,23 @@ public class BuildSchedulingService : IBuildSchedulingService
     private readonly IBuildPlanningService _buildPlanning;
     private readonly ISerialNumberService _serialNumberService;
     private readonly ISchedulingService _scheduling;
+    private readonly IManufacturingProcessService _processService;
+    private readonly IBatchService _batchService;
 
-    public BuildSchedulingService(TenantDbContext db, IBuildPlanningService buildPlanning, ISerialNumberService serialNumberService, ISchedulingService scheduling)
+    public BuildSchedulingService(
+        TenantDbContext db,
+        IBuildPlanningService buildPlanning,
+        ISerialNumberService serialNumberService,
+        ISchedulingService scheduling,
+        IManufacturingProcessService processService,
+        IBatchService batchService)
     {
         _db = db;
         _buildPlanning = buildPlanning;
         _serialNumberService = serialNumberService;
         _scheduling = scheduling;
+        _processService = processService;
+        _batchService = batchService;
     }
 
     public async Task<BuildScheduleResult> ScheduleBuildAsync(
@@ -291,6 +301,7 @@ public class BuildSchedulingService : IBuildSchedulingService
             throw new InvalidOperationException(
                 $"Cannot release plate: {incompleteStages} stage execution(s) are not yet completed.");
 
+        // Create PartInstances
         var createdInstances = new List<PartInstance>();
         var createdJobs = new List<Job>();
         var instanceIndex = 0;
@@ -325,7 +336,7 @@ public class BuildSchedulingService : IBuildSchedulingService
         package.LastModifiedDate = DateTime.UtcNow;
         package.LastModifiedBy = releasedBy;
 
-        // Complete the build-level Job (it was Scheduled when build was scheduled)
+        // Complete the build-level Job
         if (package.ScheduledJobId.HasValue)
         {
             var buildJob = await _db.Jobs.FindAsync(package.ScheduledJobId.Value);
@@ -339,6 +350,44 @@ public class BuildSchedulingService : IBuildSchedulingService
         }
 
         await _db.SaveChangesAsync();
+
+        // Create production batches via IBatchService if ManufacturingProcess exists
+        var partIds = package.Parts.Select(p => p.PartId).Distinct().ToList();
+        var processes = await _db.ManufacturingProcesses
+            .Where(p => partIds.Contains(p.PartId) && p.IsActive)
+            .ToDictionaryAsync(p => p.PartId, p => p);
+
+        if (processes.Any())
+        {
+            // Determine batch capacity from the first available process
+            var primaryProcess = processes.Values.First();
+            var batchCapacity = primaryProcess.DefaultBatchCapacity;
+
+            var batches = await _batchService.CreateBatchesFromBuildAsync(
+                buildPackageId, batchCapacity, releasedBy);
+
+            // Assign part instances to batches
+            var batchIndex = 0;
+            var partsAssignedToBatch = 0;
+            foreach (var instance in createdInstances)
+            {
+                if (batchIndex < batches.Count)
+                {
+                    var currentBatch = batches[batchIndex];
+                    await _batchService.AssignPartToBatchAsync(
+                        instance.Id, currentBatch.Id,
+                        $"Initial batch from build #{buildPackageId}",
+                        releasedBy);
+
+                    partsAssignedToBatch++;
+                    if (partsAssignedToBatch >= currentBatch.Capacity && batchIndex < batches.Count - 1)
+                    {
+                        batchIndex++;
+                        partsAssignedToBatch = 0;
+                    }
+                }
+            }
+        }
 
         // Per-part jobs: either reuse prefilled jobs from scheduling or create new ones
         var partJobIds = await _buildPlanning.CreatePartStageExecutionsAsync(
@@ -364,7 +413,7 @@ public class BuildSchedulingService : IBuildSchedulingService
         }
 
         await _buildPlanning.CreateRevisionAsync(buildPackageId, releasedBy,
-            $"Plate released: {createdInstances.Count} part instance(s) created");
+            $"Plate released: {createdInstances.Count} part instance(s) created, batches assigned");
 
         return new PlateReleaseResult(
             buildPackageId, createdInstances, createdJobs, createdInstances.Count);

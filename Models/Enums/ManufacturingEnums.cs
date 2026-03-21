@@ -182,3 +182,14 @@ public enum FeedbackStatus
 {
     New, Acknowledged, Resolved, WontFix
 }
+
+// Manufacturing Process Redesign
+public enum ProcessingLevel { Build, Batch, Part }
+
+public enum DurationMode { None, PerBuild, PerBatch, PerPart }
+
+public enum BatchStatus { Open, Sealed, InProcess, Completed, Dissolved }
+
+public enum BatchAssignmentAction { Assigned, Removed }
+
+public enum JobScope { Build, Batch, Part }

@@ -336,13 +336,7 @@ public class PartService : IPartService
                 PlannedPartsPerBuildDouble = src.PlannedPartsPerBuildDouble,
                 PlannedPartsPerBuildTriple = src.PlannedPartsPerBuildTriple,
                 EnableDoubleStack = src.EnableDoubleStack,
-                EnableTripleStack = src.EnableTripleStack,
-                DepowderingDurationHours = src.DepowderingDurationHours,
-                DepowderingPartsPerBatch = src.DepowderingPartsPerBatch,
-                HeatTreatmentDurationHours = src.HeatTreatmentDurationHours,
-                HeatTreatmentPartsPerBatch = src.HeatTreatmentPartsPerBatch,
-                WireEdmDurationHours = src.WireEdmDurationHours,
-                WireEdmPartsPerSession = src.WireEdmPartsPerSession
+                EnableTripleStack = src.EnableTripleStack
             };
             _db.PartAdditiveBuildConfigs.Add(clonedConfig);
         }

@@ -32,6 +32,9 @@ public class DataSeedingService : IDataSeedingService
         // Inventory (depends on materials)
         await SeedStockLocationsAsync(tenantDb);
         await SeedInventoryItemsAsync(tenantDb);
+
+        // Manufacturing processes (depends on parts + production stages)
+        await SeedManufacturingProcessesAsync(tenantDb);
     }
 
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
@@ -40,11 +43,12 @@ public class DataSeedingService : IDataSeedingService
 
         var stages = new List<ProductionStage>
         {
-            // === BUILD-LEVEL STAGES (durations come from build, BatchCapacity N/A) ===
+            // === BUILD-LEVEL STAGES (now configured via ProcessStage.ProcessingLevel) ===
             new()
             {
                 Name = "SLS/LPBF Printing", StageSlug = "sls-printing", Department = "SLS",
-                DefaultDurationHours = 8.0, IsBatchStage = true, IsBuildLevelStage = true, HasBuiltInPage = true,
+                DefaultDurationHours = 8.0, HasBuiltInPage = true,
+                DefaultHourlyRate = 225.00m, DefaultSetupMinutes = 60,
                 DisplayOrder = 1, StageIcon = "🖨️", StageColor = "#3B82F6",
                 RequiresMachineAssignment = true, RequiresQualityCheck = false,
                 DefaultMachineId = "M4-1", AssignedMachineIds = "M4-1,M4-2",
@@ -53,7 +57,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Depowdering", StageSlug = "depowdering", Department = "Post-Process",
-                DefaultDurationHours = 1.0, IsBatchStage = true, IsBuildLevelStage = true, HasBuiltInPage = true,
+                DefaultDurationHours = 1.0, HasBuiltInPage = true,
+                DefaultHourlyRate = 55.00m, DefaultSetupMinutes = 10,
                 DisplayOrder = 2, StageIcon = "💨", StageColor = "#F59E0B",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "INC1", AssignedMachineIds = "INC1",
@@ -62,7 +67,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Heat Treatment", StageSlug = "heat-treatment", Department = "Post-Process",
-                DefaultDurationHours = 4.0, IsBatchStage = true, IsBuildLevelStage = true, HasBuiltInPage = true,
+                DefaultDurationHours = 4.0, HasBuiltInPage = true,
+                DefaultHourlyRate = 65.00m, DefaultSetupMinutes = 20,
                 DisplayOrder = 3, StageIcon = "🔥", StageColor = "#EF4444",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "HT1", AssignedMachineIds = "HT1",
@@ -71,20 +77,20 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Wire EDM", StageSlug = "wire-edm", Department = "EDM",
-                DefaultDurationHours = 2.0, IsBatchStage = false, IsBuildLevelStage = true, TriggerPlateRelease = true, HasBuiltInPage = true,
+                DefaultDurationHours = 2.0, HasBuiltInPage = true,
+                DefaultHourlyRate = 85.00m, DefaultSetupMinutes = 25,
                 DisplayOrder = 4, StageIcon = "⚡", StageColor = "#8B5CF6",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "EDM1", AssignedMachineIds = "EDM1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
 
-            // === PER-PART STAGES (DefaultDurationHours in minutes equivalent, BatchCapacity matters) ===
+            // === PER-PART / BATCH STAGES (batch behavior now on ProcessStage) ===
             new()
             {
                 Name = "CNC Machining", StageSlug = "cnc-machining", Department = "Machining",
-                DefaultDurationHours = 0.5, // 30 min per part default
-                BatchCapacity = 1, // One part at a time
-                IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.5, HasBuiltInPage = true,
+                DefaultHourlyRate = 95.00m, DefaultSetupMinutes = 30,
                 DisplayOrder = 5, StageIcon = "⚙️", StageColor = "#06B6D4",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "CNC1", AssignedMachineIds = "CNC1,CNC2,CNC3,CNC4",
@@ -93,9 +99,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Laser Engraving", StageSlug = "laser-engraving", Department = "Engraving",
-                DefaultDurationHours = 0.25, // 15 min per batch (multiple parts)
-                BatchCapacity = 36, // 6x6 grid on engraver
-                IsBatchStage = true, HasBuiltInPage = true,
+                DefaultDurationHours = 0.25, HasBuiltInPage = true,
+                DefaultHourlyRate = 55.00m, DefaultSetupMinutes = 10,
                 RequiresSerialNumber = true,
                 DisplayOrder = 6, StageIcon = "✒️", StageColor = "#10B981",
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -103,18 +108,16 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Surface Finishing", StageSlug = "surface-finishing", Department = "Finishing",
-                DefaultDurationHours = 0.33, // 20 min per batch
-                BatchCapacity = 50, // Tumbling basket holds 50
-                IsBatchStage = true, HasBuiltInPage = true,
+                DefaultDurationHours = 0.33, HasBuiltInPage = true,
+                DefaultHourlyRate = 45.00m, DefaultSetupMinutes = 10,
                 DisplayOrder = 7, StageIcon = "🎨", StageColor = "#EC4899",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 Name = "Quality Control", StageSlug = "qc", Department = "Quality",
-                DefaultDurationHours = 0.083, // 5 min per part
-                BatchCapacity = 1,
-                IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.083, HasBuiltInPage = true,
+                DefaultHourlyRate = 75.00m, DefaultSetupMinutes = 15,
                 DisplayOrder = 8, StageIcon = "✅", StageColor = "#14B8A6",
                 RequiresQualityCheck = true,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -122,9 +125,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Shipping", StageSlug = "shipping", Department = "Shipping",
-                DefaultDurationHours = 0.083, // 5 min per part
-                BatchCapacity = 100, // Batch shipping
-                IsBatchStage = true, HasBuiltInPage = true,
+                DefaultDurationHours = 0.083, HasBuiltInPage = true,
+                DefaultHourlyRate = 35.00m, DefaultSetupMinutes = 5,
                 DisplayOrder = 9, StageIcon = "🚚", StageColor = "#6366F1",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -132,9 +134,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "CNC Turning", StageSlug = "cnc-turning", Department = "Machining",
-                DefaultDurationHours = 0.33, // 20 min per part
-                BatchCapacity = 1,
-                IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.33, HasBuiltInPage = true,
+                DefaultHourlyRate = 90.00m, DefaultSetupMinutes = 25,
                 DisplayOrder = 10, StageIcon = "🔩", StageColor = "#0891B2",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "LATHE1", AssignedMachineIds = "LATHE1",
@@ -143,9 +144,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Assembly", StageSlug = "assembly", Department = "Assembly",
-                DefaultDurationHours = 0.167, // 10 min per part
-                BatchCapacity = 1,
-                IsBatchStage = false, HasBuiltInPage = true,
+                DefaultDurationHours = 0.167, HasBuiltInPage = true,
+                DefaultHourlyRate = 60.00m, DefaultSetupMinutes = 10,
                 DisplayOrder = 11, StageIcon = "🔧", StageColor = "#7C3AED",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -153,9 +153,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Sandblasting", StageSlug = "sandblasting", Department = "Finishing",
-                DefaultDurationHours = 0.25, // 15 min per batch
-                BatchCapacity = 20, // Cabinet holds ~20 small parts
-                IsBatchStage = true,
+                DefaultDurationHours = 0.25,
+                DefaultHourlyRate = 40.00m, DefaultSetupMinutes = 5,
                 DisplayOrder = 12, StageIcon = "🌪️", StageColor = "#A3A3A3",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -164,7 +163,7 @@ public class DataSeedingService : IDataSeedingService
             {
                 Name = "External Coating", StageSlug = "external-coating", Department = "External",
                 DefaultDurationHours = 0, IsExternalOperation = true, DefaultTurnaroundDays = 14,
-                BatchCapacity = 200, // External vendor handles batches
+                DefaultHourlyRate = 0.00m, DefaultSetupMinutes = 0,
                 DisplayOrder = 13, StageIcon = "🏢", StageColor = "#D97706",
                 RequiresQualityCheck = true,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -172,9 +171,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Oil & Sleeve Assembly", StageSlug = "oil-sleeve", Department = "Assembly",
-                DefaultDurationHours = 0.083, // 5 min per part
-                BatchCapacity = 1,
-                IsBatchStage = false,
+                DefaultDurationHours = 0.083,
+                DefaultHourlyRate = 50.00m, DefaultSetupMinutes = 5,
                 DisplayOrder = 14, StageIcon = "🛢️", StageColor = "#059669",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -182,9 +180,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "Packaging & Shipping", StageSlug = "packaging", Department = "Shipping",
-                DefaultDurationHours = 0.05, // 3 min per part
-                BatchCapacity = 50,
-                IsBatchStage = true,
+                DefaultDurationHours = 0.05,
+                DefaultHourlyRate = 35.00m, DefaultSetupMinutes = 5,
                 DisplayOrder = 15, StageIcon = "📦", StageColor = "#7C3AED",
                 RequiresQualityCheck = false,
                 CreatedBy = "System", LastModifiedBy = "System"
@@ -343,21 +340,163 @@ public class DataSeedingService : IDataSeedingService
     {
         if (await db.ManufacturingApproaches.AnyAsync()) return;
 
+        // Helper to serialize enhanced routing templates
+        static string RT(List<RoutingTemplateStage> stages) =>
+            System.Text.Json.JsonSerializer.Serialize(stages, RoutingTemplateStage.JsonOptions);
+
         var approaches = new List<ManufacturingApproach>
         {
-            new() { Name = "SLS-Based",              Slug = "sls-based",           IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = true,  DefaultRoutingTemplate = """["sls-printing","depowdering","heat-treatment","wire-edm","qc"]""",          DisplayOrder = 1,  IconEmoji = "🖨️" },
-            new() { Name = "CNC Machining",          Slug = "cnc-machining",        IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 2,  IconEmoji = "⚙️" },
-            new() { Name = "CNC Turning",            Slug = "cnc-turning",          IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 3,  IconEmoji = "🔩" },
-            new() { Name = "Wire EDM",               Slug = "wire-edm",             IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["wire-edm","qc"]""",                                            DisplayOrder = 4,  IconEmoji = "⚡" },
-            new() { Name = "3D Printing (FDM)",      Slug = "fdm",                  IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = false, DefaultRoutingTemplate = """["sls-printing","qc"]""",                                        DisplayOrder = 5,  IconEmoji = "🖨️" },
-            new() { Name = "3D Printing (SLA)",      Slug = "sla",                  IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = false, DefaultRoutingTemplate = """["sls-printing","qc"]""",                                        DisplayOrder = 6,  IconEmoji = "🖨️" },
-            new() { Name = "Additive + Subtractive", Slug = "additive-subtractive", IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = true,  DefaultRoutingTemplate = """["sls-printing","depowdering","heat-treatment","wire-edm","cnc-machining","qc"]""",  DisplayOrder = 7,  IconEmoji = "🔧" },
-            new() { Name = "Sheet Metal",            Slug = "sheet-metal",          IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 8,  IconEmoji = "📐" },
-            new() { Name = "Casting",                Slug = "casting",              IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 9,  IconEmoji = "🏭" },
-            new() { Name = "Injection Molding",      Slug = "injection-molding",    IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 10, IconEmoji = "💉" },
-            new() { Name = "Assembly",               Slug = "assembly",             IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 11, IconEmoji = "🔧" },
-            new() { Name = "Manual",                 Slug = "manual",               IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 12, IconEmoji = "✋" },
-            new() { Name = "Other",                  Slug = "other",                IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = "[]",                                                                DisplayOrder = 13, IconEmoji = "❓" },
+            new()
+            {
+                Name = "SLS-Based", Slug = "sls-based", IsAdditive = true, RequiresBuildPlate = true,
+                DefaultBatchCapacity = 60, DisplayOrder = 1, IconEmoji = "🖨️",
+                Description = "Selective Laser Sintering with full post-print processing",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "sls-printing",    Level = ProcessingLevel.Build, DurationFromBuildConfig = true },
+                    new() { Slug = "depowdering",     Level = ProcessingLevel.Build },
+                    new() { Slug = "heat-treatment",  Level = ProcessingLevel.Build },
+                    new() { Slug = "wire-edm",        Level = ProcessingLevel.Build, IsPlateReleaseTrigger = true },
+                    new() { Slug = "sandblasting",    Level = ProcessingLevel.Batch, BatchCapacityOverride = 20 },
+                    new() { Slug = "cnc-machining",   Level = ProcessingLevel.Part },
+                    new() { Slug = "laser-engraving", Level = ProcessingLevel.Batch, BatchCapacityOverride = 36 },
+                    new() { Slug = "qc",              Level = ProcessingLevel.Part },
+                    new() { Slug = "packaging",       Level = ProcessingLevel.Batch, BatchCapacityOverride = 50 },
+                ])
+            },
+            new()
+            {
+                Name = "Suppressor (No HT)", Slug = "suppressor-no-ht", IsAdditive = true, RequiresBuildPlate = true,
+                DefaultBatchCapacity = 60, DisplayOrder = 2, IconEmoji = "🔫",
+                Description = "SLS-based suppressor manufacturing without heat treatment",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "sls-printing",    Level = ProcessingLevel.Build, DurationFromBuildConfig = true },
+                    new() { Slug = "depowdering",     Level = ProcessingLevel.Build },
+                    new() { Slug = "wire-edm",        Level = ProcessingLevel.Build, IsPlateReleaseTrigger = true },
+                    new() { Slug = "sandblasting",    Level = ProcessingLevel.Batch, BatchCapacityOverride = 20 },
+                    new() { Slug = "cnc-machining",   Level = ProcessingLevel.Part },
+                    new() { Slug = "laser-engraving", Level = ProcessingLevel.Batch, BatchCapacityOverride = 36 },
+                    new() { Slug = "qc",              Level = ProcessingLevel.Part },
+                    new() { Slug = "packaging",       Level = ProcessingLevel.Batch, BatchCapacityOverride = 50 },
+                ])
+            },
+            new()
+            {
+                Name = "CNC Machining", Slug = "cnc-machining", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 50, DisplayOrder = 3, IconEmoji = "⚙️",
+                Description = "Traditional CNC milling from bar/billet stock",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "cnc-machining", Level = ProcessingLevel.Part },
+                    new() { Slug = "qc",            Level = ProcessingLevel.Part },
+                ])
+            },
+            new()
+            {
+                Name = "CNC Turning", Slug = "cnc-turning", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 50, DisplayOrder = 4, IconEmoji = "🔩",
+                Description = "CNC lathe operations for rotational parts",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "cnc-machining", Level = ProcessingLevel.Part },
+                    new() { Slug = "qc",            Level = ProcessingLevel.Part },
+                ])
+            },
+            new()
+            {
+                Name = "Wire EDM", Slug = "wire-edm", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 20, DisplayOrder = 5, IconEmoji = "⚡",
+                Description = "Wire electrical discharge machining",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "wire-edm", Level = ProcessingLevel.Part },
+                    new() { Slug = "qc",       Level = ProcessingLevel.Part },
+                ])
+            },
+            new()
+            {
+                Name = "3D Printing (FDM)", Slug = "fdm", IsAdditive = true, RequiresBuildPlate = true,
+                DefaultBatchCapacity = 30, DisplayOrder = 6, IconEmoji = "🖨️",
+                Description = "Fused Deposition Modeling",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "sls-printing", Level = ProcessingLevel.Build, DurationFromBuildConfig = true },
+                    new() { Slug = "qc",           Level = ProcessingLevel.Part },
+                ])
+            },
+            new()
+            {
+                Name = "3D Printing (SLA)", Slug = "sla", IsAdditive = true, RequiresBuildPlate = true,
+                DefaultBatchCapacity = 30, DisplayOrder = 7, IconEmoji = "🖨️",
+                Description = "Stereolithography resin printing",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "sls-printing", Level = ProcessingLevel.Build, DurationFromBuildConfig = true },
+                    new() { Slug = "qc",           Level = ProcessingLevel.Part },
+                ])
+            },
+            new()
+            {
+                Name = "Additive + Subtractive", Slug = "additive-subtractive", IsAdditive = true, RequiresBuildPlate = true,
+                DefaultBatchCapacity = 60, DisplayOrder = 8, IconEmoji = "🔧",
+                Description = "Additive printing followed by CNC finishing",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "sls-printing",    Level = ProcessingLevel.Build, DurationFromBuildConfig = true },
+                    new() { Slug = "depowdering",     Level = ProcessingLevel.Build },
+                    new() { Slug = "heat-treatment",  Level = ProcessingLevel.Build },
+                    new() { Slug = "wire-edm",        Level = ProcessingLevel.Build, IsPlateReleaseTrigger = true },
+                    new() { Slug = "cnc-machining",   Level = ProcessingLevel.Part },
+                    new() { Slug = "qc",              Level = ProcessingLevel.Part },
+                ])
+            },
+            new()
+            {
+                Name = "Sheet Metal", Slug = "sheet-metal", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 100, DisplayOrder = 9, IconEmoji = "📐",
+                Description = "Sheet metal fabrication",
+                DefaultRoutingTemplate = RT([new() { Slug = "qc", Level = ProcessingLevel.Part }])
+            },
+            new()
+            {
+                Name = "Casting", Slug = "casting", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 50, DisplayOrder = 10, IconEmoji = "🏭",
+                Description = "Metal casting with CNC finishing",
+                DefaultRoutingTemplate = RT(
+                [
+                    new() { Slug = "cnc-machining", Level = ProcessingLevel.Part },
+                    new() { Slug = "qc",            Level = ProcessingLevel.Part },
+                ])
+            },
+            new()
+            {
+                Name = "Injection Molding", Slug = "injection-molding", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 200, DisplayOrder = 11, IconEmoji = "💉",
+                Description = "Plastic injection molding",
+                DefaultRoutingTemplate = RT([new() { Slug = "qc", Level = ProcessingLevel.Part }])
+            },
+            new()
+            {
+                Name = "Assembly", Slug = "assembly", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 50, DisplayOrder = 12, IconEmoji = "🔧",
+                Description = "Assembly from sub-components",
+                DefaultRoutingTemplate = RT([new() { Slug = "qc", Level = ProcessingLevel.Part }])
+            },
+            new()
+            {
+                Name = "Manual", Slug = "manual", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 20, DisplayOrder = 13, IconEmoji = "✋",
+                Description = "Manual hand-finishing operations",
+                DefaultRoutingTemplate = RT([new() { Slug = "qc", Level = ProcessingLevel.Part }])
+            },
+            new()
+            {
+                Name = "Other", Slug = "other", IsAdditive = false, RequiresBuildPlate = false,
+                DefaultBatchCapacity = 50, DisplayOrder = 14, IconEmoji = "❓",
+                Description = "Custom or unclassified manufacturing approach",
+                DefaultRoutingTemplate = "[]"
+            },
         };
 
         db.ManufacturingApproaches.AddRange(approaches);
@@ -930,6 +1069,259 @@ public class DataSeedingService : IDataSeedingService
 
         db.InventoryTransactions.AddRange(transactions);
         await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
+    //  Manufacturing Processes (for existing parts)
+    // ──────────────────────────────────────────────
+    private static async Task SeedManufacturingProcessesAsync(TenantDbContext db)
+    {
+        if (await db.ManufacturingProcesses.AnyAsync()) return;
+
+        // Only seed if parts and production stages already exist
+        var parts = await db.Parts.ToListAsync();
+        if (parts.Count == 0) return;
+
+        var stages = await db.ProductionStages.ToListAsync();
+        if (stages.Count == 0) return;
+
+        // Look up stages by slug
+        var stageBySlug = stages.ToDictionary(s => s.StageSlug, s => s);
+
+        // Look up machines by MachineId string → int Id
+        var machineIdLookup = await db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.MachineId, m => m.Id);
+
+        int? MachineIntId(string machineId) =>
+            machineIdLookup.TryGetValue(machineId, out var id) ? id : null;
+
+        foreach (var part in parts)
+        {
+            // Create a standard SLS manufacturing process for each part
+            var process = new ManufacturingProcess
+            {
+                PartId = part.Id,
+                Name = $"{part.PartNumber} Process",
+                Description = $"Standard manufacturing process for {part.Name}",
+                DefaultBatchCapacity = 60,
+                IsActive = true,
+                Version = 1,
+                CreatedBy = "System",
+                LastModifiedBy = "System",
+                CreatedDate = DateTime.UtcNow,
+                LastModifiedDate = DateTime.UtcNow
+            };
+
+            db.ManufacturingProcesses.Add(process);
+            await db.SaveChangesAsync();
+
+            var order = 1;
+            var processStages = new List<ProcessStage>();
+
+            // Build-level stages
+            if (stageBySlug.TryGetValue("sls-printing", out var slsStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = slsStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Build,
+                    SetupDurationMode = DurationMode.None,
+                    RunDurationMode = DurationMode.PerBuild,
+                    DurationFromBuildConfig = true,
+                    AssignedMachineId = MachineIntId("M4-1"),
+                    RequiresSpecificMachine = false,
+                    IsRequired = true,
+                    IsBlocking = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            if (stageBySlug.TryGetValue("depowdering", out var depowStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = depowStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Build,
+                    SetupDurationMode = DurationMode.PerBuild,
+                    SetupTimeMinutes = 15,
+                    RunDurationMode = DurationMode.PerBuild,
+                    RunTimeMinutes = 45,
+                    AssignedMachineId = MachineIntId("INC1"),
+                    IsRequired = true,
+                    IsBlocking = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            if (stageBySlug.TryGetValue("heat-treatment", out var htStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = htStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Build,
+                    SetupDurationMode = DurationMode.PerBuild,
+                    SetupTimeMinutes = 30,
+                    RunDurationMode = DurationMode.PerBuild,
+                    RunTimeMinutes = 210,
+                    AssignedMachineId = MachineIntId("HT1"),
+                    IsRequired = true,
+                    IsBlocking = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            if (stageBySlug.TryGetValue("wire-edm", out var edmStage))
+            {
+                var wireEdmPs = new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = edmStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Build,
+                    SetupDurationMode = DurationMode.PerBuild,
+                    SetupTimeMinutes = 20,
+                    RunDurationMode = DurationMode.PerBuild,
+                    RunTimeMinutes = 100,
+                    AssignedMachineId = MachineIntId("EDM1"),
+                    IsRequired = true,
+                    IsBlocking = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                };
+                processStages.Add(wireEdmPs);
+            }
+
+            // Batch-level stages
+            if (stageBySlug.TryGetValue("sandblasting", out var sbStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = sbStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Batch,
+                    SetupDurationMode = DurationMode.PerBatch,
+                    SetupTimeMinutes = 5,
+                    RunDurationMode = DurationMode.PerBatch,
+                    RunTimeMinutes = 15,
+                    BatchCapacityOverride = 20,
+                    AllowRebatching = true,
+                    IsRequired = false,
+                    AllowSkip = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            // Part-level stages
+            if (stageBySlug.TryGetValue("cnc-machining", out var cncStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = cncStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Part,
+                    SetupDurationMode = DurationMode.PerBatch,
+                    SetupTimeMinutes = 30,
+                    RunDurationMode = DurationMode.PerPart,
+                    RunTimeMinutes = 8,
+                    AssignedMachineId = MachineIntId("CNC1"),
+                    PreferredMachineIds = string.Join(",",
+                        new[] { "CNC1", "CNC2", "CNC3", "CNC4" }
+                            .Select(id => MachineIntId(id))
+                            .Where(id => id.HasValue)
+                            .Select(id => id!.Value)),
+                    IsRequired = true,
+                    IsBlocking = true,
+                    RequiresQualityCheck = false,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            if (stageBySlug.TryGetValue("laser-engraving", out var engStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = engStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Batch,
+                    SetupDurationMode = DurationMode.PerBatch,
+                    SetupTimeMinutes = 5,
+                    RunDurationMode = DurationMode.PerBatch,
+                    RunTimeMinutes = 15,
+                    BatchCapacityOverride = 36,
+                    RequiresSerialNumber = true,
+                    IsRequired = true,
+                    IsBlocking = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            if (stageBySlug.TryGetValue("qc", out var qcStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = qcStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Part,
+                    RunDurationMode = DurationMode.PerPart,
+                    RunTimeMinutes = 5,
+                    RequiresQualityCheck = true,
+                    IsRequired = true,
+                    IsBlocking = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            if (stageBySlug.TryGetValue("packaging", out var pkgStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = pkgStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Batch,
+                    SetupDurationMode = DurationMode.PerBatch,
+                    SetupTimeMinutes = 5,
+                    RunDurationMode = DurationMode.PerBatch,
+                    RunTimeMinutes = 10,
+                    BatchCapacityOverride = 50,
+                    IsRequired = true,
+                    IsBlocking = false,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            db.ProcessStages.AddRange(processStages);
+            await db.SaveChangesAsync();
+
+            // Set plate release to the wire EDM stage (last build-level stage)
+            var wireEdmProcessStage = processStages
+                .FirstOrDefault(ps => ps.ProductionStage?.StageSlug == "wire-edm"
+                    || (stageBySlug.TryGetValue("wire-edm", out var ws) && ps.ProductionStageId == ws.Id));
+            if (wireEdmProcessStage != null)
+            {
+                process.PlateReleaseStageId = wireEdmProcessStage.Id;
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     }

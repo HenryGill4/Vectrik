@@ -4,6 +4,11 @@ using System.Text.Json;
 
 namespace Opcentrix_V3.Models;
 
+/// <summary>
+/// Legacy per-part stage routing. Use ManufacturingProcess/ProcessStage for new work.
+/// Retained for historical queries and migration.
+/// </summary>
+[Obsolete("Use ManufacturingProcess and ProcessStage for new routing definitions. PartStageRequirement is retained for historical data.")]
 public class PartStageRequirement
 {
     public int Id { get; set; }

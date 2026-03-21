@@ -180,33 +180,8 @@
                                 <span>🖨️ @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h print</span>
                             </div>
 
-                            @* ── Post-Print Stage Durations ── *@
-                            <div class="builds-stage-durations">
-                                <div class="stage-duration-row">
-                                    <label>💨 Depowdering</label>
-                                    <input type="number" step="0.25" min="0" max="24"
-                                           value="@(build.DepowderingHours ?? 1.0)"
-                                           @onchange="@(e => UpdateStageDuration(build, StageDepowdering, e))" />
-                                    <span>hrs</span>
-                                </div>
-                                <div class="stage-duration-row">
-                                    <label>🔥 Heat Treat</label>
-                                    <input type="number" step="0.5" min="0" max="48"
-                                           value="@(build.HeatTreatmentHours ?? 4.0)"
-                                           @onchange="@(e => UpdateStageDuration(build, StageHeatTreatment, e))" />
-                                    <span>hrs</span>
-                                </div>
-                                <div class="stage-duration-row">
-                                    <label>⚡ Wire EDM</label>
-                                    <input type="number" step="0.25" min="0" max="24"
-                                           value="@(build.WireEdmHours ?? 2.0)"
-                                           @onchange="@(e => UpdateStageDuration(build, StageWireEdm, e))" />
-                                    <span>hrs</span>
-                                </div>
-                            </div>
-
                             <div class="builds-total-duration">
-                                <span>Total estimated: @GetTotalBuildDuration(build).ToString("F1")h</span>
+                                <span>Print estimate: @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h</span>
                             </div>
 
                             <div style="margin-top:8px;">
@@ -236,13 +211,23 @@
                             </div>
                             <div class="builds-ready-card-meta">
                                 <span>@(build.TotalPartCount) parts</span>
-                                <span>@GetTotalBuildDuration(build).ToString("F1")h total</span>
+                                <span>🖨️ @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h print</span>
                             </div>
+                            @{
+                                var readyProcess = build.Parts
+                                    .Select(pp => pp.Part?.ManufacturingProcess)
+                                    .FirstOrDefault(mp => mp != null);
+                            }
+                            @if (readyProcess != null)
+                            {
+                                var batchCap = readyProcess.DefaultBatchCapacity;
+                                var batchCnt = (int)Math.Ceiling((double)build.TotalPartCount / batchCap);
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                                    📦 @batchCnt batch@(batchCnt != 1 ? "es" : "") (@batchCap/crate) · Process: @readyProcess.Name
+                                </div>
+                            }
                             <div class="builds-stage-summary">
-                                <span>🖨️ @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h</span>
-                                <span>💨 @(build.DepowderingHours?.ToString("F1") ?? "1.0")h</span>
-                                <span>🔥 @(build.HeatTreatmentHours?.ToString("F1") ?? "4.0")h</span>
-                                <span>⚡ @(build.WireEdmHours?.ToString("F1") ?? "2.0")h</span>
+                                <span>🖨️ @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h print</span>
                             </div>
                         </div>
                     }
@@ -303,31 +288,19 @@
                                     <span>✔ Printed @build.PrintCompletedAt.Value.ToString("MM/dd HH:mm")</span>
                                 }
                             </div>
-
-                            @* ── Build Stage Durations ── *@
-                            <div class="builds-stage-durations">
-                                <div class="stage-duration-row">
-                                    <label>💨 Depowdering</label>
-                                    <input type="number" step="0.25" min="0" max="24"
-                                           value="@(build.DepowderingHours ?? 1.0)"
-                                           @onchange="@(e => UpdateStageDuration(build, StageDepowdering, e))" />
-                                    <span>hrs</span>
+                            @{
+                                var ppProcess = build.Parts
+                                    .Select(pp => pp.Part?.ManufacturingProcess)
+                                    .FirstOrDefault(mp => mp != null);
+                            }
+                            @if (ppProcess != null)
+                            {
+                                var ppBatchCap = ppProcess.DefaultBatchCapacity;
+                                var ppBatchCnt = (int)Math.Ceiling((double)build.TotalPartCount / ppBatchCap);
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                                    📦 Will create @ppBatchCnt batch@(ppBatchCnt != 1 ? "es" : "") (@ppBatchCap/crate) on plate release
                                 </div>
-                                <div class="stage-duration-row">
-                                    <label>🔥 Heat Treat</label>
-                                    <input type="number" step="0.5" min="0" max="48"
-                                           value="@(build.HeatTreatmentHours ?? 4.0)"
-                                           @onchange="@(e => UpdateStageDuration(build, StageHeatTreatment, e))" />
-                                    <span>hrs</span>
-                                </div>
-                                <div class="stage-duration-row">
-                                    <label>⚡ Wire EDM</label>
-                                    <input type="number" step="0.25" min="0" max="24"
-                                           value="@(build.WireEdmHours ?? 2.0)"
-                                           @onchange="@(e => UpdateStageDuration(build, StageWireEdm, e))" />
-                                    <span>hrs</span>
-                                </div>
-                            </div>
+                            }
 
                             <div style="margin-top:8px;">
                                 <button class="btn btn-sm btn-success" @onclick="() => ReleasePlateAsync(build)" disabled="@_processing"
@@ -343,7 +316,7 @@
     </div>
 
     @{
-        var buildUnscheduled = Unscheduled.Where(e => e.ProductionStage?.IsBuildLevelStage == true).ToList();
+        var buildUnscheduled = Unscheduled.Where(e => e.BuildPackageId.HasValue).ToList();
     }
     <UnscheduledSidebar Executions="buildUnscheduled"
                         Title="📋 Unscheduled Build Stages"
@@ -373,11 +346,6 @@
 
     private bool _processing;
     private ConfirmDialog _confirmDialog = null!;
-
-    // Stage slug constants for Razor binding
-    private const string StageDepowdering = "depowdering";
-    private const string StageHeatTreatment = "heat-treatment";
-    private const string StageWireEdm = "wire-edm";
 
     /// <summary>Filters build packages based on the toolbar filter.</summary>
     private List<BuildPackage> FilteredBuilds => BuildStatusFilter == null
@@ -413,31 +381,6 @@
         finally { _processing = false; }
     }
 
-    private async Task UpdateStageDuration(BuildPackage build, string stageSlug, ChangeEventArgs e)
-    {
-        if (!double.TryParse(e.Value?.ToString(), out var hours)) return;
-        hours = Math.Max(0, Math.Min(48, hours)); // Clamp to reasonable range
-
-        switch (stageSlug)
-        {
-            case "depowdering": build.DepowderingHours = hours; break;
-            case "heat-treatment": build.HeatTreatmentHours = hours; break;
-            case "wire-edm": build.WireEdmHours = hours; break;
-        }
-
-        build.LastModifiedBy = UserName;
-        build.LastModifiedDate = DateTime.UtcNow;
-
-        try
-        {
-            await BuildPlanning.UpdatePackageAsync(build);
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to save duration: {ex.Message}");
-        }
-    }
-
     private async Task ReleasePlateAsync(BuildPackage build)
     {
         var confirmed = await _confirmDialog.ShowAsync(
@@ -471,13 +414,6 @@
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
         finally { _processing = false; }
     }
-
-    /// <summary>Calculates total estimated build duration (print + post-print stages).</summary>
-    private static double GetTotalBuildDuration(BuildPackage build) =>
-        (build.EstimatedDurationHours ?? 0) +
-        (build.DepowderingHours ?? 1.0) +
-        (build.HeatTreatmentHours ?? 4.0) +
-        (build.WireEdmHours ?? 2.0);
 
     private static string BuildStatusBadgeClass(BuildPackageStatus status) => status switch
     {

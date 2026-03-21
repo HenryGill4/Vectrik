@@ -80,4 +80,7 @@ public class Part
 
     // Additive build configuration (1:0..1 — only for additive parts)
     public virtual PartAdditiveBuildConfig? AdditiveBuildConfig { get; set; }
+
+    // Manufacturing process definition (1:0..1 — configurable process per part type)
+    public virtual ManufacturingProcess? ManufacturingProcess { get; set; }
 }

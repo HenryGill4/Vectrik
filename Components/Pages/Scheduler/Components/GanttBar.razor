@@ -3,12 +3,14 @@
 @{
     var barClass = IsUnassigned ? "unassigned" : (Exec.Job?.Priority.ToString().ToLower() ?? "normal");
     var stageColor = Exec.ProductionStage?.StageColor ?? "";
+    var isBatchScope = Exec.Job?.Scope == JobScope.Batch || Exec.ProductionBatchId != null;
+    var batchBorder = isBatchScope ? "border-bottom: 3px solid var(--warning);" : "";
 }
 <div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "")"
-     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
+     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
      title="@ComputeTooltip()"
      @onclick="HandleClick">
-    <span class="gantt-bar-text">@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
+    <span class="gantt-bar-text">@(isBatchScope ? "📦 " : "")@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
 </div>
 
 @code {

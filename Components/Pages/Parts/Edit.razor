@@ -4,10 +4,10 @@
 @inject IStageService StageService
 @inject IMaterialService MaterialService
 @inject IManufacturingApproachService ApproachService
+@inject IManufacturingProcessService ProcessService
 @inject ICustomFieldService CustomFieldService
 @inject ITenantFeatureService Features
 @inject IMachineService MachineService
-@inject IBuildPlanningService BuildPlanningService
 @inject IInventoryService InventoryService
 @inject NavigationManager Nav
 @inject ToastService Toast
@@ -36,12 +36,259 @@
                 <button class="btn btn-secondary" @onclick="GoBack">← Back to Parts</button>
             </div>
         }
-        else
+        else if (_isNew)
         {
+            @* ═══════════════════════════════════════════════════════════════
+               NEW PART WIZARD — 3-step guided creation flow
+               ═══════════════════════════════════════════════════════════════ *@
             <div class="page-header">
                 <div>
                     <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Parts</button>
-                    <h1 class="page-title">@(_isNew ? "New Part" : $"Edit {_part!.PartNumber} — {_part.Name}")</h1>
+                    <h1 class="page-title">New Part</h1>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="alert alert-danger" style="margin-bottom: 12px;">@_error</div>
+            }
+            @if (_validationErrors.Count > 0)
+            {
+                <div class="alert alert-danger" style="margin-bottom: 12px;">
+                    <strong>Please fix the following:</strong>
+                    <ul style="margin: 8px 0 0 16px;">
+                        @foreach (var err in _validationErrors) { <li>@err</li> }
+                    </ul>
+                </div>
+            }
+
+            <!-- Wizard Step Indicator -->
+            <div class="wizard-steps" style="display:flex; gap:0; margin-bottom:24px; border-bottom:2px solid var(--border);">
+                <button class="wizard-step @(_wizardStep == 1 ? "wizard-step-active" : "") @(_wizardStep > 1 ? "wizard-step-done" : "")"
+                        @onclick="() => { if (_wizardStep > 1) _wizardStep = 1; }" style="flex:1; padding:12px 16px; border:none; background:none; cursor:pointer; text-align:center; font-weight:600; border-bottom:3px solid @(_wizardStep == 1 ? "var(--primary)" : _wizardStep > 1 ? "var(--success)" : "transparent"); color:@(_wizardStep >= 1 ? "var(--text)" : "var(--text-muted)");">
+                    <span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:@(_wizardStep > 1 ? "var(--success)" : _wizardStep == 1 ? "var(--primary)" : "var(--border)");color:white;line-height:24px;font-size:0.8em;margin-right:6px;">@(_wizardStep > 1 ? "✓" : "1")</span>
+                    Part Info
+                </button>
+                <button class="wizard-step @(_wizardStep == 2 ? "wizard-step-active" : "") @(_wizardStep > 2 ? "wizard-step-done" : "")"
+                        @onclick="() => { if (_wizardStep > 2) _wizardStep = 2; }" disabled="@(_wizardStep < 2)" style="flex:1; padding:12px 16px; border:none; background:none; cursor:pointer; text-align:center; font-weight:600; border-bottom:3px solid @(_wizardStep == 2 ? "var(--primary)" : _wizardStep > 2 ? "var(--success)" : "transparent"); color:@(_wizardStep >= 2 ? "var(--text)" : "var(--text-muted)");">
+                    <span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:@(_wizardStep > 2 ? "var(--success)" : _wizardStep == 2 ? "var(--primary)" : "var(--border)");color:white;line-height:24px;font-size:0.8em;margin-right:6px;">@(_wizardStep > 2 ? "✓" : "2")</span>
+                    Manufacturing Approach
+                </button>
+                <button class="wizard-step @(_wizardStep == 3 ? "wizard-step-active" : "")"
+                        disabled="@(_wizardStep < 3)" style="flex:1; padding:12px 16px; border:none; background:none; cursor:pointer; text-align:center; font-weight:600; border-bottom:3px solid @(_wizardStep == 3 ? "var(--primary)" : "transparent"); color:@(_wizardStep >= 3 ? "var(--text)" : "var(--text-muted)");">
+                    <span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:@(_wizardStep == 3 ? "var(--primary)" : "var(--border)");color:white;line-height:24px;font-size:0.8em;margin-right:6px;">3</span>
+                    Review & Create
+                </button>
+            </div>
+
+            @* ── STEP 1: Basic Part Information ── *@
+            @if (_wizardStep == 1)
+            {
+                <div class="card">
+                    <h3 class="card-title">Basic Information</h3>
+                    <p style="color:var(--text-muted);margin-bottom:12px;">Enter the core details for this part. You can add drawings, BOM, and other details after creation.</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">Part Number <span style="color:var(--danger)">*</span></label>
+                            <input class="form-control" @bind="_part!.PartNumber" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                            <input class="form-control" @bind="_part!.Name" />
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" @bind="_part!.Description" rows="2"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Material <span style="color:var(--danger)">*</span></label>
+                            <select class="form-control" value="@_part!.Material" @onchange="OnMaterialChanged">
+                                <option value="">Select material...</option>
+                                @if (_materials != null)
+                                {
+                                    @foreach (var m in _materials)
+                                    {
+                                        <option value="@m.Name">@m.Name (@m.Category)</option>
+                                    }
+                                }
+                                @if (!string.IsNullOrEmpty(_part.Material) && _materials?.All(m => m.Name != _part.Material) == true)
+                                {
+                                    <option value="@_part.Material">@_part.Material (custom)</option>
+                                }
+                            </select>
+                            <small style="color: var(--text-muted);">Or type a custom value below:</small>
+                            <input class="form-control" @bind="_part!.Material" style="margin-top: 4px;" placeholder="Custom material name..." />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Raw Material Spec</label>
+                            <input class="form-control" @bind="_part!.RawMaterialSpec" placeholder="e.g. AMS 4911" />
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                    <button class="btn btn-secondary" @onclick="GoBack">Cancel</button>
+                    <button class="btn btn-primary" style="margin-left:auto;" @onclick="WizardNext" disabled="@(!WizardCanAdvance)">Next: Select Approach →</button>
+                </div>
+            }
+
+            @* ── STEP 2: Manufacturing Approach Selection ── *@
+            @if (_wizardStep == 2)
+            {
+                <div class="card">
+                    <h3 class="card-title">Select Manufacturing Approach</h3>
+                    <p style="color:var(--text-muted);margin-bottom:16px;">Choose how this part will be manufactured. This determines the default process stages, batch handling, and scheduling behavior.</p>
+
+                    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">
+                        @foreach (var approach in _approaches.Where(a => a.IsActive).OrderBy(a => a.DisplayOrder))
+                        {
+                            var isSelected = _part!.ManufacturingApproachId == approach.Id;
+                            var template = approach.ParsedRoutingTemplate;
+                            <div class="card approach-card" style="cursor:pointer; padding:16px; border:2px solid @(isSelected ? "var(--primary)" : "var(--border)"); background:@(isSelected ? "var(--primary-bg, rgba(0,123,255,0.05))" : "var(--bg-card)"); transition:all 0.15s;"
+                                 @onclick="() => SelectApproach(approach.Id)">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                    <span style="font-size:1.5em;">@(approach.IconEmoji ?? "📦")</span>
+                                    <div>
+                                        <strong style="font-size:1.05em;">@approach.Name</strong>
+                                        @if (!string.IsNullOrEmpty(approach.Description))
+                                        {
+                                            <div style="font-size:0.85em;color:var(--text-muted);">@approach.Description</div>
+                                        }
+                                    </div>
+                                    @if (isSelected)
+                                    {
+                                        <span style="margin-left:auto;color:var(--primary);font-size:1.2em;">✓</span>
+                                    }
+                                </div>
+                                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">
+                                    @if (approach.IsAdditive) { <span class="badge badge-info" style="font-size:0.75em;">Additive</span> }
+                                    @if (approach.RequiresBuildPlate) { <span class="badge badge-warning" style="font-size:0.75em;">Build Plate</span> }
+                                    @if (approach.DefaultBatchCapacity > 0) { <span class="badge badge-secondary" style="font-size:0.75em;">Batch: @(approach.DefaultBatchCapacity)/crate</span> }
+                                </div>
+                                @if (template.Count > 0)
+                                {
+                                    <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;">
+                                        @for (int i = 0; i < template.Count; i++)
+                                        {
+                                            var entry = template[i];
+                                            var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                                            if (i > 0) { <span style="color:var(--text-muted);font-size:0.8em;">→</span> }
+                                            <span style="font-size:0.8em;padding:2px 6px;border-radius:4px;background:@(stage?.StageColor ?? "#666")20;border:1px solid @(stage?.StageColor ?? "#ccc");white-space:nowrap;">
+                                                @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
+                                                <span style="font-size:0.7em;color:var(--text-muted);margin-left:2px;">@entry.Level.ToString()[0]</span>
+                                            </span>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span style="font-size:0.85em;color:var(--text-muted);font-style:italic;">No default routing</span>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (SelectedApproach != null)
+                    {
+                        <div style="margin-top:16px;padding:12px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border);">
+                            <strong>Selected:</strong> @SelectedApproach.IconEmoji @SelectedApproach.Name
+                            @{ var selectedTemplate = SelectedApproach.ParsedRoutingTemplate; }
+                            @if (selectedTemplate.Count > 0)
+                            {
+                                <span style="color:var(--text-muted);margin-left:8px;">— @selectedTemplate.Count stages will be auto-created in the manufacturing process</span>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                    <button class="btn btn-secondary" @onclick="WizardBack">← Back</button>
+                    <button class="btn btn-primary" style="margin-left:auto;" @onclick="WizardNext">Next: Review →</button>
+                </div>
+            }
+
+            @* ── STEP 3: Review & Create ── *@
+            @if (_wizardStep == 3)
+            {
+                <div class="card">
+                    <h3 class="card-title">Review & Create</h3>
+                    <p style="color:var(--text-muted);margin-bottom:16px;">Review the part details below. After creation you can configure the process stages, add BOM items, drawings, and more.</p>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <div>
+                            <h4 style="margin-bottom:8px;">Part Details</h4>
+                            <table style="width:100%;">
+                                <tr><td style="padding:4px 8px;color:var(--text-muted);width:140px;">Part Number</td><td style="padding:4px 8px;font-weight:600;">@_part!.PartNumber</td></tr>
+                                <tr><td style="padding:4px 8px;color:var(--text-muted);">Name</td><td style="padding:4px 8px;">@_part.Name</td></tr>
+                                @if (!string.IsNullOrEmpty(_part.Description))
+                                {
+                                    <tr><td style="padding:4px 8px;color:var(--text-muted);">Description</td><td style="padding:4px 8px;">@_part.Description</td></tr>
+                                }
+                                <tr><td style="padding:4px 8px;color:var(--text-muted);">Material</td><td style="padding:4px 8px;">@(string.IsNullOrEmpty(_part.Material) ? "—" : _part.Material)</td></tr>
+                                @if (!string.IsNullOrEmpty(_part.RawMaterialSpec))
+                                {
+                                    <tr><td style="padding:4px 8px;color:var(--text-muted);">Raw Material Spec</td><td style="padding:4px 8px;">@_part.RawMaterialSpec</td></tr>
+                                }
+                            </table>
+                        </div>
+                        <div>
+                            <h4 style="margin-bottom:8px;">Manufacturing Approach</h4>
+                            @if (SelectedApproach != null)
+                            {
+                                var reviewTemplate = SelectedApproach.ParsedRoutingTemplate;
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                    <span style="font-size:1.3em;">@SelectedApproach.IconEmoji</span>
+                                    <strong>@SelectedApproach.Name</strong>
+                                </div>
+                                @if (reviewTemplate.Count > 0)
+                                {
+                                    <p style="font-size:0.9em;color:var(--text-muted);margin-bottom:8px;">
+                                        @reviewTemplate.Count process stages will be auto-created:
+                                    </p>
+                                    <div style="display:flex;flex-direction:column;gap:4px;">
+                                        @for (int i = 0; i < reviewTemplate.Count; i++)
+                                        {
+                                            var entry = reviewTemplate[i];
+                                            var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                                            <div style="display:flex;align-items:center;gap:6px;font-size:0.9em;">
+                                                <span style="width:20px;text-align:right;color:var(--text-muted);">@(i + 1).</span>
+                                                <span style="padding:2px 6px;border-radius:4px;background:@(stage?.StageColor ?? "#666")20;border:1px solid @(stage?.StageColor ?? "#ccc");">
+                                                    @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
+                                                </span>
+                                                <span class="badge badge-secondary" style="font-size:0.75em;">@entry.Level</span>
+                                                @if (entry.IsPlateReleaseTrigger) { <span class="badge badge-warning" style="font-size:0.7em;">Plate Release</span> }
+                                                @if (entry.DurationFromBuildConfig) { <span class="badge badge-info" style="font-size:0.7em;">Slicer Data</span> }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p style="color:var(--text-muted);font-style:italic;">No approach selected — you can configure the process manually after creation.</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                    <button class="btn btn-secondary" @onclick="WizardBack">← Back</button>
+                    <button class="btn btn-primary" style="margin-left:auto;" @onclick="Save" disabled="@_saving">
+                        @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                        Create Part
+                    </button>
+                </div>
+            }
+        }
+        else
+        {
+            @* ═══════════════════════════════════════════════════════════════
+               EDIT EXISTING PART — tabbed interface (unchanged)
+               ═══════════════════════════════════════════════════════════════ *@
+            <div class="page-header">
+                <div>
+                    <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Parts</button>
+                    <h1 class="page-title">Edit @_part!.PartNumber — @_part.Name</h1>
                 </div>
             </div>
 
@@ -67,7 +314,7 @@
             <div class="tab-bar" style="margin-bottom: 16px;">
                 <button class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>Part Info</button>
                 <button class="tab @(_tab == "pdm" ? "active" : "")" @onclick='() => _tab = "pdm"'>Drawing & Revision</button>
-                <button class="tab @(_tab == "routing" ? "active" : "")" @onclick='() => _tab = "routing"'>Routing (@(_stageReqs?.Count ?? 0))</button>
+                <button class="tab @(_tab == "process" ? "active" : "")" @onclick='() => _tab = "process"'>Process</button>
                 <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM / Materials (@(_bomItems?.Count ?? 0))</button>
                 @if (ShowAdditiveTabs)
                 {
@@ -170,312 +417,21 @@
                             <input class="form-control" type="date" @bind="_part!.RevisionDate" />
                         </div>
                     </div>
-                    @if (!_isNew)
-                    {
-                        <p style="color: var(--text-muted); margin-top: 12px; font-size: 0.85rem;">
-                            To formally bump the revision (with history tracking), use the "Bump Revision" button on the Part Detail page.
-                            Drawings can be uploaded from the Part Detail → Drawings tab.
-                        </p>
-                    }
-                </div>
-            }
-
-            <!-- Routing / Stage Requirements Tab -->
-            @if (_tab == "routing")
-            {
-                <div class="card">
-                    <h3 class="card-title">Stage Routing</h3>
-                    <p style="color: var(--text-muted); margin-bottom: 12px;">
-                        Define the production stages this part goes through. 
-                        @if (SelectedApproach?.RequiresBuildPlate == true)
-                        {
-                            <span>Build-level stages run once for the entire build plate; per-part stages run after plate release.</span>
-                        }
+                    <p style="color: var(--text-muted); margin-top: 12px; font-size: 0.85rem;">
+                        To formally bump the revision (with history tracking), use the "Bump Revision" button on the Part Detail page.
+                        Drawings can be uploaded from the Part Detail → Drawings tab.
                     </p>
-
-                    <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <select class="form-control" style="width: auto;" @bind="_addStageId">
-                            <option value="0">Add stage...</option>
-                            @if (_allStages != null)
-                            {
-                                @foreach (var s in _allStages.Where(s => _stageReqs?.All(r => r.ProductionStageId != s.Id) ?? true))
-                                {
-                                    <option value="@s.Id">@(s.IsBuildLevelStage ? "🔷 " : "")@s.Name (@(s.Department ?? "—"))</option>
-                                }
-                            }
-                        </select>
-                        <button class="btn btn-sm btn-primary" @onclick="AddStageReq" disabled="@(_addStageId == 0)">+ Add Stage</button>
-                        @if (SelectedApproach != null && !string.IsNullOrWhiteSpace(SelectedApproach.DefaultRoutingTemplate) && SelectedApproach.DefaultRoutingTemplate != "[]")
-                        {
-                            <button class="btn btn-sm btn-secondary" @onclick="() => ApplyRoutingTemplateAsync()" title="Apply default routing from the selected manufacturing approach">
-                                🛤️ Apply Template
-                            </button>
-                        }
-                    </div>
-
-                    @if (_stageReqs != null && _stageReqs.Any())
-                    {
-                        @* Build-Level Stages Section (only show if approach requires build plate) *@
-                        @if (SelectedApproach?.RequiresBuildPlate == true)
-                        {
-                            var buildLevelReqs = _stageReqs.Where(r => r.ProductionStage?.IsBuildLevelStage == true).OrderBy(r => r.ExecutionOrder).ToList();
-                            if (buildLevelReqs.Any())
-                            {
-                                <div style="margin-bottom: 20px;">
-                                    <h4 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                                        <span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">BUILD</span>
-                                        Build-Level Stages
-                                        <span style="font-weight: normal; color: var(--text-muted);">— Shared across all parts on the plate</span>
-                                    </h4>
-                                    <table class="data-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Order</th>
-                                                <th>Stage</th>
-                                                <th>Department</th>
-                                                <th>Est. Hours</th>
-                                                <th>Machine</th>
-                                                <th>Required</th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var r in buildLevelReqs)
-                                            {
-                                                var slug = r.ProductionStage?.StageSlug?.ToLowerInvariant() ?? "";
-                                                var config = _part?.AdditiveBuildConfig;
-                                                <tr>
-                                                    <td><input class="form-control" type="number" min="1" style="width: 60px;" value="@r.ExecutionOrder" @onchange="e => UpdateReqField(r, nameof(r.ExecutionOrder), e)" /></td>
-                                                    <td>
-                                                        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:@(r.ProductionStage?.StageColor ?? "var(--accent)");margin-right:6px;"></span>
-                                                        @(r.ProductionStage?.Name ?? $"Stage {r.ProductionStageId}")
-                                                        @if (r.ProductionStage?.TriggerPlateRelease == true)
-                                                        {
-                                                            <span style="margin-left: 6px; font-size: 0.75rem; background: var(--warning); color: white; padding: 1px 6px; border-radius: 3px;">RELEASE</span>
-                                                        }
-                                                    </td>
-                                                    <td>@(r.ProductionStage?.Department ?? "—")</td>
-                                                    <td>
-                                                        @if (_selectedBuildId > 0 && config != null)
-                                                        {
-                                                            @* Show editable input when a build is selected *@
-                                                            @if (slug is "sls-printing" or "sls-print" or "printing" or "print")
-                                                            {
-                                                                <input class="form-control form-control-sm" type="number" step="0.1" min="0" style="width: 80px;"
-                                                                       value="@config.SingleStackDurationHours"
-                                                                       @onchange="e => config.SingleStackDurationHours = ParseNullableDouble(e.Value)" />
-                                                            }
-                                                            else if (slug is "depowder" or "depowdering")
-                                                            {
-                                                                <input class="form-control form-control-sm" type="number" step="0.1" min="0" style="width: 80px;"
-                                                                       value="@config.DepowderingDurationHours"
-                                                                       @onchange="e => config.DepowderingDurationHours = ParseNullableDouble(e.Value)" />
-                                                            }
-                                                            else if (slug is "heat-treat" or "heat-treatment")
-                                                            {
-                                                                <input class="form-control form-control-sm" type="number" step="0.1" min="0" style="width: 80px;"
-                                                                       value="@config.HeatTreatmentDurationHours"
-                                                                       @onchange="e => config.HeatTreatmentDurationHours = ParseNullableDouble(e.Value)" />
-                                                            }
-                                                            else if (slug is "wire-edm" or "edm")
-                                                            {
-                                                                <input class="form-control form-control-sm" type="number" step="0.1" min="0" style="width: 80px;"
-                                                                       value="@config.WireEdmDurationHours"
-                                                                       @onchange="e => config.WireEdmDurationHours = ParseNullableDouble(e.Value)" />
-                                                            }
-                                                            else
-                                                            {
-                                                                <span style="color: var(--text-muted); font-style: italic;">From build</span>
-                                                            }
-                                                        }
-                                                        else
-                                                        {
-                                                            <span style="color: var(--text-muted); font-style: italic;" title="Select a build above to edit durations">
-                                                                From build
-                                                            </span>
-                                                        }
-                                                    </td>
-                                                    <td>
-                                                        <span style="color: var(--text-muted);" title="Machine is assigned when the build is scheduled">
-                                                            @(r.ProductionStage?.DefaultMachineId ?? "Build")
-                                                        </span>
-                                                    </td>
-                                                    <td><input type="checkbox" checked="@r.IsRequired" @onchange="e => UpdateReqRequired(r, e)" /></td>
-                                                    <td><button class="btn btn-sm btn-danger" @onclick="() => RemoveStageReq(r.Id)">✕</button></td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                    <div style="margin-top: 8px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.85rem; color: var(--text-muted);">
-                                        ℹ️ Build-level stage durations are calculated when a build plate is created. Times depend on the number of parts and stack configuration.
-                                    </div>
-
-                                    @* Fill From Build Section *@
-                                    @if (_buildsForPart?.Any() == true)
-                                    {
-                                        <div style="margin-top: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
-                                            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                                                <label class="form-label" style="margin: 0; white-space: nowrap;">
-                                                    📦 @(_selectedBuildId > 0 ? "Editing durations from:" : "Fill durations from existing build:")
-                                                </label>
-                                                <select class="form-control" style="flex: 1; min-width: 200px; max-width: 400px;" @bind="_selectedBuildId">
-                                                    <option value="0">Select a build...</option>
-                                                    @foreach (var build in _buildsForPart)
-                                                    {
-                                                        var statusIcon = build.Status switch
-                                                        {
-                                                            BuildPackageStatus.Completed => "✅",
-                                                            BuildPackageStatus.PostPrint => "📦",
-                                                            BuildPackageStatus.Printing => "🖨️",
-                                                            BuildPackageStatus.Scheduled => "📅",
-                                                            _ => "📝"
-                                                        };
-                                                        var durationInfo = build.EstimatedDurationHours.HasValue ? $" ({build.EstimatedDurationHours:F1}h)" : "";
-                                                        <option value="@build.Id">@statusIcon @build.Name@durationInfo — @build.Status</option>
-                                                    }
-                                                </select>
-                                                <button class="btn btn-sm btn-primary" @onclick="FillDurationsFromBuild" disabled="@(_selectedBuildId == 0)">
-                                                    Apply
-                                                </button>
-                                            </div>
-                                            @if (_selectedBuildId > 0)
-                                            {
-                                                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px;">
-                                                    <span style="color: var(--text-muted); font-size: 0.85rem;">
-                                                        ✏️ Edit durations in the table above, then save changes:
-                                                    </span>
-                                                    <button class="btn btn-sm btn-success" @onclick="SaveBuildDurations">
-                                                        💾 Save Durations
-                                                    </button>
-                                                    <button class="btn btn-sm btn-secondary" @onclick="() => _selectedBuildId = 0">
-                                                        Cancel
-                                                    </button>
-                                                </div>
-                                            }
-                                            else
-                                            {
-                                                <small style="color: var(--text-muted); display: block; margin-top: 6px;">
-                                                    Copies print duration, depowdering, heat treatment, and wire EDM times from the selected build to this part's configuration.
-                                                </small>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        }
-
-                        @* Per-Part Stages Section *@
-                        var perPartReqs = _stageReqs.Where(r => r.ProductionStage?.IsBuildLevelStage != true).OrderBy(r => r.ExecutionOrder).ToList();
-                        if (perPartReqs.Any())
-                        {
-                            <div>
-                                @if (SelectedApproach?.RequiresBuildPlate == true)
-                                {
-                                    <h4 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                                        <span style="background: var(--success); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">PART</span>
-                                        Per-Part Stages
-                                        <span style="font-weight: normal; color: var(--text-muted);">— Individual jobs after plate release</span>
-                                    </h4>
-                                }
-                                <table class="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Order</th>
-                                            <th>Stage</th>
-                                            <th>Department</th>
-                                            <th>Est. Min</th>
-                                            <th>Setup (min)</th>
-                                            <th>Batch</th>
-                                            <th>Rate $/hr</th>
-                                            <th>Material $</th>
-                                            <th>Machine</th>
-                                            <th>Required</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var r in perPartReqs)
-                                        {
-                                            <tr>
-                                                <td><input class="form-control" type="number" min="1" style="width: 60px;" value="@r.ExecutionOrder" @onchange="e => UpdateReqField(r, nameof(r.ExecutionOrder), e)" /></td>
-                                                <td>
-                                                    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:@(r.ProductionStage?.StageColor ?? "var(--accent)");margin-right:6px;"></span>
-                                                    @(r.ProductionStage?.Name ?? $"Stage {r.ProductionStageId}")
-                                                </td>
-                                                <td>@(r.ProductionStage?.Department ?? "—")</td>
-                                                <td><input class="form-control" type="number" min="1" style="width: 70px;" value="@r.EstimatedMinutes" @onchange="e => UpdateReqField(r, nameof(r.EstimatedMinutes), e)" placeholder="@((int)((r.ProductionStage?.DefaultDurationHours ?? 1) * 60))" /></td>
-                                                <td><input class="form-control" type="number" style="width: 70px;" value="@r.SetupTimeMinutes" @onchange="e => UpdateReqField(r, nameof(r.SetupTimeMinutes), e)" /></td>
-                                                <td>
-                                                    <span style="color: var(--text-muted);" title="@(r.ProductionStage?.BatchCapacity ?? 1) part(s) at a time">
-                                                        @(r.ProductionStage?.BatchCapacity ?? 1)×
-                                                    </span>
-                                                </td>
-                                                <td><input class="form-control" type="number" step="1" style="width: 80px;" value="@r.HourlyRateOverride" @onchange="e => UpdateReqField(r, nameof(r.HourlyRateOverride), e)" placeholder="@(r.ProductionStage?.DefaultHourlyRate.ToString("F0") ?? "—")" /></td>
-                                                <td><input class="form-control" type="number" step="0.01" style="width: 80px;" value="@r.MaterialCost" @onchange="e => UpdateReqField(r, nameof(r.MaterialCost), e)" /></td>
-                                                <td>
-                                                    <select class="form-control" style="width:auto;min-width:100px;" value="@(r.AssignedMachineId ?? "")" @onchange="e => UpdateReqMachine(r, e)">
-                                                        <option value="">Any</option>
-                                                        @if (_machines != null)
-                                                        {
-                                                            @foreach (var m in _machines.Where(m => r.ProductionStage?.Department == null || m.Department == r.ProductionStage.Department || string.IsNullOrEmpty(m.Department)))
-                                                            {
-                                                                <option value="@m.MachineId">@m.Name</option>
-                                                            }
-                                                        }
-                                                    </select>
-                                                </td>
-                                                <td><input type="checkbox" checked="@r.IsRequired" @onchange="e => UpdateReqRequired(r, e)" /></td>
-                                                <td><button class="btn btn-sm btn-danger" @onclick="() => RemoveStageReq(r.Id)">✕</button></td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        }
-
-                        @* Summary (only for per-part stages since build-level comes from build) *@
-                        @if (perPartReqs.Any())
-                        {
-                            <div style="margin-top: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; display: flex; gap: 24px;">
-                                <div>
-                                    <span class="form-label">Per-Part Est. Hours</span>
-                                    <div style="font-weight: 600;">@perPartReqs.Sum(r => r.GetEffectiveEstimatedHours()).ToString("F1") hrs</div>
-                                </div>
-                                <div>
-                                    <span class="form-label">Per-Part Est. Cost</span>
-                                    <div style="font-weight: 600;">@perPartReqs.Sum(r => r.CalculateTotalEstimatedCost()).ToString("C")</div>
-                                </div>
-                            </div>
-                        }
-                    }
-                    else
-                    {
-                        <div class="empty-state">
-                            <div class="empty-state-icon">⚙</div>
-                            <div class="empty-state-text">
-                                @if (SelectedApproach != null && !string.IsNullOrWhiteSpace(SelectedApproach.DefaultRoutingTemplate) && SelectedApproach.DefaultRoutingTemplate != "[]")
-                                {
-                                    <span>No stages assigned yet.</span>
-                                    <button class="btn btn-sm btn-primary" style="margin-top: 8px;" @onclick="() => ApplyRoutingTemplateAsync()">
-                                        🛤️ Apply @(SelectedApproach.Name) Template
-                                    </button>
-                                }
-                                else if (SelectedApproach != null)
-                                {
-                                    <span>No stages assigned. Add stages manually using the dropdown above.</span>
-                                }
-                                else
-                                {
-                                    <span>No stages assigned. Select a manufacturing approach on the Part Info tab to auto-populate, or add stages manually.</span>
-                                }
-                            </div>
-                        </div>
-                    }
                 </div>
             }
 
-                            <!-- BOM / Materials Tab -->
-                            @if (_tab == "bom")
+            <!-- Manufacturing Process Tab -->
+            @if (_tab == "process")
+            {
+                <ProcessEditor PartId="@Id" CurrentUser="@_currentUser" />
+            }
+
+            <!-- BOM / Materials Tab -->
+            @if (_tab == "bom")
             {
                 <div class="card">
                     <h3 class="card-title">Bill of Materials</h3>
@@ -689,8 +645,8 @@
                 </div>
             }
 
-                            <!-- Stacking Tab (approach-driven) -->
-                            @if (_tab == "stacking" && ShowAdditiveTabs)
+            <!-- Stacking Tab (approach-driven) -->
+            @if (_tab == "stacking" && ShowAdditiveTabs)
             {
                 <div class="card">
                     <h3 class="card-title">SLS Stacking Configuration</h3>
@@ -759,48 +715,14 @@
             <div style="display: flex; gap: 8px; margin-top: 16px;">
                 <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
                     @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
-                    @(_isNew ? "Create Part" : "Save Changes")
+                    Save Changes
                 </button>
                 <button class="btn btn-secondary" @onclick="GoBack">Cancel</button>
-                @if (!_isNew)
-                {
-                    <button class="btn btn-sm btn-secondary" @onclick="ViewDetail" style="margin-left: auto;">View Part Detail →</button>
-                }
+                <button class="btn btn-sm btn-secondary" @onclick="ViewDetail" style="margin-left: auto;">View Part Detail →</button>
             </div>
         }
     </Authorized>
 </AuthorizeView>
-
-@if (_showRoutingTemplateConfirm && SelectedApproach != null)
-{
-    var templateSlugs = _pendingTemplateSlugs ?? [];
-    <div class="modal-overlay" @onclick="CancelReplaceRouting">
-        <div class="modal-content" style="max-width: 500px;" @onclick:stopPropagation>
-            <div class="modal-header">
-                <span class="modal-title">Replace Routing?</span>
-                <button class="modal-close" @onclick="CancelReplaceRouting">&times;</button>
-            </div>
-            <div style="padding: 16px;">
-                <p>This part already has <strong>@(_stageReqs?.Count ?? 0) stage(s)</strong> in its routing.</p>
-                <p>The <strong>@(SelectedApproach.IconEmoji) @(SelectedApproach.Name)</strong> template would replace them with:</p>
-                <div style="margin: 12px 0; display: flex; flex-wrap: wrap; gap: 6px;">
-                    @foreach (var slug in templateSlugs)
-                    {
-                        var stage = _allStages?.FirstOrDefault(s => s.StageSlug == slug);
-                        <span style="padding: 3px 10px; border-radius: 4px; font-size: 0.85rem; background: @(stage?.StageColor ?? "#666")20; border: 1px solid @(stage?.StageColor ?? "#ccc"); color: var(--text-primary);">
-                            @(stage?.StageIcon ?? "❓") @(stage?.Name ?? slug)
-                        </span>
-                    }
-                </div>
-                <p style="color: var(--text-muted); font-size: 0.85rem;">Existing stages will be removed and replaced with the template stages.</p>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-primary" @onclick="ConfirmReplaceRouting">Replace Routing</button>
-                <button class="btn btn-secondary" @onclick="CancelReplaceRouting">Keep Existing</button>
-            </div>
-        </div>
-    </div>
-}
 
 <ConfirmDialog @ref="_confirm" />
 
@@ -813,15 +735,12 @@
     private string? _error;
     private List<string> _validationErrors = new();
     private string _tab = "info";
+    private int _wizardStep = 1;
     private string _currentUser = "System";
     private ConfirmDialog _confirm = null!;
 
     // Feature flags
     private bool _showDlms;
-
-    // Part data
-    private Part? _part;
-    private List<PartStageRequirement>? _stageReqs;
 
     // Reference data
     private List<Material>? _materials;
@@ -846,12 +765,8 @@
     private List<InventoryItem>? _inventoryItems;
     private List<Part>? _allParts;
 
-    // Stage requirement form state
-    private int _addStageId;
-
-    // Builds for this part (for "Fill from Build" feature)
-    private List<BuildPackage>? _buildsForPart;
-    private int _selectedBuildId;
+    // Part being edited
+    private Part? _part;
 
     // Manufacturing approaches (DB-backed)
     private List<ManufacturingApproach> _approaches = new();
@@ -882,7 +797,6 @@
                 CreatedBy = _currentUser,
                 LastModifiedBy = _currentUser
             };
-            _stageReqs = new();
             _bomItems = new();
         }
         else
@@ -890,7 +804,6 @@
             _part = await PartService.GetPartByIdAsync(Id);
             if (_part != null)
             {
-                _stageReqs = await PartService.GetStageRequirementsAsync(Id);
                 _bomItems = await PartService.GetBomItemsAsync(Id);
 
                 // Backfill MaterialId from Material string if not set
@@ -899,9 +812,6 @@
                     var match = _materials?.FirstOrDefault(m => m.Name == _part.Material);
                     if (match != null) _part.MaterialId = match.Id;
                 }
-
-                // Load builds containing this part (for "Fill from Build" feature)
-                _buildsForPart = await BuildPlanningService.GetBuildsForPartAsync(Id);
             }
         }
 
@@ -930,119 +840,40 @@
         _part.MaterialId = match?.Id;
     }
 
-    private bool _showRoutingTemplateConfirm;
-    private List<string>? _pendingTemplateSlugs;
-
     private async Task OnApproachChanged(ChangeEventArgs e)
     {
-        int? previousApproachId = _part!.ManufacturingApproachId;
-
         if (int.TryParse(e.Value?.ToString(), out var id))
             _part!.ManufacturingApproachId = id;
         else
             _part!.ManufacturingApproachId = null;
 
         EnsureAdditiveBuildConfig();
-
-        // Auto-apply routing template when approach changes
-        if (_part.ManufacturingApproachId != previousApproachId)
-        {
-            await ApplyRoutingTemplateAsync();
-        }
     }
 
-    /// <summary>
-    /// Auto-applies the DefaultRoutingTemplate from the selected ManufacturingApproach.
-    /// If routing is empty, applies immediately. If routing has stages, shows confirmation.
-    /// </summary>
-    private async Task ApplyRoutingTemplateAsync(bool forceReplace = false)
+    private void SelectApproach(int approachId)
     {
-        if (_part == null || _allStages == null) return;
-
-        var approach = SelectedApproach;
-        if (approach == null || string.IsNullOrWhiteSpace(approach.DefaultRoutingTemplate)) return;
-
-        try
-        {
-            var stageSlugs = JsonSerializer.Deserialize<List<string>>(approach.DefaultRoutingTemplate);
-            if (stageSlugs == null || stageSlugs.Count == 0) return;
-
-            // Option C: if routing has stages and not forcing, show confirmation
-            if (_stageReqs?.Any() == true && !forceReplace)
-            {
-                _pendingTemplateSlugs = stageSlugs;
-                _showRoutingTemplateConfirm = true;
-                return;
-            }
-
-            // Clear existing routing if replacing
-            if (forceReplace && _stageReqs?.Any() == true)
-            {
-                if (!_isNew)
-                {
-                    foreach (var existing in _stageReqs.ToList())
-                    {
-                        await PartService.RemoveStageRequirementAsync(existing.Id);
-                    }
-                }
-                _stageReqs = new();
-            }
-
-            _stageReqs ??= new();
-            int order = 1;
-
-            foreach (var slug in stageSlugs)
-            {
-                var stage = _allStages.FirstOrDefault(s => s.StageSlug == slug);
-                if (stage == null) continue;
-
-                if (_stageReqs.Any(r => r.ProductionStageId == stage.Id)) continue;
-
-                var req = new PartStageRequirement
-                {
-                    PartId = _part.Id,
-                    ProductionStageId = stage.Id,
-                    ProductionStage = stage,
-                    ExecutionOrder = order++,
-                    EstimatedMinutes = stage.IsBuildLevelStage ? null : (int)(stage.DefaultDurationHours * 60),
-                    SetupTimeMinutes = stage.IsBuildLevelStage ? null : stage.DefaultSetupMinutes,
-                    IsRequired = true,
-                    CreatedBy = _currentUser,
-                    LastModifiedBy = _currentUser
-                };
-
-                if (_isNew)
-                {
-                    _stageReqs.Add(req);
-                }
-                else
-                {
-                    await PartService.AddStageRequirementAsync(req);
-                }
-            }
-
-            if (!_isNew && _stageReqs.Count > 0)
-            {
-                _stageReqs = await PartService.GetStageRequirementsAsync(_part.Id);
-            }
-        }
-        catch (JsonException)
-        {
-            // Invalid JSON in template, ignore
-        }
+        _part!.ManufacturingApproachId = _part.ManufacturingApproachId == approachId ? null : approachId;
+        EnsureAdditiveBuildConfig();
     }
 
-    private async Task ConfirmReplaceRouting()
+    private bool WizardCanAdvance => _wizardStep switch
     {
-        _showRoutingTemplateConfirm = false;
-        _pendingTemplateSlugs = null;
-        await ApplyRoutingTemplateAsync(forceReplace: true);
+        1 => !string.IsNullOrWhiteSpace(_part?.PartNumber) && !string.IsNullOrWhiteSpace(_part?.Name),
+        _ => true
+    };
+
+    private void WizardNext()
+    {
+        _error = null;
+        _validationErrors.Clear();
+        if (_wizardStep < 3) _wizardStep++;
     }
 
-    private void CancelReplaceRouting()
+    private void WizardBack()
     {
-        _showRoutingTemplateConfirm = false;
-        _pendingTemplateSlugs = null;
+        _error = null;
+        _validationErrors.Clear();
+        if (_wizardStep > 1) _wizardStep--;
     }
 
     /// <summary>
@@ -1092,12 +923,6 @@
                 _part.CreatedBy = _currentUser;
                 _part = await PartService.CreatePartAsync(_part);
 
-                // Persist in-memory routing
-                foreach (var req in _stageReqs ?? [])
-                {
-                    req.PartId = _part.Id;
-                    await PartService.AddStageRequirementAsync(req);
-                }
                 // Persist in-memory BOM
                 foreach (var item in (_bomItems ?? []).Where(b => b.IsActive))
                 {
@@ -1105,8 +930,22 @@
                     await PartService.AddBomItemAsync(item);
                 }
 
+                // Auto-scaffold manufacturing process from approach template
+                if (_part.ManufacturingApproachId.HasValue)
+                {
+                    try
+                    {
+                        await ProcessService.CreateProcessFromApproachAsync(
+                            _part.Id, _part.ManufacturingApproachId.Value, _currentUser);
+                    }
+                    catch (Exception ex)
+                    {
+                        Toast.ShowWarning($"Part created but process scaffold failed: {ex.Message}");
+                    }
+                }
+
                 Toast.ShowSuccess("Part created successfully");
-                Nav.NavigateTo($"/parts/{_part.Id}/edit");
+                Nav.NavigateTo($"/parts/{_part.Id}/edit", forceLoad: true);
             }
             else
             {
@@ -1118,214 +957,9 @@
         finally { _saving = false; }
     }
 
-    // Stage requirement CRUD
-    private async Task AddStageReq()
-    {
-        if (_addStageId == 0 || _part == null) return;
-        var nextOrder = (_stageReqs?.Any() == true) ? _stageReqs.Max(r => r.ExecutionOrder) + 1 : 1;
-        var stage = _allStages?.FirstOrDefault(s => s.Id == _addStageId);
-        var req = new PartStageRequirement
-        {
-            PartId = _part.Id,
-            ProductionStageId = _addStageId,
-            ProductionStage = stage!,
-            ExecutionOrder = nextOrder,
-            // Convert default hours to minutes (or null for build-level stages)
-            EstimatedMinutes = stage?.IsBuildLevelStage == true ? null : (int)((stage?.DefaultDurationHours ?? 1.0) * 60),
-            SetupTimeMinutes = stage?.DefaultSetupMinutes,
-            IsRequired = true,
-            CreatedBy = _currentUser,
-            LastModifiedBy = _currentUser
-        };
-
-        if (_isNew)
-        {
-            _stageReqs ??= new();
-            _stageReqs.Add(req);
-        }
-        else
-        {
-            await PartService.AddStageRequirementAsync(req);
-            _stageReqs = await PartService.GetStageRequirementsAsync(_part.Id);
-        }
-        _addStageId = 0;
-    }
-
-    private async Task RemoveStageReq(int id)
-    {
-        var item = _stageReqs?.FirstOrDefault(r => r.Id == id);
-        var stageName = item?.ProductionStage?.Name ?? "this stage";
-        if (!await _confirm.ShowAsync($"Remove '{stageName}' from the routing?")) return;
-
-        if (_isNew)
-        {
-            if (item != null) _stageReqs?.Remove(item);
-        }
-        else
-        {
-            await PartService.RemoveStageRequirementAsync(id);
-            _stageReqs = await PartService.GetStageRequirementsAsync(_part!.Id);
-        }
-    }
-
-    private async Task UpdateReqField(PartStageRequirement r, string field, ChangeEventArgs e)
-    {
-        var val = e.Value?.ToString();
-        switch (field)
-        {
-            case nameof(r.ExecutionOrder):
-                if (int.TryParse(val, out var order)) r.ExecutionOrder = order;
-                break;
-            case nameof(r.EstimatedMinutes):
-                r.EstimatedMinutes = int.TryParse(val, out var mins) ? mins : null;
-                break;
-            case nameof(r.SetupTimeMinutes):
-                r.SetupTimeMinutes = int.TryParse(val, out var setup) ? setup : null;
-                break;
-            case nameof(r.HourlyRateOverride):
-                r.HourlyRateOverride = decimal.TryParse(val, out var rate) ? rate : null;
-                break;
-            case nameof(r.MaterialCost):
-                r.MaterialCost = decimal.TryParse(val, out var mc) ? mc : 0;
-                break;
-        }
-        r.LastModifiedBy = _currentUser;
-        if (!_isNew)
-        {
-            try
-            {
-                await PartService.UpdateStageRequirementAsync(r);
-            }
-            catch (Exception ex)
-            {
-                Toast.ShowError($"Failed to save: {ex.Message}");
-            }
-        }
-    }
-
-    private async Task UpdateReqMachine(PartStageRequirement r, ChangeEventArgs e)
-    {
-        r.AssignedMachineId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString();
-        r.LastModifiedBy = _currentUser;
-        if (!_isNew)
-        {
-            try
-            {
-                await PartService.UpdateStageRequirementAsync(r);
-            }
-            catch (Exception ex)
-            {
-                Toast.ShowError($"Failed to save: {ex.Message}");
-            }
-        }
-    }
-
-    private async Task UpdateReqRequired(PartStageRequirement r, ChangeEventArgs e)
-    {
-        r.IsRequired = (bool)(e.Value ?? true);
-        r.LastModifiedBy = _currentUser;
-        if (!_isNew)
-        {
-            try
-            {
-                await PartService.UpdateStageRequirementAsync(r);
-            }
-            catch (Exception ex)
-            {
-                Toast.ShowError($"Failed to save: {ex.Message}");
-            }
-        }
-    }
-
     private void OnCustomFieldsChanged(Dictionary<string, string> values)
     {
         _customFieldValues = values;
-    }
-
-    // ── Fill Durations From Build ─────────────────────────────────────
-
-    private async Task FillDurationsFromBuild()
-    {
-        if (_selectedBuildId == 0 || _part?.AdditiveBuildConfig == null) return;
-
-        var build = _buildsForPart?.FirstOrDefault(b => b.Id == _selectedBuildId);
-        if (build == null) return;
-
-        var config = _part.AdditiveBuildConfig;
-        var changes = new List<string>();
-
-        // Copy print/build duration to single stack duration (if exists)
-        if (build.EstimatedDurationHours.HasValue)
-        {
-            config.SingleStackDurationHours = build.EstimatedDurationHours;
-            changes.Add($"Print: {build.EstimatedDurationHours:F1}h");
-        }
-
-        // Copy post-print stage durations
-        if (build.DepowderingHours.HasValue)
-        {
-            config.DepowderingDurationHours = build.DepowderingHours;
-            changes.Add($"Depowdering: {build.DepowderingHours:F1}h");
-        }
-
-        if (build.HeatTreatmentHours.HasValue)
-        {
-            config.HeatTreatmentDurationHours = build.HeatTreatmentHours;
-            changes.Add($"Heat Treat: {build.HeatTreatmentHours:F1}h");
-        }
-
-        if (build.WireEdmHours.HasValue)
-        {
-            config.WireEdmDurationHours = build.WireEdmHours;
-            changes.Add($"Wire EDM: {build.WireEdmHours:F1}h");
-        }
-
-        // Copy parts per build (from the first part on this build matching our part)
-        var buildPart = build.Parts?.FirstOrDefault(pp => pp.PartId == _part.Id);
-        if (buildPart != null && buildPart.Quantity > 0)
-        {
-            config.PlannedPartsPerBuildSingle = buildPart.Quantity;
-            changes.Add($"Parts/Build: {buildPart.Quantity}");
-        }
-
-        if (changes.Any())
-        {
-            Toast.ShowSuccess($"Applied from {build.Name}: {string.Join(", ", changes)}");
-            StateHasChanged();
-        }
-        else
-        {
-            Toast.ShowInfo($"No timing data found on build '{build.Name}'");
-        }
-
-        // Keep build selected so user can continue editing
-    }
-
-    private double? ParseNullableDouble(object? value)
-    {
-        var str = value?.ToString();
-        if (string.IsNullOrWhiteSpace(str)) return null;
-        return double.TryParse(str, out var d) ? d : null;
-    }
-
-    private async Task SaveBuildDurations()
-    {
-        if (_part?.AdditiveBuildConfig == null)
-        {
-            Toast.ShowError("No additive configuration to save.");
-            return;
-        }
-
-        try
-        {
-            _part.LastModifiedBy = _currentUser;
-            await PartService.UpdatePartAsync(_part);
-            Toast.ShowSuccess("Build durations saved successfully.");
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to save: {ex.Message}");
-        }
     }
 
     // BOM CRUD

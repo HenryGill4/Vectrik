@@ -21,6 +21,21 @@ public class Job
 
     public int? WorkOrderLineId { get; set; }
 
+    /// <summary>
+    /// Scope of this job: Build-level, Batch-level, or Part-level.
+    /// </summary>
+    public JobScope Scope { get; set; } = JobScope.Part;
+
+    /// <summary>
+    /// FK to ProductionBatch — set for Batch-scope jobs.
+    /// </summary>
+    public int? ProductionBatchId { get; set; }
+
+    /// <summary>
+    /// FK to ManufacturingProcess — links this job to the process definition that created it.
+    /// </summary>
+    public int? ManufacturingProcessId { get; set; }
+
     // Scheduling
     public DateTime ScheduledStart { get; set; }
     public DateTime ScheduledEnd { get; set; }
@@ -73,6 +88,8 @@ public class Job
     public virtual Job? PredecessorJob { get; set; }
     public virtual User? OperatorUser { get; set; }
     public virtual WorkOrderLine? WorkOrderLine { get; set; }
+    public virtual ProductionBatch? ProductionBatch { get; set; }
+    public virtual ManufacturingProcess? ManufacturingProcess { get; set; }
     public virtual ICollection<StageExecution> Stages { get; set; } = new List<StageExecution>();
     public virtual ICollection<JobNote> JobNotes { get; set; } = new List<JobNote>();
     public virtual ICollection<DelayLog> DelayLogs { get; set; } = new List<DelayLog>();

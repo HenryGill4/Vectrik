@@ -5,40 +5,6 @@ namespace Opcentrix_V3.Tests.Models;
 
 public class PartAdditiveBuildConfigTests
 {
-    // ── Per-part hour computed properties ──────────────────────
-
-    [Fact]
-    public void DepowderingPerPartHours_WhenBothValuesSet_ReturnsCorrectRatio()
-    {
-        var config = new PartAdditiveBuildConfig { DepowderingDurationHours = 4, DepowderingPartsPerBatch = 8 };
-
-        Assert.Equal(0.5, config.DepowderingPerPartHours);
-    }
-
-    [Fact]
-    public void DepowderingPerPartHours_WhenMissing_ReturnsNull()
-    {
-        var config = new PartAdditiveBuildConfig();
-
-        Assert.Null(config.DepowderingPerPartHours);
-    }
-
-    [Fact]
-    public void HeatTreatmentPerPartHours_WhenBothValuesSet_ReturnsCorrectRatio()
-    {
-        var config = new PartAdditiveBuildConfig { HeatTreatmentDurationHours = 6, HeatTreatmentPartsPerBatch = 3 };
-
-        Assert.Equal(2.0, config.HeatTreatmentPerPartHours);
-    }
-
-    [Fact]
-    public void WireEdmPerPartHours_WhenBothValuesSet_ReturnsCorrectRatio()
-    {
-        var config = new PartAdditiveBuildConfig { WireEdmDurationHours = 8, WireEdmPartsPerSession = 4 };
-
-        Assert.Equal(2.0, config.WireEdmPerPartHours);
-    }
-
     // ── Stacking configuration properties ─────────────────────
 
     [Fact]

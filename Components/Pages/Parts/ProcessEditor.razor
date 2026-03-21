@@ -1,0 +1,498 @@
+@inject IManufacturingProcessService ProcessService
+@inject IStageService StageService
+@inject IMachineService MachineService
+@inject ToastService Toast
+@using Opcentrix_V3.Models.Enums
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading process...</div>
+}
+else if (_process == null && !_isNew)
+{
+    <div class="card">
+        <div style="text-align: center; padding: 20px;">
+            <div class="empty-state-icon">⚙️</div>
+            <p style="color: var(--text-muted);">No manufacturing process defined for this part.</p>
+            <button class="btn btn-primary" @onclick="CreateNewProcess">+ Create Manufacturing Process</button>
+        </div>
+    </div>
+}
+else if (_process != null)
+{
+    <div class="card">
+        <h3 class="card-title">Manufacturing Process</h3>
+
+        @if (_validationWarnings.Count > 0)
+        {
+            <div class="alert alert-warning" style="margin-bottom: 12px;">
+                <strong>Validation:</strong>
+                <ul style="margin: 4px 0 0 16px;">
+                    @foreach (var w in _validationWarnings)
+                    {
+                        <li>@w</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        @* ── Process Header ── *@
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+            <div class="form-group">
+                <label class="form-label">Process Name</label>
+                <input class="form-control" @bind="_process.Name" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Default Batch Capacity</label>
+                <input class="form-control" type="number" min="1" max="10000" @bind="_process.DefaultBatchCapacity" />
+                <small style="color: var(--text-muted);">Parts per crate/batch</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Plate Release Trigger</label>
+                <select class="form-control" value="@(_process.PlateReleaseStageId?.ToString() ?? "")" @onchange="OnPlateReleaseChanged">
+                    <option value="">— None —</option>
+                    @foreach (var s in _stages.Where(s => s.ProcessingLevel == ProcessingLevel.Build))
+                    {
+                        <option value="@s.Id">@GetStageName(s)</option>
+                    }
+                </select>
+                <small style="color: var(--text-muted);">Which stage triggers plate release</small>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 16px;">
+            <label class="form-label">Description</label>
+            <input class="form-control" @bind="_process.Description" placeholder="Optional process description..." />
+        </div>
+
+        @* ── Add Stage ── *@
+        <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <select class="form-control" style="width: auto;" @bind="_addStageId">
+                <option value="0">Add stage from catalog...</option>
+                @if (_catalogStages != null)
+                {
+                    @foreach (var cs in _catalogStages)
+                    {
+                        <option value="@cs.Id">@cs.StageIcon @cs.Name (@(cs.Department ?? "—"))</option>
+                    }
+                }
+            </select>
+            <select class="form-control" style="width: auto;" @bind="_addProcessingLevel">
+                <option value="@ProcessingLevel.Build">Build-Level</option>
+                <option value="@ProcessingLevel.Batch">Batch-Level</option>
+                <option value="@ProcessingLevel.Part">Part-Level</option>
+            </select>
+            <button class="btn btn-sm btn-primary" @onclick="AddStage" disabled="@(_addStageId == 0)">+ Add Stage</button>
+        </div>
+
+        @* ── Stage List ── *@
+        @if (!_stages.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon">🔧</div>
+                <div class="empty-state-text">No stages configured. Add stages from the catalog above.</div>
+            </div>
+        }
+        else
+        {
+            @* ── Build-Level Stages ── *@
+            var buildStages = _stages.Where(s => s.ProcessingLevel == ProcessingLevel.Build).OrderBy(s => s.ExecutionOrder).ToList();
+            @if (buildStages.Any())
+            {
+                <div style="margin-bottom: 20px;">
+                    <h4 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        <span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">BUILD</span>
+                        Build-Level Stages
+                    </h4>
+                    @RenderStageTable(buildStages)
+                </div>
+            }
+
+            @* ── Batch-Level Stages ── *@
+            var batchStages = _stages.Where(s => s.ProcessingLevel == ProcessingLevel.Batch).OrderBy(s => s.ExecutionOrder).ToList();
+            @if (batchStages.Any())
+            {
+                <div style="margin-bottom: 20px;">
+                    <h4 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        <span style="background: var(--warning); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">BATCH</span>
+                        Batch-Level Stages
+                    </h4>
+                    @RenderStageTable(batchStages)
+                </div>
+            }
+
+            @* ── Part-Level Stages ── *@
+            var partStages = _stages.Where(s => s.ProcessingLevel == ProcessingLevel.Part).OrderBy(s => s.ExecutionOrder).ToList();
+            @if (partStages.Any())
+            {
+                <div style="margin-bottom: 20px;">
+                    <h4 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        <span style="background: var(--success); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">PART</span>
+                        Part-Level Stages
+                    </h4>
+                    @RenderStageTable(partStages)
+                </div>
+            }
+
+            @* ── Duration Preview Calculator ── *@
+            <div style="background: var(--bg-secondary); border-radius: 8px; padding: 12px; margin-top: 16px;">
+                <h4 style="font-size: 0.95rem; margin-bottom: 8px;">⏱️ Duration Preview</h4>
+                <div style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Parts</label>
+                        <input class="form-control" type="number" min="1" max="10000" style="width: 100px;" @bind="_previewPartCount" @bind:after="CalculatePreview" />
+                    </div>
+                    <button class="btn btn-sm btn-secondary" @onclick="CalculatePreview">Calculate</button>
+                </div>
+                @if (_previewResults.Any())
+                {
+                    <table class="data-table" style="margin-top: 12px; font-size: 0.85rem;">
+                        <thead><tr><th>Stage</th><th>Level</th><th>Setup</th><th>Run</th><th>Total</th><th>Breakdown</th></tr></thead>
+                        <tbody>
+                            @foreach (var pr in _previewResults)
+                            {
+                                <tr>
+                                    <td>@pr.StageName</td>
+                                    <td><span class="badge badge-@pr.Level.ToString().ToLower()">@pr.Level</span></td>
+                                    <td>@pr.SetupMinutes.ToString("F0") min</td>
+                                    <td>@pr.RunMinutes.ToString("F0") min</td>
+                                    <td><strong>@pr.TotalMinutes.ToString("F0") min</strong></td>
+                                    <td style="color: var(--text-muted);">@pr.Breakdown</td>
+                                </tr>
+                            }
+                            <tr style="font-weight: 600; border-top: 2px solid var(--border-color);">
+                                <td colspan="4">Total</td>
+                                <td>@_previewResults.Sum(r => r.TotalMinutes).ToString("F0") min (@(_previewResults.Sum(r => r.TotalMinutes) / 60).ToString("F1") hrs)</td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+
+        @* ── Save / Actions ── *@
+        <div style="display: flex; gap: 8px; margin-top: 16px;">
+            <button class="btn btn-primary" @onclick="SaveProcess" disabled="@_saving">
+                @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                Save Process
+            </button>
+            <button class="btn btn-secondary" @onclick="ValidateProcess">Validate</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int PartId { get; set; }
+    [Parameter] public string CurrentUser { get; set; } = "System";
+
+    private ManufacturingProcess? _process;
+    private List<ProcessStage> _stages = [];
+    private List<ProductionStage>? _catalogStages;
+    private List<Machine>? _machines;
+    private bool _loading = true;
+    private bool _isNew;
+    private bool _saving;
+    private int _addStageId;
+    private ProcessingLevel _addProcessingLevel = ProcessingLevel.Part;
+    private List<string> _validationWarnings = [];
+
+    // Duration preview
+    private int _previewPartCount = 60;
+    private List<PreviewResult> _previewResults = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _catalogStages = await StageService.GetAllStagesAsync(activeOnly: true);
+            _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+            _process = await ProcessService.GetByPartIdAsync(PartId);
+
+            if (_process != null)
+            {
+                _stages = _process.Stages?.OrderBy(s => s.ExecutionOrder).ToList() ?? [];
+            }
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to load process: {ex.Message}"); }
+        finally { _loading = false; }
+    }
+
+    private async Task CreateNewProcess()
+    {
+        try
+        {
+            _process = await ProcessService.CreateAsync(new ManufacturingProcess
+            {
+                PartId = PartId,
+                Name = "New Process",
+                DefaultBatchCapacity = 60,
+                IsActive = true,
+                Version = 1,
+                CreatedBy = CurrentUser,
+                LastModifiedBy = CurrentUser
+            });
+            _stages = [];
+            _isNew = false;
+            Toast.ShowSuccess("Manufacturing process created.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task AddStage()
+    {
+        if (_addStageId == 0 || _process == null) return;
+
+        var catalogStage = _catalogStages?.FirstOrDefault(s => s.Id == _addStageId);
+        if (catalogStage == null) return;
+
+        var nextOrder = _stages.Any() ? _stages.Max(s => s.ExecutionOrder) + 1 : 1;
+
+        try
+        {
+            var stage = await ProcessService.AddStageAsync(new ProcessStage
+            {
+                ManufacturingProcessId = _process.Id,
+                ProductionStageId = _addStageId,
+                ExecutionOrder = nextOrder,
+                ProcessingLevel = _addProcessingLevel,
+                SetupDurationMode = DurationMode.None,
+                RunDurationMode = _addProcessingLevel == ProcessingLevel.Part
+                    ? DurationMode.PerPart
+                    : _addProcessingLevel == ProcessingLevel.Batch
+                        ? DurationMode.PerBatch
+                        : DurationMode.PerBuild,
+                RunTimeMinutes = catalogStage.DefaultDurationHours * 60,
+                SetupTimeMinutes = catalogStage.DefaultSetupMinutes,
+                IsRequired = true,
+                IsBlocking = true,
+                CreatedBy = CurrentUser,
+                LastModifiedBy = CurrentUser
+            });
+            stage.ProductionStage = catalogStage;
+            _stages.Add(stage);
+            _addStageId = 0;
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to add stage: {ex.Message}"); }
+    }
+
+    private async Task RemoveStage(ProcessStage stage)
+    {
+        try
+        {
+            await ProcessService.RemoveStageAsync(stage.Id);
+            _stages.Remove(stage);
+
+            // Clear plate release if it referenced this stage
+            if (_process?.PlateReleaseStageId == stage.Id)
+            {
+                _process.PlateReleaseStageId = null;
+            }
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to remove: {ex.Message}"); }
+    }
+
+    private async Task MoveStageUp(ProcessStage stage)
+    {
+        var idx = _stages.IndexOf(stage);
+        if (idx <= 0) return;
+        (_stages[idx - 1], _stages[idx]) = (_stages[idx], _stages[idx - 1]);
+        await ReorderStages();
+    }
+
+    private async Task MoveStageDown(ProcessStage stage)
+    {
+        var idx = _stages.IndexOf(stage);
+        if (idx < 0 || idx >= _stages.Count - 1) return;
+        (_stages[idx + 1], _stages[idx]) = (_stages[idx], _stages[idx + 1]);
+        await ReorderStages();
+    }
+
+    private async Task ReorderStages()
+    {
+        for (var i = 0; i < _stages.Count; i++)
+            _stages[i].ExecutionOrder = i + 1;
+
+        try
+        {
+            await ProcessService.ReorderStagesAsync(_process!.Id, _stages.Select(s => s.Id).ToList());
+        }
+        catch (Exception ex) { Toast.ShowError($"Reorder failed: {ex.Message}"); }
+    }
+
+    private async Task UpdateStage(ProcessStage stage)
+    {
+        try
+        {
+            stage.LastModifiedBy = CurrentUser;
+            stage.LastModifiedDate = DateTime.UtcNow;
+            await ProcessService.UpdateStageAsync(stage);
+        }
+        catch (Exception ex) { Toast.ShowError($"Save failed: {ex.Message}"); }
+    }
+
+    private async Task SaveProcess()
+    {
+        if (_process == null) return;
+        _saving = true;
+        try
+        {
+            _process.LastModifiedBy = CurrentUser;
+            _process.LastModifiedDate = DateTime.UtcNow;
+            await ProcessService.UpdateAsync(_process);
+            Toast.ShowSuccess("Process saved.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task ValidateProcess()
+    {
+        if (_process == null) return;
+        _validationWarnings = await ProcessService.ValidateProcessAsync(_process.Id);
+        if (_validationWarnings.Count == 0)
+            Toast.ShowSuccess("Process is valid ✅");
+    }
+
+    private void OnPlateReleaseChanged(ChangeEventArgs e)
+    {
+        if (_process == null) return;
+        _process.PlateReleaseStageId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+    }
+
+    private void CalculatePreview()
+    {
+        _previewResults.Clear();
+        if (_process == null) return;
+
+        var batchCapacity = _process.DefaultBatchCapacity;
+        var batchCount = (int)Math.Ceiling((double)_previewPartCount / batchCapacity);
+
+        foreach (var stage in _stages.OrderBy(s => s.ExecutionOrder))
+        {
+            var result = ProcessService.CalculateStageDuration(stage, _previewPartCount, batchCount, buildConfigHours: null);
+            _previewResults.Add(new PreviewResult(
+                GetStageName(stage),
+                stage.ProcessingLevel,
+                result.SetupMinutes,
+                result.RunMinutes,
+                result.TotalMinutes,
+                result.HumanReadableBreakdown));
+        }
+    }
+
+    private string GetStageName(ProcessStage stage) =>
+        stage.ProductionStage?.Name
+            ?? _catalogStages?.FirstOrDefault(cs => cs.Id == stage.ProductionStageId)?.Name
+            ?? $"Stage #{stage.ProductionStageId}";
+
+    private string GetStageColor(ProcessStage stage) =>
+        stage.ProductionStage?.StageColor ?? "var(--accent)";
+
+    private string GetStageIcon(ProcessStage stage) =>
+        stage.ProductionStage?.StageIcon ?? "⚙️";
+
+    private RenderFragment RenderStageTable(List<ProcessStage> stages) => __builder =>
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width:50px;">Order</th>
+                    <th>Stage</th>
+                    <th>Setup Mode</th>
+                    <th>Setup Min</th>
+                    <th>Run Mode</th>
+                    <th>Run Min</th>
+                    <th>Machine</th>
+                    <th>Batch Cap</th>
+                    <th>Flags</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in stages)
+                {
+                    <tr>
+                        <td>
+                            <div style="display: flex; gap: 2px;">
+                                <button class="btn btn-sm" style="padding:2px 4px;" @onclick="() => MoveStageUp(s)" title="Move up">▲</button>
+                                <button class="btn btn-sm" style="padding:2px 4px;" @onclick="() => MoveStageDown(s)" title="Move down">▼</button>
+                            </div>
+                        </td>
+                        <td>
+                            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:@GetStageColor(s);margin-right:6px;"></span>
+                            @GetStageIcon(s) @GetStageName(s)
+                            @if (_process?.PlateReleaseStageId == s.Id)
+                            {
+                                <span style="margin-left: 6px; font-size: 0.75rem; background: var(--warning); color: white; padding: 1px 6px; border-radius: 3px;">RELEASE</span>
+                            }
+                        </td>
+                        <td>
+                            <select class="form-control form-control-sm" style="width: auto;" value="@s.SetupDurationMode" @onchange="e => { s.SetupDurationMode = Enum.Parse<DurationMode>(e.Value?.ToString() ?? nameof(DurationMode.None)); _ = UpdateStage(s); }">
+                                @foreach (var dm in Enum.GetValues<DurationMode>())
+                                {
+                                    <option value="@dm">@dm</option>
+                                }
+                            </select>
+                        </td>
+                        <td>
+                            <input class="form-control form-control-sm" type="number" step="1" style="width:70px;"
+                                   value="@s.SetupTimeMinutes" @onchange="e => { s.SetupTimeMinutes = double.TryParse(e.Value?.ToString(), out var v) ? v : null; _ = UpdateStage(s); }" />
+                        </td>
+                        <td>
+                            <select class="form-control form-control-sm" style="width: auto;" value="@s.RunDurationMode" @onchange="e => { s.RunDurationMode = Enum.Parse<DurationMode>(e.Value?.ToString() ?? nameof(DurationMode.PerPart)); _ = UpdateStage(s); }">
+                                @foreach (var dm in Enum.GetValues<DurationMode>())
+                                {
+                                    <option value="@dm">@dm</option>
+                                }
+                            </select>
+                        </td>
+                        <td>
+                            <input class="form-control form-control-sm" type="number" step="1" style="width:70px;"
+                                   value="@s.RunTimeMinutes" @onchange="e => { s.RunTimeMinutes = double.TryParse(e.Value?.ToString(), out var v) ? v : null; _ = UpdateStage(s); }" />
+                        </td>
+                        <td>
+                            <select class="form-control form-control-sm" style="width: auto; min-width: 100px;"
+                                    value="@(s.AssignedMachineId?.ToString() ?? "")"
+                                    @onchange="e => { s.AssignedMachineId = int.TryParse(e.Value?.ToString(), out var mid) ? mid : null; _ = UpdateStage(s); }">
+                                <option value="">Any</option>
+                                @if (_machines != null)
+                                {
+                                    @foreach (var m in _machines)
+                                    {
+                                        <option value="@m.Id">@m.Name</option>
+                                    }
+                                }
+                            </select>
+                        </td>
+                        <td>
+                            @if (s.ProcessingLevel == ProcessingLevel.Batch)
+                            {
+                                <input class="form-control form-control-sm" type="number" style="width: 60px;"
+                                       value="@s.BatchCapacityOverride"
+                                       @onchange="e => { s.BatchCapacityOverride = int.TryParse(e.Value?.ToString(), out var bc) ? bc : null; _ = UpdateStage(s); }"
+                                       placeholder="@(_process?.DefaultBatchCapacity)" />
+                            }
+                            else
+                            {
+                                <span style="color: var(--text-muted);">—</span>
+                            }
+                        </td>
+                        <td style="font-size: 0.8rem; white-space: nowrap;">
+                            @if (s.IsRequired) { <span title="Required">✓</span> }
+                            @if (s.RequiresQualityCheck) { <span title="QC Required">🔍</span> }
+                            @if (s.AllowSkip) { <span title="Skippable">⏭️</span> }
+                            @if (s.IsExternalOperation) { <span title="External">🏢</span> }
+                            @if (s.RequiresSerialNumber) { <span title="Serial #">🔢</span> }
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveStage(s)">✕</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private record PreviewResult(string StageName, ProcessingLevel Level, double SetupMinutes, double RunMinutes, double TotalMinutes, string Breakdown);
+}
