@@ -1,7 +1,7 @@
 # Stage Routing & Manufacturing Approach Integration Plan
 
 > **Created**: 2026-03-20
-> **Status**: PLANNING
+> **Status**: PHASES 1, 2, 4 COMPLETE — Phase 3 (Per-Part Plate Release Override) DEFERRED
 > **Purpose**: Connect the stage/routing system with manufacturing approaches so users can configure
 > how parts flow through production based on their manufacturing approach.
 
@@ -240,69 +240,53 @@ Let users create/edit manufacturing approaches with full routing templates.
 ## Implementation Order
 
 ```
-Phase 1: Apply DefaultRoutingTemplate (2-3 hours)
-  ├── Edit OnApproachChanged to offer template application
-  ├── Add confirmation modal
-  └── Generate PartStageRequirements from template
+Phase 1: Apply DefaultRoutingTemplate ✅ COMPLETE
+  ├── [x] Edit OnApproachChanged to offer template application
+  ├── [x] Add confirmation modal (Option C: auto-apply if empty, confirm if routing has stages)
+  ├── [x] Generate PartStageRequirements from template
+  ├── [x] Add manual "Apply Template" button on routing tab
+  ├── [x] Fix SLS-Based seed template: added wire-edm
+  └── [x] Fix Additive+Subtractive seed template: added heat-treatment + wire-edm
 
-Phase 2: Build-Level vs Per-Part UI (3-4 hours)
-  ├── Split routing tab into two sections
-  ├── Filter stages by IsBuildLevelStage
-  ├── Add explanatory callouts
-  └── Disable editing of build-level stages (handled by build system)
+Phase 2: Build-Level vs Per-Part UI ✅ COMPLETE (pre-existing)
+  ├── [x] Split routing tab into two sections
+  ├── [x] Filter stages by IsBuildLevelStage
+  ├── [x] Add explanatory callouts
+  └── [x] Editable with "From build" hint (Option C: flexibility for costing/quoting)
 
-Phase 3: Per-Part Plate Release Override (2 hours)
-  ├── Add TriggerPlateReleaseOverride to PartStageRequirement
-  ├── Migration
-  ├── Update StageService.CompleteStageExecutionAsync
-  └── Add toggle in routing UI
+Phase 3: Per-Part Plate Release Override — DEFERRED
+  ├── [ ] Add TriggerPlateReleaseOverride to PartStageRequirement
+  ├── [ ] Migration
+  ├── [ ] Update StageService.CompleteStageExecutionAsync
+  └── [ ] Add toggle in routing UI
 
-Phase 4: Manufacturing Approach Admin (4-5 hours)
-  ├── New ManufacturingApproaches.razor admin page
-  ├── Enhanced routing template editor
-  ├── JSON schema upgrade with backward compat
-  └── Integration tests
+Phase 4: Manufacturing Approach Admin ✅ COMPLETE (pre-existing)
+  ├── [x] ManufacturingApproaches.razor admin page at /admin/manufacturing-approaches
+  ├── [x] Routing template editor with available/selected columns
+  ├── [x] Move up/down/remove stage controls
+  ├── [x] Build-level stage duration editing
+  └── [x] Preview panel
 ```
 
 **Total estimated: 11-14 hours**
 
 ---
 
-## Questions for You
+## Decisions (Resolved)
 
-Before I start implementing, I need your input on a few decisions:
+### 1. Template Application Behavior → **Option C** ✅
+Apply if routing is empty (auto), confirm if routing already has stages (modal dialog).
+Implemented in `Edit.razor` — `ApplyRoutingTemplateAsync(forceReplace)` + `_showRoutingTemplateConfirm` modal.
 
-### 1. Template Application Behavior
-When a user selects a ManufacturingApproach on a **new** part:
-- **Option A**: Auto-apply template silently (no confirmation)
-- **Option B**: Show confirmation modal asking if they want the default routing
-- **Option C**: Apply if routing is empty, confirm if routing already has stages
+### 2. Build-Level Stage Editing → **Option C** ✅
+Editable with "From build" hint. Flexibility for costing/quoting.
+Pre-existing implementation in routing tab — build-level stages show duration inputs when a build is selected.
 
-**My recommendation**: Option C — least disruptive, handles both new and existing parts.
+### 3. Per-Part Plate Release Override → **Deferred** 📌
+Deferred to Phase 3. Phase 1-2 working first. Current `ProductionStage.TriggerPlateRelease` flag is sufficient.
 
-### 2. Build-Level Stage Editing
-Should users be able to edit build-level stages in the Part routing?
-- **Option A**: Read-only (build-level handled entirely by build system)
-- **Option B**: Editable but with warning that these are shared across the build
-- **Option C**: Allow overrides (e.g., part-specific duration estimates)
-
-**My recommendation**: Option C — flexibility matters for costing/quoting.
-
-### 3. Per-Part Plate Release Override (Phase 3)
-Should we implement this now or defer?
-- Some parts might not need Wire EDM (release earlier)
-- Some parts might need extra stages before release
-- Adds complexity to the data model
-
-**My recommendation**: Defer to Phase 3, get Phase 1-2 working first.
-
-### 4. Existing Parts Migration
-When we improve the routing system, what happens to existing parts with manually-configured routing?
-- **Option A**: Leave as-is, new behavior only applies to new parts
-- **Option B**: Offer "Upgrade to template" action on existing parts
-- **Option C**: Auto-categorize existing stage requirements by IsBuildLevelStage
-
-**My recommendation**: Option A + B — don't break existing data, offer opt-in upgrade.
+### 4. Existing Parts Migration → **Option A + B** ✅
+Existing parts untouched. New "Apply Template" button on routing tab lets users opt-in to template routing.
 
 ---
 

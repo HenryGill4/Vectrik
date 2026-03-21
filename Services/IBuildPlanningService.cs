@@ -10,6 +10,14 @@ public interface IBuildPlanningService
     Task<BuildPackage> CreatePackageAsync(BuildPackage package);
     Task<BuildPackage> UpdatePackageAsync(BuildPackage package);
     Task DeletePackageAsync(int id);
+
+    /// <summary>
+    /// Create a scheduled copy of an existing build package (parts, slicer data, build file info).
+    /// The original build stays at its current status — it represents the build file.
+    /// Each copy is a separate print run that flows through the scheduling pipeline.
+    /// </summary>
+    Task<BuildPackage> CreateScheduledCopyAsync(int sourcePackageId, string createdBy, int? workOrderLineId = null);
+
     Task<BuildPackagePart> AddPartToPackageAsync(int packageId, int partId, int quantity, int? workOrderLineId = null);
     Task<BuildPackagePart> UpdatePartInPackageAsync(int packagePartId, int quantity, int stackLevel, string? slicerNotes = null);
     Task RemovePartFromPackageAsync(int packagePartId);
@@ -20,7 +28,13 @@ public interface IBuildPlanningService
     // Build Plate Execution (CHUNK-09)
     Task UpdateBuildDurationFromSliceAsync(int buildPackageId);
     Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy);
-    Task CreatePartStageExecutionsAsync(int buildPackageId, string createdBy);
+
+    /// <summary>
+    /// Create per-part jobs and stage executions for parts in a build package.
+    /// Returns the created Job IDs so the caller can auto-schedule them.
+    /// </summary>
+    /// <param name="startAfter">Earliest start time for per-part jobs (e.g. last build-level stage end).</param>
+    Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null);
     Task<BuildPackageRevision> CreateRevisionAsync(int buildPackageId, string changedBy, string? notes = null);
 
     // Build Plate UI (CHUNK-10)

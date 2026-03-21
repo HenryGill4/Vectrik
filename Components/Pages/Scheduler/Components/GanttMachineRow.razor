@@ -21,14 +21,21 @@
                 End="entry.PrintEnd"
                 OnBuildAction="OnBuildAction" />
         }
-        @* ── Build-level stage execution groups ── *@
+        @* ── Build-level stage execution groups (skip stages already shown by build bars) ── *@
         @{
+            var timelineBuildIds = BuildTimeline.Select(t => t.BuildPackageId).ToHashSet();
             var buildGroups = Executions
-                .Where(e => e.BuildPackageId != null && e.ProductionStage?.IsBuildLevelStage == true)
+                .Where(e => e.BuildPackageId != null
+                    && e.ProductionStage?.IsBuildLevelStage == true
+                    && !timelineBuildIds.Contains(e.BuildPackageId!.Value))
                 .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId })
                 .ToList();
             var buildGroupExecIds = buildGroups.SelectMany(g => g.Select(e => e.Id)).ToHashSet();
-            var individualExecs = Executions.Where(e => !buildGroupExecIds.Contains(e.Id)).ToList();
+            var timelineExecIds = Executions
+                .Where(e => e.BuildPackageId != null && timelineBuildIds.Contains(e.BuildPackageId!.Value))
+                .Select(e => e.Id)
+                .ToHashSet();
+            var individualExecs = Executions.Where(e => !buildGroupExecIds.Contains(e.Id) && !timelineExecIds.Contains(e.Id)).ToList();
         }
         @foreach (var group in buildGroups)
         {

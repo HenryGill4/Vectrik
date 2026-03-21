@@ -251,7 +251,7 @@ else
                                 <th style="width:90px">Qty</th>
                                 <th style="width:90px">Stack</th>
                                 <th>Notes</th>
-                                @if (pkg.Status == BuildPackageStatus.Draft)
+                                @if (IsEditable(pkg))
                                 {
                                     <th style="width:100px"></th>
                                 }
@@ -297,7 +297,7 @@ else
                                             </div>
                                         }
                                     </td>
-                                    @if (isEditing && pkg.Status == BuildPackageStatus.Draft)
+                                    @if (isEditing && IsEditable(pkg))
                                     {
                                         <td><input class="form-control form-control-sm" type="number" min="1" max="500" @bind="_editQty" style="width:70px" /></td>
                                         <td>
@@ -320,7 +320,7 @@ else
                                         <td>@pp.Quantity</td>
                                         <td>@(pp.StackLevel)x</td>
                                         <td style="font-size:0.85rem;color:var(--text-secondary);">@(pp.SlicerNotes ?? "—")</td>
-                                        @if (pkg.Status == BuildPackageStatus.Draft)
+                                        @if (IsEditable(pkg))
                                         {
                                             <td>
                                                 <div style="display:flex;gap:4px">
@@ -337,8 +337,8 @@ else
                 </div>
             }
 
-            @* ── Add Part (Draft only) ── *@
-            @if (pkg.Status == BuildPackageStatus.Draft)
+            @* ── Add Part (editable states) ── *@
+            @if (IsEditable(pkg))
             {
                 <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;margin-bottom:12px;">
                     <div class="form-label" style="margin-bottom:6px">Add Part to Plate</div>
@@ -684,6 +684,10 @@ else
         _packages?.Where(p => string.IsNullOrEmpty(_statusFilter) || p.Status.ToString() == _statusFilter) ?? Enumerable.Empty<BuildPackage>();
 
     private void ClearFilter() => _statusFilter = "";
+
+    /// <summary>Returns true if the build package is in a state where parts/details can be edited.</summary>
+    private static bool IsEditable(BuildPackage pkg) =>
+        pkg.Status is BuildPackageStatus.Draft or BuildPackageStatus.Sliced or BuildPackageStatus.Ready;
 
     private IEnumerable<Part> FilteredAdditiveParts
     {
@@ -1088,7 +1092,7 @@ else
         finally { _processing = false; }
     }
 
-    // ── Certify as Template ─────────────────────────────────────────
+    // ── Certify as Template
 
     private bool _showCertifyModal;
     private BuildTemplate? _certifyTemplate;

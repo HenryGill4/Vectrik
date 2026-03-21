@@ -356,7 +356,7 @@
                                                     @if (existingBuilds.Any())
                                                     {
                                                         <div class="wo-config-warning" style="flex-direction: column; align-items: flex-start; gap: 6px;">
-                                                            <span style="font-size: 0.8rem; color: var(--text-muted);">📦 Existing builds with this part:</span>
+                                                            <span style="font-size: 0.8rem; color: var(--text-muted);">📦 Available build files for this part:</span>
                                                             @foreach (var eb in existingBuilds)
                                                             {
                                                                 var ebStatusIcon = eb.Status switch
@@ -366,15 +366,29 @@
                                                                     BuildPackageStatus.Printing => "🖨️",
                                                                     BuildPackageStatus.Scheduled => "📅",
                                                                     BuildPackageStatus.Ready => "🟢",
+                                                                    BuildPackageStatus.Sliced => "📐",
                                                                     _ => "📝"
                                                                 };
                                                                 var ebPartQty = eb.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
-                                                                <div style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem;">
-                                                                    <span>@ebStatusIcon @eb.Name — @ebPartQty pcs — @eb.Status</span>
-                                                                    @if (eb.Status == BuildPackageStatus.Ready)
+                                                                var canScheduleFrom = eb.IsSlicerDataEntered && eb.Status != BuildPackageStatus.Cancelled;
+                                                                <div style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; flex-wrap: wrap;">
+                                                                    <span>@ebStatusIcon @eb.Name — @ebPartQty pcs/run — @eb.Status</span>
+                                                                    @if (canScheduleFrom)
                                                                     {
-                                                                        <button class="btn btn-sm btn-primary" style="padding: 2px 8px; font-size: 0.75rem;" @onclick="() => ScheduleExistingBuildAsync(eb)">
-                                                                            📅 Schedule
+                                                                        var runsNeeded = ebPartQty > 0 ? Math.Max(1, (int)Math.Ceiling((double)outstanding / ebPartQty)) : 1;
+                                                                        var runKey = $"{eb.Id}-{line.Id}";
+                                                                        if (!_buildRunCounts.ContainsKey(runKey))
+                                                                            _buildRunCounts[runKey] = runsNeeded;
+                                                                        <input type="number" min="1" max="100"
+                                                                               value="@_buildRunCounts[runKey]"
+                                                                               @onchange="e => UpdateRunCount(runKey, e)"
+                                                                               class="form-control form-control-sm"
+                                                                               style="width: 60px; padding: 2px 6px; font-size: 0.75rem;" />
+                                                                        <button class="btn btn-sm btn-primary" style="padding: 2px 8px; font-size: 0.75rem;"
+                                                                                @onclick="() => ScheduleRunsFromBuildAsync(eb, line, _buildRunCounts[runKey])"
+                                                                                disabled="@_schedulingBuildRuns"
+                                                                                title="Schedule @(_buildRunCounts[runKey]) run(s) from this build file">
+                                                                            @if (_schedulingBuildRuns) { <span>...</span> } else { <span>📅 Schedule @(_buildRunCounts[runKey]) Run(s)</span> }
                                                                         </button>
                                                                     }
                                                                     @if (eb.Status == BuildPackageStatus.Draft)
@@ -553,6 +567,10 @@
     // Schedule All state
     private int? _schedulingWoId;
 
+    // Multi-run scheduling state
+    private Dictionary<string, int> _buildRunCounts = new();
+    private bool _schedulingBuildRuns;
+
     private async Task OnModalConfirmedAsync()
     {
         _showWoBuildModal = false;
@@ -691,35 +709,43 @@
 
                 if (IsAdditiveLine(line))
                 {
-                    // Schedule existing Ready/Sliced builds for this part
+                    var defaultMachineId = SlsMachines.FirstOrDefault()?.Id;
+                    if (!defaultMachineId.HasValue)
+                    {
+                        slsNoMachine++;
+                        continue;
+                    }
+
+                    var outstanding = GetOutstanding(line);
+
+                    // Schedule runs from existing build files to fill demand
                     var existingBuilds = GetBuildsForPart(line.PartId)
-                        .Where(b => b.Status is BuildPackageStatus.Ready or BuildPackageStatus.Sliced)
+                        .Where(b => b.IsSlicerDataEntered)
                         .ToList();
                     foreach (var build in existingBuilds)
                     {
-                        try
+                        if (outstanding <= 0) break;
+                        var buildPartQty = build.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
+                        if (buildPartQty <= 0) continue;
+                        var runsNeeded = (int)Math.Ceiling((double)outstanding / buildPartQty);
+                        var machineId = build.MachineId ?? defaultMachineId.Value;
+                        for (var i = 0; i < runsNeeded; i++)
                         {
-                            var machineId = build.MachineId ?? SlsMachines.FirstOrDefault()?.Id;
-                            if (machineId.HasValue)
+                            try
                             {
-                                await BuildScheduling.ScheduleBuildAsync(build.Id, machineId.Value);
+                                var copy = await BuildPlanning.CreateScheduledCopyAsync(build.Id, UserName, line.Id);
+                                buildsCreated++;
+                                await BuildScheduling.ScheduleBuildAsync(copy.Id, machineId);
                                 buildsScheduled++;
+                                outstanding -= buildPartQty;
                             }
+                            catch { /* skip runs that fail */ }
                         }
-                        catch { /* skip builds that fail to schedule */ }
                     }
 
-                    // Create and schedule new builds from certified template for remaining demand
-                    var outstanding = GetOutstanding(line);
+                    // If still outstanding, create and schedule from certified templates
                     if (outstanding > 0)
                     {
-                        var defaultMachineId = SlsMachines.FirstOrDefault()?.Id;
-                        if (!defaultMachineId.HasValue)
-                        {
-                            slsNoMachine++;
-                            continue;
-                        }
-
                         var templates = GetMatchingTemplates(line.PartId);
                         if (templates.Count > 0)
                         {
@@ -807,13 +833,13 @@
     private List<BuildPackage> GetBuildsForPart(int partId) =>
         BuildPackages
             .Where(bp => bp.Parts != null && bp.Parts.Any(p => p.PartId == partId)
-                && bp.Status != BuildPackageStatus.Completed
                 && bp.Status != BuildPackageStatus.Cancelled)
             .OrderByDescending(bp => bp.CreatedDate)
             .ToList();
 
     /// <summary>
-    /// Schedule an existing Ready build on the first available SLS machine.
+    /// Schedule a single run from an existing build — creates a copy and schedules it.
+    /// The original build file stays at its current status.
     /// </summary>
     private async Task ScheduleExistingBuildAsync(BuildPackage build)
     {
@@ -826,14 +852,68 @@
                 return;
             }
 
-            await BuildScheduling.ScheduleBuildAsync(build.Id, machineId.Value);
-            Toast.ShowSuccess($"Build '{build.Name}' scheduled successfully.");
+            var copy = await BuildPlanning.CreateScheduledCopyAsync(build.Id, UserName);
+            await BuildScheduling.ScheduleBuildAsync(copy.Id, machineId.Value);
+            Toast.ShowSuccess($"Run '{copy.Name}' scheduled from build '{build.Name}'.");
             await OnRefreshRequested.InvokeAsync();
         }
         catch (Exception ex)
         {
             Toast.ShowError($"Failed to schedule build: {ex.Message}");
         }
+    }
+
+    private void UpdateRunCount(string runKey, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var count) && count >= 1)
+            _buildRunCounts[runKey] = count;
+    }
+
+    /// <summary>
+    /// Schedule N runs from an existing build file. Each run creates a scheduled copy;
+    /// the original build file stays at its current status.
+    /// </summary>
+    private async Task ScheduleRunsFromBuildAsync(BuildPackage build, WorkOrderLine line, int runCount)
+    {
+        if (runCount < 1) return;
+        _schedulingBuildRuns = true;
+        StateHasChanged();
+        try
+        {
+            var machineId = build.MachineId ?? SlsMachines.FirstOrDefault()?.Id;
+            if (machineId is null)
+            {
+                Toast.ShowError("No SLS machine available.");
+                return;
+            }
+
+            var scheduled = 0;
+            for (var i = 0; i < runCount; i++)
+            {
+                try
+                {
+                    var copy = await BuildPlanning.CreateScheduledCopyAsync(build.Id, UserName, line.Id);
+                    await BuildScheduling.ScheduleBuildAsync(copy.Id, machineId.Value);
+                    scheduled++;
+                }
+                catch { /* skip runs that fail to schedule */ }
+            }
+
+            if (scheduled > 0)
+            {
+                var partQty = build.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
+                var totalParts = partQty * scheduled;
+                Toast.ShowSuccess($"Scheduled {scheduled} run(s) from '{build.Name}' ({totalParts} parts total).");
+                _buildRunCounts.Remove($"{build.Id}-{line.Id}");
+                await OnRefreshRequested.InvokeAsync();
+            }
+            else
+            {
+                Toast.ShowError("Failed to schedule any runs.");
+            }
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _schedulingBuildRuns = false; }
     }
 
     // ── Template Matching Helpers ──

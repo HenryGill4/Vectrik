@@ -25,7 +25,7 @@
                         }
                         @foreach (var machine in orderedMachines)
                         {
-                            var groupLabel = IsSls(machine) ? "SLS / Additive" : (machine.MachineType ?? "Other");
+                            var groupLabel = machine.IsAdditiveMachine ? "SLS / Additive" : (machine.MachineType ?? "Other");
                             if (groupLabel != lastGroup)
                             {
                                 lastGroup = groupLabel;
@@ -117,14 +117,10 @@
     /// <summary>Exposes the inner GanttViewport for direct method calls (zoom, scroll, save state).</summary>
     public GanttViewport? Viewport { get; private set; }
 
-    private static bool IsSls(Machine m) =>
-        m.MachineType.Equals("SLS", StringComparison.OrdinalIgnoreCase) ||
-        m.MachineType.Equals("Additive", StringComparison.OrdinalIgnoreCase);
-
     private List<Machine> GetOrderedMachines() =>
         Machines
             .Where(m => m.IsAvailableForScheduling)
-            .OrderByDescending(m => IsSls(m))
+            .OrderByDescending(m => m.IsAdditiveMachine)
             .ThenBy(m => m.MachineType, StringComparer.OrdinalIgnoreCase)
             .ThenBy(m => m.Priority)
             .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)

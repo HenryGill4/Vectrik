@@ -15,6 +15,8 @@ internal sealed class StubBuildPlanningService : IBuildPlanningService
     public Task<BuildPackage> CreatePackageAsync(BuildPackage package) => Task.FromResult(package);
     public Task<BuildPackage> UpdatePackageAsync(BuildPackage package) => Task.FromResult(package);
     public Task DeletePackageAsync(int id) => Task.CompletedTask;
+    public Task<BuildPackage> CreateScheduledCopyAsync(int sourcePackageId, string createdBy, int? workOrderLineId = null)
+        => Task.FromResult(new BuildPackage { Name = "Run" });
     public Task<BuildPackagePart> AddPartToPackageAsync(int packageId, int partId, int quantity, int? workOrderLineId = null)
         => Task.FromResult(new BuildPackagePart());
     public Task<BuildPackagePart> UpdatePartInPackageAsync(int packagePartId, int quantity, int stackLevel, string? slicerNotes = null)
@@ -26,7 +28,8 @@ internal sealed class StubBuildPlanningService : IBuildPlanningService
     public Task UpdateBuildDurationFromSliceAsync(int buildPackageId) => Task.CompletedTask;
     public Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy)
         => Task.FromResult(new List<StageExecution>());
-    public Task CreatePartStageExecutionsAsync(int buildPackageId, string createdBy) => Task.CompletedTask;
+    public Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null)
+        => Task.FromResult(new List<int>());
     public Task<BuildPackageRevision> CreateRevisionAsync(int buildPackageId, string changedBy, string? notes = null)
         => Task.FromResult(new BuildPackageRevision());
     public Task<List<BuildPackageRevision>> GetRevisionsAsync(int buildPackageId)

@@ -193,7 +193,7 @@
                         }
                     </p>
 
-                    <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
+                    <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <select class="form-control" style="width: auto;" @bind="_addStageId">
                             <option value="0">Add stage...</option>
                             @if (_allStages != null)
@@ -205,6 +205,12 @@
                             }
                         </select>
                         <button class="btn btn-sm btn-primary" @onclick="AddStageReq" disabled="@(_addStageId == 0)">+ Add Stage</button>
+                        @if (SelectedApproach != null && !string.IsNullOrWhiteSpace(SelectedApproach.DefaultRoutingTemplate) && SelectedApproach.DefaultRoutingTemplate != "[]")
+                        {
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ApplyRoutingTemplateAsync()" title="Apply default routing from the selected manufacturing approach">
+                                🛤️ Apply Template
+                            </button>
+                        }
                     </div>
 
                     @if (_stageReqs != null && _stageReqs.Any())
@@ -447,13 +453,20 @@
                         <div class="empty-state">
                             <div class="empty-state-icon">⚙</div>
                             <div class="empty-state-text">
-                                @if (SelectedApproach != null)
+                                @if (SelectedApproach != null && !string.IsNullOrWhiteSpace(SelectedApproach.DefaultRoutingTemplate) && SelectedApproach.DefaultRoutingTemplate != "[]")
                                 {
-                                    <span>Select a manufacturing approach above to auto-populate the routing, or add stages manually.</span>
+                                    <span>No stages assigned yet.</span>
+                                    <button class="btn btn-sm btn-primary" style="margin-top: 8px;" @onclick="() => ApplyRoutingTemplateAsync()">
+                                        🛤️ Apply @(SelectedApproach.Name) Template
+                                    </button>
+                                }
+                                else if (SelectedApproach != null)
+                                {
+                                    <span>No stages assigned. Add stages manually using the dropdown above.</span>
                                 }
                                 else
                                 {
-                                    <span>No stages assigned. Select a manufacturing approach to auto-populate, or add stages manually.</span>
+                                    <span>No stages assigned. Select a manufacturing approach on the Part Info tab to auto-populate, or add stages manually.</span>
                                 }
                             </div>
                         </div>
@@ -758,6 +771,37 @@
     </Authorized>
 </AuthorizeView>
 
+@if (_showRoutingTemplateConfirm && SelectedApproach != null)
+{
+    var templateSlugs = _pendingTemplateSlugs ?? [];
+    <div class="modal-overlay" @onclick="CancelReplaceRouting">
+        <div class="modal-content" style="max-width: 500px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">Replace Routing?</span>
+                <button class="modal-close" @onclick="CancelReplaceRouting">&times;</button>
+            </div>
+            <div style="padding: 16px;">
+                <p>This part already has <strong>@(_stageReqs?.Count ?? 0) stage(s)</strong> in its routing.</p>
+                <p>The <strong>@(SelectedApproach.IconEmoji) @(SelectedApproach.Name)</strong> template would replace them with:</p>
+                <div style="margin: 12px 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                    @foreach (var slug in templateSlugs)
+                    {
+                        var stage = _allStages?.FirstOrDefault(s => s.StageSlug == slug);
+                        <span style="padding: 3px 10px; border-radius: 4px; font-size: 0.85rem; background: @(stage?.StageColor ?? "#666")20; border: 1px solid @(stage?.StageColor ?? "#ccc"); color: var(--text-primary);">
+                            @(stage?.StageIcon ?? "❓") @(stage?.Name ?? slug)
+                        </span>
+                    }
+                </div>
+                <p style="color: var(--text-muted); font-size: 0.85rem;">Existing stages will be removed and replaced with the template stages.</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="ConfirmReplaceRouting">Replace Routing</button>
+                <button class="btn btn-secondary" @onclick="CancelReplaceRouting">Keep Existing</button>
+            </div>
+        </div>
+    </div>
+}
+
 <ConfirmDialog @ref="_confirm" />
 
 @code {
@@ -886,6 +930,9 @@
         _part.MaterialId = match?.Id;
     }
 
+    private bool _showRoutingTemplateConfirm;
+    private List<string>? _pendingTemplateSlugs;
+
     private async Task OnApproachChanged(ChangeEventArgs e)
     {
         int? previousApproachId = _part!.ManufacturingApproachId;
@@ -897,7 +944,7 @@
 
         EnsureAdditiveBuildConfig();
 
-        // Auto-apply routing template when approach changes (only if routing is empty)
+        // Auto-apply routing template when approach changes
         if (_part.ManufacturingApproachId != previousApproachId)
         {
             await ApplyRoutingTemplateAsync();
@@ -906,23 +953,40 @@
 
     /// <summary>
     /// Auto-applies the DefaultRoutingTemplate from the selected ManufacturingApproach.
-    /// Only applies if the current routing is empty.
+    /// If routing is empty, applies immediately. If routing has stages, shows confirmation.
     /// </summary>
-    private async Task ApplyRoutingTemplateAsync()
+    private async Task ApplyRoutingTemplateAsync(bool forceReplace = false)
     {
         if (_part == null || _allStages == null) return;
 
         var approach = SelectedApproach;
         if (approach == null || string.IsNullOrWhiteSpace(approach.DefaultRoutingTemplate)) return;
 
-        // Only apply if routing is empty
-        if (_stageReqs?.Any() == true) return;
-
         try
         {
-            // Parse the template (JSON array of stage slugs)
             var stageSlugs = JsonSerializer.Deserialize<List<string>>(approach.DefaultRoutingTemplate);
             if (stageSlugs == null || stageSlugs.Count == 0) return;
+
+            // Option C: if routing has stages and not forcing, show confirmation
+            if (_stageReqs?.Any() == true && !forceReplace)
+            {
+                _pendingTemplateSlugs = stageSlugs;
+                _showRoutingTemplateConfirm = true;
+                return;
+            }
+
+            // Clear existing routing if replacing
+            if (forceReplace && _stageReqs?.Any() == true)
+            {
+                if (!_isNew)
+                {
+                    foreach (var existing in _stageReqs.ToList())
+                    {
+                        await PartService.RemoveStageRequirementAsync(existing.Id);
+                    }
+                }
+                _stageReqs = new();
+            }
 
             _stageReqs ??= new();
             int order = 1;
@@ -932,7 +996,6 @@
                 var stage = _allStages.FirstOrDefault(s => s.StageSlug == slug);
                 if (stage == null) continue;
 
-                // Skip if already added
                 if (_stageReqs.Any(r => r.ProductionStageId == stage.Id)) continue;
 
                 var req = new PartStageRequirement
@@ -941,8 +1004,6 @@
                     ProductionStageId = stage.Id,
                     ProductionStage = stage,
                     ExecutionOrder = order++,
-                    // Build-level stages: duration comes from build, so leave null
-                    // Per-part stages: use default duration converted to minutes
                     EstimatedMinutes = stage.IsBuildLevelStage ? null : (int)(stage.DefaultDurationHours * 60),
                     SetupTimeMinutes = stage.IsBuildLevelStage ? null : stage.DefaultSetupMinutes,
                     IsRequired = true,
@@ -960,7 +1021,6 @@
                 }
             }
 
-            // Reload if we persisted
             if (!_isNew && _stageReqs.Count > 0)
             {
                 _stageReqs = await PartService.GetStageRequirementsAsync(_part.Id);
@@ -970,6 +1030,19 @@
         {
             // Invalid JSON in template, ignore
         }
+    }
+
+    private async Task ConfirmReplaceRouting()
+    {
+        _showRoutingTemplateConfirm = false;
+        _pendingTemplateSlugs = null;
+        await ApplyRoutingTemplateAsync(forceReplace: true);
+    }
+
+    private void CancelReplaceRouting()
+    {
+        _showRoutingTemplateConfirm = false;
+        _pendingTemplateSlugs = null;
     }
 
     /// <summary>

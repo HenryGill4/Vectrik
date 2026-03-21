@@ -104,7 +104,7 @@ public class BuildPlanningService : IBuildPlanningService
         package.Status = BuildPackageStatus.Cancelled;
         package.LastModifiedDate = DateTime.UtcNow;
 
-        // Cancel outstanding stage executions tied to this build package
+        // Cancel outstanding build-level stage executions tied to this build package
         var activeExecutions = await _db.StageExecutions
             .Where(e => e.BuildPackageId == id
                 && e.Status != StageExecutionStatus.Completed
@@ -121,7 +121,122 @@ public class BuildPlanningService : IBuildPlanningService
             exec.LastModifiedDate = DateTime.UtcNow;
         }
 
+        // Cancel prefilled per-part jobs
+        var perPartJobs = await _db.Jobs
+            .Include(j => j.Stages)
+            .Where(j => j.Notes != null && j.Notes.Contains(package.Name)
+                && j.Status != JobStatus.Completed && j.Status != JobStatus.Cancelled)
+            .ToListAsync();
+
+        foreach (var job in perPartJobs)
+        {
+            job.Status = JobStatus.Cancelled;
+            job.LastModifiedDate = DateTime.UtcNow;
+            foreach (var stage in job.Stages.Where(s =>
+                s.Status != StageExecutionStatus.Completed
+                && s.Status != StageExecutionStatus.Skipped
+                && s.Status != StageExecutionStatus.Failed))
+            {
+                stage.Status = StageExecutionStatus.Skipped;
+                stage.Notes = "Auto-skipped: build package cancelled";
+                stage.CompletedAt = DateTime.UtcNow;
+                stage.ActualEndAt = DateTime.UtcNow;
+                stage.LastModifiedDate = DateTime.UtcNow;
+            }
+        }
+
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<BuildPackage> CreateScheduledCopyAsync(int sourcePackageId, string createdBy, int? workOrderLineId = null)
+    {
+        var source = await _db.BuildPackages
+            .Include(p => p.Parts)
+            .Include(p => p.BuildFileInfo)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == sourcePackageId)
+            ?? throw new InvalidOperationException("Source build package not found.");
+
+        // Determine copy suffix — check existing copies to avoid name collisions
+        var baseName = source.Name;
+        var existingNames = await _db.BuildPackages
+            .Where(p => p.Name.StartsWith(baseName))
+            .Select(p => p.Name)
+            .ToListAsync();
+
+        var copyNumber = 1;
+        string newName;
+        do
+        {
+            newName = $"{baseName} (Run {copyNumber})";
+            copyNumber++;
+        } while (existingNames.Contains(newName));
+
+        var clone = new BuildPackage
+        {
+            Name = newName,
+            Description = source.Description,
+            MachineId = source.MachineId,
+            Status = BuildPackageStatus.Draft,
+            Material = source.Material,
+            EstimatedDurationHours = source.EstimatedDurationHours,
+            Notes = source.Notes,
+            IsSlicerDataEntered = source.IsSlicerDataEntered,
+            BuildParameters = source.BuildParameters,
+            DepowderingHours = source.DepowderingHours,
+            HeatTreatmentHours = source.HeatTreatmentHours,
+            WireEdmHours = source.WireEdmHours,
+            CreatedBy = createdBy,
+            LastModifiedBy = createdBy,
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+
+        // If source had slicer data, the copy starts as Sliced so it's ready to schedule faster
+        if (source.IsSlicerDataEntered)
+            clone.Status = BuildPackageStatus.Sliced;
+
+        _db.BuildPackages.Add(clone);
+        await _db.SaveChangesAsync();
+
+        // Clone parts — override WO line link if a specific line was provided
+        foreach (var sp in source.Parts)
+        {
+            _db.BuildPackageParts.Add(new BuildPackagePart
+            {
+                BuildPackageId = clone.Id,
+                PartId = sp.PartId,
+                Quantity = sp.Quantity,
+                StackLevel = sp.StackLevel,
+                SlicerNotes = sp.SlicerNotes,
+                WorkOrderLineId = workOrderLineId ?? sp.WorkOrderLineId
+            });
+        }
+
+        // Clone build file info (slicer metadata)
+        if (source.BuildFileInfo != null)
+        {
+            _db.BuildFileInfos.Add(new BuildFileInfo
+            {
+                BuildPackageId = clone.Id,
+                FileName = source.BuildFileInfo.FileName,
+                LayerCount = source.BuildFileInfo.LayerCount,
+                BuildHeightMm = source.BuildFileInfo.BuildHeightMm,
+                EstimatedPrintTimeHours = source.BuildFileInfo.EstimatedPrintTimeHours,
+                EstimatedPowderKg = source.BuildFileInfo.EstimatedPowderKg,
+                PartPositionsJson = source.BuildFileInfo.PartPositionsJson,
+                SlicerSoftware = source.BuildFileInfo.SlicerSoftware,
+                SlicerVersion = source.BuildFileInfo.SlicerVersion,
+                ImportedBy = createdBy,
+                ImportedDate = DateTime.UtcNow
+            });
+        }
+
+        await _db.SaveChangesAsync();
+
+        await CreateRevisionAsync(clone.Id, createdBy, $"Scheduled run from build \"{source.Name}\" (#{source.Id})");
+
+        return clone;
     }
 
     public async Task<BuildPackagePart> AddPartToPackageAsync(int packageId, int partId, int quantity, int? workOrderLineId = null)
@@ -301,6 +416,7 @@ public class BuildPlanningService : IBuildPlanningService
         var package = await _db.BuildPackages
             .Include(p => p.BuildFileInfo)
             .Include(p => p.ScheduledJob)
+            .Include(p => p.Parts)
             .FirstOrDefaultAsync(p => p.Id == buildPackageId);
 
         if (package == null) throw new InvalidOperationException("Build package not found.");
@@ -309,6 +425,36 @@ public class BuildPlanningService : IBuildPlanningService
             .Where(s => s.IsBuildLevelStage && s.IsActive)
             .OrderBy(s => s.DisplayOrder)
             .ToListAsync();
+
+        // Determine which build-level stages the parts actually require.
+        // The print stage is always needed; post-print stages are only created
+        // when at least one part in the build has that stage in its routing.
+        var partIds = package.Parts.Select(p => p.PartId).Distinct().ToList();
+        var requiredStageIds = await _db.PartStageRequirements
+            .Where(r => partIds.Contains(r.PartId) && r.IsActive && r.IsRequired)
+            .Select(r => r.ProductionStageId)
+            .Distinct()
+            .ToListAsync();
+        var requiredStageIdSet = requiredStageIds.ToHashSet();
+
+        // Also include stages that have a custom duration set on the package
+        // (user explicitly configured them, so they should be scheduled).
+        var packageConfiguredStages = buildStages
+            .Where(s => s.StageSlug switch
+            {
+                "depowdering" => package.DepowderingHours.HasValue,
+                "heat-treatment" => package.HeatTreatmentHours.HasValue,
+                "wire-edm" => package.WireEdmHours.HasValue,
+                _ => false
+            })
+            .Select(s => s.Id)
+            .ToHashSet();
+
+        buildStages = buildStages
+            .Where(s => s.StageSlug == "sls-printing"
+                || requiredStageIdSet.Contains(s.Id)
+                || packageConfiguredStages.Contains(s.Id))
+            .ToList();
 
         // Use the package's ScheduledJob, or create one if it doesn't exist
         var job = package.ScheduledJob;
@@ -360,33 +506,11 @@ public class BuildPlanningService : IBuildPlanningService
 
         foreach (var stage in buildStages)
         {
-            var estimatedHours = stage.DefaultDurationHours;
+            var estimatedHours = GetBuildStageDuration(stage, package);
 
-            // Use custom durations from BuildPackage when set, otherwise fall back to stage defaults
-            switch (stage.StageSlug)
-            {
-                case "sls-printing":
-                    // SLS printing stage gets duration from slice file or package estimate
-                    if (package.BuildFileInfo?.EstimatedPrintTimeHours != null)
-                        estimatedHours = (double)package.BuildFileInfo.EstimatedPrintTimeHours.Value;
-                    else if (package.EstimatedDurationHours.HasValue)
-                        estimatedHours = package.EstimatedDurationHours.Value;
-                    break;
-                case "depowdering":
-                    if (package.DepowderingHours.HasValue)
-                        estimatedHours = package.DepowderingHours.Value;
-                    break;
-                case "heat-treatment":
-                    if (package.HeatTreatmentHours.HasValue)
-                        estimatedHours = package.HeatTreatmentHours.Value;
-                    break;
-                case "wire-edm":
-                    if (package.WireEdmHours.HasValue)
-                        estimatedHours = package.WireEdmHours.Value;
-                    break;
-            }
-
-            // Resolve the correct machine for this stage
+            // Resolve the correct machine for this stage:
+            // The print stage uses the build's assigned machine;
+            // other stages fall back to their configured default machine.
             int? machineId = null;
             if (stage.StageSlug == "sls-printing")
             {
@@ -430,7 +554,26 @@ public class BuildPlanningService : IBuildPlanningService
         return executions;
     }
 
-    public async Task CreatePartStageExecutionsAsync(int buildPackageId, string createdBy)
+    /// <summary>
+    /// Resolves the estimated duration for a build-level stage.
+    /// Uses package-specific overrides when set, slice data for the print stage,
+    /// and falls back to the stage's default duration.
+    /// </summary>
+    private static double GetBuildStageDuration(ProductionStage stage, BuildPackage package)
+    {
+        return stage.StageSlug switch
+        {
+            "sls-printing" =>
+                package.BuildFileInfo?.EstimatedPrintTimeHours is { } printHours ? (double)printHours
+                : package.EstimatedDurationHours ?? stage.DefaultDurationHours,
+            "depowdering" => package.DepowderingHours ?? stage.DefaultDurationHours,
+            "heat-treatment" => package.HeatTreatmentHours ?? stage.DefaultDurationHours,
+            "wire-edm" => package.WireEdmHours ?? stage.DefaultDurationHours,
+            _ => stage.DefaultDurationHours
+        };
+    }
+
+    public async Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null)
     {
         var package = await _db.BuildPackages
             .Include(p => p.Parts)
@@ -438,6 +581,30 @@ public class BuildPlanningService : IBuildPlanningService
             .FirstOrDefaultAsync(p => p.Id == buildPackageId);
 
         if (package == null) throw new InvalidOperationException("Build package not found.");
+
+        // Check if per-part jobs already exist for this build (idempotent)
+        var existingJobIds = await _db.Jobs
+            .Where(j => j.Notes != null && j.Notes.Contains(package.Name)
+                && j.Stages.Any(s => s.BuildPackageId == null))
+            .Select(j => j.Id)
+            .ToListAsync();
+
+        // Also check for jobs linked via BuildPackagePart WorkOrderLineIds
+        var woLineIds = package.Parts
+            .Where(p => p.WorkOrderLineId.HasValue)
+            .Select(p => p.WorkOrderLineId!.Value)
+            .Distinct()
+            .ToList();
+        var partIds = package.Parts.Select(p => p.PartId).Distinct().ToList();
+
+        var existingPartJobs = await _db.Jobs
+            .Where(j => partIds.Contains(j.PartId)
+                && j.Notes != null && j.Notes.Contains(package.Name))
+            .Select(j => j.Id)
+            .ToListAsync();
+
+        if (existingPartJobs.Count > 0)
+            return existingPartJobs;
 
         // Load all build-level stage IDs to skip
         var buildLevelStageIds = await _db.ProductionStages
@@ -449,6 +616,9 @@ public class BuildPlanningService : IBuildPlanningService
         var partGroups = package.Parts
             .GroupBy(p => new { p.PartId, p.WorkOrderLineId })
             .ToList();
+
+        var createdJobIds = new List<int>();
+        var jobStartTime = startAfter ?? DateTime.UtcNow;
 
         foreach (var group in partGroups)
         {
@@ -466,6 +636,8 @@ public class BuildPlanningService : IBuildPlanningService
             var partStages = routing.Where(r => !buildLevelStageIds.Contains(r.ProductionStageId)).ToList();
             if (partStages.Count == 0) continue;
 
+            var estimatedHours = partStages.Sum(r => r.GetEffectiveEstimatedHours()) * totalQuantity;
+
             var job = new Job
             {
                 JobNumber = await _numberSeq.NextAsync("Job"),
@@ -474,9 +646,9 @@ public class BuildPlanningService : IBuildPlanningService
                 Quantity = totalQuantity,
                 Status = JobStatus.Scheduled,
                 Priority = JobPriority.Normal,
-                ScheduledStart = DateTime.UtcNow,
-                ScheduledEnd = DateTime.UtcNow.AddDays(7),
-                EstimatedHours = partStages.Sum(r => r.GetEffectiveEstimatedHours()),
+                ScheduledStart = jobStartTime,
+                ScheduledEnd = jobStartTime.AddHours(estimatedHours),
+                EstimatedHours = estimatedHours,
                 Notes = $"Post-build processing: {representative.Part.PartNumber} x{totalQuantity} (build plate {package.Name})",
                 CreatedBy = createdBy,
                 LastModifiedBy = createdBy,
@@ -494,7 +666,7 @@ public class BuildPlanningService : IBuildPlanningService
                     JobId = job.Id,
                     ProductionStageId = req.ProductionStageId,
                     Status = StageExecutionStatus.NotStarted,
-                    EstimatedHours = req.GetEffectiveEstimatedHours(),
+                    EstimatedHours = req.GetEffectiveEstimatedHours() * totalQuantity,
                     EstimatedCost = req.EstimatedCost,
                     MaterialCost = req.MaterialCost,
                     SetupHours = req.SetupTimeMinutes.HasValue ? req.SetupTimeMinutes.Value / 60.0 : req.ProductionStage.DefaultSetupMinutes / 60.0,
@@ -507,9 +679,12 @@ public class BuildPlanningService : IBuildPlanningService
                 };
                 _db.StageExecutions.Add(execution);
             }
+
+            createdJobIds.Add(job.Id);
         }
 
         await _db.SaveChangesAsync();
+        return createdJobIds;
     }
 
     public async Task<BuildPackageRevision> CreateRevisionAsync(int buildPackageId, string changedBy, string? notes = null)

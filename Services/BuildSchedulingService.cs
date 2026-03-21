@@ -72,9 +72,30 @@ public class BuildSchedulingService : IBuildSchedulingService
         // Create build-level stage executions via the existing planning service
         var stageExecutions = await _buildPlanning.CreateBuildStageExecutionsAsync(buildPackageId, "Scheduler");
 
+        // Prefill per-part stage executions: start after the last build-level stage ends
+        var lastBuildStageEnd = stageExecutions
+            .Where(e => e.ScheduledEndAt.HasValue)
+            .MaxBy(e => e.ScheduledEndAt)?.ScheduledEndAt ?? slot.PrintEnd;
+
+        var partJobIds = await _buildPlanning.CreatePartStageExecutionsAsync(
+            buildPackageId, "Scheduler", lastBuildStageEnd);
+
+        // Auto-schedule each per-part job to distribute across available machines
+        foreach (var jobId in partJobIds)
+        {
+            try
+            {
+                await _scheduling.AutoScheduleJobAsync(jobId, lastBuildStageEnd);
+            }
+            catch
+            {
+                // Job could not be auto-scheduled — it will appear unscheduled in the Gantt
+            }
+        }
+
         // Create revision snapshot
         await _buildPlanning.CreateRevisionAsync(buildPackageId, "Scheduler",
-            $"Scheduled on {machine.Name} starting {slot.PrintStart:g}");
+            $"Scheduled on {machine.Name} starting {slot.PrintStart:g}; {partJobIds.Count} per-part job(s) prefilled");
 
         return new BuildScheduleResult(slot, changeoverInfo, stageExecutions);
     }
@@ -319,26 +340,26 @@ public class BuildSchedulingService : IBuildSchedulingService
 
         await _db.SaveChangesAsync();
 
-        // Create per-part stage executions via existing planning service
-        await _buildPlanning.CreatePartStageExecutionsAsync(buildPackageId, releasedBy);
+        // Per-part jobs: either reuse prefilled jobs from scheduling or create new ones
+        var partJobIds = await _buildPlanning.CreatePartStageExecutionsAsync(
+            buildPackageId, releasedBy, DateTime.UtcNow);
 
-        // Load the jobs that were just created
-        var jobIds = await _db.Jobs
-            .Where(j => j.Notes != null && j.Notes.Contains(package.Name) && j.CreatedDate >= DateTime.UtcNow.AddMinutes(-1))
+        // Load the per-part jobs
+        var partJobs = await _db.Jobs
+            .Where(j => partJobIds.Contains(j.Id))
             .ToListAsync();
-        createdJobs.AddRange(jobIds);
+        createdJobs.AddRange(partJobs);
 
-        // Auto-schedule each newly created per-part job
-        foreach (var job in createdJobs)
+        // Re-schedule per-part jobs that haven't been scheduled yet
+        foreach (var job in createdJobs.Where(j => j.MachineId == null || j.ScheduledStart < DateTime.UtcNow.AddMinutes(-5)))
         {
             try
             {
                 await _scheduling.AutoScheduleJobAsync(job.Id, DateTime.UtcNow);
             }
-            catch (Exception)
+            catch
             {
-                // Job could not be auto-scheduled (no capable machines, etc.)
-                // It will appear as unscheduled in the scheduler for manual assignment
+                // Job could not be auto-scheduled — it will appear unscheduled
             }
         }
 
@@ -383,7 +404,7 @@ public class BuildSchedulingService : IBuildSchedulingService
         package.LastModifiedDate = DateTime.UtcNow;
         package.LastModifiedBy = unlockedBy;
 
-        // Cancel outstanding stage executions for this build
+        // Cancel outstanding build-level stage executions
         var activeExecutions = await _db.StageExecutions
             .Where(e => e.BuildPackageId == buildPackageId
                 && e.Status != StageExecutionStatus.Completed
@@ -398,6 +419,31 @@ public class BuildSchedulingService : IBuildSchedulingService
             exec.CompletedAt = DateTime.UtcNow;
             exec.ActualEndAt = DateTime.UtcNow;
             exec.LastModifiedDate = DateTime.UtcNow;
+        }
+
+        // Cancel prefilled per-part jobs and their stage executions
+        var perPartJobs = await _db.Jobs
+            .Include(j => j.Stages)
+            .Where(j => j.Notes != null && j.Notes.Contains(package.Name)
+                && j.Status != JobStatus.Completed && j.Status != JobStatus.Cancelled)
+            .ToListAsync();
+
+        foreach (var job in perPartJobs)
+        {
+            job.Status = JobStatus.Cancelled;
+            job.LastModifiedDate = DateTime.UtcNow;
+            job.LastModifiedBy = unlockedBy;
+            foreach (var stage in job.Stages.Where(s =>
+                s.Status != StageExecutionStatus.Completed
+                && s.Status != StageExecutionStatus.Skipped
+                && s.Status != StageExecutionStatus.Failed))
+            {
+                stage.Status = StageExecutionStatus.Skipped;
+                stage.Notes = $"Auto-skipped: build unlocked by {unlockedBy} — {reason}";
+                stage.CompletedAt = DateTime.UtcNow;
+                stage.ActualEndAt = DateTime.UtcNow;
+                stage.LastModifiedDate = DateTime.UtcNow;
+            }
         }
 
         await _db.SaveChangesAsync();

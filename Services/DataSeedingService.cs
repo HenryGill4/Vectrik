@@ -87,7 +87,7 @@ public class DataSeedingService : IDataSeedingService
                 IsBatchStage = false, HasBuiltInPage = true,
                 DisplayOrder = 5, StageIcon = "⚙️", StageColor = "#06B6D4",
                 RequiresMachineAssignment = true,
-                DefaultMachineId = "CNC1", AssignedMachineIds = "CNC1",
+                DefaultMachineId = "CNC1", AssignedMachineIds = "CNC1,CNC2,CNC3,CNC4",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -269,6 +269,24 @@ public class DataSeedingService : IDataSeedingService
             },
             new()
             {
+                MachineId = "CNC2", Name = "Haas VF-2SS #2", MachineType = "CNC",
+                MachineModel = "Haas VF-2SS", Department = "Machining",
+                HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "CNC3", Name = "Haas VF-4 #3", MachineType = "CNC",
+                MachineModel = "Haas VF-4", Department = "Machining",
+                HourlyRate = 105.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "CNC4", Name = "DMG MORI NHX 4000", MachineType = "CNC",
+                MachineModel = "DMG MORI NHX 4000", Department = "Machining",
+                HourlyRate = 125.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
                 MachineId = "LATHE1", Name = "CNC Lathe", MachineType = "CNC-Turning",
                 MachineModel = "Haas ST-20Y", Department = "Machining",
                 HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
@@ -327,13 +345,13 @@ public class DataSeedingService : IDataSeedingService
 
         var approaches = new List<ManufacturingApproach>
         {
-            new() { Name = "SLS-Based",              Slug = "sls-based",           IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = true,  DefaultRoutingTemplate = """["sls-printing","depowdering","heat-treatment","qc"]""",          DisplayOrder = 1,  IconEmoji = "🖨️" },
+            new() { Name = "SLS-Based",              Slug = "sls-based",           IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = true,  DefaultRoutingTemplate = """["sls-printing","depowdering","heat-treatment","wire-edm","qc"]""",          DisplayOrder = 1,  IconEmoji = "🖨️" },
             new() { Name = "CNC Machining",          Slug = "cnc-machining",        IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 2,  IconEmoji = "⚙️" },
             new() { Name = "CNC Turning",            Slug = "cnc-turning",          IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 3,  IconEmoji = "🔩" },
             new() { Name = "Wire EDM",               Slug = "wire-edm",             IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["wire-edm","qc"]""",                                            DisplayOrder = 4,  IconEmoji = "⚡" },
             new() { Name = "3D Printing (FDM)",      Slug = "fdm",                  IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = false, DefaultRoutingTemplate = """["sls-printing","qc"]""",                                        DisplayOrder = 5,  IconEmoji = "🖨️" },
             new() { Name = "3D Printing (SLA)",      Slug = "sla",                  IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = false, DefaultRoutingTemplate = """["sls-printing","qc"]""",                                        DisplayOrder = 6,  IconEmoji = "🖨️" },
-            new() { Name = "Additive + Subtractive", Slug = "additive-subtractive", IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = true,  DefaultRoutingTemplate = """["sls-printing","depowdering","cnc-machining","qc"]""",          DisplayOrder = 7,  IconEmoji = "🔧" },
+            new() { Name = "Additive + Subtractive", Slug = "additive-subtractive", IsAdditive = true,  RequiresBuildPlate = true,  HasPostPrintBatching = true,  DefaultRoutingTemplate = """["sls-printing","depowdering","heat-treatment","wire-edm","cnc-machining","qc"]""",  DisplayOrder = 7,  IconEmoji = "🔧" },
             new() { Name = "Sheet Metal",            Slug = "sheet-metal",          IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 8,  IconEmoji = "📐" },
             new() { Name = "Casting",                Slug = "casting",              IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["cnc-machining","qc"]""",                                       DisplayOrder = 9,  IconEmoji = "🏭" },
             new() { Name = "Injection Molding",      Slug = "injection-molding",    IsAdditive = false, RequiresBuildPlate = false, HasPostPrintBatching = false, DefaultRoutingTemplate = """["qc"]""",                                                       DisplayOrder = 10, IconEmoji = "💉" },

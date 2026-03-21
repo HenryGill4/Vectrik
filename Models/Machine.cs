@@ -84,4 +84,12 @@ public class Machine
 
     // Navigation
     public virtual ICollection<MachineComponent> Components { get; set; } = new List<MachineComponent>();
+
+    /// <summary>
+    /// Whether this machine is an additive/SLS-type machine that runs build packages.
+    /// </summary>
+    [NotMapped]
+    public bool IsAdditiveMachine =>
+        MachineType.Equals("SLS", StringComparison.OrdinalIgnoreCase)
+        || MachineType.Equals("Additive", StringComparison.OrdinalIgnoreCase);
 }
