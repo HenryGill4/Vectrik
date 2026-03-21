@@ -511,9 +511,9 @@ public class BuildPlanningService : IBuildPlanningService
 
             var estimatedHours = durationResult.TotalMinutes / 60.0;
 
-            // Resolve machine: print stage uses build machine; others use ProcessStage config
+            // Resolve machine: stages pulling duration from build config use the build machine
             int? machineId = null;
-            if (processStage.ProductionStage.StageSlug == "sls-printing")
+            if (processStage.DurationFromBuildConfig)
             {
                 machineId = buildMachineIntId;
             }
@@ -572,7 +572,9 @@ public class BuildPlanningService : IBuildPlanningService
         var partIds = package.Parts.Select(p => p.PartId).Distinct().ToList();
         var existingPartJobs = await _db.Jobs
             .Where(j => partIds.Contains(j.PartId)
-                && j.Notes != null && j.Notes.Contains(package.Name))
+                && j.Scope == JobScope.Part
+                && j.ManufacturingProcessId != null
+                && j.Stages.Any(s => s.BuildPackageId == buildPackageId))
             .Select(j => j.Id)
             .ToListAsync();
 

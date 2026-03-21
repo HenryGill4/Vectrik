@@ -30,14 +30,12 @@ public class BatchService : IBatchService
         var batchCount = (int)Math.Ceiling((double)partInstances.Count / batchCapacity);
         var batches = new List<ProductionBatch>();
 
-        // Generate batch numbers
-        var maxExisting = await _db.ProductionBatches
-            .Where(b => b.OriginBuildPackageId == buildPackageId)
-            .CountAsync();
+        // Use Max(Id) to avoid collision when batches are dissolved/deleted
+        var maxId = await _db.ProductionBatches.MaxAsync(b => (int?)b.Id) ?? 0;
 
         for (int i = 0; i < batchCount; i++)
         {
-            var batchNumber = $"BATCH-{buildPackageId:D4}-{maxExisting + i + 1:D3}";
+            var batchNumber = $"BATCH-{buildPackageId:D4}-{maxId + i + 1:D3}";
             var partsForBatch = partInstances
                 .Skip(i * batchCapacity)
                 .Take(batchCapacity)
@@ -54,6 +52,7 @@ public class BatchService : IBatchService
             };
 
             _db.ProductionBatches.Add(batch);
+            // Save to get batch.Id for part assignments
             await _db.SaveChangesAsync();
 
             // Assign parts and record history
@@ -71,10 +70,11 @@ public class BatchService : IBatchService
                 });
             }
 
-            await _db.SaveChangesAsync();
             batches.Add(batch);
         }
 
+        // Single save for all part assignments
+        await _db.SaveChangesAsync();
         return batches;
     }
 
@@ -186,12 +186,12 @@ public class BatchService : IBatchService
 
         // Create new batches
         var batchCount = (int)Math.Ceiling((double)partInstances.Count / newCapacity);
-        var maxExisting = await _db.ProductionBatches.CountAsync();
+        var maxId = await _db.ProductionBatches.MaxAsync(b => (int?)b.Id) ?? 0;
         var newBatches = new List<ProductionBatch>();
 
         for (int i = 0; i < batchCount; i++)
         {
-            var batchNumber = $"BATCH-R-{maxExisting + i + 1:D4}";
+            var batchNumber = $"BATCH-R-{maxId + i + 1:D4}";
             var partsForBatch = partInstances
                 .Skip(i * newCapacity)
                 .Take(newCapacity)
@@ -251,10 +251,10 @@ public class BatchService : IBatchService
         }
 
         // Create merged batch
-        var maxExisting = await _db.ProductionBatches.CountAsync();
+        var maxId = await _db.ProductionBatches.MaxAsync(b => (int?)b.Id) ?? 0;
         var mergedBatch = new ProductionBatch
         {
-            BatchNumber = $"BATCH-M-{maxExisting + 1:D4}",
+            BatchNumber = $"BATCH-M-{maxId + 1:D4}",
             OriginBuildPackageId = batches.FirstOrDefault()?.OriginBuildPackageId,
             Capacity = targetMachineCapacity,
             CurrentPartCount = 0,
