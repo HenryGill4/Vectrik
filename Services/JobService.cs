@@ -9,11 +9,13 @@ public class JobService : IJobService
 {
     private readonly TenantDbContext _db;
     private readonly ISchedulingService _scheduler;
+    private readonly IManufacturingProcessService _processService;
 
-    public JobService(TenantDbContext db, ISchedulingService scheduler)
+    public JobService(TenantDbContext db, ISchedulingService scheduler, IManufacturingProcessService processService)
     {
         _db = db;
         _scheduler = scheduler;
+        _processService = processService;
     }
 
     public async Task<List<Job>> GetAllJobsAsync(JobStatus? statusFilter = null)
@@ -97,53 +99,132 @@ public class JobService : IJobService
         await _db.SaveChangesAsync();
 
         // Generate StageExecution records from part routing
+        // Prefer ManufacturingProcess (new system) over PartStageRequirements (legacy)
         if (job.PartId > 0)
         {
-            var routing = await _db.PartStageRequirements
-                .Include(r => r.ProductionStage)
-                .Where(r => r.PartId == job.PartId && r.IsActive)
-                .OrderBy(r => r.ExecutionOrder)
-                .ToListAsync();
+            var process = await _db.ManufacturingProcesses
+                .Include(p => p.Stages.OrderBy(s => s.ExecutionOrder))
+                    .ThenInclude(s => s.ProductionStage)
+                .FirstOrDefaultAsync(p => p.PartId == job.PartId && p.IsActive);
 
-            if (routing.Count > 0)
+            if (process != null)
             {
-                // Build machine lookup: string MachineId → int Id for stage machine resolution
-                var machineLookup = await _db.Machines
-                    .Where(m => m.IsActive)
-                    .ToDictionaryAsync(m => m.MachineId, m => m.Id);
+                // New system: use ProcessStages filtered to Batch + Part levels
+                // (Build-level stages are handled by the build workflow, not direct jobs)
+                var stages = process.Stages
+                    .Where(s => s.ProcessingLevel == ProcessingLevel.Batch
+                             || s.ProcessingLevel == ProcessingLevel.Part)
+                    .OrderBy(s => s.ExecutionOrder)
+                    .ToList();
 
-                foreach (var stage in routing)
+                if (stages.Count > 0)
                 {
-                    var estHours = stage.GetEffectiveEstimatedHours();
+                    var machineIntLookup = await _db.Machines
+                        .Where(m => m.IsActive)
+                        .ToDictionaryAsync(m => m.Id, m => m);
+                    var machineStringLookup = await _db.Machines
+                        .Where(m => m.IsActive)
+                        .ToDictionaryAsync(m => m.MachineId, m => m);
 
-                    // Resolve stage-specific machine from routing config (string → int)
-                    int? machineIntId = job.MachineId;
-                    if (!string.IsNullOrEmpty(stage.AssignedMachineId)
-                        && machineLookup.TryGetValue(stage.AssignedMachineId, out var smid))
+                    var sortOrder = 0;
+                    foreach (var processStage in stages)
                     {
-                        machineIntId = smid;
+                        var dur = _processService.CalculateStageDuration(
+                            processStage, job.Quantity, batchCount: 1, buildConfigHours: null);
+                        var estimatedHours = dur.TotalMinutes / 60.0;
+                        var setupHours = dur.SetupMinutes / 60.0;
+
+                        // Resolve machine from ProcessStage (int-based)
+                        int? machineIntId = null;
+                        if (processStage.AssignedMachineId.HasValue
+                            && machineIntLookup.ContainsKey(processStage.AssignedMachineId.Value))
+                        {
+                            machineIntId = processStage.AssignedMachineId.Value;
+                        }
+                        else if (!string.IsNullOrEmpty(processStage.PreferredMachineIds))
+                        {
+                            foreach (var pid in processStage.PreferredMachineIds.Split(',',
+                                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                            {
+                                if (int.TryParse(pid, out var intId) && machineIntLookup.ContainsKey(intId))
+                                {
+                                    machineIntId = intId;
+                                    break;
+                                }
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(processStage.ProductionStage?.DefaultMachineId)
+                            && machineStringLookup.TryGetValue(processStage.ProductionStage.DefaultMachineId, out var defMachine))
+                        {
+                            machineIntId = defMachine.Id;
+                        }
+
+                        _db.StageExecutions.Add(new StageExecution
+                        {
+                            JobId = job.Id,
+                            ProductionStageId = processStage.ProductionStageId,
+                            ProcessStageId = processStage.Id,
+                            SortOrder = sortOrder++,
+                            EstimatedHours = estimatedHours,
+                            SetupHours = setupHours,
+                            QualityCheckRequired = processStage.RequiresQualityCheck,
+                            MachineId = machineIntId,
+                            CreatedBy = job.CreatedBy,
+                            LastModifiedBy = job.LastModifiedBy,
+                            CreatedDate = DateTime.UtcNow,
+                            LastModifiedDate = DateTime.UtcNow
+                        });
                     }
 
-                    _db.StageExecutions.Add(new StageExecution
-                    {
-                        JobId = job.Id,
-                        ProductionStageId = stage.ProductionStageId,
-                        SortOrder = stage.ExecutionOrder,
-                        EstimatedHours = estHours,
-                        EstimatedCost = stage.EstimatedCost,
-                        MaterialCost = stage.MaterialCost,
-                        SetupHours = stage.SetupTimeMinutes.HasValue ? stage.SetupTimeMinutes.Value / 60.0 : null,
-                        QualityCheckRequired = stage.ProductionStage?.RequiresQualityCheck ?? true,
-                        MachineId = machineIntId,
-                        CreatedBy = job.CreatedBy,
-                        LastModifiedBy = job.LastModifiedBy
-                    });
+                    job.ManufacturingProcessId = process.Id;
+                    await _db.SaveChangesAsync();
+                    await _scheduler.AutoScheduleJobAsync(job.Id, job.ScheduledStart);
                 }
+            }
+            else
+            {
+                // Legacy fallback: use PartStageRequirements
+                var routing = await _db.PartStageRequirements
+                    .Include(r => r.ProductionStage)
+                    .Where(r => r.PartId == job.PartId && r.IsActive)
+                    .OrderBy(r => r.ExecutionOrder)
+                    .ToListAsync();
 
-                await _db.SaveChangesAsync();
+                if (routing.Count > 0)
+                {
+                    var machineLookup = await _db.Machines
+                        .Where(m => m.IsActive)
+                        .ToDictionaryAsync(m => m.MachineId, m => m.Id);
 
-                // Auto-schedule: assign optimal machines and non-overlapping time slots
-                await _scheduler.AutoScheduleJobAsync(job.Id, job.ScheduledStart);
+                    foreach (var stage in routing)
+                    {
+                        var estHours = stage.GetEffectiveEstimatedHours();
+                        int? machineIntId = job.MachineId;
+                        if (!string.IsNullOrEmpty(stage.AssignedMachineId)
+                            && machineLookup.TryGetValue(stage.AssignedMachineId, out var smid))
+                        {
+                            machineIntId = smid;
+                        }
+
+                        _db.StageExecutions.Add(new StageExecution
+                        {
+                            JobId = job.Id,
+                            ProductionStageId = stage.ProductionStageId,
+                            SortOrder = stage.ExecutionOrder,
+                            EstimatedHours = estHours,
+                            EstimatedCost = stage.EstimatedCost,
+                            MaterialCost = stage.MaterialCost,
+                            SetupHours = stage.SetupTimeMinutes.HasValue ? stage.SetupTimeMinutes.Value / 60.0 : null,
+                            QualityCheckRequired = stage.ProductionStage?.RequiresQualityCheck ?? true,
+                            MachineId = machineIntId,
+                            CreatedBy = job.CreatedBy,
+                            LastModifiedBy = job.LastModifiedBy
+                        });
+                    }
+
+                    await _db.SaveChangesAsync();
+                    await _scheduler.AutoScheduleJobAsync(job.Id, job.ScheduledStart);
+                }
             }
         }
 
