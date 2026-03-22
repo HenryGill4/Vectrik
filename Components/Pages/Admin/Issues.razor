@@ -1,6 +1,7 @@
 @page "/admin/issues"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @inject IDevIssueService IssueService
+@inject ISchedulingDiagnosticsService SchedulingDiag
 @inject ToastService Toast
 @inject IJSRuntime JS
 
@@ -242,11 +243,62 @@ else
                         </div>
                     </div>
 
+                    @* ── Scheduling Issue: Machine Picker + Auto-Capture ── *@
+                    @if (_editingIssue.Type == DevIssueType.SchedulingIssue)
+                    {
+                        <div class="form-group">
+                            <label>Machine <span class="pw-hint">select a machine to auto-capture scheduling data</span></label>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <select class="form-control" style="flex:1;" value="@_selectedMachineId"
+                                        @onchange="OnMachineSelectedAsync">
+                                    <option value="0">— select machine —</option>
+                                    @if (_machines is not null)
+                                    {
+                                        @foreach (var m in _machines)
+                                        {
+                                            <option value="@m.Id">@m.Name (@m.MachineType) — @m.Status</option>
+                                        }
+                                    }
+                                </select>
+                                @if (_capturingSnapshot)
+                                {
+                                    <span class="spinner" style="width:20px;height:20px;"></span>
+                                }
+                                else if (_editingSnapshot is not null)
+                                {
+                                    <span style="color:var(--success);" title="Snapshot captured">✅</span>
+                                }
+                            </div>
+                        </div>
+
+                        @if (_editingSnapshot is not null)
+                        {
+                            <div class="pw-snapshot-summary">
+                                <div class="pw-snapshot-header">📸 Auto-Captured Snapshot</div>
+                                <div class="pw-snapshot-stats">
+                                    <span>⏱️ @_editingSnapshot.Executions.Count executions</span>
+                                    <span>🏗️ @_editingSnapshot.BuildPackages.Count builds</span>
+                                    <span>⚠️ @_editingSnapshot.Conflicts.Count conflicts</span>
+                                    <span>📋 @_editingSnapshot.UnscheduledCount unscheduled</span>
+                                </div>
+                                @if (_editingSnapshot.Conflicts.Count > 0)
+                                {
+                                    <div style="color:var(--danger); font-size:0.8rem; margin-top:4px;">
+                                        @foreach (var c in _editingSnapshot.Conflicts)
+                                        {
+                                            <div>🔴 Overlap: @c.DescriptionA vs @c.DescriptionB</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+
                     <!-- Title -->
                     <div class="form-group">
                         <label>Title <span class="pw-hint">Short, specific — this becomes the prompt heading</span></label>
                         <input type="text" class="form-control" @bind="_editingIssue.Title" @bind:event="oninput"
-                               placeholder="e.g. Gantt build bars don't show changeover gaps" />
+                               placeholder="@TitlePlaceholder(_editingIssue.Type)" />
                     </div>
 
                     <!-- Affected Page -->
@@ -350,6 +402,12 @@ else
     private DevIssue? _resolvingIssue;
     private string _resolutionText = "";
 
+    // Scheduling diagnostics
+    private List<Machine>? _machines;
+    private int _selectedMachineId;
+    private bool _capturingSnapshot;
+    private SchedulingSnapshot? _editingSnapshot;
+
     private static readonly string[] SystemAreas =
     [
         "Scheduler — Gantt",
@@ -379,6 +437,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
+        try { _machines = await SchedulingDiag.GetSchedulableMachinesAsync(); } catch { _machines = []; }
     }
 
     private async Task LoadAsync()
@@ -398,6 +457,8 @@ else
     private void OpenCreate()
     {
         _editingIssue = new DevIssue();
+        _selectedMachineId = 0;
+        _editingSnapshot = null;
         _showModal = true;
     }
 
@@ -422,8 +483,16 @@ else
             CreatedAt = issue.CreatedAt,
             StartedAt = issue.StartedAt,
             ResolvedAt = issue.ResolvedAt,
-            Resolution = issue.Resolution
+            Resolution = issue.Resolution,
+            MachineContext = issue.MachineContext,
+            ScheduleSnapshotJson = issue.ScheduleSnapshotJson
         };
+        _selectedMachineId = 0;
+        _editingSnapshot = null;
+        if (!string.IsNullOrWhiteSpace(issue.ScheduleSnapshotJson))
+        {
+            try { _editingSnapshot = System.Text.Json.JsonSerializer.Deserialize<SchedulingSnapshot>(issue.ScheduleSnapshotJson); } catch { }
+        }
         _showModal = true;
     }
 
@@ -447,6 +516,51 @@ else
     }
 
     private void CloseModal() => _showModal = false;
+
+    private async Task OnMachineSelectedAsync(ChangeEventArgs e)
+    {
+        _selectedMachineId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        _editingSnapshot = null;
+        _editingIssue.MachineContext = null;
+        _editingIssue.ScheduleSnapshotJson = null;
+
+        if (_selectedMachineId <= 0) return;
+
+        _capturingSnapshot = true;
+        try
+        {
+            _editingSnapshot = await SchedulingDiag.CaptureSnapshotAsync(_selectedMachineId);
+            _editingIssue.MachineContext = _editingSnapshot.Machine.Name;
+            _editingIssue.ScheduleSnapshotJson =
+                System.Text.Json.JsonSerializer.Serialize(_editingSnapshot,
+                    new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
+
+            // Auto-fill scheduling-related defaults
+            if (string.IsNullOrWhiteSpace(_editingIssue.SystemArea))
+                _editingIssue.SystemArea = "Scheduler — Gantt";
+            if (string.IsNullOrWhiteSpace(_editingIssue.AffectedPage))
+                _editingIssue.AffectedPage = "/scheduler";
+            if (string.IsNullOrWhiteSpace(_editingIssue.RelatedFiles))
+                _editingIssue.RelatedFiles = string.Join("\n",
+                [
+                    "Services/BuildSchedulingService.cs",
+                    "Services/SchedulingService.cs",
+                    "Services/BuildPlanningService.cs",
+                    "Components/Pages/Scheduler/Views/GanttView.razor",
+                    "Components/Pages/Scheduler/Components/GanttMachineRow.razor"
+                ]);
+
+            Toast.ShowSuccess($"Captured snapshot: {_editingSnapshot.Executions.Count} executions, {_editingSnapshot.Conflicts.Count} conflicts");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Snapshot capture failed: {ex.Message}");
+        }
+        finally
+        {
+            _capturingSnapshot = false;
+        }
+    }
 
     private void TogglePreview(int id) =>
         _previewId = _previewId == id ? null : id;
@@ -530,6 +644,7 @@ else
             DevIssueType.Bug => "BUG FIX",
             DevIssueType.Change => "CHANGE REQUEST",
             DevIssueType.Styling => "STYLING FIX",
+            DevIssueType.SchedulingIssue => "SCHEDULING ISSUE",
             _ => "ISSUE"
         };
         sb.AppendLine($"{typeTag}: {issue.Title}");
@@ -538,10 +653,12 @@ else
         // Location context
         var hasArea = !string.IsNullOrWhiteSpace(issue.SystemArea);
         var hasPage = !string.IsNullOrWhiteSpace(issue.AffectedPage);
-        if (hasArea || hasPage)
+        var hasMachine = !string.IsNullOrWhiteSpace(issue.MachineContext);
+        if (hasArea || hasPage || hasMachine)
         {
             if (hasArea) sb.AppendLine($"System area: {issue.SystemArea}");
             if (hasPage) sb.AppendLine($"Affected page: {issue.AffectedPage}");
+            if (hasMachine) sb.AppendLine($"Machine: {issue.MachineContext}");
             sb.AppendLine();
         }
 
@@ -566,6 +683,13 @@ else
                     AppendSection(sb, "How it should look:", issue.Expected);
                 if (!string.IsNullOrWhiteSpace(issue.EnvironmentContext))
                     sb.AppendLine($"Environment: {issue.EnvironmentContext}");
+                break;
+            case DevIssueType.SchedulingIssue:
+                AppendSection(sb, "Scheduling problem:", issue.Description);
+                AppendSection(sb, "Expected schedule:", issue.Expected);
+                if (!string.IsNullOrWhiteSpace(issue.StepsOrElement))
+                    AppendSection(sb, "How it was scheduled:", issue.StepsOrElement);
+                AppendSchedulingSnapshot(sb, issue.ScheduleSnapshotJson);
                 break;
         }
 
@@ -605,6 +729,88 @@ else
         sb.AppendLine();
     }
 
+    private static void AppendSchedulingSnapshot(System.Text.StringBuilder sb, string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return;
+
+        SchedulingSnapshot? snapshot;
+        try { snapshot = System.Text.Json.JsonSerializer.Deserialize<SchedulingSnapshot>(json); }
+        catch { return; }
+        if (snapshot is null) return;
+
+        sb.AppendLine("═══ AUTO-CAPTURED SCHEDULING DIAGNOSTICS ═══");
+        sb.AppendLine();
+
+        // Machine info
+        var m = snapshot.Machine;
+        sb.AppendLine($"Machine: {m.Name} (Type: {m.MachineType}, Status: {m.Status}, Additive: {m.IsAdditive})");
+        if (m.AutoChangeoverEnabled)
+            sb.AppendLine($"  Changeover: {m.ChangeoverMinutes}min (auto-enabled)");
+        sb.AppendLine($"  Hourly rate: ${m.HourlyRate}/hr");
+        sb.AppendLine($"  Snapshot range: {snapshot.RangeStart:yyyy-MM-dd HH:mm} → {snapshot.RangeEnd:yyyy-MM-dd HH:mm}");
+        sb.AppendLine($"  Captured at: {snapshot.CapturedAt:yyyy-MM-dd HH:mm:ss} UTC");
+        sb.AppendLine();
+
+        // Conflicts (most important — show first)
+        if (snapshot.Conflicts.Count > 0)
+        {
+            sb.AppendLine($"⚠️ CONFLICTS DETECTED ({snapshot.Conflicts.Count}):");
+            foreach (var c in snapshot.Conflicts)
+            {
+                sb.AppendLine($"  🔴 {c.DescriptionA}");
+                sb.AppendLine($"     overlaps with {c.DescriptionB}");
+                sb.AppendLine($"     Overlap window: {c.OverlapStart:MM/dd HH:mm}–{c.OverlapEnd:MM/dd HH:mm}");
+            }
+            sb.AppendLine();
+        }
+
+        // Build packages on this machine
+        if (snapshot.BuildPackages.Count > 0)
+        {
+            sb.AppendLine($"Build packages on machine ({snapshot.BuildPackages.Count}):");
+            foreach (var bp in snapshot.BuildPackages)
+            {
+                sb.AppendLine($"  [{bp.Status}] {bp.Name} — scheduled: {bp.ScheduledDate:MM/dd HH:mm}, " +
+                    $"duration: {bp.EstimatedDurationHours:F1}h, material: {bp.Material ?? "—"}, " +
+                    $"parts: {bp.PartCount}, locked: {bp.IsLocked}");
+            }
+            sb.AppendLine();
+        }
+
+        // Build timeline (print + changeover windows)
+        if (snapshot.Timeline.Count > 0)
+        {
+            sb.AppendLine($"Build timeline ({snapshot.Timeline.Count} entries):");
+            foreach (var t in snapshot.Timeline)
+            {
+                var co = t.ChangeoverStart.HasValue
+                    ? $" → changeover {t.ChangeoverStart:HH:mm}–{t.ChangeoverEnd:HH:mm}"
+                    : "";
+                sb.AppendLine($"  {t.BuildName} [{t.Status}]: print {t.PrintStart:MM/dd HH:mm}–{t.PrintEnd:MM/dd HH:mm}{co}");
+            }
+            sb.AppendLine();
+        }
+
+        // Executions on this machine
+        if (snapshot.Executions.Count > 0)
+        {
+            sb.AppendLine($"Stage executions on machine ({snapshot.Executions.Count}):");
+            foreach (var e in snapshot.Executions)
+            {
+                var wo = !string.IsNullOrWhiteSpace(e.WorkOrderNumber) ? $" WO:{e.WorkOrderNumber}" : "";
+                var build = e.BuildPackageId.HasValue ? $" Build#{e.BuildPackageId}" : "";
+                var batch = !string.IsNullOrWhiteSpace(e.BatchGroupId) ? $" Batch:{e.BatchGroupId}" : "";
+                sb.AppendLine($"  Exec#{e.Id} [{e.Status}] {e.StageName}: {e.PartNumber ?? "no-part"} " +
+                    $"({e.ScheduledStart:MM/dd HH:mm}–{e.ScheduledEnd:MM/dd HH:mm}, " +
+                    $"est: {e.EstimatedHours:F1}h){wo}{build}{batch}");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"Unscheduled executions in system: {snapshot.UnscheduledCount}");
+        sb.AppendLine();
+    }
+
     // --- Helpers ---
 
     private static string TypeIcon(DevIssueType type) => type switch
@@ -612,7 +818,14 @@ else
         DevIssueType.Bug => "🐛",
         DevIssueType.Change => "💡",
         DevIssueType.Styling => "🎨",
+        DevIssueType.SchedulingIssue => "📅",
         _ => "📝"
+    };
+
+    private static string TitlePlaceholder(DevIssueType type) => type switch
+    {
+        DevIssueType.SchedulingIssue => "e.g. EOS M4 Onyx #1 shows overlapping build executions",
+        _ => "e.g. Gantt build bars don't show changeover gaps"
     };
 
     private static string DescriptionLabel(DevIssueType type) => type switch
@@ -620,6 +833,7 @@ else
         DevIssueType.Bug => "What happened?",
         DevIssueType.Change => "Current behavior",
         DevIssueType.Styling => "What looks wrong?",
+        DevIssueType.SchedulingIssue => "What's wrong with the schedule?",
         _ => "Description"
     };
 
@@ -628,6 +842,7 @@ else
         DevIssueType.Bug => "Expected behavior",
         DevIssueType.Change => "Desired behavior",
         DevIssueType.Styling => "How it should look",
+        DevIssueType.SchedulingIssue => "What should the schedule look like?",
         _ => "Expected"
     };
 
@@ -636,6 +851,7 @@ else
         DevIssueType.Bug => "Steps to reproduce",
         DevIssueType.Change => "Additional context",
         DevIssueType.Styling => "Affected element / area",
+        DevIssueType.SchedulingIssue => "How was this scheduled?",
         _ => "Details"
     };
 
@@ -644,6 +860,7 @@ else
         DevIssueType.Bug => "Describe what goes wrong — be specific about what you see",
         DevIssueType.Change => "How does it work right now?",
         DevIssueType.Styling => "Describe exactly what looks off",
+        DevIssueType.SchedulingIssue => "e.g. Builds overlap on timeline, per-part executions missing, wrong machine assignment",
         _ => "Describe the issue"
     };
 
@@ -652,6 +869,7 @@ else
         DevIssueType.Bug => "What should happen instead?",
         DevIssueType.Change => "How should it work? Be specific about the behavior you want.",
         DevIssueType.Styling => "What should it look like? Reference other parts of the UI if helpful.",
+        DevIssueType.SchedulingIssue => "Builds should be sequential with changeover gaps, no overlaps, all parts scheduled to machines",
         _ => "Expected outcome"
     };
 
@@ -660,6 +878,7 @@ else
         DevIssueType.Bug => "1. Go to /scheduler\n2. Click a build bar\n3. Nothing happens",
         DevIssueType.Change => "Any related context — other pages that already do this right, etc.",
         DevIssueType.Styling => "e.g. sidebar nav items, Gantt time header, card borders",
+        DevIssueType.SchedulingIssue => "1. Scheduled 5 builds from Orders view\n2. Switched to Gantt\n3. Machine row shows overlapping bars",
         _ => "Additional details"
     };
 

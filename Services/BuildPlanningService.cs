@@ -603,6 +603,14 @@ public class BuildPlanningService : IBuildPlanningService
         var createdJobIds = new List<int>();
         var jobStartTime = startAfter ?? DateTime.UtcNow;
 
+        // Build machine lookup for stage machine resolution
+        var machineLookup = await _db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.Id, m => m);
+        var machineIdLookup = await _db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.MachineId, m => m);
+
         // Group parts by (PartId, WorkOrderLineId) so we create 1 job per part-type per WO line
         var partGroups = package.Parts
             .GroupBy(p => new { p.PartId, p.WorkOrderLineId })
@@ -631,9 +639,6 @@ public class BuildPlanningService : IBuildPlanningService
             // Calculate batch count
             var batchCapacity = process.DefaultBatchCapacity;
             var batchCount = (int)Math.Ceiling((double)totalQuantity / batchCapacity);
-
-            // Create batches for this part group (batches are created during plate release, not here)
-            // At scheduling time we calculate durations based on expected batch count
 
             // Calculate total estimated hours across all stages
             var totalEstimatedHours = 0.0;
@@ -671,6 +676,7 @@ public class BuildPlanningService : IBuildPlanningService
             await _db.SaveChangesAsync();
 
             var sortOrder = 0;
+            var currentStart = jobStartTime;
 
             // Create batch-level stage executions
             foreach (var stage in batchStages)
@@ -678,10 +684,16 @@ public class BuildPlanningService : IBuildPlanningService
                 var effectiveCapacity = stage.BatchCapacityOverride ?? batchCapacity;
                 var stageBatchCount = (int)Math.Ceiling((double)totalQuantity / effectiveCapacity);
                 var dur = _processService.CalculateStageDuration(stage, totalQuantity, stageBatchCount, null);
+                var estimatedHours = dur.TotalMinutes / 60.0;
+
+                // Resolve machine from ProcessStage preferences
+                int? machineId = ResolveStageMachine(stage, machineLookup, machineIdLookup);
+
+                var scheduledEnd = currentStart.AddHours(estimatedHours);
 
                 // Use cost profile for detailed cost breakdown
                 var batchCostEstimate = await _costService.EstimateCostAsync(
-                    stage.ProductionStageId, dur.TotalMinutes / 60.0, totalQuantity, stageBatchCount);
+                    stage.ProductionStageId, estimatedHours, totalQuantity, stageBatchCount);
 
                 var execution = new StageExecution
                 {
@@ -689,13 +701,15 @@ public class BuildPlanningService : IBuildPlanningService
                     ProductionStageId = stage.ProductionStageId,
                     ProcessStageId = stage.Id,
                     Status = StageExecutionStatus.NotStarted,
-                    EstimatedHours = dur.TotalMinutes / 60.0,
+                    EstimatedHours = estimatedHours,
                     SetupHours = dur.SetupMinutes / 60.0,
                     EstimatedCost = batchCostEstimate.TotalCost,
                     MaterialCost = stage.MaterialCost,
                     QualityCheckRequired = stage.RequiresQualityCheck,
                     BatchPartCount = totalQuantity,
-                    MachineId = stage.AssignedMachineId,
+                    MachineId = machineId,
+                    ScheduledStartAt = currentStart,
+                    ScheduledEndAt = scheduledEnd,
                     SortOrder = sortOrder++,
                     CreatedBy = createdBy,
                     LastModifiedBy = createdBy,
@@ -703,16 +717,24 @@ public class BuildPlanningService : IBuildPlanningService
                     LastModifiedDate = DateTime.UtcNow
                 };
                 _db.StageExecutions.Add(execution);
+
+                currentStart = scheduledEnd;
             }
 
             // Create part-level stage executions
             foreach (var stage in partStages)
             {
                 var dur = _processService.CalculateStageDuration(stage, totalQuantity, batchCount, null);
+                var estimatedHours = dur.TotalMinutes / 60.0;
+
+                // Resolve machine from ProcessStage preferences
+                int? machineId = ResolveStageMachine(stage, machineLookup, machineIdLookup);
+
+                var scheduledEnd = currentStart.AddHours(estimatedHours);
 
                 // Use cost profile for detailed cost breakdown
                 var partCostEstimate = await _costService.EstimateCostAsync(
-                    stage.ProductionStageId, dur.TotalMinutes / 60.0, totalQuantity, batchCount);
+                    stage.ProductionStageId, estimatedHours, totalQuantity, batchCount);
 
                 var execution = new StageExecution
                 {
@@ -720,12 +742,14 @@ public class BuildPlanningService : IBuildPlanningService
                     ProductionStageId = stage.ProductionStageId,
                     ProcessStageId = stage.Id,
                     Status = StageExecutionStatus.NotStarted,
-                    EstimatedHours = dur.TotalMinutes / 60.0,
+                    EstimatedHours = estimatedHours,
                     SetupHours = dur.SetupMinutes / 60.0,
                     EstimatedCost = partCostEstimate.TotalCost,
                     MaterialCost = stage.MaterialCost,
                     QualityCheckRequired = stage.RequiresQualityCheck,
-                    MachineId = stage.AssignedMachineId,
+                    MachineId = machineId,
+                    ScheduledStartAt = currentStart,
+                    ScheduledEndAt = scheduledEnd,
                     SortOrder = sortOrder++,
                     CreatedBy = createdBy,
                     LastModifiedBy = createdBy,
@@ -733,7 +757,13 @@ public class BuildPlanningService : IBuildPlanningService
                     LastModifiedDate = DateTime.UtcNow
                 };
                 _db.StageExecutions.Add(execution);
+
+                currentStart = scheduledEnd;
             }
+
+            // Update the job's scheduled window to reflect actual execution times
+            job.ScheduledEnd = currentStart;
+            job.EstimatedHours = (currentStart - jobStartTime).TotalHours;
 
             createdJobIds.Add(job.Id);
         }
@@ -836,5 +866,38 @@ public class BuildPlanningService : IBuildPlanningService
             .Replace("{MATERIAL}", machine?.CurrentMaterial ?? "Mixed", StringComparison.OrdinalIgnoreCase);
 
         return name;
+    }
+
+    /// <summary>
+    /// Resolves the best machine ID for a process stage from its configuration:
+    /// assigned machine → preferred machines (first) → ProductionStage default.
+    /// </summary>
+    private static int? ResolveStageMachine(
+        ProcessStage stage,
+        Dictionary<int, Machine> byIntId,
+        Dictionary<string, Machine> byStringId)
+    {
+        // 1. Explicitly assigned machine
+        if (stage.AssignedMachineId.HasValue && byIntId.ContainsKey(stage.AssignedMachineId.Value))
+            return stage.AssignedMachineId.Value;
+
+        // 2. First preferred machine
+        if (!string.IsNullOrEmpty(stage.PreferredMachineIds))
+        {
+            foreach (var pid in stage.PreferredMachineIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (int.TryParse(pid, out var intId) && byIntId.ContainsKey(intId))
+                    return intId;
+            }
+        }
+
+        // 3. ProductionStage default machine
+        if (!string.IsNullOrEmpty(stage.ProductionStage?.DefaultMachineId)
+            && byStringId.TryGetValue(stage.ProductionStage.DefaultMachineId, out var defaultMachine))
+        {
+            return defaultMachine.Id;
+        }
+
+        return null;
     }
 }

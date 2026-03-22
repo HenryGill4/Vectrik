@@ -90,22 +90,26 @@ public class BuildSchedulingService : IBuildSchedulingService
         var partJobIds = await _buildPlanning.CreatePartStageExecutionsAsync(
             buildPackageId, "Scheduler", lastBuildStageEnd);
 
-        // Auto-schedule each per-part job to distribute across available machines
+        // Auto-schedule each per-part job to distribute across available machines.
+        // Per-part executions already have pre-filled schedule times from creation;
+        // AutoScheduleJobAsync refines them with actual machine slot availability.
+        var autoScheduled = 0;
         foreach (var jobId in partJobIds)
         {
             try
             {
                 await _scheduling.AutoScheduleJobAsync(jobId, lastBuildStageEnd);
+                autoScheduled++;
             }
             catch
             {
-                // Job could not be auto-scheduled — it will appear unscheduled in the Gantt
+                // Job keeps its pre-filled schedule times from CreatePartStageExecutionsAsync
             }
         }
 
         // Create revision snapshot
         await _buildPlanning.CreateRevisionAsync(buildPackageId, "Scheduler",
-            $"Scheduled on {machine.Name} starting {slot.PrintStart:g}; {partJobIds.Count} per-part job(s) prefilled");
+            $"Scheduled on {machine.Name} starting {slot.PrintStart:g}; {partJobIds.Count} per-part job(s) prefilled ({autoScheduled} auto-scheduled to machines)");
 
         return new BuildScheduleResult(slot, changeoverInfo, stageExecutions);
     }

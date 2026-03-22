@@ -108,6 +108,7 @@ builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
 // Shop Floor & Scheduling (Stage 4)
 builder.Services.AddScoped<ISchedulingService, SchedulingService>();
 builder.Services.AddScoped<IBuildSchedulingService, BuildSchedulingService>();
+builder.Services.AddScoped<ISchedulingDiagnosticsService, SchedulingDiagnosticsService>();
 builder.Services.AddScoped<IOeeService, OeeService>();
 
 // Inventory Control (Module 06)

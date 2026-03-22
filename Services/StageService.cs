@@ -517,6 +517,7 @@ public class StageService : IStageService
                 .ThenInclude(j => j!.WorkOrderLine)
                     .ThenInclude(wl => wl!.WorkOrder)
             .Include(e => e.ProductionStage)
+            .Include(e => e.ProcessStage)
             .Include(e => e.Operator)
             .Include(e => e.Machine)
             .Include(e => e.BuildPackage)

@@ -43,6 +43,18 @@ public class DevIssue
     /// <summary>Notes on what was done to fix the issue.</summary>
     public string Resolution { get; set; } = string.Empty;
 
+    // ── Scheduling Issue fields ──
+
+    /// <summary>Machine name/identifier for scheduling issues (e.g. "EOS M4 Onyx #1").</summary>
+    [MaxLength(200)]
+    public string? MachineContext { get; set; }
+
+    /// <summary>
+    /// Auto-captured JSON snapshot of scheduling diagnostics at report time.
+    /// Contains machine state, executions, conflicts, build packages, and timeline data.
+    /// </summary>
+    public string? ScheduleSnapshotJson { get; set; }
+
     /// <summary>Manual sort order for queue prioritization.</summary>
     public int SortOrder { get; set; }
 
@@ -55,7 +67,8 @@ public enum DevIssueType
 {
     Bug,
     Change,
-    Styling
+    Styling,
+    SchedulingIssue
 }
 
 public enum DevIssuePriority

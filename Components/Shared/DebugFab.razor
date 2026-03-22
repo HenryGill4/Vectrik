@@ -50,6 +50,21 @@
                             </div>
                             break;
 
+                        case "scheduling":
+                            <label class="dfab-lbl">What's wrong with the schedule?</label>
+                            <textarea class="dfab-input" @bind="_description"
+                                      placeholder="e.g. Builds overlap, per-part executions missing, wrong machine" rows="3"></textarea>
+                            <label class="dfab-lbl">Which machine / build?</label>
+                            <input class="dfab-input" type="text" @bind="_element"
+                                   placeholder="e.g. EOS M4 Onyx #1, Build B-2025-042" />
+                            <label class="dfab-lbl">Expected schedule</label>
+                            <textarea class="dfab-input" @bind="_expected"
+                                      placeholder="What should the timeline look like?" rows="2"></textarea>
+                            <div class="dfab-hint">
+                                💡 Use the full Issue Tracker for auto-captured diagnostics
+                            </div>
+                            break;
+
                         default:
                             <label class="dfab-lbl">Description</label>
                             <textarea class="dfab-input" @bind="_description"
@@ -93,6 +108,7 @@
                 <button class="dfab-opt dfab-opt-bug" @onclick='() => OpenFormAsync("bug")'>🐛 Report Bug</button>
                 <button class="dfab-opt dfab-opt-idea" @onclick='() => OpenFormAsync("change")'>💡 Request Change</button>
                 <button class="dfab-opt dfab-opt-style" @onclick='() => OpenFormAsync("style")'>🎨 Styling Issue</button>
+                <button class="dfab-opt dfab-opt-sched" @onclick='() => OpenFormAsync("scheduling")'>📅 Scheduling Issue</button>
             </div>
         }
 
@@ -189,10 +205,11 @@
 
         (_formTitle, _formIcon) = type switch
         {
-            "bug"    => ("Report Bug",       "🐛"),
-            "change" => ("Request Change",    "💡"),
-            "style"  => ("Styling Issue",     "🎨"),
-            _        => ("Feedback",          "📝")
+            "bug"        => ("Report Bug",          "🐛"),
+            "change"     => ("Request Change",       "💡"),
+            "style"      => ("Styling Issue",        "🎨"),
+            "scheduling" => ("Scheduling Issue",     "📅"),
+            _            => ("Feedback",             "📝")
         };
 
         _ctxUrl = Nav.Uri;
@@ -238,6 +255,7 @@
                     "bug" => DevIssueType.Bug,
                     "change" => DevIssueType.Change,
                     "style" => DevIssueType.Styling,
+                    "scheduling" => DevIssueType.SchedulingIssue,
                     _ => DevIssueType.Bug
                 },
                 Title = _formType switch
@@ -245,14 +263,18 @@
                     "bug" => Truncate(_description, 200),
                     "change" => Truncate(_description, 200),
                     "style" => Truncate($"Styling: {_element} — {_description}", 200),
+                    "scheduling" => Truncate($"Scheduling: {_element} — {_description}", 200),
                     _ => Truncate(_description, 200)
                 },
                 Description = _description,
                 Expected = _expected,
-                StepsOrElement = _formType == "style" ? _element : _steps,
+                StepsOrElement = _formType is "style" or "scheduling" ? _element : _steps,
                 AffectedPage = ExtractPath(_ctxUrl),
-                SystemArea = InferSystemArea(ExtractPath(_ctxUrl)),
-                EnvironmentContext = string.Join(" · ", envParts)
+                SystemArea = _formType == "scheduling"
+                    ? "Scheduler — Gantt"
+                    : InferSystemArea(ExtractPath(_ctxUrl)),
+                EnvironmentContext = string.Join(" · ", envParts),
+                MachineContext = _formType == "scheduling" ? _element : null
             };
 
             await IssueService.CreateAsync(issue);
