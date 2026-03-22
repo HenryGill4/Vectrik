@@ -428,6 +428,7 @@ public class StageService : IStageService
                     .ThenInclude(wl => wl!.WorkOrder)
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
+            .Include(e => e.BuildPackage)
             .Where(e => e.OperatorUserId == operatorUserId
                 && (e.Status == StageExecutionStatus.NotStarted
                     || e.Status == StageExecutionStatus.InProgress
@@ -446,6 +447,7 @@ public class StageService : IStageService
                 .ThenInclude(j => j!.Part)
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
+            .Include(e => e.BuildPackage)
             .Where(e => e.OperatorUserId == operatorUserId
                 && (e.Status == StageExecutionStatus.InProgress || e.Status == StageExecutionStatus.Paused))
             .FirstOrDefaultAsync();
@@ -458,6 +460,7 @@ public class StageService : IStageService
                 .ThenInclude(j => j!.Part)
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
+            .Include(e => e.BuildPackage)
             .Where(e => e.OperatorUserId == null
                 && e.Status == StageExecutionStatus.NotStarted
                 && !e.IsUnmanned)
@@ -476,6 +479,8 @@ public class StageService : IStageService
                 .ThenInclude(j => j!.Part)
             .Include(e => e.ProductionStage)
             .Include(e => e.Operator)
+            .Include(e => e.BuildPackage)
+            .Include(e => e.ProcessStage)
             .Where(e => e.MachineId == machineId
                 && (e.Status == StageExecutionStatus.NotStarted
                     || e.Status == StageExecutionStatus.InProgress
@@ -540,6 +545,7 @@ public class StageService : IStageService
                     .ThenInclude(wl => wl!.WorkOrder)
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
+            .Include(e => e.ProcessStage)
             .Where(e => e.Status == StageExecutionStatus.NotStarted
                 && (e.ScheduledStartAt == null || e.MachineId == null))
             .OrderByDescending(e => e.Job != null ? (int)e.Job.Priority : 0)
