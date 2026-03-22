@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-07: PricingEngine Verification + Part System Cleanup
 
 > **Size**: S (Small) — ~3-5 file edits

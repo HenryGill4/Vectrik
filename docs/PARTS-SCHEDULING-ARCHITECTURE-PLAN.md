@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Parts & Scheduling Architecture Plan
 
 > **Created**: 2026-03-20

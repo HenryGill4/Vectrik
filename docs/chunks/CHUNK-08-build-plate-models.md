@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-08: Build Plate Models + Migration
 
 > **Size**: M (Medium) — ~6-8 file edits + migration

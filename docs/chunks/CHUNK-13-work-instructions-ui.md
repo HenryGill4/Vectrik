@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-13: Work Instructions — UI Pages
 
 > **Size**: M (Medium) — 5 new page files + 2-3 edits

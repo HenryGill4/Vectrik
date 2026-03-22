@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Opcentrix MES — Master Context & Architecture Reference
 
 > **For AI agents**: Start every session by opening **`docs/chunks/QUEUE.md`** to

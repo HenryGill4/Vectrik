@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-01: Feature Flag Gating
 
 > **Size**: M (Medium) — ~8-12 file edits

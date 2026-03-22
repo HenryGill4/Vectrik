@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # OpCentrix — Fresh Build Architecture Spec
 
 > **PHASE TRACKER DEPRECATED**: The phase tracker in this file has been superseded

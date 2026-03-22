@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-05: Workflow Engine Wiring
 
 > **Size**: L (Large) — ~10-15 file edits, 1 new page

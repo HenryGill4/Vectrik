@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Sprint 2: Admin Pages (Full CRUD)
 
 > **Status**: COMPLETE

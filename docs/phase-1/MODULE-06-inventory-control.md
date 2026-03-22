@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Module 06: Inventory Control & Material Planning
 
 ## Status: [x] Complete

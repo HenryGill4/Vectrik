@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-09: Build Plate Execution Engine
 
 > **Size**: L (Large) — ~8-12 file edits

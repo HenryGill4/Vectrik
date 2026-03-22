@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Sprint 9: Analytics + Dashboard
 
 > **Status**: NOT STARTED

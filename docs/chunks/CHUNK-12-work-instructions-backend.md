@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-12: Work Instructions — Models + Service
 
 > **Size**: M (Medium) — 5 new files + 2 edits

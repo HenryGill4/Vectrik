@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Module 05: Quality Systems & Inspection (QMS)
 
 ## Status: [x] Complete
