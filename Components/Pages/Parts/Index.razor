@@ -15,7 +15,7 @@
         @if (!_loading)
         {
             <span style="color: var(--text-muted); font-size: 0.85rem;">
-                @_allParts.Count total · @_allParts.Count(p => p.IsActive) active · @_allParts.Sum(p => p.StageRequirements?.Count ?? 0) routing stages
+                @_allParts.Count total · @_allParts.Count(p => p.IsActive) active · @_allParts.Sum(p => p.ManufacturingProcess?.Stages?.Count ?? 0) process stages
             </span>
         }
     </div>
@@ -139,14 +139,14 @@ else
                         <td>@p.Material</td>
                         <td><span class="badge" style="background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.75rem;">@(p.ManufacturingApproach?.IconEmoji) @(p.ManufacturingApproach?.Name ?? "—")</span></td>
                         <td>
-                            @{ var stageCount = p.StageRequirements?.Count ?? 0; }
+                            @{ var stageCount = p.ManufacturingProcess?.Stages?.Count ?? 0; }
                             @if (stageCount > 0)
                             {
                                 <span>@stageCount</span>
                             }
                             else
                             {
-                                <span style="color: var(--warning);" title="No routing defined">⚠ 0</span>
+                                <span style="color: var(--warning);" title="No process defined">⚠ 0</span>
                             }
                         </td>
                         <td>@(p.Drawings?.Count ?? 0)</td>
@@ -331,8 +331,8 @@ else
             ("Revision", false) => parts.OrderByDescending(p => p.Revision ?? ""),
             ("Material", true) => parts.OrderBy(p => p.Material),
             ("Material", false) => parts.OrderByDescending(p => p.Material),
-            ("Stages", true) => parts.OrderBy(p => p.StageRequirements?.Count ?? 0),
-            ("Stages", false) => parts.OrderByDescending(p => p.StageRequirements?.Count ?? 0),
+            ("Stages", true) => parts.OrderBy(p => p.ManufacturingProcess?.Stages?.Count ?? 0),
+            ("Stages", false) => parts.OrderByDescending(p => p.ManufacturingProcess?.Stages?.Count ?? 0),
             ("Status", true) => parts.OrderBy(p => p.IsActive).ThenBy(p => p.PartNumber),
             ("Status", false) => parts.OrderByDescending(p => p.IsActive).ThenBy(p => p.PartNumber),
             _ => parts.OrderBy(p => p.PartNumber)

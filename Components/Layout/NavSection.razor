@@ -1,0 +1,68 @@
+@inject IJSRuntime JS
+
+<div class="nav-group @(_isOpen ? "nav-group-open" : "")">
+    <button class="nav-group-header" @onclick="Toggle" title="@(_isOpen ? "Collapse" : "Expand") @Title">
+        <span class="nav-group-title">@Title</span>
+        <span class="nav-group-chevron">›</span>
+    </button>
+    <div class="nav-group-body" style="@BodyStyle">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string SectionKey { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public bool DefaultOpen { get; set; } = true;
+
+    private bool _isOpen = true;
+    private bool _initialized;
+
+    private string BodyStyle => _isOpen ? "" : "display:none";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var stored = await JS.InvokeAsync<string?>("localStorage.getItem", $"nav-section-{SectionKey}");
+                _isOpen = stored is null ? DefaultOpen : stored == "1";
+            }
+            catch
+            {
+                _isOpen = DefaultOpen;
+            }
+
+            _initialized = true;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Opens the section programmatically (used for auto-expand on active route).
+    /// </summary>
+    public void Open()
+    {
+        if (!_isOpen)
+        {
+            _isOpen = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Toggle()
+    {
+        _isOpen = !_isOpen;
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", $"nav-section-{SectionKey}", _isOpen ? "1" : "0");
+        }
+        catch
+        {
+            // localStorage unavailable during prerender
+        }
+    }
+}

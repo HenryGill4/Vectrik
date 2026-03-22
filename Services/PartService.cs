@@ -23,6 +23,8 @@ public class PartService : IPartService
             .Include(p => p.AdditiveBuildConfig)
             .Include(p => p.StageRequirements)
             .Include(p => p.Drawings)
+            .Include(p => p.ManufacturingProcess!)
+                .ThenInclude(mp => mp.Stages)
             .AsQueryable();
         if (activeOnly)
             query = query.Where(p => p.IsActive);
@@ -198,6 +200,8 @@ public class PartService : IPartService
             .Include(p => p.AdditiveBuildConfig)
             .Include(p => p.StageRequirements)
             .Include(p => p.Drawings)
+            .Include(p => p.ManufacturingProcess!)
+                .ThenInclude(mp => mp.Stages)
             .AsQueryable();
         if (activeOnly)
             query = query.Where(p => p.IsActive);

@@ -1,7 +1,9 @@
 ﻿@inject IStageService StageService
 @inject IServiceProvider ServiceProvider
 @inject ITenantFeatureService Features
+@inject NavigationManager Nav
 @using Microsoft.AspNetCore.Components.Authorization
+@implements IDisposable
 
 <AuthorizeView>
     <Authorized>
@@ -9,226 +11,433 @@
             var role = context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
             var isPlatform = context.User.FindFirst("IsPlatform")?.Value == "true";
             var isOperator = role == "Operator";
+            var isAdmin = role == "Admin";
+            var isAdminOrManager = isAdmin || role == "Manager";
+            var isLeadership = isAdminOrManager || role == "Supervisor";
         }
 
         <nav class="sidebar-nav">
-            <NavLink class="nav-item" href="" Match="NavLinkMatch.All">
+            <!-- Quick search / filter -->
+            <div class="nav-search">
+                <span class="nav-search-icon">🔎</span>
+                <input type="text"
+                       class="nav-search-input"
+                       placeholder="Filter menu..."
+                       @bind="_searchTerm"
+                       @bind:event="oninput" />
+                @if (!string.IsNullOrEmpty(_searchTerm))
+                {
+                    <button class="nav-search-clear" @onclick="ClearSearch" title="Clear">✕</button>
+                }
+            </div>
+
+            <!-- Dashboard — always pinned at top -->
+            <NavLink class="nav-item nav-item-pinned" href="" Match="NavLinkMatch.All">
                 <span class="nav-icon">📊</span> Dashboard
             </NavLink>
 
+            @* ──────────── PRODUCTION ──────────── *@
             @if (!isOperator)
             {
-                <div class="nav-section">PRODUCTION</div>
-                <NavLink class="nav-item" href="scheduler">
-                    <span class="nav-icon">📅</span> Production Scheduler
-                </NavLink>
-                <NavLink class="nav-item" href="scheduler/capacity">
-                    <span class="nav-icon">📊</span> Capacity Dashboard
-                </NavLink>
-                <NavLink class="nav-item" href="workorders">
-                    <span class="nav-icon">📋</span> Work Orders
-                </NavLink>
-                <NavLink class="nav-item" href="quotes">
-                    <span class="nav-icon">💰</span> Quotes
-                </NavLink>
-                @if (role == "Admin" || role == "Manager")
+                @if (SectionVisible("production", "Production Scheduler", "Capacity Dashboard", "Work Orders", "Quotes", "RFQ Inbox", "SLS Builds", "Production Batches", "Operation Costs", "Workflows"))
                 {
-                    <NavLink class="nav-item" href="quotes/rfq-inbox">
-                        <span class="nav-icon">📥</span> RFQ Inbox
-                    </NavLink>
-                }
-                @if (Features.IsEnabled("sls"))
-                {
-                    <NavLink class="nav-item" href="builds">
-                        <span class="nav-icon">🏗️</span> SLS Builds
-                    </NavLink>
-                    <NavLink class="nav-item" href="production/batches">
-                        <span class="nav-icon">📦</span> Production Batches
-                    </NavLink>
+                    <NavSection @ref="_sectionRefs[SectionId.Production]" Title="Production" SectionKey="production">
+                        @if (ItemVisible("Production Scheduler"))
+                        {
+                            <NavLink class="nav-item" href="scheduler">
+                                <span class="nav-icon">📅</span> Production Scheduler
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Capacity Dashboard"))
+                        {
+                            <NavLink class="nav-item" href="scheduler/capacity">
+                                <span class="nav-icon">📊</span> Capacity Dashboard
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Work Orders"))
+                        {
+                            <NavLink class="nav-item" href="workorders">
+                                <span class="nav-icon">📋</span> Work Orders
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Quotes"))
+                        {
+                            <NavLink class="nav-item" href="quotes">
+                                <span class="nav-icon">💰</span> Quotes
+                            </NavLink>
+                        }
+                        @if (isAdminOrManager && ItemVisible("RFQ Inbox"))
+                        {
+                            <NavLink class="nav-item" href="quotes/rfq-inbox">
+                                <span class="nav-icon">📥</span> RFQ Inbox
+                            </NavLink>
+                        }
+                        @if (Features.IsEnabled("sls"))
+                        {
+                            @if (ItemVisible("SLS Builds"))
+                            {
+                                <NavLink class="nav-item" href="builds">
+                                    <span class="nav-icon">🏗️</span> SLS Builds
+                                </NavLink>
+                            }
+                            @if (ItemVisible("Production Batches"))
+                            {
+                                <NavLink class="nav-item" href="production/batches">
+                                    <span class="nav-icon">📦</span> Production Batches
+                                </NavLink>
+                            }
+                        }
+                        @if (isAdminOrManager && ItemVisible("Operation Costs"))
+                        {
+                            <NavLink class="nav-item nav-item-admin" href="admin/operation-costs">
+                                <span class="nav-icon">💲</span> Operation Costs
+                            </NavLink>
+                        }
+                        @if (isAdmin && ItemVisible("Workflows"))
+                        {
+                            <NavLink class="nav-item nav-item-admin" href="admin/workflows">
+                                <span class="nav-icon">🔄</span> Workflows
+                            </NavLink>
+                        }
+                    </NavSection>
                 }
 
-                <div class="nav-section">PARTS & SETUP</div>
-                <NavLink class="nav-item" href="parts">
-                    <span class="nav-icon">🔩</span> Parts Library
-                </NavLink>
-                <NavLink class="nav-item" href="admin/stages">
-                    <span class="nav-icon">📋</span> Production Stages
-                </NavLink>
-                <NavLink class="nav-item" href="programs">
-                    <span class="nav-icon">📄</span> Machine Programs
-                </NavLink>
-                <NavLink class="nav-item" href="admin/materials">
-                    <span class="nav-icon">🧪</span> Materials
-                </NavLink>
-                <NavLink class="nav-item" href="admin/manufacturing-approaches">
-                    <span class="nav-icon">🏭</span> Approaches
-                </NavLink>
+                @* ──────────── PARTS & SETUP ──────────── *@
+                @if (SectionVisible("parts", "Parts Library", "Production Stages", "Machine Programs", "Materials", "Approaches", "Work Instructions", "Custom Fields"))
+                {
+                    <NavSection @ref="_sectionRefs[SectionId.PartsSetup]" Title="Parts & Setup" SectionKey="parts">
+                        @if (ItemVisible("Parts Library"))
+                        {
+                            <NavLink class="nav-item" href="parts">
+                                <span class="nav-icon">🔩</span> Parts Library
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Production Stages"))
+                        {
+                            <NavLink class="nav-item" href="admin/stages">
+                                <span class="nav-icon">📋</span> Production Stages
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Machine Programs"))
+                        {
+                            <NavLink class="nav-item" href="programs">
+                                <span class="nav-icon">📄</span> Machine Programs
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Materials"))
+                        {
+                            <NavLink class="nav-item" href="admin/materials">
+                                <span class="nav-icon">🧪</span> Materials
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Approaches"))
+                        {
+                            <NavLink class="nav-item" href="admin/manufacturing-approaches">
+                                <span class="nav-icon">🏭</span> Approaches
+                            </NavLink>
+                        }
+                        @if (isAdmin && ItemVisible("Work Instructions"))
+                        {
+                            <NavLink class="nav-item nav-item-admin" href="admin/work-instructions">
+                                <span class="nav-icon">📋</span> Work Instructions
+                            </NavLink>
+                        }
+                        @if (isAdmin && ItemVisible("Custom Fields"))
+                        {
+                            <NavLink class="nav-item nav-item-admin" href="admin/custom-fields">
+                                <span class="nav-icon">🧩</span> Custom Fields
+                            </NavLink>
+                        }
+                    </NavSection>
+                }
             }
 
-            <div class="nav-section">SHOP FLOOR</div>
-            <NavLink class="nav-item" href="shopfloor">
-                <span class="nav-icon">🏭</span> Operator Queue
-            </NavLink>
-            @if (_stages != null)
+            @* ──────────── SHOP FLOOR ──────────── *@
+            @if (SectionVisible("shopfloor", ["Operator Queue", .. GetStageNames()]))
             {
-                @foreach (var stage in _stages)
-                {
-                    @if (!isOperator || IsAssignedStage(context.User, stage.Id))
+                <NavSection @ref="_sectionRefs[SectionId.ShopFloor]" Title="Shop Floor" SectionKey="shopfloor">
+                    @if (ItemVisible("Operator Queue"))
                     {
-                        <NavLink class="nav-item" href="@($"shopfloor/stage/{stage.StageSlug}")">
-                            <span class="nav-icon" style="color: @stage.StageColor">@ResolveStageIcon(stage.StageIcon)</span> @stage.Name
+                        <NavLink class="nav-item" href="shopfloor">
+                            <span class="nav-icon">🏭</span> Operator Queue
                         </NavLink>
                     }
-                }
+                    @if (_stages is not null)
+                    {
+                        @foreach (var stage in _stages)
+                        {
+                            @if ((!isOperator || IsAssignedStage(context.User, stage.Id)) && ItemVisible(stage.Name))
+                            {
+                                <NavLink class="nav-item" href="@($"shopfloor/stage/{stage.StageSlug}")">
+                                    <span class="nav-icon" style="color: @stage.StageColor">@ResolveStageIcon(stage.StageIcon)</span> @stage.Name
+                                </NavLink>
+                            }
+                        }
+                    }
+                </NavSection>
             }
 
             @if (!isOperator)
             {
-                <div class="nav-section">VISIBILITY</div>
-                <NavLink class="nav-item" href="tracking">
-                    <span class="nav-icon">🔍</span> Part Tracker
-                </NavLink>
-                <NavLink class="nav-item" href="analytics">
-                    <span class="nav-icon">📈</span> Analytics
-                </NavLink>
-                <NavLink class="nav-item" href="analytics/on-time-delivery">
-                    <span class="nav-icon">⏱️</span> On-Time Delivery
-                </NavLink>
-                <NavLink class="nav-item" href="analytics/quality">
-                    <span class="nav-icon">✅</span> Quality Metrics
-                </NavLink>
-                <NavLink class="nav-item" href="analytics/oee">
-                    <span class="nav-icon">⚙️</span> Machine OEE
-                </NavLink>
-                <NavLink class="nav-item" href="analytics/cost">
-                    <span class="nav-icon">💲</span> Cost Analysis
-                </NavLink>
-                <NavLink class="nav-item" href="analytics/profit">
-                    <span class="nav-icon">💰</span> Profit Dashboard
-                </NavLink>
-                <NavLink class="nav-item" href="search">
-                    <span class="nav-icon">🔎</span> Search
-                </NavLink>
-
-                <div class="nav-section">MACHINES</div>
-                <NavLink class="nav-item" href="machines">
-                    <span class="nav-icon">🖥️</span> Machines
-                </NavLink>
-                @if (Features.IsEnabled("module.maintenance"))
+                @* ──────────── VISIBILITY ──────────── *@
+                @if (SectionVisible("visibility", "Part Tracker", "Analytics", "On-Time Delivery", "Quality Metrics", "Machine OEE", "Cost Analysis", "Profit Dashboard", "Search"))
                 {
-                    <NavLink class="nav-item" href="maintenance">
-                        <span class="nav-icon">🔧</span> Maintenance Alerts
-                    </NavLink>
-                    <NavLink class="nav-item" href="maintenance/workorders">
-                        <span class="nav-icon">📝</span> Work Orders
-                    </NavLink>
-                    <NavLink class="nav-item" href="maintenance/rules">
-                        <span class="nav-icon">📐</span> Rules
-                    </NavLink>
+                    <NavSection @ref="_sectionRefs[SectionId.Visibility]" Title="Visibility" SectionKey="visibility">
+                        @if (ItemVisible("Part Tracker"))
+                        {
+                            <NavLink class="nav-item" href="tracking">
+                                <span class="nav-icon">🔍</span> Part Tracker
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Analytics"))
+                        {
+                            <NavLink class="nav-item" href="analytics">
+                                <span class="nav-icon">📈</span> Analytics
+                            </NavLink>
+                        }
+                        @if (ItemVisible("On-Time Delivery"))
+                        {
+                            <NavLink class="nav-item" href="analytics/on-time-delivery">
+                                <span class="nav-icon">⏱️</span> On-Time Delivery
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Quality Metrics"))
+                        {
+                            <NavLink class="nav-item" href="analytics/quality">
+                                <span class="nav-icon">✅</span> Quality Metrics
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Machine OEE"))
+                        {
+                            <NavLink class="nav-item" href="analytics/oee">
+                                <span class="nav-icon">⚙️</span> Machine OEE
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Cost Analysis"))
+                        {
+                            <NavLink class="nav-item" href="analytics/cost">
+                                <span class="nav-icon">💲</span> Cost Analysis
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Profit Dashboard"))
+                        {
+                            <NavLink class="nav-item" href="analytics/profit">
+                                <span class="nav-icon">💰</span> Profit Dashboard
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Search"))
+                        {
+                            <NavLink class="nav-item" href="search">
+                                <span class="nav-icon">🔎</span> Search
+                            </NavLink>
+                        }
+                    </NavSection>
                 }
 
-                @if (Features.IsEnabled("module.inventory"))
+                @* ──────────── MACHINES ──────────── *@
+                @if (SectionVisible("machines", "Machines", "Maintenance Alerts", "Maintenance Work Orders", "Maintenance Rules"))
                 {
-                    <div class="nav-section">INVENTORY</div>
-                    <NavLink class="nav-item" href="inventory">
-                        <span class="nav-icon">📦</span> Inventory
-                    </NavLink>
-                    <NavLink class="nav-item" href="inventory/items">
-                        <span class="nav-icon">📋</span> Inventory Items
-                    </NavLink>
-                    <NavLink class="nav-item" href="inventory/receive">
-                        <span class="nav-icon">📥</span> Receive Stock
-                    </NavLink>
+                    <NavSection @ref="_sectionRefs[SectionId.Machines]" Title="Machines" SectionKey="machines">
+                        @if (ItemVisible("Machines"))
+                        {
+                            <NavLink class="nav-item" href="machines">
+                                <span class="nav-icon">🖥️</span> Machines
+                            </NavLink>
+                        }
+                        @if (Features.IsEnabled("module.maintenance"))
+                        {
+                            @if (ItemVisible("Maintenance Alerts"))
+                            {
+                                <NavLink class="nav-item" href="maintenance">
+                                    <span class="nav-icon">🔧</span> Maintenance Alerts
+                                </NavLink>
+                            }
+                            @if (ItemVisible("Maintenance Work Orders"))
+                            {
+                                <NavLink class="nav-item" href="maintenance/workorders">
+                                    <span class="nav-icon">📝</span> Work Orders
+                                </NavLink>
+                            }
+                            @if (ItemVisible("Maintenance Rules"))
+                            {
+                                <NavLink class="nav-item" href="maintenance/rules">
+                                    <span class="nav-icon">📐</span> Rules
+                                </NavLink>
+                            }
+                        }
+                    </NavSection>
                 }
 
-                @if (Features.IsEnabled("module.quality"))
+                @* ──────────── INVENTORY ──────────── *@
+                @if (Features.IsEnabled("module.inventory") && SectionVisible("inventory", "Inventory", "Inventory Items", "Receive Stock"))
                 {
-                    <div class="nav-section">QUALITY</div>
-                    <NavLink class="nav-item" href="quality">
-                        <span class="nav-icon">🔍</span> Quality Dashboard
-                    </NavLink>
-                    <NavLink class="nav-item" href="quality/ncr">
-                        <span class="nav-icon">📋</span> NCR Management
-                    </NavLink>
-                    <NavLink class="nav-item" href="quality/capa">
-                        <span class="nav-icon">🔧</span> CAPA Board
-                    </NavLink>
-                    <NavLink class="nav-item" href="quality/spc">
-                        <span class="nav-icon">📈</span> SPC Charts
-                    </NavLink>
+                    <NavSection @ref="_sectionRefs[SectionId.Inventory]" Title="Inventory" SectionKey="inventory">
+                        @if (ItemVisible("Inventory"))
+                        {
+                            <NavLink class="nav-item" href="inventory">
+                                <span class="nav-icon">📦</span> Inventory
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Inventory Items"))
+                        {
+                            <NavLink class="nav-item" href="inventory/items">
+                                <span class="nav-icon">📋</span> Inventory Items
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Receive Stock"))
+                        {
+                            <NavLink class="nav-item" href="inventory/receive">
+                                <span class="nav-icon">📥</span> Receive Stock
+                            </NavLink>
+                        }
+                    </NavSection>
+                }
+
+                @* ──────────── QUALITY ──────────── *@
+                @if (Features.IsEnabled("module.quality") && SectionVisible("quality", "Quality Dashboard", "NCR Management", "CAPA Board", "SPC Charts"))
+                {
+                    <NavSection @ref="_sectionRefs[SectionId.Quality]" Title="Quality" SectionKey="quality">
+                        @if (ItemVisible("Quality Dashboard"))
+                        {
+                            <NavLink class="nav-item" href="quality">
+                                <span class="nav-icon">🔍</span> Quality Dashboard
+                            </NavLink>
+                        }
+                        @if (ItemVisible("NCR Management"))
+                        {
+                            <NavLink class="nav-item" href="quality/ncr">
+                                <span class="nav-icon">📋</span> NCR Management
+                            </NavLink>
+                        }
+                        @if (ItemVisible("CAPA Board"))
+                        {
+                            <NavLink class="nav-item" href="quality/capa">
+                                <span class="nav-icon">🔧</span> CAPA Board
+                            </NavLink>
+                        }
+                        @if (ItemVisible("SPC Charts"))
+                        {
+                            <NavLink class="nav-item" href="quality/spc">
+                                <span class="nav-icon">📈</span> SPC Charts
+                            </NavLink>
+                        }
+                    </NavSection>
                 }
             }
             else
             {
-                <NavLink class="nav-item" href="tracking">
-                    <span class="nav-icon">🔍</span> Part Tracker
-                </NavLink>
+                @if (ItemVisible("Part Tracker"))
+                {
+                    <NavLink class="nav-item" href="tracking">
+                        <span class="nav-icon">🔍</span> Part Tracker
+                    </NavLink>
+                }
             }
 
-            <div class="nav-section">SETTINGS</div>
-            <NavLink class="nav-item" href="settings/display">
-                <span class="nav-icon">🎨</span> Display
-            </NavLink>
-
-            @if (role == "Admin" || role == "Manager" || role == "Supervisor")
+            @* ──────────── USERS & ACCESS (Admin/Manager) ──────────── *@
+            @if (isAdminOrManager && SectionVisible("users", "Users", "Operator Roles"))
             {
-                <div class="nav-section">ADMIN</div>
-                <NavLink class="nav-item" href="admin">
-                    <span class="nav-icon">⚙️</span> Admin Panel
-                </NavLink>
-                @if (role == "Admin" || role == "Manager")
-                {
-                    <NavLink class="nav-item" href="admin/users">
-                        <span class="nav-icon">👥</span> Users
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/operator-roles">
-                        <span class="nav-icon">🎭</span> Operator Roles
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/operation-costs">
-                        <span class="nav-icon">💲</span> Operation Costs
-                    </NavLink>
-                }
-                @if (role == "Admin")
-                {
-                    <NavLink class="nav-item" href="admin/workflows">
-                        <span class="nav-icon">🔄</span> Workflows
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/work-instructions">
-                        <span class="nav-icon">📋</span> Work Instructions
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/settings">
-                        <span class="nav-icon">⚙️</span> Settings
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/features">
-                        <span class="nav-icon">🎛️</span> Feature Flags
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/custom-fields">
-                        <span class="nav-icon">🧩</span> Custom Fields
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/numbering">
-                        <span class="nav-icon">🔢</span> Numbering
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/branding">
-                        <span class="nav-icon">🏷️</span> Branding
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/debug">
-                        <span class="nav-icon">🛠️</span> Debug Tools
-                    </NavLink>
-                    <NavLink class="nav-item" href="admin/issues">
-                        <span class="nav-icon">🎯</span> Issue Tracker
-                    </NavLink>
-                }
+                <NavSection @ref="_sectionRefs[SectionId.UsersAccess]" Title="Users & Access" SectionKey="users" DefaultOpen="false">
+                    @if (ItemVisible("Users"))
+                    {
+                        <NavLink class="nav-item" href="admin/users">
+                            <span class="nav-icon">👥</span> Users
+                        </NavLink>
+                    }
+                    @if (ItemVisible("Operator Roles"))
+                    {
+                        <NavLink class="nav-item" href="admin/operator-roles">
+                            <span class="nav-icon">🎭</span> Operator Roles
+                        </NavLink>
+                    }
+                </NavSection>
             }
 
+            @* ──────────── SETTINGS & CONFIG ──────────── *@
+            @if (SectionVisible("settings", "Display", "Settings", "Feature Flags", "Numbering", "Branding"))
+            {
+                <NavSection @ref="_sectionRefs[SectionId.Settings]" Title="Settings" SectionKey="settings" DefaultOpen="false">
+                    @if (ItemVisible("Display"))
+                    {
+                        <NavLink class="nav-item" href="settings/display">
+                            <span class="nav-icon">🎨</span> Display
+                        </NavLink>
+                    }
+                    @if (isAdmin)
+                    {
+                        @if (ItemVisible("Settings"))
+                        {
+                            <NavLink class="nav-item nav-item-admin" href="admin/settings">
+                                <span class="nav-icon">⚙️</span> System Settings
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Feature Flags"))
+                        {
+                            <NavLink class="nav-item nav-item-admin" href="admin/features">
+                                <span class="nav-icon">🎛️</span> Feature Flags
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Numbering"))
+                        {
+                            <NavLink class="nav-item nav-item-admin" href="admin/numbering">
+                                <span class="nav-icon">🔢</span> Numbering
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Branding"))
+                        {
+                            <NavLink class="nav-item nav-item-admin" href="admin/branding">
+                                <span class="nav-icon">🏷️</span> Branding
+                            </NavLink>
+                        }
+                    }
+                </NavSection>
+            }
+
+            @* ──────────── SYSTEM (Admin only) ──────────── *@
+            @if (isAdmin && SectionVisible("system", "Admin Panel", "Debug Tools", "Issue Tracker"))
+            {
+                <NavSection @ref="_sectionRefs[SectionId.System]" Title="System" SectionKey="system" DefaultOpen="false">
+                    @if (ItemVisible("Admin Panel"))
+                    {
+                        <NavLink class="nav-item" href="admin">
+                            <span class="nav-icon">⚙️</span> Admin Panel
+                        </NavLink>
+                    }
+                    @if (ItemVisible("Debug Tools"))
+                    {
+                        <NavLink class="nav-item" href="admin/debug">
+                            <span class="nav-icon">🛠️</span> Debug Tools
+                        </NavLink>
+                    }
+                    @if (ItemVisible("Issue Tracker"))
+                    {
+                        <NavLink class="nav-item" href="admin/issues">
+                            <span class="nav-icon">🎯</span> Issue Tracker
+                        </NavLink>
+                    }
+                </NavSection>
+            }
+
+            @* ──────────── PLATFORM (super-admin only) ──────────── *@
             @if (isPlatform)
             {
-                <div class="nav-section">PLATFORM</div>
-                <NavLink class="nav-item" href="platform/tenants">
-                    <span class="nav-icon">🏢</span> Tenants
-                </NavLink>
-                <NavLink class="nav-item" href="platform/users">
-                    <span class="nav-icon">👤</span> Platform Users
-                </NavLink>
+                @if (SectionVisible("platform", "Tenants", "Platform Users"))
+                {
+                    <NavSection @ref="_sectionRefs[SectionId.Platform]" Title="Platform" SectionKey="platform" DefaultOpen="false">
+                        @if (ItemVisible("Tenants"))
+                        {
+                            <NavLink class="nav-item" href="platform/tenants">
+                                <span class="nav-icon">🏢</span> Tenants
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Platform Users"))
+                        {
+                            <NavLink class="nav-item" href="platform/users">
+                                <span class="nav-icon">👤</span> Platform Users
+                            </NavLink>
+                        }
+                    </NavSection>
+                }
             }
         </nav>
     </Authorized>
@@ -243,6 +452,66 @@
 
 @code {
     private List<ProductionStage>? _stages;
+    private string _searchTerm = "";
+
+    private readonly Dictionary<SectionId, NavSection?> _sectionRefs = Enum.GetValues<SectionId>()
+        .ToDictionary(s => s, _ => (NavSection?)null);
+
+    /// <summary>
+    /// Maps route prefixes to their owning section for auto-expand on navigation.
+    /// More specific prefixes must appear before general ones (e.g. admin/stages before admin).
+    /// </summary>
+    private static readonly (string Prefix, SectionId Section)[] _routeSections =
+    [
+        ("scheduler", SectionId.Production),
+        ("workorders", SectionId.Production),
+        ("quotes", SectionId.Production),
+        ("builds", SectionId.Production),
+        ("production", SectionId.Production),
+        ("admin/operation-costs", SectionId.Production),
+        ("admin/workflows", SectionId.Production),
+        ("parts", SectionId.PartsSetup),
+        ("programs", SectionId.PartsSetup),
+        ("admin/stages", SectionId.PartsSetup),
+        ("admin/materials", SectionId.PartsSetup),
+        ("admin/manufacturing", SectionId.PartsSetup),
+        ("admin/work-instructions", SectionId.PartsSetup),
+        ("admin/custom-fields", SectionId.PartsSetup),
+        ("shopfloor", SectionId.ShopFloor),
+        ("tracking", SectionId.Visibility),
+        ("analytics", SectionId.Visibility),
+        ("search", SectionId.Visibility),
+        ("machines", SectionId.Machines),
+        ("maintenance", SectionId.Machines),
+        ("inventory", SectionId.Inventory),
+        ("quality", SectionId.Quality),
+        ("admin/users", SectionId.UsersAccess),
+        ("admin/operator-roles", SectionId.UsersAccess),
+        ("settings", SectionId.Settings),
+        ("admin/settings", SectionId.Settings),
+        ("admin/features", SectionId.Settings),
+        ("admin/numbering", SectionId.Settings),
+        ("admin/branding", SectionId.Settings),
+        ("admin/debug", SectionId.System),
+        ("admin/issues", SectionId.System),
+        ("admin", SectionId.System),
+        ("platform", SectionId.Platform),
+    ];
+
+    private enum SectionId
+    {
+        Production,
+        PartsSetup,
+        ShopFloor,
+        Visibility,
+        Machines,
+        Inventory,
+        Quality,
+        UsersAccess,
+        Settings,
+        System,
+        Platform,
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -254,7 +523,63 @@
         {
             _stages = new();
         }
+
+        Nav.LocationChanged += OnLocationChanged;
     }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            AutoExpandActiveSection();
+        }
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        AutoExpandActiveSection();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void AutoExpandActiveSection()
+    {
+        var relativeUri = Nav.ToBaseRelativePath(Nav.Uri).ToLowerInvariant();
+
+        foreach (var (prefix, section) in _routeSections)
+        {
+            if (relativeUri.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                _sectionRefs[section]?.Open();
+                break;
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void ClearSearch() => _searchTerm = "";
+
+    private bool IsSearching => !string.IsNullOrWhiteSpace(_searchTerm);
+
+    private bool ItemVisible(string label) =>
+        !IsSearching || label.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase);
+
+    private bool SectionVisible(string sectionName, params ReadOnlySpan<string> itemLabels)
+    {
+        if (!IsSearching) return true;
+        if (sectionName.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var l in itemLabels)
+        {
+            if (l.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    private string[] GetStageNames() =>
+        _stages?.Select(s => s.Name).ToArray() ?? [];
 
     private static bool IsAssignedStage(System.Security.Claims.ClaimsPrincipal user, int stageId)
     {
