@@ -52,6 +52,23 @@ public class SchedulingService : ISchedulingService
             }
         }
 
+        // Recover ProcessStage references for legacy-created executions that have ProcessStageId = null
+        // This allows re-scheduling old jobs to benefit from new-system machine routing
+        if (job.ManufacturingProcessId.HasValue)
+        {
+            var processStageLookup = await _db.ProcessStages
+                .Where(ps => ps.ManufacturingProcessId == job.ManufacturingProcessId.Value)
+                .ToDictionaryAsync(ps => ps.ProductionStageId, ps => ps);
+
+            foreach (var exec in executions.Where(e => e.ProcessStage == null && e.ProcessStageId == null))
+            {
+                if (processStageLookup.TryGetValue(exec.ProductionStageId, out var matchedStage))
+                {
+                    exec.ProcessStage = matchedStage; // in-memory only, not saved to DB
+                }
+            }
+        }
+
         var cursor = notBefore;
 
         foreach (var exec in executions)
@@ -134,6 +151,15 @@ public class SchedulingService : ISchedulingService
             ? await _db.PartStageRequirements.FirstOrDefaultAsync(r =>
                 r.PartId == exec.Job.PartId && r.ProductionStageId == exec.ProductionStageId && r.IsActive)
             : null;
+
+        // Recover ProcessStage for legacy-created execution missing ProcessStageId
+        if (exec.ProcessStage == null && exec.ProcessStageId == null && exec.Job?.ManufacturingProcessId.HasValue == true)
+        {
+            exec.ProcessStage = await _db.ProcessStages
+                .FirstOrDefaultAsync(ps =>
+                    ps.ManufacturingProcessId == exec.Job.ManufacturingProcessId.Value
+                    && ps.ProductionStageId == exec.ProductionStageId);
+        }
 
         var notBefore = startAfter ?? DateTime.UtcNow;
 
