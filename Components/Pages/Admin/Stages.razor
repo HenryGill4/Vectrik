@@ -1,5 +1,6 @@
 @page "/admin/stages"
 @inject IStageService StageService
+@inject IMachineService MachineService
 @inject ToastService Toast
 @using System.Text.Json
 
@@ -15,7 +16,7 @@ else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Department</th><th>Duration</th><th>Rate</th><th>Active</th><th></th></tr></thead>
+            <thead><tr><th>Order</th><th>Name</th><th>Slug</th><th>Department</th><th>Duration</th><th>Rate</th><th>Machines</th><th>Active</th><th></th></tr></thead>
             <tbody>
                 @foreach (var s in _stages)
                 {
@@ -26,6 +27,19 @@ else
                         <td>@s.Department</td>
                         <td>@s.DefaultDurationHours h</td>
                         <td>$@s.DefaultHourlyRate/hr</td>
+                        <td>
+                            @{
+                                var assignedIds = s.GetAssignedMachineIntIds();
+                            }
+                            @if (assignedIds.Count == 0)
+                            {
+                                <span style="color: var(--text-muted); font-size: 0.8rem;">Any</span>
+                            }
+                            else
+                            {
+                                <span style="font-size: 0.8rem;">@string.Join(", ", _machines.Where(m => assignedIds.Contains(m.Id)).Select(m => m.Name))</span>
+                            }
+                        </td>
                         <td><span class="badge @(s.IsActive ? "badge-active" : "badge-cancelled")">@(s.IsActive ? "Yes" : "No")</span></td>
                         <td><button class="btn btn-sm btn-secondary" @onclick="() => Edit(s)">Edit</button></td>
                     </tr>
@@ -77,6 +91,27 @@ else
                     <label class="form-label"><input type="checkbox" @bind="_edit.IsOptional" style="margin-right: 6px;" />Optional</label>
                     <label class="form-label"><input type="checkbox" @bind="_edit.AllowParallelExecution" style="margin-right: 6px;" />Parallel Execution</label>
                     <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
+                </div>
+
+                <div style="margin-top: 16px;">
+                    <label class="form-label" style="font-weight: 600; margin-bottom: 8px; display: block;">Assigned Machines</label>
+                    <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 8px;">Select which machines can execute this stage. Leave all unchecked to allow any machine.</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 220px; overflow-y: auto; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-md);">
+                        @foreach (var m in _machines.OrderBy(m => m.Department).ThenBy(m => m.Name))
+                        {
+                            var mid = m.Id;
+                            var isSelected = _selectedMachineIds.Contains(mid);
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; cursor: pointer;">
+                                <input type="checkbox" checked="@isSelected" @onchange="e => ToggleMachine(mid, (bool)(e.Value ?? false))" />
+                                <span style="color: var(--text-secondary); font-size: 0.75rem;">@(m.Department ?? "—")</span>
+                                @m.Name
+                            </label>
+                        }
+                    </div>
+                    @if (_selectedMachineIds.Count > 0)
+                    {
+                        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">@_selectedMachineIds.Count machine(s) selected</p>
+                    }
                 </div>
             }
 
@@ -130,15 +165,21 @@ else
 
 @code {
     private List<ProductionStage>? _stages;
+    private List<Machine> _machines = new();
     private ProductionStage? _edit;
     private bool _showForm;
     private string? _error;
     private string _tab = "info";
     private List<CustomFieldDefinition> _customFields = new();
+    private HashSet<int> _selectedMachineIds = new();
 
     protected override async Task OnInitializedAsync()
     {
-        try { _stages = await StageService.GetAllStagesAsync(activeOnly: false); }
+        try
+        {
+            _stages = await StageService.GetAllStagesAsync(activeOnly: false);
+            _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+        }
         catch (Exception ex) { Toast.ShowError($"Failed to load stages: {ex.Message}"); _stages = new(); }
     }
 
@@ -146,6 +187,7 @@ else
     {
         _edit = new ProductionStage { CreatedBy = "System", LastModifiedBy = "System", CustomFieldsConfig = "[]" };
         _customFields = new();
+        _selectedMachineIds = new();
         _tab = "info";
         _showForm = true;
     }
@@ -156,6 +198,7 @@ else
         _tab = "info";
         try { _customFields = JsonSerializer.Deserialize<List<CustomFieldDefinition>>(s.CustomFieldsConfig) ?? new(); }
         catch { _customFields = new(); }
+        _selectedMachineIds = s.GetAssignedMachineIntIds().ToHashSet();
         _showForm = true;
     }
 
@@ -189,12 +232,21 @@ else
         try
         {
             _edit!.CustomFieldsConfig = JsonSerializer.Serialize(_customFields);
+            _edit.AssignedMachineIds = _selectedMachineIds.Count > 0
+                ? string.Join(",", _selectedMachineIds.Order())
+                : null;
             if (_edit.Id == 0) await StageService.CreateStageAsync(_edit);
             else await StageService.UpdateStageAsync(_edit);
             _showForm = false;
             _stages = await StageService.GetAllStagesAsync(activeOnly: false);
         }
         catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void ToggleMachine(int machineId, bool isChecked)
+    {
+        if (isChecked) _selectedMachineIds.Add(machineId);
+        else _selectedMachineIds.Remove(machineId);
     }
 
     private static string ResolveStageIcon(string? icon)

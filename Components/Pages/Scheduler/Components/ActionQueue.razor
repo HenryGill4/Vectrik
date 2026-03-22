@@ -1,0 +1,120 @@
+@* ── Action Queue: top urgent actions ranked by priority for operators/supervisors ── *@
+
+<div class="sched-action-queue">
+    <div class="sched-action-header" @onclick="() => _expanded = !_expanded">
+        <span class="sched-action-title">⚡ Next Actions (@_actions.Count)</span>
+        <span class="sched-action-chevron @(_expanded ? "sched-action-chevron--open" : "")">▸</span>
+    </div>
+    @if (_expanded && _actions.Count > 0)
+    {
+        <div class="sched-action-list">
+            @foreach (var action in _actions.Take(10))
+            {
+                <div class="sched-action-item" @onclick="() => HandleActionClick(action)" title="@action.Detail">
+                    <div class="sched-action-urgency sched-action-urgency--@action.UrgencyClass"></div>
+                    <span class="sched-action-text">@action.Label</span>
+                    <span class="sched-action-badge badge badge-@action.BadgeClass">@action.Badge</span>
+                </div>
+            }
+        </div>
+    }
+    else if (_expanded)
+    {
+        <div style="padding: 12px; font-size: 0.8rem; color: var(--text-muted); text-align: center;">
+            ✅ No urgent actions
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<StageExecution> Executions { get; set; } = [];
+    [Parameter] public List<StageExecution> Unscheduled { get; set; } = [];
+    [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
+    [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
+    [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
+    [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
+
+    private bool _expanded = true;
+
+    private record ActionItem(string Label, string Detail, string Badge, string BadgeClass, string UrgencyClass, int Priority, StageExecution? Execution = null);
+
+    private List<ActionItem> _actions => BuildActions();
+
+    private List<ActionItem> BuildActions()
+    {
+        var items = new List<ActionItem>();
+        var now = DateTime.UtcNow;
+        var today = now.Date;
+
+        // 1. Overdue stage executions (highest priority)
+        foreach (var exec in Executions
+            .Where(e => e.ScheduledEndAt.HasValue && e.ScheduledEndAt < now
+                && e.Status is StageExecutionStatus.NotStarted or StageExecutionStatus.InProgress)
+            .OrderBy(e => e.ScheduledEndAt)
+            .Take(5))
+        {
+            var hours = (now - exec.ScheduledEndAt!.Value).TotalHours;
+            items.Add(new ActionItem(
+                $"{exec.ProductionStage?.Name ?? "Stage"} — overdue {hours:F0}h",
+                $"Job #{exec.JobId} was due {exec.ScheduledEndAt:g}",
+                "OVERDUE", "danger", "overdue", 0, exec));
+        }
+
+        // 2. Overdue work orders
+        foreach (var wo in WorkOrders
+            .Where(w => w.DueDate.Date < today && w.Lines.Any(l => l.Quantity > l.ProducedQuantity))
+            .OrderBy(w => w.DueDate)
+            .Take(3))
+        {
+            items.Add(new ActionItem(
+                $"WO {wo.OrderNumber} — past due {(today - wo.DueDate.Date).Days}d",
+                $"{wo.CustomerName} due {wo.DueDate:d}",
+                "WO", "danger", "overdue", 1));
+        }
+
+        // 3. Approaching due dates (next 24h)
+        foreach (var exec in Executions
+            .Where(e => e.ScheduledEndAt.HasValue && e.ScheduledEndAt >= now && e.ScheduledEndAt < now.AddHours(24)
+                && e.Status is StageExecutionStatus.NotStarted or StageExecutionStatus.InProgress)
+            .OrderBy(e => e.ScheduledEndAt)
+            .Take(3))
+        {
+            var hours = (exec.ScheduledEndAt!.Value - now).TotalHours;
+            items.Add(new ActionItem(
+                $"{exec.ProductionStage?.Name ?? "Stage"} — due in {hours:F0}h",
+                $"Job #{exec.JobId} ends {exec.ScheduledEndAt:g}",
+                "DUE", "warning", "due-soon", 2, exec));
+        }
+
+        // 4. Unassigned executions
+        var unassignedCount = Unscheduled.Count;
+        if (unassignedCount > 0)
+        {
+            var firstUnassigned = Unscheduled.FirstOrDefault();
+            items.Add(new ActionItem(
+                $"{unassignedCount} unscheduled task(s) need assignment",
+                "Click to auto-schedule or manually assign",
+                unassignedCount.ToString(), "warning", "unassigned", 3, firstUnassigned));
+        }
+
+        // 5. Ready builds not yet scheduled
+        var readyBuilds = BuildPackages.Where(b => b.Status == BuildPackageStatus.Ready).ToList();
+        if (readyBuilds.Count > 0)
+        {
+            items.Add(new ActionItem(
+                $"{readyBuilds.Count} build(s) ready to schedule",
+                string.Join(", ", readyBuilds.Take(3).Select(b => b.Name)),
+                readyBuilds.Count.ToString(), "accent", "ready", 4));
+        }
+
+        return items.OrderBy(a => a.Priority).ToList();
+    }
+
+    private async Task HandleActionClick(ActionItem action)
+    {
+        if (action.Execution != null)
+        {
+            await OnShowReschedule.InvokeAsync(action.Execution);
+        }
+    }
+}

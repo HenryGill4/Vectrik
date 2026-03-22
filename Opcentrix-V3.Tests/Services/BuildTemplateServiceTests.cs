@@ -329,9 +329,10 @@ public class BuildTemplateServiceTests : IDisposable
 
         Assert.True(result.Id > 0);
         Assert.Equal(machine.Id, result.MachineId);
-        Assert.Equal(BuildPackageStatus.Sliced, result.Status);
+        Assert.Equal(BuildPackageStatus.Ready, result.Status);
         Assert.True(result.IsSlicerDataEntered);
         Assert.Equal(certified.EstimatedDurationHours, result.EstimatedDurationHours);
+        Assert.Equal(certified.Id, result.BuildTemplateId);
         Assert.Equal("scheduler", result.CreatedBy);
 
         var parts = await _db.BuildPackageParts.Where(p => p.BuildPackageId == result.Id).ToListAsync();

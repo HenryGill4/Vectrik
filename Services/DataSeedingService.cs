@@ -44,6 +44,9 @@ public class DataSeedingService : IDataSeedingService
         // Manufacturing processes (depends on parts + production stages)
         await SeedManufacturingProcessesAsync(tenantDb);
 
+        // Build templates (depends on parts + machines + materials)
+        await SeedBuildTemplatesAsync(tenantDb);
+
         // Work instructions & sign-off checklists (depends on parts + production stages)
         await SeedWorkInstructionsAsync(tenantDb);
     }
@@ -2033,6 +2036,185 @@ public class DataSeedingService : IDataSeedingService
 
                 await db.SaveChangesAsync();
             }
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    //  Build Templates (reusable build file library)
+    // ──────────────────────────────────────────────
+    private static async Task SeedBuildTemplatesAsync(TenantDbContext db)
+    {
+        if (await db.BuildTemplates.AnyAsync()) return;
+
+        // Only seed if parts and machines already exist
+        var parts = await db.Parts.ToListAsync();
+        if (parts.Count == 0) return;
+
+        var tiMaterial = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("Ti-6Al-4V"));
+        var ssMaterial = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("316L"));
+        var m4Machine = await db.Machines.FirstOrDefaultAsync(m => m.MachineId == "M4-1");
+
+        // Group parts by material for realistic template assignments
+        var tiParts = parts.Where(p => p.MaterialId == tiMaterial?.Id).Take(3).ToList();
+        var ssParts = parts.Where(p => p.MaterialId == ssMaterial?.Id).Take(2).ToList();
+
+        // Fall back to first available parts if material filtering yields nothing
+        if (tiParts.Count == 0 && parts.Count > 0)
+            tiParts = parts.Take(Math.Min(2, parts.Count)).ToList();
+
+        var templates = new List<BuildTemplate>();
+
+        // Template 1: Certified Ti-6Al-4V build with slicer data
+        if (tiParts.Count > 0)
+        {
+            var t1 = new BuildTemplate
+            {
+                Name = "Ti64 Standard Build",
+                Description = "Standard Ti-6Al-4V build plate — certified and ready for scheduling.",
+                Status = BuildTemplateStatus.Certified,
+                MaterialId = tiMaterial?.Id,
+                StackLevel = 1,
+                EstimatedDurationHours = 18.5,
+                FileName = "Ti64_Standard_v3.sli",
+                LayerCount = 2800,
+                BuildHeightMm = 84.0,
+                EstimatedPowderKg = 12.5,
+                SlicerSoftware = "EOSPRINT 2",
+                SlicerVersion = "2.12.1",
+                BuildParameters = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    laserPower = 370,
+                    scanSpeed = 1200,
+                    layerThickness = 0.03,
+                    hatchSpacing = 0.12,
+                    contourCount = 2
+                }),
+                CertifiedBy = "System",
+                CertifiedDate = DateTime.UtcNow.AddDays(-7),
+                UseCount = 3,
+                LastUsedDate = DateTime.UtcNow.AddDays(-2),
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.BuildTemplates.Add(t1);
+            await db.SaveChangesAsync();
+
+            var positions = new List<object>();
+            var order = 0;
+            foreach (var part in tiParts)
+            {
+                db.BuildTemplateParts.Add(new BuildTemplatePart
+                {
+                    BuildTemplateId = t1.Id,
+                    PartId = part.Id,
+                    Quantity = 20,
+                    StackLevel = 1,
+                    PositionNotes = $"Row {order + 1}"
+                });
+                positions.Add(new { partId = part.Id, x = 25.0 + order * 45.0, y = 25.0, rotation = 0 });
+                order++;
+            }
+            t1.PartPositionsJson = System.Text.Json.JsonSerializer.Serialize(positions);
+            await db.SaveChangesAsync();
+
+            templates.Add(t1);
+        }
+
+        // Template 2: Draft 316L build (not yet certified)
+        if (ssParts.Count > 0)
+        {
+            var t2 = new BuildTemplate
+            {
+                Name = "316L Bracket Build",
+                Description = "316L stainless bracket plate — draft, pending slicer validation.",
+                Status = BuildTemplateStatus.Draft,
+                MaterialId = ssMaterial?.Id,
+                StackLevel = 1,
+                EstimatedDurationHours = 12.0,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.BuildTemplates.Add(t2);
+            await db.SaveChangesAsync();
+
+            foreach (var part in ssParts)
+            {
+                db.BuildTemplateParts.Add(new BuildTemplatePart
+                {
+                    BuildTemplateId = t2.Id,
+                    PartId = part.Id,
+                    Quantity = 30,
+                    StackLevel = 1
+                });
+            }
+            await db.SaveChangesAsync();
+
+            templates.Add(t2);
+        }
+
+        // Template 3: Double-stack Ti-6Al-4V for high-volume runs
+        if (tiParts.Count > 0 && m4Machine != null)
+        {
+            var t3 = new BuildTemplate
+            {
+                Name = "Ti64 Double-Stack High Volume",
+                Description = "Double-stacked Ti-6Al-4V build for maximum plate utilization.",
+                Status = BuildTemplateStatus.Certified,
+                MaterialId = tiMaterial?.Id,
+                StackLevel = 2,
+                EstimatedDurationHours = 32.0,
+                FileName = "Ti64_DoubleStack_v1.sli",
+                LayerCount = 4200,
+                BuildHeightMm = 126.0,
+                EstimatedPowderKg = 22.8,
+                SlicerSoftware = "EOSPRINT 2",
+                SlicerVersion = "2.12.1",
+                BuildParameters = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    laserPower = 370,
+                    scanSpeed = 1200,
+                    layerThickness = 0.03,
+                    hatchSpacing = 0.12,
+                    contourCount = 2,
+                    stackHeight2 = 63.0
+                }),
+                CertifiedBy = "System",
+                CertifiedDate = DateTime.UtcNow.AddDays(-3),
+                UseCount = 1,
+                LastUsedDate = DateTime.UtcNow.AddDays(-1),
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.BuildTemplates.Add(t3);
+            await db.SaveChangesAsync();
+
+            // Stack level 1
+            foreach (var part in tiParts)
+            {
+                db.BuildTemplateParts.Add(new BuildTemplatePart
+                {
+                    BuildTemplateId = t3.Id,
+                    PartId = part.Id,
+                    Quantity = 20,
+                    StackLevel = 1,
+                    PositionNotes = "Bottom layer"
+                });
+            }
+            // Stack level 2
+            foreach (var part in tiParts)
+            {
+                db.BuildTemplateParts.Add(new BuildTemplatePart
+                {
+                    BuildTemplateId = t3.Id,
+                    PartId = part.Id,
+                    Quantity = 20,
+                    StackLevel = 2,
+                    PositionNotes = "Top layer"
+                });
+            }
+            await db.SaveChangesAsync();
+
+            templates.Add(t3);
         }
     }
 

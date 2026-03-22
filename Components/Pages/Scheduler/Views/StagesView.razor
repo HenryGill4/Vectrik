@@ -1,6 +1,33 @@
-@* ── Stage Queue View ── *@
+@* ── Floor View (Stage Queues + My Work) ── *@
 @inject IStageService StageService
 @inject ToastService Toast
+
+@if (!string.IsNullOrEmpty(UserName) && _myWork.Any())
+{
+    <div class="card" style="margin-bottom: 12px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>👤 My Work — @UserName</span>
+            <span class="badge badge-accent">@_myWork.Count task(s)</span>
+        </div>
+        <div style="padding: 4px 0;">
+            @foreach (var exec in _myWork.OrderByDescending(e => e.Status == StageExecutionStatus.InProgress).ThenBy(e => e.ScheduledStartAt))
+            {
+                <div class="stage-queue-item @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item--active" : "")" style="padding: 6px 12px;">
+                    <span class="stage-queue-item-dot @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item-dot--active" : "")"></span>
+                    <span class="stage-queue-item-part">@(exec.ProductionStage?.Name ?? "—")</span>
+                    <span style="opacity: 0.7;">@(exec.Job?.Part?.PartNumber ?? (exec.BuildPackage?.Name ?? "—"))</span>
+                    <span class="badge badge-@(exec.Status.ToString().ToLower())">@exec.Status</span>
+                    <span class="stage-queue-item-hours">@(exec.EstimatedHours?.ToString("F1") ?? "—")h</span>
+                    @if (exec.ScheduledStartAt != null)
+                    {
+                        <span class="stage-queue-item-time">@exec.ScheduledStartAt.Value.ToString("MM/dd HH:mm")</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
 <div class="stage-queue-grid">
     @foreach (var stage in Stages.OrderBy(s => s.DisplayOrder))
     {
@@ -171,12 +198,19 @@
     [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
     [Parameter, EditorRequired] public List<ProductionStage> Stages { get; set; } = [];
     [Parameter] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public string? UserName { get; set; }
     [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
     private HashSet<int> _expandedStages = new();
     private const double ShiftHoursPerDay = 8.0;
+
+    private List<StageExecution> _myWork => Executions.Concat(Unscheduled)
+        .Where(e => !string.IsNullOrEmpty(e.OperatorName)
+            && e.OperatorName.Equals(UserName, StringComparison.OrdinalIgnoreCase)
+            && e.Status is StageExecutionStatus.NotStarted or StageExecutionStatus.InProgress)
+        .ToList();
 
     /// <summary>
     /// Resolves machines capable of executing a production stage using AssignedMachineIds

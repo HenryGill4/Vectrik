@@ -45,9 +45,11 @@ public class BuildSchedulingService : IBuildSchedulingService
             .FirstOrDefaultAsync(p => p.Id == buildPackageId)
             ?? throw new InvalidOperationException("Build package not found.");
 
-        if (package.Status != BuildPackageStatus.Ready && package.Status != BuildPackageStatus.Sliced)
-            throw new InvalidOperationException(
-                $"Build package must be in Ready or Sliced status to schedule. Current: {package.Status}");
+        #pragma warning disable CS0618 // Sliced is obsolete — needed for legacy packages
+                if (package.Status != BuildPackageStatus.Ready && package.Status != BuildPackageStatus.Sliced)
+                    throw new InvalidOperationException(
+                        $"Build package must be in Ready or Sliced status to schedule. Current: {package.Status}");
+        #pragma warning restore CS0618
 
         if (!package.IsSlicerDataEntered || !package.EstimatedDurationHours.HasValue)
             throw new InvalidOperationException("Slicer data must be entered before scheduling.");
@@ -159,6 +161,7 @@ public class BuildSchedulingService : IBuildSchedulingService
         var package = await _db.BuildPackages
             .Include(p => p.Parts)
             .Include(p => p.BuildFileInfo)
+            .Include(p => p.BuildTemplate)
             .FirstOrDefaultAsync(p => p.Id == buildPackageId)
             ?? throw new InvalidOperationException("Build package not found.");
 
@@ -180,7 +183,9 @@ public class BuildSchedulingService : IBuildSchedulingService
         }
 
         // Ensure the build package is marked as scheduled and locked
+#pragma warning disable CS0618 // Sliced is obsolete — needed for legacy packages
         if (package.Status is BuildPackageStatus.Ready or BuildPackageStatus.Sliced)
+#pragma warning restore CS0618
         {
             package.Status = BuildPackageStatus.Scheduled;
             package.IsLocked = true;
@@ -336,6 +341,7 @@ public class BuildSchedulingService : IBuildSchedulingService
         // Resolve the "build family" for same-build detection: a scheduled copy shares a
         // SourceBuildPackageId with other copies of the same build file. Runs created via
         // ScheduleBuildRunAsync reuse the same BuildPackageId directly.
+        // Also: packages sharing the same BuildTemplateId are the same build file.
         var sameBuildIds = new HashSet<int>();
         if (forBuildPackageId.HasValue)
         {
@@ -344,20 +350,20 @@ public class BuildSchedulingService : IBuildSchedulingService
             // If the incoming build is a copy, its siblings share the same source
             var sourceBp = await _db.BuildPackages
                 .Where(bp => bp.Id == forBuildPackageId.Value)
-                .Select(bp => bp.SourceBuildPackageId)
+                .Select(bp => new { bp.SourceBuildPackageId, bp.BuildTemplateId })
                 .FirstOrDefaultAsync();
 
-            if (sourceBp.HasValue)
+            if (sourceBp?.SourceBuildPackageId.HasValue == true)
             {
-                sameBuildIds.Add(sourceBp.Value);
+                sameBuildIds.Add(sourceBp.SourceBuildPackageId.Value);
                 // Also include all other copies from the same source
                 var siblingIds = await _db.BuildPackages
-                    .Where(bp => bp.SourceBuildPackageId == sourceBp.Value)
+                    .Where(bp => bp.SourceBuildPackageId == sourceBp.SourceBuildPackageId)
                     .Select(bp => bp.Id)
                     .ToListAsync();
                 foreach (var id in siblingIds) sameBuildIds.Add(id);
             }
-            else
+            else if (sourceBp != null)
             {
                 // The incoming build IS the source — include all its copies
                 var copyIds = await _db.BuildPackages
@@ -365,6 +371,17 @@ public class BuildSchedulingService : IBuildSchedulingService
                     .Select(bp => bp.Id)
                     .ToListAsync();
                 foreach (var id in copyIds) sameBuildIds.Add(id);
+            }
+
+            // Also include packages sharing the same BuildTemplate (same slicer file)
+            if (sourceBp?.BuildTemplateId.HasValue == true)
+            {
+                var templateSiblingIds = await _db.BuildPackages
+                    .Where(bp => bp.BuildTemplateId == sourceBp.BuildTemplateId
+                        && bp.Status != BuildPackageStatus.Cancelled)
+                    .Select(bp => bp.Id)
+                    .ToListAsync();
+                foreach (var id in templateSiblingIds) sameBuildIds.Add(id);
             }
         }
 
@@ -860,7 +877,11 @@ public class BuildSchedulingService : IBuildSchedulingService
             throw new InvalidOperationException("Cannot unlock a build that is currently printing or in post-print.");
 
         package.IsLocked = false;
-        package.Status = BuildPackageStatus.Draft;
+#pragma warning disable CS0618 // Draft is obsolete — needed for legacy packages without templates
+        package.Status = package.BuildTemplateId.HasValue
+            ? BuildPackageStatus.Ready
+            : BuildPackageStatus.Draft;
+#pragma warning restore CS0618
         package.ScheduledDate = null;
         package.PredecessorBuildPackageId = null;
         package.LastModifiedDate = DateTime.UtcNow;

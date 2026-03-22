@@ -21,8 +21,14 @@ public interface IBuildPlanningService
     Task<BuildPackagePart> AddPartToPackageAsync(int packageId, int partId, int quantity, int? workOrderLineId = null);
     Task<BuildPackagePart> UpdatePartInPackageAsync(int packagePartId, int quantity, int stackLevel, string? slicerNotes = null);
     Task RemovePartFromPackageAsync(int packagePartId);
+
+    [Obsolete("Use BuildTemplateService for slicer metadata. Kept for legacy BuildFileInfo reads.")]
     Task<BuildFileInfo?> GetBuildFileInfoAsync(int packageId);
+
+    [Obsolete("Use BuildTemplateService.UpdateSlicerMetadataAsync instead.")]
     Task<BuildFileInfo> SaveBuildFileInfoAsync(BuildFileInfo info);
+
+    [Obsolete("Use BuildTemplateService.UpdateSlicerMetadataAsync instead.")]
     Task<BuildFileInfo> GenerateSpoofBuildFileAsync(int packageId, string importedBy);
 
     // Build Plate Execution (CHUNK-09)

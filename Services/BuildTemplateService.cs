@@ -150,6 +150,36 @@ public class BuildTemplateService : IBuildTemplateService
         await _db.SaveChangesAsync();
     }
 
+    // ── Slicer Metadata ───────────────────────────────────────
+
+    public async Task<BuildTemplate> UpdateSlicerMetadataAsync(
+        int templateId, string? fileName, int? layerCount,
+        double? buildHeightMm, double? estimatedPowderKg, string? partPositionsJson,
+        string? slicerSoftware, string? slicerVersion)
+    {
+        var template = await _db.BuildTemplates.FindAsync(templateId)
+            ?? throw new InvalidOperationException($"BuildTemplate {templateId} not found.");
+
+        if (template.Status == BuildTemplateStatus.Archived)
+            throw new InvalidOperationException("Cannot modify an archived build file.");
+
+        template.FileName = fileName;
+        template.LayerCount = layerCount;
+        template.BuildHeightMm = buildHeightMm;
+        template.EstimatedPowderKg = estimatedPowderKg;
+        template.PartPositionsJson = partPositionsJson;
+        template.SlicerSoftware = slicerSoftware;
+        template.SlicerVersion = slicerVersion;
+
+        // Modifying slicer data invalidates certification
+        if (template.Status == BuildTemplateStatus.Certified)
+            template.NeedsRecertification = true;
+
+        template.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return template;
+    }
+
     // ── Certification ─────────────────────────────────────────
 
     public async Task<BuildTemplate> CertifyAsync(int templateId, string certifiedBy)
@@ -180,13 +210,14 @@ public class BuildTemplateService : IBuildTemplateService
         return template;
     }
 
-    public async Task<BuildTemplate> RecertifyAsync(int templateId, string certifiedBy)
+    public async Task<BuildTemplate> RecertifyAsync(int templateId, string certifiedBy, string? changeNotes = null)
     {
         if (string.IsNullOrWhiteSpace(certifiedBy))
             throw new ArgumentException("CertifiedBy is required.", nameof(certifiedBy));
 
         var template = await _db.BuildTemplates
             .Include(t => t.Parts).ThenInclude(p => p.Part)
+            .Include(t => t.Revisions)
             .FirstOrDefaultAsync(t => t.Id == templateId)
             ?? throw new InvalidOperationException($"BuildTemplate {templateId} not found.");
 
@@ -195,6 +226,33 @@ public class BuildTemplateService : IBuildTemplateService
 
         if (template.EstimatedDurationHours <= 0)
             throw new InvalidOperationException("Cannot recertify a template without a valid estimated duration.");
+
+        // Create a revision snapshot of the previous state before recertifying
+        var nextRevision = template.Revisions.Count > 0
+            ? template.Revisions.Max(r => r.RevisionNumber) + 1
+            : 1;
+
+        var partsSnapshot = System.Text.Json.JsonSerializer.Serialize(
+            template.Parts.Select(p => new { p.PartId, p.Quantity, p.StackLevel, p.PositionNotes }));
+
+        var slicerSnapshot = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            template.FileName, template.LayerCount, template.BuildHeightMm,
+            template.EstimatedPowderKg, template.EstimatedDurationHours,
+            template.SlicerSoftware, template.SlicerVersion
+        });
+
+        _db.BuildTemplateRevisions.Add(new BuildTemplateRevision
+        {
+            BuildTemplateId = template.Id,
+            RevisionNumber = nextRevision,
+            ChangedBy = certifiedBy,
+            ChangeNotes = changeNotes,
+            PartsSnapshotJson = partsSnapshot,
+            ParametersSnapshotJson = template.BuildParameters,
+            SlicerMetadataSnapshotJson = slicerSnapshot,
+            RevisionDate = DateTime.UtcNow
+        });
 
         var parts = template.Parts.Select(tp => tp.Part).ToList();
         template.PartVersionHash = ComputePartVersionHash(parts);
@@ -225,11 +283,13 @@ public class BuildTemplateService : IBuildTemplateService
         if (!template.IsCertified)
             throw new InvalidOperationException("Cannot instantiate a template that is not certified or needs recertification.");
 
+        #pragma warning disable CS0618 // Obsolete BuildPackageStatus values used for backward compat
         var buildPackage = new BuildPackage
         {
             Name = $"{template.Name} — {DateTime.UtcNow:MMdd-HHmm}",
             MachineId = machineId,
-            Status = BuildPackageStatus.Sliced,
+            BuildTemplateId = templateId,
+            Status = BuildPackageStatus.Ready,
             IsSlicerDataEntered = true,
             EstimatedDurationHours = template.EstimatedDurationHours,
             Material = template.Material?.Name,
@@ -239,6 +299,7 @@ public class BuildTemplateService : IBuildTemplateService
             CreatedDate = DateTime.UtcNow,
             LastModifiedDate = DateTime.UtcNow
         };
+        #pragma warning restore CS0618
 
         _db.BuildPackages.Add(buildPackage);
         await _db.SaveChangesAsync();
@@ -281,6 +342,7 @@ public class BuildTemplateService : IBuildTemplateService
 
         var build = await _db.BuildPackages
             .Include(b => b.Parts).ThenInclude(p => p.Part)
+            .Include(b => b.BuildFileInfo)
             .FirstOrDefaultAsync(b => b.Id == buildPackageId)
             ?? throw new InvalidOperationException($"BuildPackage {buildPackageId} not found.");
 
@@ -301,6 +363,18 @@ public class BuildTemplateService : IBuildTemplateService
             CreatedDate = DateTime.UtcNow,
             LastModifiedDate = DateTime.UtcNow
         };
+
+        // Copy slicer metadata from the build's BuildFileInfo (if present)
+        if (build.BuildFileInfo is { } bfi)
+        {
+            template.FileName = bfi.FileName;
+            template.LayerCount = bfi.LayerCount;
+            template.BuildHeightMm = bfi.BuildHeightMm.HasValue ? (double)bfi.BuildHeightMm.Value : null;
+            template.EstimatedPowderKg = bfi.EstimatedPowderKg.HasValue ? (double)bfi.EstimatedPowderKg.Value : null;
+            template.PartPositionsJson = bfi.PartPositionsJson;
+            template.SlicerSoftware = bfi.SlicerSoftware;
+            template.SlicerVersion = bfi.SlicerVersion;
+        }
 
         _db.BuildTemplates.Add(template);
         await _db.SaveChangesAsync();
@@ -376,5 +450,15 @@ public class BuildTemplateService : IBuildTemplateService
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexString(hashBytes)[..32];
+    }
+
+    // ── Revisions ─────────────────────────────────────────────
+
+    public async Task<List<BuildTemplateRevision>> GetRevisionsAsync(int templateId)
+    {
+        return await _db.BuildTemplateRevisions
+            .Where(r => r.BuildTemplateId == templateId)
+            .OrderByDescending(r => r.RevisionNumber)
+            .ToListAsync();
     }
 }

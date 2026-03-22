@@ -70,7 +70,7 @@
                         title="Show Printing builds">Printing</button>
             </div>
         }
-        else if (ViewMode == "orders")
+        else if (ViewMode == "demand")
         {
             <div class="sched-quick-filters">
                 <button class="btn btn-sm @(ShowOverdueOnly ? "btn-danger" : "btn-secondary")"
@@ -83,12 +83,11 @@
     </div>
     <div class="sched-controls-right">
         <div class="sched-view-toggle">
-            <button class="btn btn-sm @(ViewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("gantt"))'>📊 Machines</button>
-            <button class="btn btn-sm @(ViewMode == "builds" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("builds"))'>📦 SLS Builds</button>
-            <button class="btn btn-sm @(ViewMode == "orders" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("orders"))'>📋 Work Orders</button>
-            <button class="btn btn-sm @(ViewMode == "path" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("path"))'>🔀 Part Path</button>
-            <button class="btn btn-sm @(ViewMode == "stages" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("stages"))'>🔧 Stages</button>
-            <button class="btn btn-sm @(ViewMode == "table" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("table"))'>📋 Table</button>
+            <button class="btn btn-sm @(ViewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("gantt"))'>🏭 Production</button>
+            <button class="btn btn-sm @(ViewMode == "demand" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("demand"))'>📋 Demand</button>
+            <button class="btn btn-sm @(ViewMode == "builds" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("builds"))'>📦 Builds</button>
+            <button class="btn btn-sm @(ViewMode == "floor" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("floor"))'>🔧 Floor</button>
+            <button class="btn btn-sm @(ViewMode == "data" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("data"))'>📊 Data</button>
         </div>
         <button class="btn btn-secondary btn-sm" @onclick="OnManualRefresh" title="Refresh now">🔄</button>
         <button class="btn btn-sm @(AutoRefreshEnabled ? "btn-accent" : "btn-secondary")" @onclick="OnToggleAutoRefresh"
@@ -115,7 +114,7 @@
     [Parameter] public BuildPackageStatus? BuildStatusFilter { get; set; }
     [Parameter] public bool ShowOverdueOnly { get; set; }
 
-    private bool HasGanttViewport => ViewMode is "gantt" or "builds" or "path";
+    private bool HasGanttViewport => ViewMode is "gantt" or "builds" or "data";
 
     [Parameter] public EventCallback<string> OnViewModeChanged { get; set; }
     [Parameter] public EventCallback<int> OnShiftViewport { get; set; }

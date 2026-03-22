@@ -79,6 +79,7 @@
                 _jsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/gantt-viewport.js");
                 await InitJsAsync();
             }
+            catch (JSDisconnectedException) { }
             catch (ObjectDisposedException) { }
             return;
         }
@@ -146,6 +147,7 @@
             catch (JSDisconnectedException) { }
             catch (ObjectDisposedException) { }
             try { await _jsModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
             catch (ObjectDisposedException) { }
         }
         _dotNetRef?.Dispose();
@@ -207,6 +209,7 @@
         if (_jsModule != null)
         {
             try { await _jsModule.InvokeVoidAsync("applyZoom", newPph); }
+            catch (JSDisconnectedException) { return; }
             catch (ObjectDisposedException) { return; }
         }
 
@@ -223,6 +226,7 @@
         if (_jsModule != null)
         {
             try { await _jsModule.InvokeVoidAsync("applyZoom", newPph); }
+            catch (JSDisconnectedException) { return; }
             catch (ObjectDisposedException) { return; }
         }
 
@@ -234,6 +238,7 @@
     {
         if (_jsModule == null || _disposed) return;
         try { await _jsModule.InvokeVoidAsync("scrollToTime", time.ToString("o")); }
+        catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
     }
 
@@ -246,6 +251,7 @@
         var shiftHours = viewportHours * 0.5 * direction;
         var targetTime = _viewportStart.AddHours(viewportHours / 2 + shiftHours);
         try { await _jsModule.InvokeVoidAsync("scrollToTime", targetTime.ToString("o")); }
+        catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
     }
 
@@ -273,6 +279,7 @@
             await _jsModule.InvokeVoidAsync("updateDataRange",
                 DataRangeStart.ToString("o"), DataRangeEnd.ToString("o"), PixelsPerHour);
         }
+        catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
     }
 

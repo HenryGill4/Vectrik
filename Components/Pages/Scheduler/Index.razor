@@ -31,7 +31,7 @@
                  ShowConflictsOnly="_showConflictsOnly"
                  BuildStatusFilter="_buildStatusFilter"
                  ShowOverdueOnly="_showOverdueOnly"
-                 OnViewModeChanged="v => _viewMode = v"
+                 OnViewModeChanged="OnViewModeChangedAsync"
                  OnShiftViewport="ShiftViewportAsync"
                  OnScrollToNow="ScrollToNowAsync"
                  OnZoomIn="ZoomInAsync"
@@ -51,6 +51,17 @@
 }
 else if (_viewMode == "gantt")
 {
+    <KpiStrip Executions="_executions"
+              Unscheduled="_unscheduled"
+              Machines="_machines"
+              BuildPackages="_buildPackages"
+              WorkOrders="_workOrders" />
+    <ActionQueue Executions="_executions"
+                 Unscheduled="_unscheduled"
+                 BuildPackages="_buildPackages"
+                 WorkOrders="_workOrders"
+                 OnShowReschedule="ShowReschedule"
+                 OnAutoSchedule="AutoScheduleSingle" />
     <GanttView @ref="_ganttView"
                Executions="_executions"
                Unscheduled="_unscheduled"
@@ -87,7 +98,7 @@ else if (_viewMode == "builds")
                 OnViewportBoundsChanged="HandleViewportBoundsChanged"
                 OnDataRangeExtensionNeeded="ExtendDataRangeAsync" />
 }
-else if (_viewMode == "orders")
+else if (_viewMode == "demand")
 {
     <WorkOrdersView WorkOrders="_workOrders"
                      BuildTemplates="_buildTemplates"
@@ -99,39 +110,47 @@ else if (_viewMode == "orders")
                      ShowOverdueOnly="_showOverdueOnly"
                      OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
 }
-else if (_viewMode == "path")
-{
-    <PartPathView @ref="_partPathView"
-                  Executions="_executions"
-                  Unscheduled="_unscheduled"
-                  Parts="_parts"
-                  DataRangeStart="_dataRangeStart"
-                  DataRangeEnd="_dataRangeEnd"
-                  PixelsPerHour="_pixelsPerHour"
-                  OnShowReschedule="ShowReschedule"
-                  OnManualSchedule="ManualScheduleSingle"
-                  OnAutoSchedule="AutoScheduleSingle"
-                  OnPixelsPerHourChanged="HandlePixelsPerHourChanged"
-                  OnViewportBoundsChanged="HandleViewportBoundsChanged"
-                  OnDataRangeExtensionNeeded="ExtendDataRangeAsync" />
-}
-else if (_viewMode == "stages")
+else if (_viewMode == "floor")
 {
     <StagesView Executions="_executions"
                 Unscheduled="_unscheduled"
                 Stages="_stages"
                 Machines="_machines"
+                UserName="@_userName"
                 OnShowReschedule="ShowReschedule"
                 OnAutoSchedule="AutoScheduleSingle"
                 OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
 }
-else if (_viewMode == "table")
+else if (_viewMode == "data")
 {
-    <TableView Executions="_executions"
-               Unscheduled="_unscheduled"
-               OnShowReschedule="ShowReschedule"
-               OnAutoSchedule="AutoScheduleSingle"
-               OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
+    <div class="sched-data-toggle" style="margin-bottom: 8px;">
+        <button class="btn btn-sm @(_dataSubView == "table" ? "btn-primary" : "btn-secondary")" @onclick='() => _dataSubView = "table"'>📊 Table</button>
+        <button class="btn btn-sm @(_dataSubView == "path" ? "btn-primary" : "btn-secondary")" @onclick='() => _dataSubView = "path"'>🔀 Part Path</button>
+    </div>
+    @if (_dataSubView == "path")
+    {
+        <PartPathView @ref="_partPathView"
+                      Executions="_executions"
+                      Unscheduled="_unscheduled"
+                      Parts="_parts"
+                      DataRangeStart="_dataRangeStart"
+                      DataRangeEnd="_dataRangeEnd"
+                      PixelsPerHour="_pixelsPerHour"
+                      OnShowReschedule="ShowReschedule"
+                      OnManualSchedule="ManualScheduleSingle"
+                      OnAutoSchedule="AutoScheduleSingle"
+                      OnPixelsPerHourChanged="HandlePixelsPerHourChanged"
+                      OnViewportBoundsChanged="HandleViewportBoundsChanged"
+                      OnDataRangeExtensionNeeded="ExtendDataRangeAsync" />
+    }
+    else
+    {
+        <TableView Executions="_executions"
+                   Unscheduled="_unscheduled"
+                   OnShowReschedule="ShowReschedule"
+                   OnAutoSchedule="AutoScheduleSingle"
+                   OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
+    }
 }
 </div>
 </div>
@@ -184,6 +203,7 @@ else if (_viewMode == "table")
     private GanttView? _ganttView;
     private BuildsView? _buildsView;
     private PartPathView? _partPathView;
+    private string _dataSubView = "table";
     private double _pixelsPerHour = 6.0;
     private DateTime _viewportStart = DateTime.UtcNow.Date;
     private DateTime _viewportEnd = DateTime.UtcNow.Date.AddDays(14);
@@ -192,6 +212,9 @@ else if (_viewMode == "table")
 
     // Configurable settings (loaded from SystemSettings)
     private int _autoRefreshSeconds = 30;
+
+    // Tab data staleness tracking: last time each tab's data was loaded
+    private readonly Dictionary<string, DateTime> _tabLastLoaded = new();
 
     private bool _showCreate;
     private bool _showReschedule;
@@ -209,7 +232,16 @@ else if (_viewMode == "table")
     protected override async Task OnInitializedAsync()
     {
         if (!string.IsNullOrEmpty(ViewParam))
-            _viewMode = ViewParam;
+        {
+            // Map legacy tab names to new names for backward compatibility
+            _viewMode = ViewParam switch
+            {
+                "orders" => "demand",
+                "stages" => "floor",
+                "table" or "path" => "data",
+                _ => ViewParam
+            };
+        }
 
         if (AuthState != null)
         {
@@ -222,7 +254,6 @@ else if (_viewMode == "table")
             _parts = await PartService.GetAllPartsAsync();
             _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
             _stages = await StageService.GetAllStagesAsync(activeOnly: true);
-            _buildPackages = await BuildPlanning.GetAllPackagesAsync();
             await LoadData();
             StartAutoRefreshTimer();
         }
@@ -237,7 +268,6 @@ else if (_viewMode == "table")
     {
         if (isBackgroundRefresh)
         {
-            // Background refresh: keep Gantt DOM alive, save JS viewport state
             _refreshing = true;
             if (ActiveViewport != null)
             {
@@ -251,15 +281,11 @@ else if (_viewMode == "table")
         StateHasChanged();
         try
         {
-            _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
-            _unscheduled = await StageService.GetUnscheduledExecutionsAsync();
-            _buildPackages = await BuildPlanning.GetAllPackagesAsync();
-            _workOrders = await WorkOrderService.GetWorkOrdersByStatusesAsync(WorkOrderStatus.Released, WorkOrderStatus.InProgress);
-            _buildTemplates = await BuildTemplateService.GetAllAsync(BuildTemplateStatus.Certified);
-            _suggestions = await BuildSuggestionService.GetSuggestionsAsync();
-            await LoadMachineTimelinesAsync();
+            // Shared data needed by toolbar (auto-schedule count, ready builds)
+            await LoadSharedDataAsync();
+            // Only load data for the active tab
+            await LoadActiveTabDataAsync();
 
-            // After data loads, request a viewport reinit on next render
             _ganttView?.Viewport?.RequestReinit();
             _buildsView?.Viewport?.RequestReinit();
             _partPathView?.Viewport?.RequestReinit();
@@ -316,6 +342,80 @@ else if (_viewMode == "table")
         catch
         {
             // Use defaults if settings can't be loaded
+        }
+    }
+
+    /// <summary>Loads data shared across all tabs (toolbar state: unscheduled count, build packages).</summary>
+    private async Task LoadSharedDataAsync()
+    {
+        _buildPackages = await BuildPlanning.GetAllPackagesAsync();
+        _unscheduled = await StageService.GetUnscheduledExecutionsAsync();
+    }
+
+    /// <summary>Loads data specific to the active tab only.</summary>
+    private async Task LoadActiveTabDataAsync()
+    {
+        switch (_viewMode)
+        {
+            case "gantt":
+                await LoadProductionDataAsync();
+                break;
+            case "builds":
+                await LoadBuildsDataAsync();
+                break;
+            case "demand":
+                await LoadDemandDataAsync();
+                break;
+            case "floor":
+                await LoadFloorDataAsync();
+                break;
+            case "data":
+                await LoadDataViewAsync();
+                break;
+        }
+        _tabLastLoaded[_viewMode] = DateTime.UtcNow;
+    }
+
+    private async Task LoadProductionDataAsync()
+    {
+        _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
+        _workOrders = await WorkOrderService.GetWorkOrdersByStatusesAsync(WorkOrderStatus.Released, WorkOrderStatus.InProgress);
+        await LoadMachineTimelinesAsync();
+    }
+
+    private async Task LoadDemandDataAsync()
+    {
+        _workOrders = await WorkOrderService.GetWorkOrdersByStatusesAsync(WorkOrderStatus.Released, WorkOrderStatus.InProgress);
+        _buildTemplates = await BuildTemplateService.GetAllAsync(BuildTemplateStatus.Certified);
+        _suggestions = await BuildSuggestionService.GetSuggestionsAsync();
+    }
+
+    private async Task LoadBuildsDataAsync()
+    {
+        _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
+        await LoadMachineTimelinesAsync();
+    }
+
+    private async Task LoadFloorDataAsync()
+    {
+        _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
+    }
+
+    private async Task LoadDataViewAsync()
+    {
+        _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
+    }
+
+    private async Task OnViewModeChangedAsync(string newMode)
+    {
+        if (_viewMode == newMode) return;
+        _viewMode = newMode;
+
+        // Load data for the new tab if stale or never loaded
+        if (!_tabLastLoaded.TryGetValue(newMode, out var lastLoaded)
+            || (DateTime.UtcNow - lastLoaded).TotalSeconds > _autoRefreshSeconds)
+        {
+            await LoadData(isBackgroundRefresh: true);
         }
     }
 
@@ -407,7 +507,7 @@ else if (_viewMode == "table")
     {
         "gantt" => _ganttView?.Viewport,
         "builds" => _buildsView?.Viewport,
-        "path" => _partPathView?.Viewport,
+        "data" => _dataSubView == "path" ? _partPathView?.Viewport : null,
         _ => null
     };
 

@@ -124,6 +124,7 @@ public class TenantDbContext : DbContext
     // Build Templates (Scheduler Overhaul Phase A)
     public DbSet<BuildTemplate> BuildTemplates { get; set; }
     public DbSet<BuildTemplatePart> BuildTemplateParts { get; set; }
+    public DbSet<BuildTemplateRevision> BuildTemplateRevisions { get; set; }
 
     // Dev Issue Tracking
     public DbSet<DevIssue> DevIssues { get; set; }
@@ -198,6 +199,18 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.MachineId)
                 .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.BuildTemplate)
+                .WithMany()
+                .HasForeignKey(e => e.BuildTemplateId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // BuildTemplateRevision
+        modelBuilder.Entity<BuildTemplateRevision>(entity =>
+        {
+            entity.HasOne(e => e.BuildTemplate)
+                .WithMany(e => e.Revisions)
+                .HasForeignKey(e => e.BuildTemplateId);
         });
 
         // Part

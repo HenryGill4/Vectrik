@@ -27,9 +27,11 @@ public enum BuildJobStatus
 
 public enum BuildPackageStatus
 {
+    [Obsolete("Build file drafting now happens on BuildTemplate. Existing Draft packages should be migrated to Ready.")]
     Draft,          // Parts being assembled onto plate
+    [Obsolete("Slicer data now lives on BuildTemplate. Existing Sliced packages should be migrated to Ready.")]
     Sliced,         // Slicer data entered (duration, actual counts)
-    Ready,          // Approved for scheduling
+    Ready,          // Approved for scheduling (created from certified template)
     Scheduled,      // Assigned to machine + time slot
     Printing,       // Actively printing on machine
     PostPrint,      // Plate off printer, going through post-print stages

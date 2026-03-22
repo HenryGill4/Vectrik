@@ -59,6 +59,11 @@ public class BuildPackage
     /// </summary>
     public int? SourceBuildPackageId { get; set; }
 
+    /// <summary>
+    /// FK to the certified Build File (template) this run was created from.
+    /// </summary>
+    public int? BuildTemplateId { get; set; }
+
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
 
@@ -76,6 +81,7 @@ public class BuildPackage
     public virtual Job? ScheduledJob { get; set; }
     public virtual BuildPackage? PredecessorBuildPackage { get; set; }
     public virtual BuildPackage? SourceBuildPackage { get; set; }
+    public virtual BuildTemplate? BuildTemplate { get; set; }
 
     // Computed
     [NotMapped]

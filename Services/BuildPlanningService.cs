@@ -32,6 +32,7 @@ public class BuildPlanningService : IBuildPlanningService
     {
         return await _db.BuildPackages
             .Include(p => p.Machine)
+            .Include(p => p.BuildTemplate)
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.Part)
                     .ThenInclude(part => part.AdditiveBuildConfig)
@@ -54,6 +55,7 @@ public class BuildPlanningService : IBuildPlanningService
     {
         return await _db.BuildPackages
             .Include(p => p.Machine)
+            .Include(p => p.BuildTemplate)
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.Part)
             .Where(p => p.Parts.Any(pp => pp.PartId == partId))
@@ -65,6 +67,7 @@ public class BuildPlanningService : IBuildPlanningService
     {
         return await _db.BuildPackages
             .Include(p => p.Machine)
+            .Include(p => p.BuildTemplate)
             .Include(p => p.Parts)
                 .ThenInclude(pp => pp.Part)
             .Include(p => p.Parts)
@@ -183,17 +186,19 @@ public class BuildPlanningService : IBuildPlanningService
             copyNumber++;
         } while (existingNames.Contains(newName));
 
+        #pragma warning disable CS0618 // Draft/Sliced are obsolete — needed for legacy source packages
         var clone = new BuildPackage
         {
             Name = newName,
             Description = source.Description,
             MachineId = source.MachineId,
-            Status = BuildPackageStatus.Draft,
+            Status = source.BuildTemplateId.HasValue ? BuildPackageStatus.Ready : BuildPackageStatus.Draft,
             Material = source.Material,
             EstimatedDurationHours = source.EstimatedDurationHours,
             Notes = source.Notes,
             IsSlicerDataEntered = source.IsSlicerDataEntered,
             BuildParameters = source.BuildParameters,
+            BuildTemplateId = source.BuildTemplateId,
             SourceBuildPackageId = source.SourceBuildPackageId ?? source.Id,
             CreatedBy = createdBy,
             LastModifiedBy = createdBy,
@@ -201,9 +206,10 @@ public class BuildPlanningService : IBuildPlanningService
             LastModifiedDate = DateTime.UtcNow
         };
 
-        // If source had slicer data, the copy starts as Sliced so it's ready to schedule faster
-        if (source.IsSlicerDataEntered)
+        // Legacy path: source has slicer data but no template
+        if (!source.BuildTemplateId.HasValue && source.IsSlicerDataEntered)
             clone.Status = BuildPackageStatus.Sliced;
+#pragma warning restore CS0618
 
         _db.BuildPackages.Add(clone);
         await _db.SaveChangesAsync();
@@ -390,12 +396,18 @@ public class BuildPlanningService : IBuildPlanningService
         var package = await _db.BuildPackages
             .Include(p => p.Parts)
             .Include(p => p.BuildFileInfo)
+            .Include(p => p.BuildTemplate)
             .FirstOrDefaultAsync(p => p.Id == buildPackageId);
 
-        if (package?.BuildFileInfo?.EstimatedPrintTimeHours == null) return;
+        // Resolve print hours: BuildTemplate (new) → BuildFileInfo (legacy) → bail
+        var printHours = package?.BuildTemplate?.EstimatedDurationHours
+            ?? (package?.BuildFileInfo?.EstimatedPrintTimeHours.HasValue == true
+                ? (double)package.BuildFileInfo.EstimatedPrintTimeHours.Value
+                : (double?)null);
 
-        var printHours = (double)package.BuildFileInfo.EstimatedPrintTimeHours.Value;
-        package.EstimatedDurationHours = printHours;
+        if (printHours == null) return;
+
+        package!.EstimatedDurationHours = printHours.Value;
         package.LastModifiedDate = DateTime.UtcNow;
 
         // Update any linked SLS printing stage execution with new duration
@@ -424,6 +436,7 @@ public class BuildPlanningService : IBuildPlanningService
     {
         var package = await _db.BuildPackages
             .Include(p => p.BuildFileInfo)
+            .Include(p => p.BuildTemplate)
             .Include(p => p.ScheduledJob)
             .Include(p => p.Parts)
             .FirstOrDefaultAsync(p => p.Id == buildPackageId);
@@ -507,8 +520,11 @@ public class BuildPlanningService : IBuildPlanningService
         foreach (var processStage in buildStages)
         {
             // Calculate duration using compound duration model
+            // Resolve build config hours: BuildTemplate (new) → BuildFileInfo (legacy) → package estimate
             double? buildConfigHours = processStage.DurationFromBuildConfig
-                ? (double?)(package.BuildFileInfo?.EstimatedPrintTimeHours) ?? package.EstimatedDurationHours
+                ? package.BuildTemplate?.EstimatedDurationHours
+                    ?? (double?)(package.BuildFileInfo?.EstimatedPrintTimeHours)
+                    ?? package.EstimatedDurationHours
                 : null;
 
             var durationResult = _processService.CalculateStageDuration(

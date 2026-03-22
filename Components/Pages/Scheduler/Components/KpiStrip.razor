@@ -1,0 +1,102 @@
+@* ── KPI Strip: at-a-glance production metrics for the scheduler ── *@
+
+<div class="sched-kpi-strip">
+    <div class="sched-kpi" title="Stage executions currently in progress">
+        <span class="sched-kpi-value">@InProgressCount</span>
+        <span class="sched-kpi-label">In Progress</span>
+    </div>
+    <div class="sched-kpi @(DueTodayCount > 0 ? "sched-kpi--warning" : "")" title="Work orders due today">
+        <span class="sched-kpi-value">@DueTodayCount</span>
+        <span class="sched-kpi-label">Due Today</span>
+    </div>
+    <div class="sched-kpi @(OverdueCount > 0 ? "sched-kpi--danger" : "")" title="Work orders past due date with outstanding parts">
+        <span class="sched-kpi-value">@OverdueCount</span>
+        <span class="sched-kpi-label">Overdue</span>
+    </div>
+    <div class="sched-kpi" title="Percentage of machines currently occupied">
+        <span class="sched-kpi-value">@Utilization.ToString("F0")%</span>
+        <span class="sched-kpi-label">Utilization</span>
+    </div>
+    <div class="sched-kpi @(UnassignedCount > 0 ? "sched-kpi--warning" : "")" title="Scheduled executions with no machine assigned">
+        <span class="sched-kpi-value">@UnassignedCount</span>
+        <span class="sched-kpi-label">Unassigned</span>
+    </div>
+    <div class="sched-kpi" title="Active builds (Scheduled, Printing, or PostPrint)">
+        <span class="sched-kpi-value">@ActiveBuildsCount</span>
+        <span class="sched-kpi-label">Builds Active</span>
+    </div>
+    @if (ConflictCount > 0)
+    {
+        <div class="sched-kpi sched-kpi--danger" title="Overlapping executions on the same machine">
+            <span class="sched-kpi-value">@ConflictCount</span>
+            <span class="sched-kpi-label">Conflicts</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<StageExecution> Executions { get; set; } = [];
+    [Parameter] public List<StageExecution> Unscheduled { get; set; } = [];
+    [Parameter] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
+    [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
+
+    private int InProgressCount => Executions.Count(e => e.Status == StageExecutionStatus.InProgress);
+
+    private int DueTodayCount
+    {
+        get
+        {
+            var today = DateTime.UtcNow.Date;
+            return WorkOrders.Count(w => w.DueDate.Date == today);
+        }
+    }
+
+    private int OverdueCount
+    {
+        get
+        {
+            var today = DateTime.UtcNow.Date;
+            return WorkOrders.Count(w => w.DueDate.Date < today
+                && w.Lines.Any(l => l.Quantity > l.ProducedQuantity));
+        }
+    }
+
+    private double Utilization
+    {
+        get
+        {
+            var schedulable = Machines.Count(m => m.IsAvailableForScheduling);
+            if (schedulable == 0) return 0;
+            var occupied = Machines.Count(m => m.IsAvailableForScheduling
+                && Executions.Any(e => e.MachineId == m.Id && e.Status == StageExecutionStatus.InProgress));
+            return occupied * 100.0 / schedulable;
+        }
+    }
+
+    private int UnassignedCount => Unscheduled.Count;
+
+    private int ActiveBuildsCount => BuildPackages.Count(b =>
+        b.Status is BuildPackageStatus.Scheduled or BuildPackageStatus.Printing or BuildPackageStatus.PostPrint);
+
+    private int ConflictCount
+    {
+        get
+        {
+            var count = 0;
+            var byMachine = Executions
+                .Where(e => e.MachineId.HasValue && e.ScheduledStartAt.HasValue && e.ScheduledEndAt.HasValue)
+                .GroupBy(e => e.MachineId!.Value);
+            foreach (var group in byMachine)
+            {
+                var sorted = group.OrderBy(e => e.ScheduledStartAt).ToList();
+                for (int i = 0; i < sorted.Count - 1; i++)
+                {
+                    if (sorted[i].ScheduledEndAt > sorted[i + 1].ScheduledStartAt)
+                        count++;
+                }
+            }
+            return count;
+        }
+    }
+}

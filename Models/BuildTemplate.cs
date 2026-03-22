@@ -32,6 +32,27 @@ public class BuildTemplate
     /// </summary>
     public string? BuildParameters { get; set; }
 
+    // Slicer output metadata (the build file IS the slicer output)
+
+    /// <summary>Slicer output file name (e.g. "MyBuild_v3.sli").</summary>
+    [MaxLength(200)]
+    public string? FileName { get; set; }
+
+    public int? LayerCount { get; set; }
+
+    public double? BuildHeightMm { get; set; }
+
+    public double? EstimatedPowderKg { get; set; }
+
+    /// <summary>JSON: per-part positions on the build plate.</summary>
+    public string? PartPositionsJson { get; set; }
+
+    [MaxLength(100)]
+    public string? SlicerSoftware { get; set; }
+
+    [MaxLength(50)]
+    public string? SlicerVersion { get; set; }
+
     // Certification
     [MaxLength(100)]
     public string? CertifiedBy { get; set; }
@@ -67,6 +88,7 @@ public class BuildTemplate
 
     // Navigation
     public virtual ICollection<BuildTemplatePart> Parts { get; set; } = new List<BuildTemplatePart>();
+    public virtual ICollection<BuildTemplateRevision> Revisions { get; set; } = new List<BuildTemplateRevision>();
 
     // Computed
     [NotMapped]

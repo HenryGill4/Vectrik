@@ -228,6 +228,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<string>("BuildParameters")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("BuildTemplateId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -300,6 +303,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BuildTemplateId");
 
                     b.HasIndex("MachineId");
 
@@ -396,6 +401,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<double?>("BuildHeightMm")
+                        .HasColumnType("REAL");
+
                     b.Property<string>("BuildParameters")
                         .HasColumnType("TEXT");
 
@@ -421,6 +429,13 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<double>("EstimatedDurationHours")
                         .HasColumnType("REAL");
 
+                    b.Property<double?>("EstimatedPowderKg")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("LastModifiedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -431,6 +446,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
                     b.Property<DateTime?>("LastUsedDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("LayerCount")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("MaterialId")
                         .HasColumnType("INTEGER");
@@ -443,8 +461,19 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<bool>("NeedsRecertification")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("PartPositionsJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("PartVersionHash")
                         .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlicerSoftware")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlicerVersion")
+                        .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("SourceBuildPackageId")
@@ -499,6 +528,47 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("BuildTemplateId", "PartId");
 
                     b.ToTable("BuildTemplateParts");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplateRevision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BuildTemplateId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ChangeNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ParametersSnapshotJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PartsSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("RevisionDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SlicerMetadataSnapshotJson")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BuildTemplateId");
+
+                    b.ToTable("BuildTemplateRevisions");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.CorrectiveAction", b =>
@@ -4888,6 +4958,11 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
             modelBuilder.Entity("Opcentrix_V3.Models.BuildPackage", b =>
                 {
+                    b.HasOne("Opcentrix_V3.Models.BuildTemplate", "BuildTemplate")
+                        .WithMany()
+                        .HasForeignKey("BuildTemplateId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Opcentrix_V3.Models.Machine", "Machine")
                         .WithMany()
                         .HasForeignKey("MachineId")
@@ -4905,6 +4980,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasOne("Opcentrix_V3.Models.BuildPackage", "SourceBuildPackage")
                         .WithMany()
                         .HasForeignKey("SourceBuildPackageId");
+
+                    b.Navigation("BuildTemplate");
 
                     b.Navigation("Machine");
 
@@ -4985,6 +5062,17 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("BuildTemplate");
 
                     b.Navigation("Part");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplateRevision", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.BuildTemplate", "BuildTemplate")
+                        .WithMany("Revisions")
+                        .HasForeignKey("BuildTemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BuildTemplate");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.DelayLog", b =>
@@ -5950,6 +6038,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
             modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplate", b =>
                 {
                     b.Navigation("Parts");
+
+                    b.Navigation("Revisions");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.InspectionPlan", b =>
