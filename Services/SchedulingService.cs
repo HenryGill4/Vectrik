@@ -16,6 +16,18 @@ public class SchedulingService : ISchedulingService
 
     public async Task AutoScheduleJobAsync(int jobId, DateTime? startAfter = null)
     {
+        await AutoScheduleJobCoreAsync(jobId, startAfter, diagnostics: null);
+    }
+
+    public async Task<JobScheduleDiagnostic> AutoScheduleJobWithDiagnosticsAsync(int jobId, DateTime? startAfter = null)
+    {
+        var diag = new JobScheduleDiagnostic();
+        await AutoScheduleJobCoreAsync(jobId, startAfter, diag);
+        return diag;
+    }
+
+    private async Task AutoScheduleJobCoreAsync(int jobId, DateTime? startAfter, JobScheduleDiagnostic? diagnostics)
+    {
         var job = await _db.Jobs
             .Include(j => j.Stages).ThenInclude(s => s.ProductionStage)
             .Include(j => j.Stages).ThenInclude(s => s.ProcessStage)
@@ -24,13 +36,28 @@ public class SchedulingService : ISchedulingService
 
         if (job == null) throw new InvalidOperationException("Job not found.");
 
+        if (diagnostics is not null)
+        {
+            diagnostics = diagnostics with
+            {
+                JobId = job.Id,
+                JobNumber = job.JobNumber,
+                Scope = job.Scope.ToString(),
+                PartNumber = job.Part?.PartNumber ?? "Unknown"
+            };
+        }
+
         var executions = job.Stages.OrderBy(s => s.SortOrder).ToList();
         if (!executions.Any()) return;
+
+        if (diagnostics is not null)
+            diagnostics = diagnostics with { ExecutionCount = executions.Count };
 
         var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
         var allMachines = await _db.Machines
             .Where(m => m.IsActive && m.IsAvailableForScheduling)
             .ToListAsync();
+        var machineNames = allMachines.ToDictionary(m => m.Id, m => m.Name ?? m.MachineId);
 
         // Load part stage requirements for machine preference resolution (legacy fallback)
         var routing = await _db.PartStageRequirements
@@ -85,6 +112,17 @@ public class SchedulingService : ISchedulingService
             // Get capable machines, ordered by preference (ProcessStage takes priority over PartStageRequirement)
             var capableMachines = ResolveMachines(exec.ProductionStage, requirement, exec.ProcessStage, allMachines);
 
+            var execDiag = diagnostics is not null ? new ExecutionScheduleDiagnostic
+            {
+                ExecutionId = exec.Id,
+                StageName = exec.ProductionStage.Name,
+                SortOrder = exec.SortOrder,
+                TotalDurationHours = totalDuration,
+                CursorBefore = cursor,
+                CandidateMachines = capableMachines.Select(m => m.Name ?? m.MachineId).ToList(),
+                MachineResolutionPath = DescribeMachineResolutionPath(exec.ProcessStage, requirement, exec.ProductionStage, capableMachines)
+            } : null;
+
             if (!capableMachines.Any())
             {
                 // No machine available — schedule without machine assignment
@@ -94,6 +132,19 @@ public class SchedulingService : ISchedulingService
                 exec.ScheduledEndAt = slotEnd;
                 exec.MachineId = null;
                 exec.LastModifiedDate = DateTime.UtcNow;
+
+                if (execDiag is not null)
+                {
+                    execDiag = execDiag with
+                    {
+                        ScheduledStart = slotStart,
+                        ScheduledEnd = slotEnd,
+                        CursorAfter = slotEnd,
+                        Issues = ["No capable machines found — scheduled as Unassigned"]
+                    };
+                    diagnostics!.Executions.Add(execDiag);
+                }
+
                 cursor = slotEnd;
                 continue;
             }
@@ -114,6 +165,19 @@ public class SchedulingService : ISchedulingService
             exec.ScheduledEndAt = bestSlot.End;
             exec.MachineId = bestSlot.MachineId;
             exec.LastModifiedDate = DateTime.UtcNow;
+
+            if (execDiag is not null)
+            {
+                execDiag = execDiag with
+                {
+                    AssignedMachineId = bestSlot.MachineId,
+                    AssignedMachineName = machineNames.GetValueOrDefault(bestSlot.MachineId, "Unknown"),
+                    ScheduledStart = bestSlot.Start,
+                    ScheduledEnd = bestSlot.End,
+                    CursorAfter = bestSlot.End
+                };
+                diagnostics!.Executions.Add(execDiag);
+            }
 
             // Next stage can't start before this one ends (sequential within job)
             cursor = bestSlot.End;
@@ -385,22 +449,55 @@ public class SchedulingService : ISchedulingService
             ? allMachines.Where(m => !m.IsAdditiveMachine).ToList()
             : allMachines;
 
-        // 8. If still nothing, and stage doesn't require machine, use fallback machines
-        if (!result.Any() && !stage.RequiresMachineAssignment)
-        {
-            result.AddRange(fallbackMachines.OrderBy(m => m.Priority));
-        }
-
-        // 9. If stage requires assignment but nothing found, return whatever is capable
+        // 8. If stage requires assignment and nothing found, restrict to assigned machines only
         if (!result.Any() && stage.RequiresMachineAssignment)
         {
             var capableIntIds = stage.GetAssignedMachineIntIds();
-            result.AddRange(fallbackMachines
-                .Where(m => capableIntIds.Count == 0 || capableIntIds.Contains(m.Id))
-                .OrderBy(m => m.Priority));
+            if (capableIntIds.Count > 0)
+            {
+                result.AddRange(fallbackMachines
+                    .Where(m => capableIntIds.Contains(m.Id))
+                    .OrderBy(m => m.Priority));
+            }
         }
 
+        // 9. If still nothing — return empty so execution is scheduled as "Unassigned".
+        // This prevents wrong-machine assignments (e.g., Laser Engraving on Depowder).
+        // Operators or admins assign machines manually, or configure the stage properly.
+
         return result;
+    }
+
+    /// <summary>
+    /// Describes which resolution step produced the machine list, for diagnostics.
+    /// </summary>
+    private static string DescribeMachineResolutionPath(
+        ProcessStage? processStage, PartStageRequirement? requirement, ProductionStage stage, List<Machine> resolved)
+    {
+        if (!resolved.Any())
+            return "No machines resolved (steps 1-8 all empty)";
+
+        var steps = new List<string>();
+        if (processStage is { AssignedMachineId: not null, RequiresSpecificMachine: true })
+            steps.Add("Step1:ProcessStage-Required");
+        if (processStage is not null && !string.IsNullOrEmpty(processStage.PreferredMachineIds))
+            steps.Add("Step2:ProcessStage-Preferred");
+        if (processStage is { AssignedMachineId: not null, RequiresSpecificMachine: false })
+            steps.Add("Step3:ProcessStage-Assigned");
+        if (requirement is { RequiresSpecificMachine: true } && !string.IsNullOrEmpty(requirement.AssignedMachineId))
+            steps.Add("Step4:Legacy-Required");
+        if (requirement is not null && !string.IsNullOrEmpty(requirement.PreferredMachineIds))
+            steps.Add("Step5:Legacy-Preferred");
+        if (stage.GetAssignedMachineIntIds().Count > 0)
+            steps.Add("Step6:ProductionStage-Assigned");
+        if (!string.IsNullOrEmpty(stage.DefaultMachineId))
+            steps.Add("Step7:ProductionStage-Default");
+        if (stage.RequiresMachineAssignment)
+            steps.Add("Step8:RequiresAssignment-Fallback");
+
+        return steps.Count > 0
+            ? string.Join(" → ", steps)
+            : "Resolved via unknown path";
     }
 
     private static DateTime SnapToNextShiftStart(DateTime from, List<OperatingShift> shifts)
@@ -575,5 +672,19 @@ public class SchedulingService : ISchedulingService
         await _db.SaveChangesAsync();
 
         return new DataDeleteResult(execCount, jobCount, buildCount, instanceCount, batchCount);
+    }
+
+    public async Task<DatabaseStats> GetDatabaseStatsAsync()
+    {
+        return new DatabaseStats(
+            Machines: await _db.Machines.CountAsync(),
+            ProductionStages: await _db.ProductionStages.CountAsync(),
+            ManufacturingProcesses: await _db.ManufacturingProcesses.CountAsync(),
+            Parts: await _db.Parts.CountAsync(),
+            Jobs: await _db.Jobs.CountAsync(),
+            StageExecutions: await _db.StageExecutions.CountAsync(),
+            BuildPackages: await _db.BuildPackages.CountAsync(),
+            ProductionBatches: await _db.ProductionBatches.CountAsync(),
+            WorkOrders: await _db.WorkOrders.CountAsync());
     }
 }

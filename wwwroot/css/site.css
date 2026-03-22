@@ -2100,6 +2100,28 @@ select.form-control {
     50% { opacity: 0.8; }
 }
 
+/* Changeover conflict: pulsing amber border + stripe overlay */
+.gantt-changeover-conflict {
+    border-left-color: #F59E0B !important;
+    border-left-width: 5px;
+    animation: gantt-conflict-pulse 1.5s ease-in-out infinite;
+    background-image: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 6px,
+        rgba(245, 158, 11, 0.25) 6px,
+        rgba(245, 158, 11, 0.25) 12px
+    );
+}
+@keyframes gantt-conflict-pulse {
+    0%, 100% { opacity: 0.55; border-left-color: #F59E0B; }
+    50% { opacity: 0.85; border-left-color: #D97706; }
+}
+.gantt-conflict-icon {
+    margin-right: 2px;
+    font-size: 0.75rem;
+}
+
 /* ── Gantt Legend ── */
 .gantt-legend {
     display: flex;
@@ -4763,6 +4785,196 @@ select.form-control {
     flex-wrap: wrap;
     font-size: 0.8rem;
     color: var(--text-secondary);
+}
+
+/* ── Schedule Diagnostic Report ── */
+.schedule-diag {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--info);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.schedule-diag-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    background: var(--bg-secondary);
+    transition: background var(--transition-fast);
+}
+
+.schedule-diag-header:hover {
+    background: var(--bg-tertiary);
+}
+
+.schedule-diag-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.schedule-diag-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+.schedule-diag-chevron {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    transition: transform var(--transition-fast);
+}
+
+.schedule-diag-chevron--open {
+    transform: rotate(90deg);
+}
+
+.schedule-diag-body {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.schedule-diag-warning {
+    padding: 6px 10px;
+    background: rgba(var(--warning-rgb), 0.1);
+    border-left: 3px solid var(--warning);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+.schedule-diag-run {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.schedule-diag-run-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+    background: var(--bg-secondary);
+    font-size: 0.82rem;
+    transition: background var(--transition-fast);
+}
+
+.schedule-diag-run-header:hover {
+    background: var(--bg-tertiary);
+}
+
+.schedule-diag-meta {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    flex: 1;
+}
+
+.schedule-diag-slot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    background: rgba(var(--accent-rgb), 0.05);
+}
+
+.schedule-diag-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.schedule-diag-job {
+    padding: 8px 12px;
+}
+
+.schedule-diag-job-header {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+.schedule-diag-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.schedule-diag-table th {
+    text-align: left;
+    padding: 5px 8px;
+    border-bottom: 2px solid var(--border);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.schedule-diag-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+    vertical-align: top;
+}
+
+.schedule-diag-table tr:hover td {
+    background: var(--table-hover);
+}
+
+.schedule-diag-row--unassigned td {
+    background: rgba(var(--danger-rgb), 0.06);
+}
+
+.schedule-diag-row--unassigned:hover td {
+    background: rgba(var(--danger-rgb), 0.1);
+}
+
+.schedule-diag-path {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.schedule-diag-candidates {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-left: 4px;
+}
+
+.schedule-diag-issue {
+    display: inline-block;
+    padding: 1px 6px;
+    margin: 1px 2px;
+    background: rgba(var(--warning-rgb), 0.12);
+    color: var(--warning);
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+}
+
+.schedule-diag-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
 }
 
 /* ── Print Styles ── */

@@ -12,6 +12,11 @@ public interface ISchedulingService
     Task AutoScheduleJobAsync(int jobId, DateTime? startAfter = null);
 
     /// <summary>
+    /// Auto-schedule a job and collect per-execution diagnostic data.
+    /// </summary>
+    Task<JobScheduleDiagnostic> AutoScheduleJobWithDiagnosticsAsync(int jobId, DateTime? startAfter = null);
+
+    /// <summary>
     /// Re-schedule a single execution to its earliest available slot
     /// on its currently assigned machine (or auto-assign one).
     /// </summary>
@@ -48,6 +53,11 @@ public interface ISchedulingService
     /// Use with extreme caution — this is a full data wipe for debugging.
     /// </summary>
     Task<DataDeleteResult> DeleteAllSchedulingDataAsync();
+
+    /// <summary>
+    /// Returns counts of key entities for the debug page.
+    /// </summary>
+    Task<DatabaseStats> GetDatabaseStatsAsync();
 }
 
 public record ScheduleClearResult(int ExecutionsCleared, int JobsReset, int BuildsUnlocked);
@@ -60,3 +70,14 @@ public record DataDeleteResult(
     int BatchesDeleted);
 
 public record ScheduleSlot(DateTime Start, DateTime End, int MachineId);
+
+public record DatabaseStats(
+    int Machines,
+    int ProductionStages,
+    int ManufacturingProcesses,
+    int Parts,
+    int Jobs,
+    int StageExecutions,
+    int BuildPackages,
+    int ProductionBatches,
+    int WorkOrders);

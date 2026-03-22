@@ -18,10 +18,14 @@
     };
 }
 <div class="gantt-build-bar-wrapper" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;">
-    <div class="gantt-bar gantt-build-bar @statusClass"
+    <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "")"
          title="@ComputeTooltip()"
          @onclick="TogglePopover"
          @onclick:stopPropagation="true">
+        @if (HasChangeoverConflict)
+        {
+            <span class="gantt-conflict-icon" title="Changeover conflict: cooldown chamber may not be emptied in time">⚠️</span>
+        }
         <span class="gantt-bar-text">@statusLabel @Build.Name — @Build.TotalPartCount parts</span>
     </div>
 
@@ -63,6 +67,7 @@
     [Parameter, EditorRequired] public double BarWidthPx { get; set; }
     [Parameter, EditorRequired] public DateTime Start { get; set; }
     [Parameter, EditorRequired] public DateTime End { get; set; }
+    [Parameter] public bool HasChangeoverConflict { get; set; }
 
     /// <summary>Raised when the user clicks a status action. Value is (BuildPackage, actionKey).</summary>
     [Parameter] public EventCallback<(BuildPackage Build, string Action)> OnBuildAction { get; set; }
@@ -87,6 +92,10 @@
     {
         var parts = Build.TotalPartCount;
         var unique = Build.UniquePartCount;
-        return $"{Build.Name}\nStatus: {Build.Status}\nParts: {parts} ({unique} types)\n{Start:MM/dd HH:mm} → {End:MM/dd HH:mm}\nEst: {Build.EstimatedDurationHours?.ToString("F1") ?? "?"}h\nClick for actions";
+        var tip = $"{Build.Name}\nStatus: {Build.Status}\nParts: {parts} ({unique} types)\n{Start:MM/dd HH:mm} → {End:MM/dd HH:mm}\nEst: {Build.EstimatedDurationHours?.ToString("F1") ?? "?"}h";
+        if (HasChangeoverConflict)
+            tip += "\n⚠️ CHANGEOVER CONFLICT: Cooldown chamber may not be emptied before next build completes. Machine will be down until an operator arrives.";
+        tip += "\nClick for actions";
+        return tip;
     }
 }

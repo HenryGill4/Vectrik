@@ -25,22 +25,25 @@
                 BarWidthPx="barWidth"
                 Start="entry.PrintStart"
                 End="entry.PrintEnd"
+                HasChangeoverConflict="entry.HasChangeoverConflict"
                 OnBuildAction="OnBuildAction" />
         }
         @* ── Build-level stage execution groups (skip stages already shown by build bars) ── *@
         @{
-            var timelineBuildIds = BuildTimeline.Select(t => t.BuildPackageId).ToHashSet();
-            var buildGroups = Executions
-                .Where(e => e.BuildPackageId != null
-                    && !timelineBuildIds.Contains(e.BuildPackageId!.Value))
-                .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId })
+            // Use StageExecutionId to precisely identify which executions are
+            // already rendered as timeline bars. Multi-run builds share the same
+            // BuildPackageId, so matching by BuildPackageId would hide ALL runs.
+            var timelineExecIds = BuildTimeline
+                .Where(t => t.StageExecutionId.HasValue)
+                .Select(t => t.StageExecutionId!.Value)
+                .ToHashSet();
+            var remainingExecs = Executions.Where(e => !timelineExecIds.Contains(e.Id)).ToList();
+            var buildGroups = remainingExecs
+                .Where(e => e.BuildPackageId != null)
+                .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId, e.JobId })
                 .ToList();
             var buildGroupExecIds = buildGroups.SelectMany(g => g.Select(e => e.Id)).ToHashSet();
-            var timelineExecIds = Executions
-                .Where(e => e.BuildPackageId != null && timelineBuildIds.Contains(e.BuildPackageId!.Value))
-                .Select(e => e.Id)
-                .ToHashSet();
-            var individualExecs = Executions.Where(e => !buildGroupExecIds.Contains(e.Id) && !timelineExecIds.Contains(e.Id)).ToList();
+            var individualExecs = remainingExecs.Where(e => !buildGroupExecIds.Contains(e.Id)).ToList();
         }
         @foreach (var group in buildGroups)
         {

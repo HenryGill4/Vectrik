@@ -420,7 +420,7 @@ public class BuildPlanningService : IBuildPlanningService
         await _db.SaveChangesAsync();
     }
 
-    public async Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy, bool forceNewJob = false)
+    public async Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy, bool forceNewJob = false, DateTime? startAfter = null)
     {
         var package = await _db.BuildPackages
             .Include(p => p.BuildFileInfo)
@@ -474,8 +474,8 @@ public class BuildPlanningService : IBuildPlanningService
                 Quantity = package.TotalPartCount,
                 Status = JobStatus.Scheduled,
                 Priority = JobPriority.Normal,
-                ScheduledStart = package.ScheduledDate ?? DateTime.UtcNow,
-                ScheduledEnd = (package.ScheduledDate ?? DateTime.UtcNow)
+                ScheduledStart = startAfter ?? package.ScheduledDate ?? DateTime.UtcNow,
+                ScheduledEnd = (startAfter ?? package.ScheduledDate ?? DateTime.UtcNow)
                     .AddHours(package.EstimatedDurationHours ?? 24),
                 EstimatedHours = package.EstimatedDurationHours ?? 24,
                 Notes = $"Build plate: {package.Name}",
@@ -502,7 +502,7 @@ public class BuildPlanningService : IBuildPlanningService
 
         var executions = new List<StageExecution>();
         var sortOrder = 0;
-        var currentStart = package.ScheduledDate ?? DateTime.UtcNow;
+        var currentStart = startAfter ?? package.ScheduledDate ?? DateTime.UtcNow;
 
         foreach (var processStage in buildStages)
         {

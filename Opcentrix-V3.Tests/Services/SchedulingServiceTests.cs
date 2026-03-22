@@ -218,17 +218,16 @@ public class SchedulingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetCapableMachinesAsync_WhenNoAssignment_ReturnsAllActiveMachines()
+    public async Task GetCapableMachinesAsync_WhenNoAssignment_ReturnsEmpty()
     {
-        var machine1 = await AddMachineAsync("SLS-001", "Printer 1", 3);
-        var machine2 = await AddMachineAsync("SLS-002", "Printer 2", 5);
+        await AddMachineAsync("SLS-001", "Printer 1", 3);
+        await AddMachineAsync("SLS-002", "Printer 2", 5);
         var stage = await AddStageAsync(requiresMachine: false);
 
         var machines = await _sut.GetCapableMachinesAsync(stage.Id);
 
-        Assert.Equal(2, machines.Count);
-        // Should be ordered by priority
-        Assert.Equal("SLS-001", machines[0].MachineId);
+        // No machines configured on stage → returns empty (no all-machines fallback)
+        Assert.Empty(machines);
     }
 
     [Fact]
@@ -288,7 +287,10 @@ public class SchedulingServiceTests : IDisposable
         _db.Machines.Add(inactiveMachine);
         await _db.SaveChangesAsync();
 
-        var stage = await AddStageAsync(requiresMachine: false);
+        // Assign both machines (int PKs) so filtering is meaningful
+        var stage = await AddStageAsync(
+            assignedMachineIds: $"{activeMachine.Id},{inactiveMachine.Id}",
+            requiresMachine: true);
 
         var machines = await _sut.GetCapableMachinesAsync(stage.Id);
 
@@ -299,7 +301,7 @@ public class SchedulingServiceTests : IDisposable
     [Fact]
     public async Task GetCapableMachinesAsync_ExcludesUnavailableForScheduling()
     {
-        await AddMachineAsync("SLS-001", "Available");
+        var available = await AddMachineAsync("SLS-001", "Available");
         var unavailable = new Machine
         {
             MachineId = "SLS-002",
@@ -313,7 +315,10 @@ public class SchedulingServiceTests : IDisposable
         _db.Machines.Add(unavailable);
         await _db.SaveChangesAsync();
 
-        var stage = await AddStageAsync(requiresMachine: false);
+        // Assign both machines (int PKs) so filtering is meaningful
+        var stage = await AddStageAsync(
+            assignedMachineIds: $"{available.Id},{unavailable.Id}",
+            requiresMachine: true);
 
         var machines = await _sut.GetCapableMachinesAsync(stage.Id);
 
@@ -369,7 +374,7 @@ public class SchedulingServiceTests : IDisposable
     {
         var machine = await AddMachineAsync();
         var part = await AddPartAsync();
-        var stage = await AddStageAsync("SLS", "sls", 4.0, machine.MachineId, true);
+        var stage = await AddStageAsync("SLS", "sls", 4.0, machine.Id.ToString(), true);
 
         var monday = GetNextDayOfWeek(DayOfWeek.Monday);
         var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 4.0 };
@@ -440,7 +445,7 @@ public class SchedulingServiceTests : IDisposable
         var machine1 = await AddMachineAsync("SLS-001", "Printer 1");
         var machine2 = await AddMachineAsync("SLS-002", "Printer 2");
         var part = await AddPartAsync();
-        var stage = await AddStageAsync("SLS", "sls", 4.0, "SLS-001,SLS-002", true);
+        var stage = await AddStageAsync("SLS", "sls", 4.0, $"{machine1.Id},{machine2.Id}", true);
 
         var monday = GetNextDayOfWeek(DayOfWeek.Monday);
 
@@ -503,7 +508,7 @@ public class SchedulingServiceTests : IDisposable
     {
         var machine = await AddMachineAsync();
         var part = await AddPartAsync();
-        var stage = await AddStageAsync("SLS", "sls", 4.0, machine.MachineId, true);
+        var stage = await AddStageAsync("SLS", "sls", 4.0, machine.Id.ToString(), true);
 
         var monday = GetNextDayOfWeek(DayOfWeek.Monday);
         var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 4.0 };

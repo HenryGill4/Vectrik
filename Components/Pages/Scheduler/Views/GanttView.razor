@@ -18,14 +18,14 @@
                     OnPixelsPerHourChanged="OnPixelsPerHourChanged"
                     OnViewportBoundsChanged="OnViewportBoundsChanged"
                     OnDataRangeExtensionNeeded="OnDataRangeExtensionNeeded">
-                        @* ── Machine rows (grouped by type, ordered by priority) ── *@
+                        @* ── Machine rows (grouped by department, ordered by production flow) ── *@
                         @{
                             var orderedMachines = GetOrderedMachines();
                             string? lastGroup = null;
                         }
                         @foreach (var machine in orderedMachines)
                         {
-                            var groupLabel = machine.IsAdditiveMachine ? "SLS / Additive" : (machine.MachineType ?? "Other");
+                            var groupLabel = machine.IsAdditiveMachine ? "SLS / Additive" : (machine.Department ?? machine.MachineType ?? "Other");
                             if (groupLabel != lastGroup)
                             {
                                 lastGroup = groupLabel;
@@ -122,8 +122,8 @@
         Machines
             .Where(m => m.IsAvailableForScheduling)
             .OrderByDescending(m => m.IsAdditiveMachine)
-            .ThenBy(m => m.MachineType, StringComparer.OrdinalIgnoreCase)
             .ThenBy(m => m.Priority)
+            .ThenBy(m => m.MachineType, StringComparer.OrdinalIgnoreCase)
             .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

@@ -26,7 +26,20 @@ public interface IBuildSchedulingService
     /// Find the earliest slot for a build on a specific machine,
     /// factoring in changeover time between consecutive builds.
     /// </summary>
-    Task<BuildScheduleSlot> FindEarliestBuildSlotAsync(int machineId, double durationHours, DateTime notBefore);
+    Task<BuildScheduleSlot> FindEarliestBuildSlotAsync(int machineId, double durationHours, DateTime notBefore, int? forBuildPackageId = null);
+
+    /// <summary>
+    /// Find the best (earliest) slot across ALL available SLS machines.
+    /// Evaluates every active additive machine and returns the one that can start soonest.
+    /// Changeover is skipped when scheduling a same-build consecutive run.
+    /// </summary>
+    Task<BestBuildSlot> FindBestBuildSlotAsync(double durationHours, DateTime notBefore, int? forBuildPackageId = null);
+
+    /// <summary>
+    /// Schedule an additional print run, automatically choosing the SLS machine
+    /// with the earliest available slot to maximize utilization across all machines.
+    /// </summary>
+    Task<BuildScheduleResult> ScheduleBuildRunAutoMachineAsync(int buildPackageId, DateTime? startAfter = null);
 
     /// <summary>
     /// Get the full build timeline for a machine: scheduled, printing, changeover windows.
@@ -38,6 +51,14 @@ public interface IBuildSchedulingService
     /// If unavailable, suggest alternative build config to sync with shift.
     /// </summary>
     Task<ChangeoverAnalysis> AnalyzeChangeoverAsync(int machineId, DateTime buildEndTime);
+
+    /// <summary>
+    /// Detect consecutive changeover conflicts on a machine.
+    /// A conflict occurs when two builds finish back-to-back and the cooldown chamber
+    /// from the preceding build cannot be emptied by an operator before the next
+    /// changeover begins — the auto plate change system requires a fresh cooldown station.
+    /// </summary>
+    Task<List<ChangeoverConflict>> DetectChangeoverConflictsAsync(int machineId, DateTime from, DateTime to);
 
     /// <summary>
     /// Create build-level StageExecutions (print, depowder, heat-treat, EDM)
@@ -70,10 +91,19 @@ public record BuildScheduleSlot(
     int MachineId,
     bool OperatorAvailableForChangeover);
 
+/// <summary>
+/// Result of FindBestBuildSlotAsync — wraps a BuildScheduleSlot with the chosen machine info.
+/// </summary>
+public record BestBuildSlot(
+    BuildScheduleSlot Slot,
+    int MachineId,
+    string MachineName);
+
 public record BuildScheduleResult(
     BuildScheduleSlot Slot,
     ChangeoverAnalysis? ChangeoverInfo,
-    List<StageExecution> BuildStageExecutions);
+    List<StageExecution> BuildStageExecutions,
+    ScheduleDiagnosticReport? Diagnostics = null);
 
 public record ChangeoverAnalysis(
     bool OperatorAvailable,
@@ -82,6 +112,24 @@ public record ChangeoverAnalysis(
     string? SuggestedAction,
     double? SuggestedDurationHours);
 
+/// <summary>
+/// Warning raised when two consecutive builds finish without an operator
+/// being available to empty the cooldown chamber between them.
+/// The auto plate change system requires a fresh plate in the cooldown station;
+/// if the previous plate hasn't been removed, the machine will be down.
+/// </summary>
+public record ChangeoverConflict(
+    int MachineId,
+    string MachineName,
+    string PrecedingBuildName,
+    DateTime PrecedingChangeoverStart,
+    DateTime PrecedingChangeoverEnd,
+    string FollowingBuildName,
+    DateTime FollowingPrintStart,
+    bool PrecedingOperatorAvailable,
+    bool FollowingOperatorAvailable,
+    string Warning);
+
 public record MachineTimelineEntry(
     int BuildPackageId,
     string BuildName,
@@ -89,7 +137,9 @@ public record MachineTimelineEntry(
     DateTime PrintEnd,
     DateTime? ChangeoverStart,
     DateTime? ChangeoverEnd,
-    BuildPackageStatus Status);
+    BuildPackageStatus Status,
+    int? StageExecutionId = null,
+    bool HasChangeoverConflict = false);
 
 public record PlateReleaseResult(
     int BuildPackageId,

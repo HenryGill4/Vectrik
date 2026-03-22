@@ -182,6 +182,10 @@
             </div>
         }
 
+        @* ── Schedule Diagnostic Report ── *@
+        <ScheduleIssueReport Reports="_diagnosticReports" Warnings="_diagnosticWarnings"
+                             OnClear="StateHasChanged" />
+
         @* ── Work Order Cards ── *@
         @if (_statFilter != null)
         {
@@ -604,6 +608,10 @@
     private Dictionary<string, int> _buildRunCounts = new();
     private bool _schedulingBuildRuns;
 
+    // Diagnostic report state
+    private List<ScheduleDiagnosticReport> _diagnosticReports = [];
+    private List<string> _diagnosticWarnings = [];
+
     private async Task OnModalConfirmedAsync()
     {
         _showWoBuildModal = false;
@@ -734,7 +742,6 @@
             var buildsScheduled = 0;
             var buildsCreated = 0;
             var slsNoTemplate = 0;
-            var slsNoMachine = 0;
 
             foreach (var line in wo.Lines)
             {
@@ -742,13 +749,6 @@
 
                 if (IsAdditiveLine(line))
                 {
-                    var defaultMachineId = SlsMachines.FirstOrDefault()?.Id;
-                    if (!defaultMachineId.HasValue)
-                    {
-                        slsNoMachine++;
-                        continue;
-                    }
-
                     var outstanding = GetOutstanding(line);
 
                     // Schedule runs from source build files (not copies) to fill demand
@@ -761,12 +761,13 @@
                         var buildPartQty = build.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
                         if (buildPartQty <= 0) continue;
                         var runsNeeded = (int)Math.Ceiling((double)outstanding / buildPartQty);
-                        var machineId = build.MachineId ?? defaultMachineId.Value;
                         for (var i = 0; i < runsNeeded; i++)
                         {
                             try
                             {
-                                await BuildScheduling.ScheduleBuildRunAsync(build.Id, machineId);
+                                var runResult = await BuildScheduling.ScheduleBuildRunAutoMachineAsync(build.Id);
+                                if (runResult.Diagnostics is not null)
+                                    _diagnosticReports.Add(runResult.Diagnostics);
                                 buildsScheduled++;
                                 outstanding -= buildPartQty;
                             }
@@ -792,11 +793,16 @@
                                 {
                                     try
                                     {
+                                        // Find best machine for this build, then instantiate and schedule on it
+                                        var bestSlot = await BuildScheduling.FindBestBuildSlotAsync(
+                                            template.EstimatedDurationHours, DateTime.UtcNow);
                                         var package = await BuildTemplateService.InstantiateAsync(
-                                            template.Id, defaultMachineId.Value, UserName, line.Id);
-                                        buildsCreated++;
-                                        await BuildScheduling.ScheduleBuildAsync(package.Id, defaultMachineId.Value);
-                                        buildsScheduled++;
+                                                    template.Id, bestSlot.MachineId, UserName, line.Id);
+                                                buildsCreated++;
+                                                var buildResult = await BuildScheduling.ScheduleBuildAsync(package.Id, bestSlot.MachineId);
+                                                if (buildResult.Diagnostics is not null)
+                                                    _diagnosticReports.Add(buildResult.Diagnostics);
+                                                buildsScheduled++;
                                     }
                                     catch { /* skip failed instantiation/scheduling */ }
                                 }
@@ -842,13 +848,14 @@
                 }
             }
 
+            var unassignedTotal = _diagnosticReports.Sum(r => r.UnassignedCount);
             var parts = new List<string>();
             if (buildsCreated > 0) parts.Add($"{buildsCreated} build(s) created from templates");
             if (buildsScheduled > 0) parts.Add($"{buildsScheduled} run(s) scheduled");
             if (jobsCreated > 0) parts.Add($"{jobsCreated} job(s) created");
             if (jobsScheduled > 0) parts.Add($"{jobsScheduled} job(s) scheduled");
             if (slsNoTemplate > 0) parts.Add($"{slsNoTemplate} SLS line(s) need certified templates");
-            if (slsNoMachine > 0) parts.Add($"{slsNoMachine} SLS line(s) skipped — no SLS machines");
+            if (unassignedTotal > 0) parts.Add($"{unassignedTotal} stage(s) unassigned — check diagnostic report");
             Toast.ShowSuccess(parts.Count > 0 ? string.Join(", ", parts) : "Nothing to schedule");
             await OnRefreshRequested.InvokeAsync();
         }
@@ -901,21 +908,16 @@
     };
 
     /// <summary>
-    /// Schedule a single run from an existing build — creates a copy and schedules it.
-    /// The original build file stays at its current status.
+    /// Schedule a single run from an existing build — auto-selects the SLS machine
+    /// with the earliest available slot.
     /// </summary>
     private async Task ScheduleExistingBuildAsync(BuildPackage build)
     {
         try
         {
-            var machineId = build.MachineId ?? SlsMachines.FirstOrDefault()?.Id;
-            if (machineId is null)
-            {
-                Toast.ShowError("No SLS machine available to schedule this build.");
-                return;
-            }
-
-            await BuildScheduling.ScheduleBuildRunAsync(build.Id, machineId.Value);
+            var result = await BuildScheduling.ScheduleBuildRunAutoMachineAsync(build.Id);
+            if (result.Diagnostics is not null)
+                _diagnosticReports.Add(result.Diagnostics);
             Toast.ShowSuccess($"Run scheduled from build '{build.Name}'.");
             await OnRefreshRequested.InvokeAsync();
         }
@@ -932,8 +934,8 @@
     }
 
     /// <summary>
-    /// Schedule N runs from an existing build file. Each run creates a scheduled copy;
-    /// the original build file stays at its current status.
+    /// Schedule N runs from an existing build file. Each run is auto-assigned to the
+    /// SLS machine with the earliest available slot, distributing work across all machines.
     /// </summary>
     private async Task ScheduleRunsFromBuildAsync(BuildPackage build, WorkOrderLine line, int runCount)
     {
@@ -942,19 +944,14 @@
         StateHasChanged();
         try
         {
-            var machineId = build.MachineId ?? SlsMachines.FirstOrDefault()?.Id;
-            if (machineId is null)
-            {
-                Toast.ShowError("No SLS machine available.");
-                return;
-            }
-
             var scheduled = 0;
             for (var i = 0; i < runCount; i++)
             {
                 try
                 {
-                    await BuildScheduling.ScheduleBuildRunAsync(build.Id, machineId.Value);
+                    var runResult = await BuildScheduling.ScheduleBuildRunAutoMachineAsync(build.Id);
+                    if (runResult.Diagnostics is not null)
+                        _diagnosticReports.Add(runResult.Diagnostics);
                     scheduled++;
                 }
                 catch { /* skip runs that fail to schedule */ }

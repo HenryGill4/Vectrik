@@ -33,7 +33,8 @@ public interface IBuildPlanningService
     /// When forceNewJob is true, always creates a new Job (used for additional print runs
     /// of the same build file). When false, reuses the package's existing ScheduledJob.
     /// </summary>
-    Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy, bool forceNewJob = false);
+    /// <param name="startAfter">Explicit start time for build-level executions (e.g. the slot found by FindEarliestBuildSlotAsync). Falls back to package.ScheduledDate when null.</param>
+    Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy, bool forceNewJob = false, DateTime? startAfter = null);
 
     /// <summary>
     /// Create per-part jobs and stage executions for parts in a build package.

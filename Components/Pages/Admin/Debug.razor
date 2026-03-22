@@ -1,8 +1,11 @@
 @page "/admin/debug"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Components.Authorization
+@using Opcentrix_V3.Data
 @inject IUserSettingsService SettingsService
 @inject ISchedulingService SchedulingService
+@inject IDataSeedingService SeedingService
+@inject TenantDbContext Db
 @inject IJSRuntime JS
 @inject ToastService Toast
 
@@ -10,6 +13,59 @@
 
 <div class="page-header">
     <h1 class="page-title">🛠️ Debug Tools</h1>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">📊 Database Overview</div>
+    @if (_stats is not null)
+    {
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px 16px; font-size:0.85rem;">
+            <div><span style="color:var(--text-secondary);">Machines:</span> <strong>@_stats.Machines</strong></div>
+            <div><span style="color:var(--text-secondary);">Stages:</span> <strong>@_stats.ProductionStages</strong></div>
+            <div><span style="color:var(--text-secondary);">Processes:</span> <strong>@_stats.ManufacturingProcesses</strong></div>
+            <div><span style="color:var(--text-secondary);">Parts:</span> <strong>@_stats.Parts</strong></div>
+            <div><span style="color:var(--text-secondary);">Jobs:</span> <strong>@_stats.Jobs</strong></div>
+            <div><span style="color:var(--text-secondary);">Executions:</span> <strong>@_stats.StageExecutions</strong></div>
+            <div><span style="color:var(--text-secondary);">Builds:</span> <strong>@_stats.BuildPackages</strong></div>
+            <div><span style="color:var(--text-secondary);">Batches:</span> <strong>@_stats.ProductionBatches</strong></div>
+            <div><span style="color:var(--text-secondary);">Work Orders:</span> <strong>@_stats.WorkOrders</strong></div>
+        </div>
+    }
+    else
+    {
+        <p style="color:var(--text-secondary); font-size:0.85rem;">Loading…</p>
+    }
+    <div style="display:flex; justify-content:flex-end; padding-top:12px;">
+        <button class="btn btn-secondary" @onclick="RefreshStats" disabled="@_loadingStats" style="font-size:0.8rem;">
+            @(_loadingStats ? "Refreshing…" : "🔄 Refresh")
+        </button>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">🌱 Re-seed Foundation Data</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        Adds any missing machines and production stages to the database, and updates
+        Priority values on existing machines. Safe to run multiple times — only missing
+        data is created.
+    </p>
+
+    @if (_seedResult is not null)
+    {
+        <div style="background: var(--surface-alt, #f0f0f0); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem;">
+            <strong>Last seed:</strong>
+            @_seedResult.MachinesAdded machines added,
+            @_seedResult.MachinesUpdated machines updated,
+            @_seedResult.StagesAdded stages added,
+            @_seedResult.StagesUpdated stages updated
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-primary" @onclick="RunReseed" disabled="@_seeding">
+            @(_seeding ? "Seeding…" : "🌱 Run Re-seed")
+        </button>
+    </div>
 </div>
 
 <div class="card" style="max-width: 700px;">
@@ -172,6 +228,10 @@
     private bool _deleting;
     private bool _deleteConfirmShown;
     private DataDeleteResult? _deleteResult;
+    private DatabaseStats? _stats;
+    private bool _loadingStats;
+    private bool _seeding;
+    private SeedResult? _seedResult;
 
     protected override async Task OnInitializedAsync()
     {
@@ -188,6 +248,8 @@
             var settings = await SettingsService.GetSettingsAsync(_userId);
             _debugFabEnabled = settings.DebugFabEnabled;
         }
+
+        await RefreshStats();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -268,6 +330,7 @@ This is a test capture from the Debug Tools admin page.
         {
             _clearResult = await SchedulingService.ClearAllScheduleDataAsync();
             Toast.ShowSuccess($"Schedule cleared: {_clearResult.ExecutionsCleared} executions, {_clearResult.JobsReset} jobs, {_clearResult.BuildsUnlocked} builds");
+            await RefreshStats();
         }
         catch (Exception ex)
         {
@@ -292,6 +355,7 @@ This is a test capture from the Debug Tools admin page.
                 $"Deleted: {_deleteResult.StageExecutionsDeleted} executions, " +
                 $"{_deleteResult.JobsDeleted} jobs, {_deleteResult.BuildsDeleted} builds, " +
                 $"{_deleteResult.PartInstancesDeleted} instances, {_deleteResult.BatchesDeleted} batches");
+            await RefreshStats();
         }
         catch (Exception ex)
         {
@@ -300,6 +364,53 @@ This is a test capture from the Debug Tools admin page.
         finally
         {
             _deleting = false;
+        }
+    }
+
+    private async Task RefreshStats()
+    {
+        _loadingStats = true;
+        try
+        {
+            _stats = await SchedulingService.GetDatabaseStatsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load stats: {ex.Message}");
+        }
+        finally
+        {
+            _loadingStats = false;
+        }
+    }
+
+    private async Task RunReseed()
+    {
+        _seeding = true;
+        _seedResult = null;
+
+        try
+        {
+            _seedResult = await SeedingService.EnsureSeedDataAsync(Db);
+            var total = _seedResult.MachinesAdded + _seedResult.MachinesUpdated
+                      + _seedResult.StagesAdded + _seedResult.StagesUpdated;
+            if (total == 0)
+                Toast.ShowSuccess("Everything is up to date — no changes needed");
+            else
+                Toast.ShowSuccess(
+                    $"Re-seed complete: {_seedResult.MachinesAdded} machines added, " +
+                    $"{_seedResult.MachinesUpdated} updated, " +
+                    $"{_seedResult.StagesAdded} stages added, " +
+                    $"{_seedResult.StagesUpdated} updated");
+            await RefreshStats();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Re-seed failed: {ex.Message}");
+        }
+        finally
+        {
+            _seeding = false;
         }
     }
 }

@@ -33,6 +33,13 @@ public class BuildSchedulingService : IBuildSchedulingService
     public async Task<BuildScheduleResult> ScheduleBuildAsync(
         int buildPackageId, int machineId, DateTime? startAfter = null)
     {
+        var report = new ScheduleDiagnosticReport
+        {
+            Operation = "ScheduleBuild",
+            BuildPackageId = buildPackageId,
+            MachineId = machineId
+        };
+
         var package = await _db.BuildPackages
             .Include(p => p.Parts)
             .FirstOrDefaultAsync(p => p.Id == buildPackageId)
@@ -51,7 +58,7 @@ public class BuildSchedulingService : IBuildSchedulingService
         var durationHours = package.EstimatedDurationHours.Value;
         var notBefore = startAfter ?? DateTime.UtcNow;
 
-        var slot = await FindEarliestBuildSlotAsync(machine.Id, durationHours, notBefore);
+        var slot = await FindEarliestBuildSlotAsync(machine.Id, durationHours, notBefore, buildPackageId);
 
         ChangeoverAnalysis? changeoverInfo = null;
         if (machine.AutoChangeoverEnabled)
@@ -80,7 +87,22 @@ public class BuildSchedulingService : IBuildSchedulingService
         await _db.SaveChangesAsync();
 
         // Create build-level stage executions via the existing planning service
-        var stageExecutions = await _buildPlanning.CreateBuildStageExecutionsAsync(buildPackageId, "Scheduler");
+        var stageExecutions = await _buildPlanning.CreateBuildStageExecutionsAsync(buildPackageId, "Scheduler", startAfter: slot.PrintStart);
+
+        // Collect build slot diagnostic
+        var buildJob = stageExecutions.FirstOrDefault()?.JobId;
+        if (buildJob.HasValue)
+        {
+            report.BuildSlots.Add(new BuildSlotDiagnostic
+            {
+                JobId = buildJob.Value,
+                SlotStart = slot.PrintStart,
+                SlotEnd = slot.PrintEnd,
+                MachineId = machine.Id,
+                MachineName = machine.Name ?? machine.MachineId,
+                DurationHours = durationHours
+            });
+        }
 
         // Prefill per-part stage executions: start after the last build-level stage ends
         var lastBuildStageEnd = stageExecutions
@@ -90,20 +112,19 @@ public class BuildSchedulingService : IBuildSchedulingService
         var partJobIds = await _buildPlanning.CreatePartStageExecutionsAsync(
             buildPackageId, "Scheduler", lastBuildStageEnd);
 
-        // Auto-schedule each per-part job to distribute across available machines.
-        // Per-part executions already have pre-filled schedule times from creation;
-        // AutoScheduleJobAsync refines them with actual machine slot availability.
+        // Auto-schedule each per-part job with diagnostics
         var autoScheduled = 0;
         foreach (var jobId in partJobIds)
         {
             try
             {
-                await _scheduling.AutoScheduleJobAsync(jobId, lastBuildStageEnd);
+                var jobDiag = await _scheduling.AutoScheduleJobWithDiagnosticsAsync(jobId, lastBuildStageEnd);
+                report.Jobs.Add(jobDiag);
                 autoScheduled++;
             }
-            catch
+            catch (Exception ex)
             {
-                // Job keeps its pre-filled schedule times from CreatePartStageExecutionsAsync
+                report.Warnings.Add($"Job {jobId} failed to auto-schedule: {ex.Message}");
             }
         }
 
@@ -111,12 +132,30 @@ public class BuildSchedulingService : IBuildSchedulingService
         await _buildPlanning.CreateRevisionAsync(buildPackageId, "Scheduler",
             $"Scheduled on {machine.Name} starting {slot.PrintStart:g}; {partJobIds.Count} per-part job(s) prefilled ({autoScheduled} auto-scheduled to machines)");
 
-        return new BuildScheduleResult(slot, changeoverInfo, stageExecutions);
+        // Detect changeover conflicts (cooldown chamber stacking)
+        if (machine.AutoChangeoverEnabled)
+        {
+            var lookAhead = slot.PrintEnd.AddDays(7);
+            var conflicts = await DetectChangeoverConflictsAsync(machine.Id, slot.PrintStart.AddDays(-1), lookAhead);
+            foreach (var conflict in conflicts)
+            {
+                report.Warnings.Add(conflict.Warning);
+            }
+        }
+
+        return new BuildScheduleResult(slot, changeoverInfo, stageExecutions, report);
     }
 
     public async Task<BuildScheduleResult> ScheduleBuildRunAsync(
         int buildPackageId, int machineId, DateTime? startAfter = null)
     {
+        var report = new ScheduleDiagnosticReport
+        {
+            Operation = "ScheduleBuildRun",
+            BuildPackageId = buildPackageId,
+            MachineId = machineId
+        };
+
         var package = await _db.BuildPackages
             .Include(p => p.Parts)
             .Include(p => p.BuildFileInfo)
@@ -132,7 +171,7 @@ public class BuildSchedulingService : IBuildSchedulingService
         var durationHours = package.EstimatedDurationHours.Value;
         var notBefore = startAfter ?? DateTime.UtcNow;
 
-        var slot = await FindEarliestBuildSlotAsync(machine.Id, durationHours, notBefore);
+        var slot = await FindEarliestBuildSlotAsync(machine.Id, durationHours, notBefore, buildPackageId);
 
         ChangeoverAnalysis? changeoverInfo = null;
         if (machine.AutoChangeoverEnabled)
@@ -152,7 +191,22 @@ public class BuildSchedulingService : IBuildSchedulingService
         await _db.SaveChangesAsync();
 
         // Create build-level stage executions for this run (always new Job)
-        var stageExecutions = await _buildPlanning.CreateBuildStageExecutionsAsync(buildPackageId, "Scheduler", forceNewJob: true);
+        var stageExecutions = await _buildPlanning.CreateBuildStageExecutionsAsync(buildPackageId, "Scheduler", forceNewJob: true, startAfter: slot.PrintStart);
+
+        // Collect build slot diagnostic
+        var buildJob = stageExecutions.FirstOrDefault()?.JobId;
+        if (buildJob.HasValue)
+        {
+            report.BuildSlots.Add(new BuildSlotDiagnostic
+            {
+                JobId = buildJob.Value,
+                SlotStart = slot.PrintStart,
+                SlotEnd = slot.PrintEnd,
+                MachineId = machine.Id,
+                MachineName = machine.Name ?? machine.MachineId,
+                DurationHours = durationHours
+            });
+        }
 
         // Per-part stage executions: start after the last build-level stage ends
         var lastBuildStageEnd = stageExecutions
@@ -162,18 +216,19 @@ public class BuildSchedulingService : IBuildSchedulingService
         var partJobIds = await _buildPlanning.CreatePartStageExecutionsAsync(
             buildPackageId, "Scheduler", lastBuildStageEnd, forceNewJobs: true);
 
-        // Auto-schedule each per-part job
+        // Auto-schedule each per-part job with diagnostics
         var autoScheduled = 0;
         foreach (var jobId in partJobIds)
         {
             try
             {
-                await _scheduling.AutoScheduleJobAsync(jobId, lastBuildStageEnd);
+                var jobDiag = await _scheduling.AutoScheduleJobWithDiagnosticsAsync(jobId, lastBuildStageEnd);
+                report.Jobs.Add(jobDiag);
                 autoScheduled++;
             }
-            catch
+            catch (Exception ex)
             {
-                // Job keeps its pre-filled schedule times
+                report.Warnings.Add($"Job {jobId} failed to auto-schedule: {ex.Message}");
             }
         }
 
@@ -186,48 +241,159 @@ public class BuildSchedulingService : IBuildSchedulingService
             $"Run #{existingRunJobs} on {machine.Name} starting {slot.PrintStart:g}; " +
             $"{partJobIds.Count} per-part job(s) ({autoScheduled} auto-scheduled)");
 
-        return new BuildScheduleResult(slot, changeoverInfo, stageExecutions);
+        // Detect changeover conflicts (cooldown chamber stacking)
+        if (machine.AutoChangeoverEnabled)
+        {
+            var lookAhead = slot.PrintEnd.AddDays(7);
+            var conflicts = await DetectChangeoverConflictsAsync(machine.Id, slot.PrintStart.AddDays(-1), lookAhead);
+            foreach (var conflict in conflicts)
+            {
+                report.Warnings.Add(conflict.Warning);
+            }
+        }
+
+        return new BuildScheduleResult(slot, changeoverInfo, stageExecutions, report);
+    }
+
+    /// <inheritdoc />
+    public async Task<BuildScheduleResult> ScheduleBuildRunAutoMachineAsync(
+        int buildPackageId, DateTime? startAfter = null)
+    {
+        var package = await _db.BuildPackages
+            .FirstOrDefaultAsync(p => p.Id == buildPackageId)
+            ?? throw new InvalidOperationException("Build package not found.");
+
+        if (!package.IsSlicerDataEntered || !package.EstimatedDurationHours.HasValue)
+            throw new InvalidOperationException("Slicer data must be entered before scheduling a run.");
+
+        var notBefore = startAfter ?? DateTime.UtcNow;
+        var bestSlot = await FindBestBuildSlotAsync(
+            package.EstimatedDurationHours.Value, notBefore, buildPackageId);
+
+        return await ScheduleBuildRunAsync(buildPackageId, bestSlot.MachineId, startAfter);
     }
 
     public async Task<BuildScheduleSlot> FindEarliestBuildSlotAsync(
-        int machineId, double durationHours, DateTime notBefore)
+        int machineId, double durationHours, DateTime notBefore, int? forBuildPackageId = null)
     {
         var machine = await _db.Machines.FindAsync(machineId)
             ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
 
         var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
 
-        // Get scheduled builds on this machine (not stage executions — builds ARE the schedule unit)
-        var existingBuilds = await _db.BuildPackages
+        // SLS machines with auto-changeover run continuously 24/7.
+        // The auto plate change system swaps plates mechanically —
+        // prints are NOT constrained to operator shift boundaries.
+        var isContinuous = machine.AutoChangeoverEnabled;
+
+        // Query build-level stage executions on this machine for collision detection.
+        // Each ScheduleBuildRunAsync call creates a separate Job with its own StageExecution
+        // rows, so this correctly detects ALL scheduled runs — not just a single BuildPackage row.
+        // Include BuildPackageId so we can skip changeover between same-build consecutive runs.
+        var existingBuildExecutions = await _db.StageExecutions
+            .Where(e => e.MachineId == machine.Id
+                && e.BuildPackageId != null
+                && e.ScheduledStartAt != null
+                && e.ScheduledEndAt != null
+                && e.Status != StageExecutionStatus.Completed
+                && e.Status != StageExecutionStatus.Skipped
+                && e.Status != StageExecutionStatus.Failed)
+            .OrderBy(e => e.ScheduledStartAt)
+            .Select(e => new { e.ScheduledStartAt, e.ScheduledEndAt, e.BuildPackageId })
+            .ToListAsync();
+
+        // Also include builds from BuildPackages that don't yet have stage executions
+        var existingBuildPackages = await _db.BuildPackages
             .Where(bp => bp.MachineId == machine.Id
                 && bp.ScheduledDate != null
                 && bp.EstimatedDurationHours != null
                 && bp.Status != BuildPackageStatus.Completed
                 && bp.Status != BuildPackageStatus.Cancelled)
             .OrderBy(bp => bp.ScheduledDate)
-            .Select(bp => new { bp.ScheduledDate, bp.EstimatedDurationHours })
+            .Select(bp => new { bp.Id, bp.ScheduledDate, bp.EstimatedDurationHours, bp.SourceBuildPackageId })
             .ToListAsync();
+
+        // Merge both sources into a unified block list (start, end, buildPackageId)
+        var blocks = existingBuildExecutions
+            .Select(e => (Start: e.ScheduledStartAt!.Value, End: e.ScheduledEndAt!.Value, BuildPackageId: e.BuildPackageId!.Value))
+            .ToList();
+
+        foreach (var bp in existingBuildPackages)
+        {
+            var bpStart = bp.ScheduledDate!.Value;
+            var bpEnd = isContinuous
+                ? bpStart.AddHours(bp.EstimatedDurationHours!.Value)
+                : AdvanceByWorkHours(bpStart, bp.EstimatedDurationHours!.Value, shifts);
+            // Only add if no stage execution already covers this window (avoid double-counting)
+            if (!blocks.Any(b => b.Start == bpStart))
+                blocks.Add((bpStart, bpEnd, bp.Id));
+        }
+
+        blocks = blocks.OrderBy(b => b.Start).ToList();
 
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
 
-        var candidateStart = SnapToNextShiftStart(notBefore, shifts);
-        var candidateEnd = AdvanceByWorkHours(candidateStart, durationHours, shifts);
-
-        foreach (var build in existingBuilds)
+        // Resolve the "build family" for same-build detection: a scheduled copy shares a
+        // SourceBuildPackageId with other copies of the same build file. Runs created via
+        // ScheduleBuildRunAsync reuse the same BuildPackageId directly.
+        var sameBuildIds = new HashSet<int>();
+        if (forBuildPackageId.HasValue)
         {
-            var buildStart = build.ScheduledDate!.Value;
-            var buildEnd = AdvanceByWorkHours(buildStart, build.EstimatedDurationHours!.Value, shifts);
-            var blockEnd = changeoverMinutes > 0
-                ? buildEnd.AddMinutes(changeoverMinutes)
-                : buildEnd;
+            sameBuildIds.Add(forBuildPackageId.Value);
+
+            // If the incoming build is a copy, its siblings share the same source
+            var sourceBp = await _db.BuildPackages
+                .Where(bp => bp.Id == forBuildPackageId.Value)
+                .Select(bp => bp.SourceBuildPackageId)
+                .FirstOrDefaultAsync();
+
+            if (sourceBp.HasValue)
+            {
+                sameBuildIds.Add(sourceBp.Value);
+                // Also include all other copies from the same source
+                var siblingIds = await _db.BuildPackages
+                    .Where(bp => bp.SourceBuildPackageId == sourceBp.Value)
+                    .Select(bp => bp.Id)
+                    .ToListAsync();
+                foreach (var id in siblingIds) sameBuildIds.Add(id);
+            }
+            else
+            {
+                // The incoming build IS the source — include all its copies
+                var copyIds = await _db.BuildPackages
+                    .Where(bp => bp.SourceBuildPackageId == forBuildPackageId.Value)
+                    .Select(bp => bp.Id)
+                    .ToListAsync();
+                foreach (var id in copyIds) sameBuildIds.Add(id);
+            }
+        }
+
+        // Continuous machines start whenever ready; shift-bound machines snap to shift starts
+        var candidateStart = isContinuous ? notBefore : SnapToNextShiftStart(notBefore, shifts);
+        var candidateEnd = isContinuous
+            ? candidateStart.AddHours(durationHours)
+            : AdvanceByWorkHours(candidateStart, durationHours, shifts);
+
+        foreach (var block in blocks)
+        {
+            // Same-build consecutive runs (same material, same plate layout) don't need
+            // changeover — the auto plate change system can swap identical plates immediately.
+            var needsChangeover = changeoverMinutes > 0
+                && !sameBuildIds.Contains(block.BuildPackageId);
+
+            var blockEnd = needsChangeover
+                ? block.End.AddMinutes(changeoverMinutes)
+                : block.End;
 
             // If our candidate fits before this block, we're done
-            if (candidateEnd <= buildStart)
+            if (candidateEnd <= block.Start)
                 break;
 
-            // Otherwise, try starting after this block (including changeover)
-            candidateStart = SnapToNextShiftStart(blockEnd, shifts);
-            candidateEnd = AdvanceByWorkHours(candidateStart, durationHours, shifts);
+            // Otherwise, try starting after this block (including changeover if needed)
+            candidateStart = isContinuous ? blockEnd : SnapToNextShiftStart(blockEnd, shifts);
+            candidateEnd = isContinuous
+                ? candidateStart.AddHours(durationHours)
+                : AdvanceByWorkHours(candidateStart, durationHours, shifts);
         }
 
         var changeoverStart = candidateEnd;
@@ -243,32 +409,109 @@ public class BuildSchedulingService : IBuildSchedulingService
             machineId, operatorAvailable);
     }
 
+    /// <inheritdoc />
+    public async Task<BestBuildSlot> FindBestBuildSlotAsync(
+        double durationHours, DateTime notBefore, int? forBuildPackageId = null)
+    {
+        // Query all SLS/additive machines that are active and available for scheduling
+        var slsMachines = await _db.Machines
+            .Where(m => m.IsActive
+                && m.IsAvailableForScheduling
+                && (m.MachineType == "SLS" || m.MachineType == "Additive"))
+            .OrderBy(m => m.Priority)
+            .ThenBy(m => m.Id)
+            .ToListAsync();
+
+        if (slsMachines.Count == 0)
+            throw new InvalidOperationException("No SLS machines are available for scheduling.");
+
+        BestBuildSlot? best = null;
+
+        foreach (var machine in slsMachines)
+        {
+            var slot = await FindEarliestBuildSlotAsync(
+                machine.Id, durationHours, notBefore, forBuildPackageId);
+
+            if (best is null || slot.PrintStart < best.Slot.PrintStart)
+            {
+                best = new BestBuildSlot(slot, machine.Id, machine.Name ?? machine.MachineId);
+            }
+        }
+
+        return best!;
+    }
+
     public async Task<List<MachineTimelineEntry>> GetMachineTimelineAsync(
         int machineId, DateTime from, DateTime to)
     {
         var machine = await _db.Machines.FindAsync(machineId)
             ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
-
-        var builds = await _db.BuildPackages
-            .Where(bp => bp.MachineId == machine.Id
-                && bp.ScheduledDate != null
-                && bp.Status != BuildPackageStatus.Cancelled)
-            .OrderBy(bp => bp.ScheduledDate)
+        // Query build-level StageExecutions on this machine — each multi-run
+        // creates its own StageExecution with distinct ScheduledStartAt/EndAt.
+        var buildExecutions = await _db.StageExecutions
+            .Include(e => e.BuildPackage)
+            .Where(e => e.MachineId == machineId
+                && e.BuildPackageId != null
+                && e.ScheduledStartAt != null
+                && e.ScheduledEndAt != null
+                && e.Status != StageExecutionStatus.Completed
+                && e.Status != StageExecutionStatus.Skipped
+                && e.Status != StageExecutionStatus.Failed)
+            .OrderBy(e => e.ScheduledStartAt)
             .ToListAsync();
 
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
         var entries = new List<MachineTimelineEntry>();
 
-        foreach (var build in builds)
+        foreach (var exec in buildExecutions)
+        {
+            var printStart = exec.ScheduledStartAt!.Value;
+            var printEnd = exec.ScheduledEndAt!.Value;
+
+            // Filter to requested window
+            if (printEnd < from || printStart > to)
+                continue;
+
+            DateTime? changeoverStart = null;
+            DateTime? changeoverEnd = null;
+
+            if (changeoverMinutes > 0)
+            {
+                changeoverStart = printEnd;
+                changeoverEnd = printEnd.AddMinutes(changeoverMinutes);
+            }
+
+            var buildName = exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}";
+            var buildStatus = exec.BuildPackage?.Status ?? BuildPackageStatus.Scheduled;
+
+            entries.Add(new MachineTimelineEntry(
+                exec.BuildPackageId!.Value, buildName,
+                printStart, printEnd,
+                changeoverStart, changeoverEnd,
+                buildStatus,
+                exec.Id));
+        }
+
+        // Fallback: include BuildPackages that have no StageExecutions yet
+        var coveredBuildIds = entries.Select(e => e.BuildPackageId).ToHashSet();
+        var orphanBuilds = await _db.BuildPackages
+            .Where(bp => bp.MachineId == machineId
+                && bp.ScheduledDate != null
+                && bp.Status != BuildPackageStatus.Cancelled
+                && !coveredBuildIds.Contains(bp.Id))
+            .OrderBy(bp => bp.ScheduledDate)
+            .ToListAsync();
+
+        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+
+        foreach (var build in orphanBuilds)
         {
             var printStart = build.ScheduledDate!.Value;
             var printEnd = build.EstimatedDurationHours.HasValue
                 ? AdvanceByWorkHours(printStart, build.EstimatedDurationHours.Value, shifts)
                 : printStart;
 
-            // Filter to requested window
             if (printEnd < from || printStart > to)
                 continue;
 
@@ -288,7 +531,98 @@ public class BuildSchedulingService : IBuildSchedulingService
                 build.Status));
         }
 
-        return entries;
+        var sorted = entries.OrderBy(e => e.PrintStart).ToList();
+
+        // Mark entries involved in changeover conflicts
+        if (machine.AutoChangeoverEnabled && sorted.Count >= 2)
+        {
+            for (int i = 0; i < sorted.Count - 1; i++)
+            {
+                var current = sorted[i];
+                var next = sorted[i + 1];
+
+                if (current.ChangeoverEnd == null) continue;
+
+                // Check: can an operator empty the cooldown chamber before the next build's
+                // changeover begins? If the preceding changeover falls outside shifts AND
+                // the next build starts before an operator could arrive, the machine stalls.
+                var operatorCanService = IsWithinShiftWindow(
+                    current.ChangeoverStart!.Value, current.ChangeoverEnd.Value, shifts);
+
+                if (!operatorCanService)
+                {
+                    // Find when an operator is next available
+                    var nextShift = FindNextShiftStart(current.ChangeoverStart!.Value, shifts);
+
+                    // Conflict: next build's changeover will also need the cooldown station,
+                    // but the previous plate hasn't been removed yet
+                    if (nextShift == null || next.PrintEnd >= nextShift.Value)
+                    {
+                        sorted[i] = current with { HasChangeoverConflict = true };
+                        sorted[i + 1] = next with { HasChangeoverConflict = true };
+                    }
+                }
+            }
+        }
+
+        return sorted;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<ChangeoverConflict>> DetectChangeoverConflictsAsync(
+        int machineId, DateTime from, DateTime to)
+    {
+        var machine = await _db.Machines.FindAsync(machineId)
+            ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
+
+        if (!machine.AutoChangeoverEnabled)
+            return [];
+
+        var timeline = await GetMachineTimelineAsync(machineId, from, to);
+        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var conflicts = new List<ChangeoverConflict>();
+
+        for (int i = 0; i < timeline.Count - 1; i++)
+        {
+            var current = timeline[i];
+            var next = timeline[i + 1];
+
+            if (current.ChangeoverStart == null || current.ChangeoverEnd == null)
+                continue;
+
+            var precedingOpAvailable = IsWithinShiftWindow(
+                current.ChangeoverStart.Value, current.ChangeoverEnd.Value, shifts);
+
+            var followingOpAvailable = next.ChangeoverStart.HasValue && next.ChangeoverEnd.HasValue
+                && IsWithinShiftWindow(next.ChangeoverStart.Value, next.ChangeoverEnd.Value, shifts);
+
+            if (!precedingOpAvailable)
+            {
+                var nextShift = FindNextShiftStart(current.ChangeoverStart.Value, shifts);
+                var operatorArrival = nextShift ?? current.ChangeoverEnd.Value;
+
+                // If the next build finishes before an operator can empty the cooldown
+                // chamber from the preceding build, the auto plate change will fail.
+                if (next.PrintEnd >= operatorArrival)
+                {
+                    var warning = $"Cooldown chamber conflict on {machine.Name}: " +
+                        $"{current.BuildName} finishes changeover at {current.ChangeoverEnd.Value:MM/dd HH:mm} " +
+                        $"(outside operator hours). Next operator available at {operatorArrival:MM/dd HH:mm}, " +
+                        $"but {next.BuildName} finishes at {next.PrintEnd:MM/dd HH:mm} — " +
+                        $"cooldown station will still be occupied. Machine will be down until an operator arrives.";
+
+                    conflicts.Add(new ChangeoverConflict(
+                        machine.Id, machine.Name,
+                        current.BuildName,
+                        current.ChangeoverStart.Value, current.ChangeoverEnd.Value,
+                        next.BuildName, next.PrintStart,
+                        precedingOpAvailable, followingOpAvailable,
+                        warning));
+                }
+            }
+        }
+
+        return conflicts;
     }
 
     public async Task<ChangeoverAnalysis> AnalyzeChangeoverAsync(int machineId, DateTime buildEndTime)

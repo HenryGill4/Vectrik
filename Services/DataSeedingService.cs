@@ -21,6 +21,13 @@ public class DataSeedingService : IDataSeedingService
         await SeedProductionStagesAsync(tenantDb);
         await SeedOperatorRolesAsync(tenantDb);
         await SeedMachinesAsync(tenantDb);
+
+        // Additive: add missing machines/stages/priorities to existing databases
+        await EnsureSeedDataAsync(tenantDb);
+
+        // Link stages to machines (runs after both exist; idempotent for existing databases)
+        await EnsureStageWorkstationsAsync(tenantDb);
+
         await SeedMaterialsAsync(tenantDb);
         await SeedManufacturingApproachesAsync(tenantDb);
         await SeedOperatingShiftsAsync(tenantDb);
@@ -54,7 +61,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 225.00m, DefaultSetupMinutes = 60,
                 DisplayOrder = 1, StageIcon = "🖨️", StageColor = "#3B82F6",
                 RequiresMachineAssignment = true, RequiresQualityCheck = false,
-                DefaultMachineId = "M4-1", AssignedMachineIds = "M4-1,M4-2",
+                DefaultMachineId = "M4-1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -64,7 +71,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 55.00m, DefaultSetupMinutes = 10,
                 DisplayOrder = 2, StageIcon = "💨", StageColor = "#F59E0B",
                 RequiresMachineAssignment = true,
-                DefaultMachineId = "INC1", AssignedMachineIds = "INC1",
+                DefaultMachineId = "INC1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -74,7 +81,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 65.00m, DefaultSetupMinutes = 20,
                 DisplayOrder = 3, StageIcon = "🔥", StageColor = "#EF4444",
                 RequiresMachineAssignment = true,
-                DefaultMachineId = "HT1", AssignedMachineIds = "HT1",
+                DefaultMachineId = "HT1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -84,11 +91,11 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 85.00m, DefaultSetupMinutes = 25,
                 DisplayOrder = 4, StageIcon = "⚡", StageColor = "#8B5CF6",
                 RequiresMachineAssignment = true,
-                DefaultMachineId = "EDM1", AssignedMachineIds = "EDM1",
+                DefaultMachineId = "EDM1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
 
-            // === PER-PART / BATCH STAGES (batch behavior now on ProcessStage) ===
+            // === PER-PART / BATCH STAGES
             new()
             {
                 Name = "CNC Machining", StageSlug = "cnc-machining", Department = "Machining",
@@ -96,7 +103,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 95.00m, DefaultSetupMinutes = 30,
                 DisplayOrder = 5, StageIcon = "⚙️", StageColor = "#06B6D4",
                 RequiresMachineAssignment = true,
-                DefaultMachineId = "CNC1", AssignedMachineIds = "CNC1,CNC2,CNC3,CNC4",
+                DefaultMachineId = "CNC1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -106,6 +113,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 55.00m, DefaultSetupMinutes = 10,
                 RequiresSerialNumber = true,
                 DisplayOrder = 6, StageIcon = "✒️", StageColor = "#10B981",
+                RequiresMachineAssignment = true, DefaultMachineId = "ENGRAVE1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -114,6 +122,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultDurationHours = 0.33, HasBuiltInPage = true,
                 DefaultHourlyRate = 45.00m, DefaultSetupMinutes = 10,
                 DisplayOrder = 7, StageIcon = "🎨", StageColor = "#EC4899",
+                RequiresMachineAssignment = true, DefaultMachineId = "FINISH1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -123,6 +132,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 75.00m, DefaultSetupMinutes = 15,
                 DisplayOrder = 8, StageIcon = "✅", StageColor = "#14B8A6",
                 RequiresQualityCheck = true,
+                RequiresMachineAssignment = true, DefaultMachineId = "QC1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -132,6 +142,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 35.00m, DefaultSetupMinutes = 5,
                 DisplayOrder = 9, StageIcon = "🚚", StageColor = "#6366F1",
                 RequiresQualityCheck = false,
+                RequiresMachineAssignment = true, DefaultMachineId = "SHIP1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -141,7 +152,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 90.00m, DefaultSetupMinutes = 25,
                 DisplayOrder = 10, StageIcon = "🔩", StageColor = "#0891B2",
                 RequiresMachineAssignment = true,
-                DefaultMachineId = "LATHE1", AssignedMachineIds = "LATHE1",
+                DefaultMachineId = "LATHE1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -151,6 +162,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 60.00m, DefaultSetupMinutes = 10,
                 DisplayOrder = 11, StageIcon = "🔧", StageColor = "#7C3AED",
                 RequiresQualityCheck = false,
+                RequiresMachineAssignment = true, DefaultMachineId = "ASSY1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -160,6 +172,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 40.00m, DefaultSetupMinutes = 5,
                 DisplayOrder = 12, StageIcon = "🌪️", StageColor = "#A3A3A3",
                 RequiresQualityCheck = false,
+                RequiresMachineAssignment = true, DefaultMachineId = "BLAST1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -169,6 +182,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 0.00m, DefaultSetupMinutes = 0,
                 DisplayOrder = 13, StageIcon = "🏢", StageColor = "#D97706",
                 RequiresQualityCheck = true,
+                RequiresMachineAssignment = true, DefaultMachineId = "EXT-COAT",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -178,6 +192,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 50.00m, DefaultSetupMinutes = 5,
                 DisplayOrder = 14, StageIcon = "🛢️", StageColor = "#059669",
                 RequiresQualityCheck = false,
+                RequiresMachineAssignment = true, DefaultMachineId = "OIL-ASSY1",
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
@@ -187,6 +202,7 @@ public class DataSeedingService : IDataSeedingService
                 DefaultHourlyRate = 35.00m, DefaultSetupMinutes = 5,
                 DisplayOrder = 15, StageIcon = "📦", StageColor = "#7C3AED",
                 RequiresQualityCheck = false,
+                RequiresMachineAssignment = true, DefaultMachineId = "PACK1",
                 CreatedBy = "System", LastModifiedBy = "System"
             }
         };
@@ -245,56 +261,467 @@ public class DataSeedingService : IDataSeedingService
             {
                 MachineId = "INC1", Name = "Incineris Depowder", MachineType = "Depowder",
                 MachineModel = "Incineris", Department = "Post-Process",
-                BuildPlateCapacity = 1,
+                BuildPlateCapacity = 1, Priority = 1,
                 HourlyRate = 85.00m, CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 MachineId = "HT1", Name = "Heat Treatment Furnace", MachineType = "Heat-Treat",
                 MachineModel = "Vacuum Furnace", Department = "Post-Process",
-                BuildPlateCapacity = 1,
+                BuildPlateCapacity = 1, Priority = 2,
                 HourlyRate = 75.00m, CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 MachineId = "EDM1", Name = "Wire EDM", MachineType = "EDM",
-                Department = "EDM", HourlyRate = 85.00m,
+                Department = "EDM", Priority = 3, HourlyRate = 85.00m,
                 CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 MachineId = "CNC1", Name = "Haas VF-2", MachineType = "CNC",
                 MachineModel = "Haas VF-2", Department = "Machining",
-                HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+                Priority = 4, HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 MachineId = "CNC2", Name = "Haas VF-2SS #2", MachineType = "CNC",
                 MachineModel = "Haas VF-2SS", Department = "Machining",
-                HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+                Priority = 4, HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 MachineId = "CNC3", Name = "Haas VF-4 #3", MachineType = "CNC",
                 MachineModel = "Haas VF-4", Department = "Machining",
-                HourlyRate = 105.00m, CreatedBy = "System", LastModifiedBy = "System"
+                Priority = 4, HourlyRate = 105.00m, CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 MachineId = "CNC4", Name = "DMG MORI NHX 4000", MachineType = "CNC",
                 MachineModel = "DMG MORI NHX 4000", Department = "Machining",
-                HourlyRate = 125.00m, CreatedBy = "System", LastModifiedBy = "System"
+                Priority = 4, HourlyRate = 125.00m, CreatedBy = "System", LastModifiedBy = "System"
             },
             new()
             {
                 MachineId = "LATHE1", Name = "CNC Lathe", MachineType = "CNC-Turning",
                 MachineModel = "Haas ST-20Y", Department = "Machining",
-                HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+                Priority = 4, HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+
+            // === WORKSTATION MACHINES (one per stage that lacks dedicated equipment) ===
+            new()
+            {
+                MachineId = "BLAST1", Name = "Sandblasting Cabinet", MachineType = "Finishing",
+                Department = "Finishing", Priority = 5,
+                HourlyRate = 40.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "FINISH1", Name = "Surface Finishing Station", MachineType = "Finishing",
+                Department = "Finishing", Priority = 6,
+                HourlyRate = 45.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "ENGRAVE1", Name = "Laser Engraver", MachineType = "Engraving",
+                Department = "Engraving", Priority = 7,
+                HourlyRate = 55.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "QC1", Name = "QC Inspection Station", MachineType = "QC",
+                Department = "Quality", Priority = 8,
+                HourlyRate = 75.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "ASSY1", Name = "Assembly Station", MachineType = "Assembly",
+                Department = "Assembly", Priority = 9,
+                HourlyRate = 60.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "OIL-ASSY1", Name = "Oil & Sleeve Assembly Station", MachineType = "Assembly",
+                Department = "Assembly", Priority = 9,
+                HourlyRate = 50.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "EXT-COAT", Name = "External Coating (Outsourced)", MachineType = "External",
+                Department = "External", Priority = 10,
+                HourlyRate = 0.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "PACK1", Name = "Packaging Station", MachineType = "Shipping",
+                Department = "Shipping", Priority = 10,
+                HourlyRate = 35.00m, CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "SHIP1", Name = "Shipping Station", MachineType = "Shipping",
+                Department = "Shipping", Priority = 10,
+                HourlyRate = 35.00m, CreatedBy = "System", LastModifiedBy = "System"
             }
         };
 
         db.Machines.AddRange(machines);
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Idempotent: adds missing machines, production stages, and updates Priority values
+    /// on existing machines. Safe to call on both fresh and existing databases.
+    /// Also exposed publicly so the Debug page can trigger a re-seed.
+    /// </summary>
+    public async Task<SeedResult> EnsureSeedDataAsync(TenantDbContext db)
+    {
+        int machinesAdded = 0, machinesUpdated = 0, stagesAdded = 0, stagesUpdated = 0;
+
+        // ── Machines: add missing, update Priority/Department on existing ──
+        var expectedMachines = GetExpectedMachines();
+        var existingMachines = await db.Machines.ToListAsync();
+        var existingByBusinessId = existingMachines.ToDictionary(m => m.MachineId, m => m);
+
+        foreach (var expected in expectedMachines)
+        {
+            if (existingByBusinessId.TryGetValue(expected.MachineId, out var existing))
+            {
+                // Update fields that may have changed
+                var changed = false;
+
+                if (existing.Priority != expected.Priority)
+                { existing.Priority = expected.Priority; changed = true; }
+
+                if (!string.IsNullOrWhiteSpace(expected.Department) && existing.Department != expected.Department)
+                { existing.Department = expected.Department; changed = true; }
+
+                if (existing.AutoChangeoverEnabled != expected.AutoChangeoverEnabled)
+                { existing.AutoChangeoverEnabled = expected.AutoChangeoverEnabled; changed = true; }
+
+                if (expected.ChangeoverMinutes > 0 && existing.ChangeoverMinutes != expected.ChangeoverMinutes)
+                { existing.ChangeoverMinutes = expected.ChangeoverMinutes; changed = true; }
+
+                if (changed) machinesUpdated++;
+            }
+            else
+            {
+                db.Machines.Add(expected);
+                machinesAdded++;
+            }
+        }
+
+        if (machinesAdded > 0 || machinesUpdated > 0)
+            await db.SaveChangesAsync();
+
+        // ── Production stages: add missing, update DefaultMachineId on existing ──
+        var expectedStages = GetExpectedProductionStages();
+        var existingStages = await db.ProductionStages.ToListAsync();
+        var existingBySlug = existingStages.ToDictionary(s => s.StageSlug, s => s);
+
+        foreach (var expected in expectedStages)
+        {
+            if (existingBySlug.TryGetValue(expected.StageSlug, out var existing))
+            {
+                var changed = false;
+
+                if (!string.IsNullOrWhiteSpace(expected.DefaultMachineId) &&
+                    existing.DefaultMachineId != expected.DefaultMachineId)
+                { existing.DefaultMachineId = expected.DefaultMachineId; changed = true; }
+
+                if (!string.IsNullOrWhiteSpace(expected.Department) && existing.Department != expected.Department)
+                { existing.Department = expected.Department; changed = true; }
+
+                if (expected.DisplayOrder > 0 && existing.DisplayOrder != expected.DisplayOrder)
+                { existing.DisplayOrder = expected.DisplayOrder; changed = true; }
+
+                if (changed) stagesUpdated++;
+            }
+            else
+            {
+                db.ProductionStages.Add(expected);
+                stagesAdded++;
+            }
+        }
+
+        if (stagesAdded > 0 || stagesUpdated > 0)
+            await db.SaveChangesAsync();
+
+        return new SeedResult(machinesAdded, machinesUpdated, stagesAdded, stagesUpdated);
+    }
+
+    /// <summary>
+    /// Returns the canonical list of machines the system expects to exist.
+    /// Used by both SeedMachinesAsync (fresh DB) and EnsureSeedDataAsync (existing DB).
+    /// </summary>
+    private static List<Machine> GetExpectedMachines() =>
+    [
+        new()
+        {
+            MachineId = "M4-1", Name = "EOS M4 Onyx #1", MachineType = "SLS",
+            MachineModel = "EOS M 400-4", Department = "SLS",
+            BuildLengthMm = 450, BuildWidthMm = 450, BuildHeightMm = 400,
+            BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30,
+            LaserCount = 6, MaxLaserPowerWatts = 1000,
+            HourlyRate = 200.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "M4-2", Name = "EOS M4 Onyx #2", MachineType = "SLS",
+            MachineModel = "EOS M 400-4", Department = "SLS",
+            BuildLengthMm = 450, BuildWidthMm = 450, BuildHeightMm = 400,
+            BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30,
+            LaserCount = 6, MaxLaserPowerWatts = 1000,
+            HourlyRate = 200.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "INC1", Name = "Incineris Depowder", MachineType = "Depowder",
+            MachineModel = "Incineris", Department = "Post-Process",
+            BuildPlateCapacity = 1, Priority = 1,
+            HourlyRate = 85.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "HT1", Name = "Heat Treatment Furnace", MachineType = "Heat-Treat",
+            MachineModel = "Vacuum Furnace", Department = "Post-Process",
+            BuildPlateCapacity = 1, Priority = 2,
+            HourlyRate = 75.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "EDM1", Name = "Wire EDM", MachineType = "EDM",
+            Department = "EDM", Priority = 3, HourlyRate = 85.00m,
+            CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "CNC1", Name = "Haas VF-2", MachineType = "CNC",
+            MachineModel = "Haas VF-2", Department = "Machining",
+            Priority = 4, HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "CNC2", Name = "Haas VF-2SS #2", MachineType = "CNC",
+            MachineModel = "Haas VF-2SS", Department = "Machining",
+            Priority = 4, HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "CNC3", Name = "Haas VF-4 #3", MachineType = "CNC",
+            MachineModel = "Haas VF-4", Department = "Machining",
+            Priority = 4, HourlyRate = 105.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "CNC4", Name = "DMG MORI NHX 4000", MachineType = "CNC",
+            MachineModel = "DMG MORI NHX 4000", Department = "Machining",
+            Priority = 4, HourlyRate = 125.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "LATHE1", Name = "CNC Lathe", MachineType = "CNC-Turning",
+            MachineModel = "Haas ST-20Y", Department = "Machining",
+            Priority = 4, HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "BLAST1", Name = "Sandblasting Cabinet", MachineType = "Finishing",
+            Department = "Finishing", Priority = 5,
+            HourlyRate = 40.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "FINISH1", Name = "Surface Finishing Station", MachineType = "Finishing",
+            Department = "Finishing", Priority = 6,
+            HourlyRate = 45.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "ENGRAVE1", Name = "Laser Engraver", MachineType = "Engraving",
+            Department = "Engraving", Priority = 7,
+            HourlyRate = 55.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "QC1", Name = "QC Inspection Station", MachineType = "QC",
+            Department = "Quality", Priority = 8,
+            HourlyRate = 75.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "ASSY1", Name = "Assembly Station", MachineType = "Assembly",
+            Department = "Assembly", Priority = 9,
+            HourlyRate = 60.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "OIL-ASSY1", Name = "Oil & Sleeve Assembly Station", MachineType = "Assembly",
+            Department = "Assembly", Priority = 9,
+            HourlyRate = 50.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "EXT-COAT", Name = "External Coating (Outsourced)", MachineType = "External",
+            Department = "External", Priority = 10,
+            HourlyRate = 0.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "PACK1", Name = "Packaging Station", MachineType = "Shipping",
+            Department = "Shipping", Priority = 10,
+            HourlyRate = 35.00m, CreatedBy = "System", LastModifiedBy = "System"
+        },
+        new()
+        {
+            MachineId = "SHIP1", Name = "Shipping Station", MachineType = "Shipping",
+            Department = "Shipping", Priority = 10,
+            HourlyRate = 35.00m, CreatedBy = "System", LastModifiedBy = "System"
+        }
+    ];
+
+    /// <summary>
+    /// Returns the canonical list of production stages the system expects.
+    /// Used by EnsureSeedDataAsync to add missing stages to existing databases.
+    /// </summary>
+    private static List<ProductionStage> GetExpectedProductionStages() =>
+    [
+        new() { Name = "SLS/LPBF Printing", StageSlug = "sls-printing", Department = "SLS", DefaultDurationHours = 8.0, HasBuiltInPage = true, DefaultHourlyRate = 225.00m, DefaultSetupMinutes = 60, DisplayOrder = 1, StageIcon = "🖨️", StageColor = "#3B82F6", RequiresMachineAssignment = true, DefaultMachineId = "M4-1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Depowdering", StageSlug = "depowdering", Department = "Post-Process", DefaultDurationHours = 1.0, HasBuiltInPage = true, DefaultHourlyRate = 55.00m, DefaultSetupMinutes = 10, DisplayOrder = 2, StageIcon = "💨", StageColor = "#F59E0B", RequiresMachineAssignment = true, DefaultMachineId = "INC1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Heat Treatment", StageSlug = "heat-treatment", Department = "Post-Process", DefaultDurationHours = 4.0, HasBuiltInPage = true, DefaultHourlyRate = 65.00m, DefaultSetupMinutes = 20, DisplayOrder = 3, StageIcon = "🔥", StageColor = "#EF4444", RequiresMachineAssignment = true, DefaultMachineId = "HT1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Wire EDM", StageSlug = "wire-edm", Department = "EDM", DefaultDurationHours = 2.0, HasBuiltInPage = true, DefaultHourlyRate = 85.00m, DefaultSetupMinutes = 25, DisplayOrder = 4, StageIcon = "⚡", StageColor = "#8B5CF6", RequiresMachineAssignment = true, DefaultMachineId = "EDM1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "CNC Machining", StageSlug = "cnc-machining", Department = "Machining", DefaultDurationHours = 0.5, HasBuiltInPage = true, DefaultHourlyRate = 95.00m, DefaultSetupMinutes = 30, DisplayOrder = 5, StageIcon = "⚙️", StageColor = "#06B6D4", RequiresMachineAssignment = true, DefaultMachineId = "CNC1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Laser Engraving", StageSlug = "laser-engraving", Department = "Engraving", DefaultDurationHours = 0.25, HasBuiltInPage = true, DefaultHourlyRate = 55.00m, DefaultSetupMinutes = 10, RequiresSerialNumber = true, DisplayOrder = 6, StageIcon = "✒️", StageColor = "#10B981", RequiresMachineAssignment = true, DefaultMachineId = "ENGRAVE1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Surface Finishing", StageSlug = "surface-finishing", Department = "Finishing", DefaultDurationHours = 0.33, HasBuiltInPage = true, DefaultHourlyRate = 45.00m, DefaultSetupMinutes = 10, DisplayOrder = 7, StageIcon = "🎨", StageColor = "#EC4899", RequiresMachineAssignment = true, DefaultMachineId = "FINISH1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Quality Control", StageSlug = "qc", Department = "Quality", DefaultDurationHours = 0.083, HasBuiltInPage = true, DefaultHourlyRate = 75.00m, DefaultSetupMinutes = 15, DisplayOrder = 8, StageIcon = "✅", StageColor = "#14B8A6", RequiresQualityCheck = true, RequiresMachineAssignment = true, DefaultMachineId = "QC1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Shipping", StageSlug = "shipping", Department = "Shipping", DefaultDurationHours = 0.083, HasBuiltInPage = true, DefaultHourlyRate = 35.00m, DefaultSetupMinutes = 5, DisplayOrder = 9, StageIcon = "🚚", StageColor = "#6366F1", RequiresMachineAssignment = true, DefaultMachineId = "SHIP1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "CNC Turning", StageSlug = "cnc-turning", Department = "Machining", DefaultDurationHours = 0.33, HasBuiltInPage = true, DefaultHourlyRate = 90.00m, DefaultSetupMinutes = 25, DisplayOrder = 10, StageIcon = "🔩", StageColor = "#0891B2", RequiresMachineAssignment = true, DefaultMachineId = "LATHE1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Assembly", StageSlug = "assembly", Department = "Assembly", DefaultDurationHours = 0.167, HasBuiltInPage = true, DefaultHourlyRate = 60.00m, DefaultSetupMinutes = 10, DisplayOrder = 11, StageIcon = "🔧", StageColor = "#7C3AED", RequiresMachineAssignment = true, DefaultMachineId = "ASSY1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Sandblasting", StageSlug = "sandblasting", Department = "Finishing", DefaultDurationHours = 0.25, DefaultHourlyRate = 40.00m, DefaultSetupMinutes = 5, DisplayOrder = 12, StageIcon = "🌪️", StageColor = "#A3A3A3", RequiresMachineAssignment = true, DefaultMachineId = "BLAST1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "External Coating", StageSlug = "external-coating", Department = "External", DefaultDurationHours = 0, IsExternalOperation = true, DefaultTurnaroundDays = 14, DefaultHourlyRate = 0.00m, DefaultSetupMinutes = 0, DisplayOrder = 13, StageIcon = "🏢", StageColor = "#D97706", RequiresQualityCheck = true, RequiresMachineAssignment = true, DefaultMachineId = "EXT-COAT", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Oil & Sleeve Assembly", StageSlug = "oil-sleeve", Department = "Assembly", DefaultDurationHours = 0.083, DefaultHourlyRate = 50.00m, DefaultSetupMinutes = 5, DisplayOrder = 14, StageIcon = "🛢️", StageColor = "#059669", RequiresMachineAssignment = true, DefaultMachineId = "OIL-ASSY1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "Packaging & Shipping", StageSlug = "packaging", Department = "Shipping", DefaultDurationHours = 0.05, DefaultHourlyRate = 35.00m, DefaultSetupMinutes = 5, DisplayOrder = 15, StageIcon = "📦", StageColor = "#7C3AED", RequiresMachineAssignment = true, DefaultMachineId = "PACK1", CreatedBy = "System", LastModifiedBy = "System" },
+    ];
+
+    /// <summary>
+    /// Ensures every ProductionStage has at least one machine assigned so the Gantt chart
+    /// shows a row for every stage in the part lifecycle. Idempotent — safe for existing databases.
+    /// Creates workstation machines for stages that have a DefaultMachineId but no matching machine,
+    /// and populates AssignedMachineIds with correct int PKs.
+    /// </summary>
+    private static async Task EnsureStageWorkstationsAsync(TenantDbContext db)
+    {
+        var stages = await db.ProductionStages.ToListAsync();
+        var machines = await db.Machines.ToListAsync();
+        var machineByBusinessId = machines.ToDictionary(m => m.MachineId, m => m);
+        var dirty = false;
+
+        foreach (var stage in stages)
+        {
+            // Resolve the default machine for this stage
+            Machine? defaultMachine = null;
+            if (!string.IsNullOrWhiteSpace(stage.DefaultMachineId))
+            {
+                machineByBusinessId.TryGetValue(stage.DefaultMachineId, out defaultMachine);
+            }
+
+            // If the stage has a DefaultMachineId but no machine exists for it, create a workstation
+            if (!string.IsNullOrWhiteSpace(stage.DefaultMachineId) && defaultMachine == null)
+            {
+                defaultMachine = new Machine
+                {
+                    MachineId = stage.DefaultMachineId,
+                    Name = $"{stage.Name} Workstation",
+                    MachineType = stage.Department ?? "General",
+                    Department = stage.Department ?? "General",
+                    HourlyRate = stage.DefaultHourlyRate,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                };
+                db.Machines.Add(defaultMachine);
+                await db.SaveChangesAsync(); // flush to get PK
+                machineByBusinessId[defaultMachine.MachineId] = defaultMachine;
+            }
+
+            // Build the correct AssignedMachineIds from int PKs
+            if (defaultMachine != null)
+            {
+                var existingIntIds = stage.GetAssignedMachineIntIds();
+                if (!existingIntIds.Contains(defaultMachine.Id))
+                {
+                    existingIntIds.Add(defaultMachine.Id);
+                    stage.AssignedMachineIds = string.Join(",", existingIntIds);
+                    dirty = true;
+                }
+
+                // For stages that already had AssignedMachineIds as string MachineIds,
+                // detect and fix: if any entry doesn't parse as int, rebuild from scratch
+                var rawIds = stage.GetAssignedMachineIds();
+                var hasNonIntIds = rawIds.Any(id => !int.TryParse(id, out _));
+                if (hasNonIntIds)
+                {
+                    var correctedIds = new List<int>();
+                    foreach (var rawId in rawIds)
+                    {
+                        if (int.TryParse(rawId, out var intId))
+                        {
+                            if (!correctedIds.Contains(intId))
+                                correctedIds.Add(intId);
+                        }
+                        else if (machineByBusinessId.TryGetValue(rawId, out var resolved))
+                        {
+                            if (!correctedIds.Contains(resolved.Id))
+                                correctedIds.Add(resolved.Id);
+                        }
+                    }
+                    // Ensure the default machine is included
+                    if (!correctedIds.Contains(defaultMachine.Id))
+                        correctedIds.Add(defaultMachine.Id);
+                    stage.AssignedMachineIds = string.Join(",", correctedIds);
+                    dirty = true;
+                }
+
+                // Ensure RequiresMachineAssignment is set
+                if (!stage.RequiresMachineAssignment)
+                {
+                    stage.RequiresMachineAssignment = true;
+                    dirty = true;
+                }
+            }
+        }
+
+        // Also fix stages that had AssignedMachineIds with string MachineIds but no DefaultMachineId
+        // (e.g., CNC Machining had "CNC1,CNC2,CNC3,CNC4" as AssignedMachineIds)
+        foreach (var stage in stages.Where(s => string.IsNullOrWhiteSpace(s.DefaultMachineId)
+                                                && !string.IsNullOrWhiteSpace(s.AssignedMachineIds)))
+        {
+            var rawIds = stage.GetAssignedMachineIds();
+            var hasNonIntIds = rawIds.Any(id => !int.TryParse(id, out _));
+            if (hasNonIntIds)
+            {
+                var correctedIds = new List<int>();
+                foreach (var rawId in rawIds)
+                {
+                    if (int.TryParse(rawId, out var intId))
+                    {
+                        if (!correctedIds.Contains(intId))
+                            correctedIds.Add(intId);
+                    }
+                    else if (machineByBusinessId.TryGetValue(rawId, out var resolved))
+                    {
+                        if (!correctedIds.Contains(resolved.Id))
+                            correctedIds.Add(resolved.Id);
+                    }
+                }
+                stage.AssignedMachineIds = string.Join(",", correctedIds);
+                dirty = true;
+            }
+        }
+
+        if (dirty)
+        {
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task SeedMaterialsAsync(TenantDbContext db)
@@ -1218,7 +1645,30 @@ public class DataSeedingService : IDataSeedingService
                     RunDurationMode = DurationMode.PerBatch,
                     RunTimeMinutes = 15,
                     BatchCapacityOverride = 20,
+                    AssignedMachineId = MachineIntId("BLAST1"),
                     AllowRebatching = true,
+                    IsRequired = false,
+                    AllowSkip = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            // Surface Finishing (batch-level, after sandblasting)
+            if (stageBySlug.TryGetValue("surface-finishing", out var sfStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = sfStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Batch,
+                    SetupDurationMode = DurationMode.PerBatch,
+                    SetupTimeMinutes = 10,
+                    RunDurationMode = DurationMode.PerBatch,
+                    RunTimeMinutes = 20,
+                    BatchCapacityOverride = 30,
+                    AssignedMachineId = MachineIntId("FINISH1"),
                     IsRequired = false,
                     AllowSkip = true,
                     CreatedBy = "System",
@@ -1266,6 +1716,7 @@ public class DataSeedingService : IDataSeedingService
                     RunDurationMode = DurationMode.PerBatch,
                     RunTimeMinutes = 15,
                     BatchCapacityOverride = 36,
+                    AssignedMachineId = MachineIntId("ENGRAVE1"),
                     RequiresSerialNumber = true,
                     IsRequired = true,
                     IsBlocking = true,
@@ -1282,8 +1733,11 @@ public class DataSeedingService : IDataSeedingService
                     ProductionStageId = qcStage.Id,
                     ExecutionOrder = order++,
                     ProcessingLevel = ProcessingLevel.Part,
+                    SetupDurationMode = DurationMode.PerBatch,
+                    SetupTimeMinutes = 5,
                     RunDurationMode = DurationMode.PerPart,
                     RunTimeMinutes = 5,
+                    AssignedMachineId = MachineIntId("QC1"),
                     RequiresQualityCheck = true,
                     IsRequired = true,
                     IsBlocking = true,
@@ -1305,6 +1759,7 @@ public class DataSeedingService : IDataSeedingService
                     RunDurationMode = DurationMode.PerBatch,
                     RunTimeMinutes = 10,
                     BatchCapacityOverride = 50,
+                    AssignedMachineId = MachineIntId("PACK1"),
                     IsRequired = true,
                     IsBlocking = false,
                     CreatedBy = "System",

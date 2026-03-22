@@ -300,18 +300,30 @@ else if (_viewMode == "table")
     private async Task LoadMachineTimelinesAsync()
     {
         var timelines = new Dictionary<int, List<MachineTimelineEntry>>();
-        var machines = SlsMachines;
 
-        var tasks = machines.Select(async machine =>
+        // Load timelines for ALL machines that have build-level executions,
+        // not just SLS machines. Depowder, Wire EDM, etc. need per-run
+        // timeline entries so GanttMachineRow renders them as individual bars.
+        var buildMachineIds = _executions
+            .Where(e => e.BuildPackageId != null && e.MachineId.HasValue)
+            .Select(e => e.MachineId!.Value)
+            .Distinct()
+            .ToHashSet();
+
+        // Always include SLS machines (they may have scheduled packages without executions yet)
+        foreach (var m in SlsMachines)
+            buildMachineIds.Add(m.Id);
+
+        var tasks = buildMachineIds.Select(async machineId =>
         {
             try
             {
-                var timeline = await BuildScheduling.GetMachineTimelineAsync(machine.Id, _dataRangeStart, _dataRangeEnd);
-                return (machine.Id, Timeline: timeline);
+                var timeline = await BuildScheduling.GetMachineTimelineAsync(machineId, _dataRangeStart, _dataRangeEnd);
+                return (machineId, Timeline: timeline);
             }
             catch
             {
-                return (machine.Id, Timeline: new List<MachineTimelineEntry>());
+                return (machineId, Timeline: new List<MachineTimelineEntry>());
             }
         });
 
