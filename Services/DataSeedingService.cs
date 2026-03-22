@@ -35,6 +35,9 @@ public class DataSeedingService : IDataSeedingService
 
         // Manufacturing processes (depends on parts + production stages)
         await SeedManufacturingProcessesAsync(tenantDb);
+
+        // Work instructions & sign-off checklists (depends on parts + production stages)
+        await SeedWorkInstructionsAsync(tenantDb);
     }
 
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
@@ -1319,6 +1322,192 @@ public class DataSeedingService : IDataSeedingService
             if (wireEdmProcessStage != null)
             {
                 process.PlateReleaseStageId = wireEdmProcessStage.Id;
+                await db.SaveChangesAsync();
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    //  Work Instructions & Sign-Off Checklists
+    // ──────────────────────────────────────────────
+    private static async Task SeedWorkInstructionsAsync(TenantDbContext db)
+    {
+        if (await db.WorkInstructions.AnyAsync()) return;
+
+        var parts = await db.Parts.ToListAsync();
+        if (parts.Count == 0) return;
+
+        var stages = await db.ProductionStages.ToDictionaryAsync(s => s.StageSlug, s => s);
+
+        // Stage-specific sign-off step templates keyed by stage slug.
+        // Each tuple: (title, body, warningText?, tipText?, requiresSignoff)
+        var stageStepTemplates = new Dictionary<string, List<(string Title, string Body, string? Warning, string? Tip, bool RequiresSignoff)>>
+        {
+            ["sls-printing"] =
+            [
+                ("Verify powder lot & material cert", "Confirm the powder lot number matches the job traveler and material certificate is on file.", "Using incorrect powder lot will result in full batch rejection.", "Check the lot label on the hopper against the traveler.", true),
+                ("Confirm build file loaded", "Load the correct .sli/.cls build file and verify part orientation matches the approved layout.", null, "Double-check the file hash if available.", true),
+                ("Set machine parameters", "Verify laser power, scan speed, layer thickness, and hatch spacing match the approved parameter set for this material.", "Deviations require engineering sign-off.", null, false),
+                ("Inspect build plate surface", "Ensure the build plate is clean, flat, and free of residual material from previous builds.", null, null, true),
+                ("Start inert atmosphere", "Purge the build chamber with argon until O₂ level is below 0.1%.", "Do not start the build if O₂ exceeds 0.1%.", null, true),
+                ("Confirm build start", "Initiate the build and record the start time on the traveler.", null, null, true),
+            ],
+            ["depowdering"] =
+            [
+                ("Verify build plate ID", "Confirm the build plate serial matches the job traveler before starting depowdering.", null, null, true),
+                ("Don required PPE", "Ensure respirator, gloves, and face shield are worn before opening the build chamber.", "Titanium powder is a respiratory and fire hazard.", null, true),
+                ("Remove loose powder", "Use the depowdering station to remove all loose powder from the build plate and part cavities.", null, "Work from top to bottom, paying special attention to internal channels.", true),
+                ("Inspect for trapped powder", "Visually and tactilely inspect all internal features for residual powder.", null, "Use compressed air for hard-to-reach areas.", true),
+                ("Record powder recovery weight", "Weigh the recovered powder and record on the traveler for material tracking.", null, null, false),
+            ],
+            ["heat-treatment"] =
+            [
+                ("Verify furnace calibration", "Confirm the furnace calibration is current and temperature uniformity survey is within spec.", "Do not proceed if calibration is expired.", null, true),
+                ("Load build plate into furnace", "Place the build plate with parts into the furnace in the correct orientation. Ensure thermocouple placement per procedure.", null, null, true),
+                ("Set heat treatment profile", "Program the furnace with the correct temperature ramp, hold time, and cooling rate per the material spec.", "Ti-6Al-4V: 800°C ± 10°C, hold 2 hrs, furnace cool below 500°C.", null, true),
+                ("Start cycle & record", "Start the heat treatment cycle and record the start time. Monitor for the first 15 minutes.", null, null, true),
+                ("Verify cycle completion", "Confirm the full cycle completed without interruption. Record the actual peak temperature and hold time from the chart recorder.", null, null, true),
+            ],
+            ["wire-edm"] =
+            [
+                ("Verify build plate fixture", "Mount the build plate securely in the EDM fixture. Confirm alignment using the edge finder.", null, null, true),
+                ("Load cutting program", "Load the correct EDM cutting program and verify the wire path matches the approved cut layout.", "Wrong cut program can destroy the entire plate of parts.", "Dry-run the program path before engaging the wire.", true),
+                ("Thread & tension wire", "Thread the brass wire and set tension per machine spec. Verify wire diameter matches program requirements (typically 0.25mm).", null, null, true),
+                ("Set flush parameters", "Configure dielectric flush pressure and nozzle positions for the cut geometry.", null, null, false),
+                ("Start cut & monitor", "Begin the EDM cut. Monitor for wire breaks during the first pass. Record the start time.", null, "Keep spare wire spools nearby for quick rethread.", true),
+                ("Verify parts released", "Confirm all parts are fully separated from the build plate. Inspect cut surfaces for quality.", null, null, true),
+            ],
+            ["sandblasting"] =
+            [
+                ("Verify media type & pressure", "Confirm the blast media and pressure setting match the part spec. Typical: alumina 120 grit @ 40 PSI.", null, null, true),
+                ("Mask critical surfaces", "Apply masking tape or plugs to any surfaces that must not be blasted (threads, sealing faces, datum surfaces).", "Blasting datum surfaces will cause CNC setup issues.", null, true),
+                ("Blast all surfaces uniformly", "Blast all exposed surfaces to achieve uniform matte finish. Rotate parts to cover all angles.", null, null, true),
+                ("Inspect finish quality", "Visually inspect that all support marks and print lines are removed. Surface should be uniformly matte.", null, null, true),
+            ],
+            ["cnc-machining"] =
+            [
+                ("Verify fixture & work holding", "Set up the correct fixture for this part number. Confirm clamping pressure and datum alignment.", null, "Use the fixture setup sheet posted at the machine.", true),
+                ("Load & verify CNC program", "Load the correct G-code program. Verify tool list matches the program requirements and all tools are presettled.", "Running with wrong tool offsets will scrap the part.", null, true),
+                ("Set work coordinate zero", "Touch off the part and set the work coordinate system origin. Verify against the setup sheet dimensions.", null, null, true),
+                ("Run first article", "Machine the first part and measure all critical dimensions before running the batch.", null, "Document all first article measurements on the inspection form.", true),
+                ("Confirm dimensions in tolerance", "Verify all critical dimensions are within the drawing tolerances using calibrated instruments.", null, null, true),
+                ("Run remaining parts", "Continue machining remaining parts. Spot-check every 5th part.", null, null, false),
+                ("Deburr & clean", "Remove all burrs, sharp edges, and machining chips. Clean parts with solvent before passing to next stage.", null, null, true),
+            ],
+            ["cnc-turning"] =
+            [
+                ("Verify chuck setup & bar stock", "Set up the correct collet/chuck for the bar diameter. Verify material matches the traveler.", null, null, true),
+                ("Load & verify turning program", "Load the correct CNC turning program. Verify all tool offsets and turret positions.", null, null, true),
+                ("Set work coordinate zero", "Face-off and set Z-zero. Confirm bar stick-out per the setup sheet.", null, null, true),
+                ("Run first article", "Turn the first part and measure all critical diameters, lengths, and thread specs.", null, null, true),
+                ("Confirm dimensions in tolerance", "Verify all dimensions are within drawing tolerances.", null, null, true),
+                ("Run remaining parts & deburr", "Continue the batch. Deburr parting-line witness marks.", null, null, false),
+            ],
+            ["laser-engraving"] =
+            [
+                ("Verify serial number sequence", "Confirm the serial number range on the traveler. Verify the engraving file has the correct sequence loaded.", "Duplicate or out-of-sequence serials cause traceability failures.", null, true),
+                ("Align part in fixture", "Place the part in the engraving fixture. Verify the engraving location matches the drawing callout.", null, null, true),
+                ("Set laser parameters", "Confirm power, speed, and frequency settings for the material. Use the approved parameter set.", null, "Titanium: lower power, slower speed to avoid heat discoloration.", false),
+                ("Engrave & verify readability", "Run the engraving cycle. Verify each serial is legible and correctly positioned using a magnifier.", null, null, true),
+            ],
+            ["surface-finishing"] =
+            [
+                ("Verify finishing specification", "Confirm the required surface finish (Ra value) and process (tumble, polish, bead blast) per the drawing.", null, null, true),
+                ("Prepare finishing media/compounds", "Load the correct media or compound for the specified finish. Check media condition.", null, null, false),
+                ("Process parts", "Run the finishing cycle per the approved time and parameters.", null, null, true),
+                ("Inspect surface finish", "Measure the surface roughness with a profilometer if specified. Visual inspection for uniform finish.", null, null, true),
+            ],
+            ["qc"] =
+            [
+                ("Visual inspection", "Inspect all parts for visible defects: cracks, porosity, surface imperfections, incomplete features.", null, null, true),
+                ("Dimensional inspection", "Measure all critical dimensions per the inspection plan. Record on the dimensional report.", null, "Use calibrated instruments only. Check calibration stickers.", true),
+                ("Thread / feature check", "Verify all threads with go/no-go gauges. Check all assembly features with mating components if available.", null, null, true),
+                ("Material cert & lot traceability", "Verify the material certificate is on file and the lot number chain is complete from powder to finished part.", "Parts without complete traceability must be quarantined.", null, true),
+                ("Record inspection results", "Complete the inspection report. Stamp or sign the traveler.", null, null, true),
+            ],
+            ["shipping"] =
+            [
+                ("Verify packing list", "Confirm all parts on the packing list are present and match the work order quantities.", null, null, true),
+                ("Include required documentation", "Attach Certificate of Conformance, material certs, and inspection reports as required by the PO.", null, null, true),
+                ("Package parts securely", "Wrap or bag parts individually. Use appropriate dunnage to prevent damage in transit.", null, "Titanium parts should be wrapped in VCI paper.", true),
+            ],
+            ["packaging"] =
+            [
+                ("Verify order completeness", "Count all parts and compare against the packing list and work order.", null, null, true),
+                ("Apply part labels", "Attach serialized labels or tags to each part or bag as required.", null, null, true),
+                ("Package for shipment", "Place parts in the shipping container with protective packaging. Seal and label the outer box.", null, null, true),
+            ],
+            ["assembly"] =
+            [
+                ("Verify all components present", "Check the bill of materials against the kit. All sub-components must be QC-passed before assembly.", null, null, true),
+                ("Follow assembly sequence", "Assemble per the approved work instruction sequence. Do not skip steps.", null, null, true),
+                ("Torque all fasteners", "Apply the specified torque values to all fasteners. Use a calibrated torque wrench.", "Under/over-torqued fasteners are a safety-critical defect.", null, true),
+                ("Verify function & fit", "Perform the functional check per the assembly procedure. Verify all fits and clearances.", null, null, true),
+            ],
+            ["oil-sleeve"] =
+            [
+                ("Verify sleeve dimensions", "Measure the sleeve ID/OD and confirm fit against the mating component.", null, null, true),
+                ("Apply lubricant", "Apply the specified oil or lubricant per the procedure. Ensure even coverage.", null, null, true),
+                ("Press-fit sleeve", "Press the sleeve into position using the arbor press. Verify final seated position.", null, null, true),
+                ("Verify assembly", "Confirm the sleeve is fully seated and the assembly moves freely.", null, null, true),
+            ],
+            ["external-coating"] =
+            [
+                ("Verify coating specification", "Confirm the coating type, thickness, and spec per the drawing (e.g., Cerakote, DLC, anodize).", null, null, true),
+                ("Prepare parts for shipping", "Clean parts per the coating vendor's pre-treatment requirements. Package to prevent contamination in transit.", null, null, true),
+                ("Record outgoing parts", "Log the parts, quantities, and PO number being sent to the coating vendor.", null, null, true),
+                ("Inspect returned parts", "When parts return, inspect coating thickness, adhesion, and appearance before accepting.", null, null, true),
+            ],
+        };
+
+        foreach (var part in parts)
+        {
+            // Get the stages assigned to this part via its manufacturing process
+            var processStageIds = await db.ProcessStages
+                .Include(ps => ps.ProductionStage)
+                .Where(ps => ps.ManufacturingProcess!.PartId == part.Id)
+                .OrderBy(ps => ps.ExecutionOrder)
+                .Select(ps => ps.ProductionStage!)
+                .ToListAsync();
+
+            if (processStageIds.Count == 0) continue;
+
+            foreach (var stage in processStageIds)
+            {
+                if (!stageStepTemplates.TryGetValue(stage.StageSlug, out var templates))
+                    continue;
+
+                var instruction = new WorkInstruction
+                {
+                    PartId = part.Id,
+                    ProductionStageId = stage.Id,
+                    Title = $"{stage.Name} — {part.PartNumber}",
+                    Description = $"Standard work instructions and sign-off checklist for {stage.Name} on {part.Name}.",
+                    RevisionNumber = 1,
+                    IsActive = true,
+                    CreatedByUserId = "System",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                };
+
+                db.WorkInstructions.Add(instruction);
+                await db.SaveChangesAsync();
+
+                var stepOrder = 1;
+                foreach (var (title, body, warning, tip, requiresSignoff) in templates)
+                {
+                    db.WorkInstructionSteps.Add(new WorkInstructionStep
+                    {
+                        WorkInstructionId = instruction.Id,
+                        StepOrder = stepOrder++,
+                        Title = title,
+                        Body = body,
+                        WarningText = warning,
+                        TipText = tip,
+                        RequiresOperatorSignoff = requiresSignoff,
+                    });
+                }
+
                 await db.SaveChangesAsync();
             }
         }

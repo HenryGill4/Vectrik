@@ -4,6 +4,8 @@
 @inject ITenantFeatureService Features
 @inject ICustomFieldService CustomFieldService
 @inject IDocumentTemplateService TemplateService
+@inject IStageService StageService
+@inject IWorkInstructionService WorkInstructionService
 @inject IJSRuntime JS
 @inject IWorkflowEngine WorkflowEngine
 @inject NavigationManager Nav
@@ -310,10 +312,10 @@ else
                                             </div>
                                         </div>
                                     }
-                                    @if (allExecs.Count > 0)
+                                    @if (processStages?.Count > 0 || allExecs.Count > 0)
                                     {
                                         <div style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
-                                            Stage Executions
+                                            Routing & Sign-Off
                                         </div>
                                         <table style="width: 100%; font-size: 0.78rem; border-collapse: collapse;">
                                             <thead>
@@ -321,10 +323,13 @@ else
                                                     <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">#</th>
                                                     <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Stage</th>
                                                     <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Level</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Setup</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Run</th>
                                                     <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Machine</th>
-                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Operator</th>
                                                     <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Status</th>
-                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Completed</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Operator</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Date</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Sign-off</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -340,15 +345,108 @@ else
                                                         _ => "var(--text-secondary)"
                                                     };
                                                     var levelLabel = exec.ProcessStage?.ProcessingLevel.ToString() ?? "—";
+                                                    var setupLabel = exec.ProcessStage?.SetupTimeMinutes is {} sm ? $"{sm:F0}m" : "—";
+                                                    var runLabel = exec.ProcessStage?.RunTimeMinutes is {} rm ? $"{rm:F0}m" : "—";
+                                                    var hasChecklist = _signOffChecklists.ContainsKey(exec.Id) && _signOffChecklists[exec.Id].Count > 0;
+                                                    var isFullySignedOff = exec.SignedOffAt.HasValue;
+                                                    var checklistItems = _signOffChecklists.GetValueOrDefault(exec.Id) ?? [];
+                                                    var signedCount = checklistItems.Count(c => c.SignedOff);
+                                                    var totalCount = checklistItems.Count;
                                                     <tr style="border-bottom: 1px solid var(--bg-tertiary);">
                                                         <td style="padding: 3px 6px;">@(execNum++)</td>
                                                         <td style="padding: 3px 6px; font-weight: 500;">@(exec.ProductionStage?.Name ?? "—")</td>
                                                         <td style="padding: 3px 6px;">@levelLabel</td>
+                                                        <td style="padding: 3px 6px;">@setupLabel</td>
+                                                        <td style="padding: 3px 6px;">@runLabel</td>
                                                         <td style="padding: 3px 6px;">@(exec.Machine?.Name ?? "—")</td>
-                                                        <td style="padding: 3px 6px;">@(exec.OperatorName ?? "—")</td>
                                                         <td style="padding: 3px 6px; color: @execStatusColor; font-weight: 500;">@exec.Status</td>
+                                                        <td style="padding: 3px 6px;">@(exec.OperatorName ?? "—")</td>
                                                         <td style="padding: 3px 6px;">@(exec.CompletedAt?.ToString("MMM dd HH:mm") ?? "—")</td>
+                                                        <td style="padding: 3px 6px;">
+                                                            @if (isFullySignedOff)
+                                                            {
+                                                                <span style="color: var(--success); font-weight: 600;" title="Signed off by @exec.SignedOffBy at @exec.SignedOffAt?.ToString("MMM dd HH:mm")">
+                                                                    ✅ @exec.SignedOffBy
+                                                                </span>
+                                                            }
+                                                            else if (hasChecklist)
+                                                            {
+                                                                <button class="btn btn-sm btn-secondary" style="font-size: 0.7rem; padding: 1px 6px;"
+                                                                        @onclick="() => ToggleChecklist(exec.Id)">
+                                                                    ✍️ @signedCount/@totalCount
+                                                                </button>
+                                                            }
+                                                            else if (exec.Status == StageExecutionStatus.Completed)
+                                                            {
+                                                                <button class="btn btn-sm btn-primary" style="font-size: 0.7rem; padding: 1px 6px;"
+                                                                        @onclick="() => QuickSignOff(exec.Id)">
+                                                                    ✍️ Sign off
+                                                                </button>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span style="color: var(--text-muted);">—</span>
+                                                            }
+                                                        </td>
                                                     </tr>
+                                                    @if (hasChecklist && _expandedChecklistId == exec.Id)
+                                                    {
+                                                        <tr>
+                                                            <td colspan="10" style="padding: 4px 6px 8px 24px; background: var(--bg-tertiary);">
+                                                                <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">Sign-off Checklist (from Work Instructions)</div>
+                                                                @foreach (var item in checklistItems)
+                                                                {
+                                                                    <div style="display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--bg-secondary);">
+                                                                        @if (item.SignedOff)
+                                                                        {
+                                                                            <span style="color: var(--success); font-weight: 600;">✅</span>
+                                                                            <span style="flex: 1;">@item.Title</span>
+                                                                            <span style="color: var(--text-muted); font-size: 0.7rem;">@item.SignedBy — @item.SignedAt?.ToString("MMM dd HH:mm")</span>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <span style="color: var(--text-muted);">☐</span>
+                                                                            <span style="flex: 1;">@item.Title</span>
+                                                                            <button class="btn btn-sm btn-primary" style="font-size: 0.65rem; padding: 1px 6px;"
+                                                                                    @onclick="() => SignOffItem(exec.Id, item.StepId)">
+                                                                                Sign off
+                                                                            </button>
+                                                                        }
+                                                                    </div>
+                                                                }
+                                                                @if (checklistItems.Any(c => !c.SignedOff))
+                                                                {
+                                                                    <div style="margin-top: 6px;">
+                                                                        <button class="btn btn-sm btn-success" style="font-size: 0.7rem;"
+                                                                                @onclick="() => SignOffAll(exec.Id)">
+                                                                            ✍️ Sign off all remaining
+                                                                        </button>
+                                                                    </div>
+                                                                }
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                }
+                                                @if (allExecs.Count == 0 && processStages != null)
+                                                {
+                                                    @for (var i = 0; i < processStages.Count; i++)
+                                                    {
+                                                        var ps = processStages[i];
+                                                        var psSetup = ps.SetupTimeMinutes is {} psm ? $"{psm:F0}m" : "—";
+                                                        var psRun = ps.RunTimeMinutes is {} prm ? $"{prm:F0}m" : "—";
+                                                        <tr style="border-bottom: 1px solid var(--bg-tertiary);">
+                                                            <td style="padding: 3px 6px;">@(i + 1)</td>
+                                                            <td style="padding: 3px 6px; font-weight: 500;">@(ps.ProductionStage?.Name ?? $"Stage {ps.ExecutionOrder}")</td>
+                                                            <td style="padding: 3px 6px;">@ps.ProcessingLevel</td>
+                                                            <td style="padding: 3px 6px;">@psSetup</td>
+                                                            <td style="padding: 3px 6px;">@psRun</td>
+                                                            <td style="padding: 3px 6px;">@(ps.AssignedMachine?.Name ?? "—")</td>
+                                                            <td style="padding: 3px 6px; color: var(--text-muted);">Pending</td>
+                                                            <td style="padding: 3px 6px;">—</td>
+                                                            <td style="padding: 3px 6px;">—</td>
+                                                            <td style="padding: 3px 6px;"><span style="color: var(--text-muted);">—</span></td>
+                                                        </tr>
+                                                    }
                                                 }
                                             </tbody>
                                         </table>
@@ -533,6 +631,10 @@ else
     private int? _editingCommentId;
     private string _editingCommentText = string.Empty;
 
+    // Sign-off state
+    private Dictionary<int, List<SignOffChecklistItem>> _signOffChecklists = new();
+    private int? _expandedChecklistId;
+
     protected override async Task OnInitializedAsync()
     {
         if (AuthState != null)
@@ -563,6 +665,30 @@ else
     private async Task LoadOrder()
     {
         _order = await WorkOrderService.GetWorkOrderDetailAsync(Id);
+        await LoadSignOffChecklistsAsync();
+    }
+
+    private async Task LoadSignOffChecklistsAsync()
+    {
+        _signOffChecklists.Clear();
+        if (_order == null) return;
+
+        foreach (var line in _order.Lines)
+        {
+            foreach (var job in line.Jobs)
+            {
+                foreach (var exec in job.Stages)
+                {
+                    try
+                    {
+                        var checklist = await StageService.GetSignOffChecklistAsync(exec.Id);
+                        if (checklist.Count > 0)
+                            _signOffChecklists[exec.Id] = checklist;
+                    }
+                    catch { /* checklist loading is non-critical */ }
+                }
+            }
+        }
     }
 
     private async Task Release()
@@ -766,10 +892,42 @@ else
                 {
                     var ps = stage.ProcessStage;
                     var level = ps?.ProcessingLevel.ToString() ?? "—";
-                    var setup = ps?.SetupTimeMinutes?.ToString("F0") ?? "—";
-                    var run = ps?.RunTimeMinutes?.ToString("F0") ?? "—";
+                    var setup = ps?.SetupTimeMinutes is {} stm ? $"{stm:F0}m" : "—";
+                    var run = ps?.RunTimeMinutes is {} rtm ? $"{rtm:F0}m" : "—";
                     var machine = stage.Machine?.Name ?? ps?.AssignedMachine?.Name ?? "—";
-                    routingHtml += $"<tr><td>{stageNum++}</td><td>{stage.ProductionStage?.Name ?? "—"}</td><td>{level}</td><td>{setup}m</td><td>{run}m</td><td>{machine}</td><td>{stage.Status}</td><td>{stage.OperatorName ?? ""}</td><td>{stage.CompletedAt?.ToString("yyyy-MM-dd") ?? ""}</td><td><span class='sign-line'></span></td></tr>";
+
+                    // Sign-off column: show signed-off status or blank line
+                    var signOffCell = stage.SignedOffAt.HasValue
+                        ? $"✓ {stage.SignedOffBy} ({stage.SignedOffAt?.ToString("MM/dd")})"
+                        : "<span class='sign-line'></span>";
+
+                    routingHtml += $"<tr><td>{stageNum++}</td><td>{stage.ProductionStage?.Name ?? "—"}</td><td>{level}</td><td>{setup}</td><td>{run}</td><td>{machine}</td><td>{stage.Status}</td><td>{stage.OperatorName ?? ""}</td><td>{stage.CompletedAt?.ToString("yyyy-MM-dd") ?? ""}</td><td>{signOffCell}</td></tr>";
+
+                    // Add work instruction sign-off checklist items as sub-rows
+                    var checklist = _signOffChecklists.GetValueOrDefault(stage.Id);
+                    if (checklist is { Count: > 0 })
+                    {
+                        foreach (var item in checklist)
+                        {
+                            var itemStatus = item.SignedOff
+                                ? $"✓ {item.SignedBy} ({item.SignedAt?.ToString("MM/dd HH:mm")})"
+                                : "<span class='sign-line'></span>";
+                            routingHtml += $"<tr><td></td><td colspan='8' style='padding-left:24px; font-size:0.85em; color:#555;'>☐ {item.Title}</td><td>{itemStatus}</td></tr>";
+                        }
+                    }
+                }
+            }
+
+            // Fallback: show process stages when no jobs exist yet
+            if (!line.Jobs.Any() && proc?.Stages != null)
+            {
+                foreach (var ps in proc.Stages.OrderBy(s => s.ExecutionOrder))
+                {
+                    var level = ps.ProcessingLevel.ToString();
+                    var setup = ps.SetupTimeMinutes is {} stm ? $"{stm:F0}m" : "—";
+                    var run = ps.RunTimeMinutes is {} rtm ? $"{rtm:F0}m" : "—";
+                    var machine = ps.AssignedMachine?.Name ?? "—";
+                    routingHtml += $"<tr><td>{stageNum++}</td><td>{ps.ProductionStage?.Name ?? $"Stage {ps.ExecutionOrder}"}</td><td>{level}</td><td>{setup}</td><td>{run}</td><td>{machine}</td><td>Pending</td><td></td><td></td><td><span class='sign-line'></span></td></tr>";
                 }
             }
         }
@@ -812,5 +970,46 @@ else
                 && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
                 && bp.BuildPackage.Status != BuildPackageStatus.Completed)
             .Sum(bp => bp.Quantity);
+    }
+
+    // ── Sign-off actions ─────────────────────────────────────────
+
+    private void ToggleChecklist(int executionId)
+    {
+        _expandedChecklistId = _expandedChecklistId == executionId ? null : executionId;
+    }
+
+    private async Task SignOffItem(int executionId, int stepId)
+    {
+        try
+        {
+            await StageService.SignOffChecklistItemAsync(executionId, stepId, _userName);
+            await LoadOrder();
+            Toast.ShowSuccess("Checklist item signed off");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task SignOffAll(int executionId)
+    {
+        try
+        {
+            await StageService.SignOffStageAsync(executionId, _userName);
+            await LoadOrder();
+            _expandedChecklistId = null;
+            Toast.ShowSuccess("Stage signed off");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task QuickSignOff(int executionId)
+    {
+        try
+        {
+            await StageService.SignOffStageAsync(executionId, _userName);
+            await LoadOrder();
+            Toast.ShowSuccess("Stage signed off");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 }

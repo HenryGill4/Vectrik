@@ -45,6 +45,22 @@ public interface IStageService
     // Delay logging
     Task<DelayLog> LogDelayAsync(int executionId, string reason, DelayCategory category, int delayMinutes, string loggedBy, string? notes = null);
 
+    // Sign-off
+    /// <summary>
+    /// Builds or retrieves the sign-off checklist for a stage execution from linked Work Instructions.
+    /// </summary>
+    Task<List<SignOffChecklistItem>> GetSignOffChecklistAsync(int executionId);
+
+    /// <summary>
+    /// Signs off an individual checklist item on a stage execution.
+    /// </summary>
+    Task SignOffChecklistItemAsync(int executionId, int stepId, string signedBy);
+
+    /// <summary>
+    /// Signs off the entire stage execution (marks all checklist items as signed off).
+    /// </summary>
+    Task SignOffStageAsync(int executionId, string signedBy);
+
     // Capacity
     Task<List<MachineCapacityInfo>> GetMachineCapacityAsync(DateTime from, DateTime to);
 }

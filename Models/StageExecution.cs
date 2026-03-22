@@ -71,6 +71,18 @@ public class StageExecution
     [MaxLength(500)]
     public string? FailureReason { get; set; }
 
+    // Sign-Off (linked to Work Instructions)
+    [MaxLength(200)]
+    public string? SignedOffBy { get; set; }
+
+    public DateTime? SignedOffAt { get; set; }
+
+    /// <summary>
+    /// JSON array of sign-off checklist items derived from Work Instruction steps.
+    /// Format: [{"stepId":1,"title":"Verify dimensions","required":true,"signedOff":false,"signedBy":null,"signedAt":null}]
+    /// </summary>
+    public string? SignOffChecklistJson { get; set; }
+
     // Unmanned / lights-out
     public bool IsUnmanned { get; set; }
 

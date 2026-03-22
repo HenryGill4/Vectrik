@@ -625,4 +625,121 @@ public class StageService : IStageService
 
         return result.OrderByDescending(r => r.UtilizationPct).ToList();
     }
+
+    // ── Sign-off ────────────────────────────────────────────────
+
+    public async Task<List<SignOffChecklistItem>> GetSignOffChecklistAsync(int executionId)
+    {
+        var execution = await _db.StageExecutions
+            .Include(e => e.Job)
+            .FirstOrDefaultAsync(e => e.Id == executionId);
+        if (execution == null) return [];
+
+        // If checklist already stored, return it
+        if (!string.IsNullOrWhiteSpace(execution.SignOffChecklistJson))
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<SignOffChecklistItem>>(execution.SignOffChecklistJson) ?? [];
+        }
+
+        // Build checklist from work instructions for this part + stage
+        var partId = execution.Job?.PartId;
+        if (partId == null) return [];
+
+        var instruction = await _db.WorkInstructions
+            .Include(wi => wi.Steps)
+            .FirstOrDefaultAsync(wi => wi.PartId == partId.Value
+                && wi.ProductionStageId == execution.ProductionStageId
+                && wi.IsActive);
+
+        if (instruction == null) return [];
+
+        var checklist = instruction.Steps
+            .Where(s => s.RequiresOperatorSignoff)
+            .OrderBy(s => s.StepOrder)
+            .Select(s => new SignOffChecklistItem
+            {
+                StepId = s.Id,
+                Title = s.Title,
+                Required = true,
+                SignedOff = false
+            })
+            .ToList();
+
+        // Persist the initial checklist so future calls return stored state
+        if (checklist.Count > 0)
+        {
+            execution.SignOffChecklistJson = System.Text.Json.JsonSerializer.Serialize(checklist);
+            await _db.SaveChangesAsync();
+        }
+
+        return checklist;
+    }
+
+    public async Task SignOffChecklistItemAsync(int executionId, int stepId, string signedBy)
+    {
+        ArgumentNullException.ThrowIfNull(signedBy);
+
+        var execution = await _db.StageExecutions.FindAsync(executionId);
+        if (execution == null) throw new InvalidOperationException("Stage execution not found.");
+
+        var checklist = !string.IsNullOrWhiteSpace(execution.SignOffChecklistJson)
+            ? System.Text.Json.JsonSerializer.Deserialize<List<SignOffChecklistItem>>(execution.SignOffChecklistJson) ?? []
+            : await GetSignOffChecklistAsync(executionId);
+
+        // Reload after potential save in GetSignOffChecklistAsync
+        if (string.IsNullOrWhiteSpace(execution.SignOffChecklistJson))
+        {
+            execution = await _db.StageExecutions.FindAsync(executionId);
+            if (execution == null) throw new InvalidOperationException("Stage execution not found.");
+            checklist = !string.IsNullOrWhiteSpace(execution.SignOffChecklistJson)
+                ? System.Text.Json.JsonSerializer.Deserialize<List<SignOffChecklistItem>>(execution.SignOffChecklistJson) ?? []
+                : [];
+        }
+
+        var item = checklist.FirstOrDefault(c => c.StepId == stepId);
+        if (item == null) throw new InvalidOperationException($"Checklist item with step {stepId} not found.");
+
+        item.SignedOff = true;
+        item.SignedBy = signedBy;
+        item.SignedAt = DateTime.UtcNow;
+
+        execution.SignOffChecklistJson = System.Text.Json.JsonSerializer.Serialize(checklist);
+        execution.LastModifiedDate = DateTime.UtcNow;
+
+        // If all required items are signed off, mark the overall sign-off
+        if (checklist.Where(c => c.Required).All(c => c.SignedOff))
+        {
+            execution.SignedOffBy = signedBy;
+            execution.SignedOffAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task SignOffStageAsync(int executionId, string signedBy)
+    {
+        ArgumentNullException.ThrowIfNull(signedBy);
+
+        var execution = await _db.StageExecutions.FindAsync(executionId);
+        if (execution == null) throw new InvalidOperationException("Stage execution not found.");
+
+        // Sign off all checklist items
+        if (!string.IsNullOrWhiteSpace(execution.SignOffChecklistJson))
+        {
+            var checklist = System.Text.Json.JsonSerializer.Deserialize<List<SignOffChecklistItem>>(execution.SignOffChecklistJson) ?? [];
+            foreach (var item in checklist.Where(c => !c.SignedOff))
+            {
+                item.SignedOff = true;
+                item.SignedBy = signedBy;
+                item.SignedAt = DateTime.UtcNow;
+            }
+            execution.SignOffChecklistJson = System.Text.Json.JsonSerializer.Serialize(checklist);
+        }
+
+        execution.SignedOffBy = signedBy;
+        execution.SignedOffAt = DateTime.UtcNow;
+        execution.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
 }
