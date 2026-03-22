@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Work Chunks — Agent Execution Guide
 
 > **For AI agents**: Each chunk in this folder is a self-contained work unit

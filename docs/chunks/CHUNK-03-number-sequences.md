@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-03: Number Sequences
 
 > **Size**: S (Small) — ~4-6 file edits

@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # OpCentrix — Full MES Build Sprint Plan
 
 > **DEPRECATED**: This plan has been superseded by **`ROADMAP.md`** (project root).

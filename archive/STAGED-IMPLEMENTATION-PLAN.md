@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Opcentrix V3 — Staged Implementation Plan
 
 > **DEPRECATED**: This plan has been superseded by **`ROADMAP.md`** (project root).

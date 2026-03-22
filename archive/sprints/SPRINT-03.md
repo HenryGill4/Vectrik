@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Sprint 3: Work Orders + Quotes (Full Lifecycle)
 
 > **Status**: NOT STARTED

@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-11: Build Plate Scheduling + Cost Integration
 
 > **Size**: M (Medium) — ~5-7 file edits

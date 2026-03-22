@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Part System Integration Plan — Wiring the Part Model to the Full System
 
 > **Purpose**: This document maps every disconnect between the `Part` model and the

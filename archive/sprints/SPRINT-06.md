@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Sprint 6: Part Tracker (Visibility)
 
 > **Status**: NOT STARTED

@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Work Queue — Execution Order
 
 > **For AI agents**: Find the first unchecked `[ ]` chunk — that's your assignment.

@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-02: Custom Fields Integration
 
 > **Size**: M (Medium) — ~8-10 file edits

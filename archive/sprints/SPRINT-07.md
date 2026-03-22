@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Sprint 7: Build Planning
 
 > **Status**: NOT STARTED

@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Module 04: Shop Floor Management & Scheduling
 
 ## Status: [x] Complete

@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # Sprint 10: Machine Integration + SignalR
 
 > **Status**: NOT STARTED

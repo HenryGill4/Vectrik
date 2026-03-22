@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-04: Document Templates
 
 > **Size**: M (Medium) — ~6-8 file edits, 2 new template data seeds

@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-14: AS9102 FAIR Forms
 
 > **Size**: M (Medium) — 3 new model files + 1 service extension + 1 template + 1 UI edit

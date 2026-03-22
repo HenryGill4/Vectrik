@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Historical reference only. Do not use for planning or development.
+
 # CHUNK-06: Part Edit Redesign (BOM + Routing In-Memory)
 
 > **Size**: M (Medium) — ~4 file edits
