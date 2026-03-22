@@ -266,6 +266,96 @@ else
                                 </div>
                             </td>
                         </tr>
+                        @* Manufacturing Process & Stage Execution detail row *@
+                        var process = line.Part?.ManufacturingProcess;
+                        var processStages = process?.Stages?.OrderBy(s => s.ExecutionOrder).ToList();
+                        var allExecs = line.Jobs.SelectMany(j => j.Stages).OrderBy(s => s.SortOrder).ToList();
+                        @if (processStages?.Count > 0 || allExecs.Count > 0)
+                        {
+                            <tr>
+                                <td colspan="6" style="padding: 0 16px 12px 16px; background: var(--bg-secondary);">
+                                    @if (processStages?.Count > 0)
+                                    {
+                                        <div style="margin-bottom: 8px;">
+                                            <div style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                Process: @(process!.Name)
+                                            </div>
+                                            <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
+                                                @for (var i = 0; i < processStages.Count; i++)
+                                                {
+                                                    var ps = processStages[i];
+                                                    var stageName = ps.ProductionStage?.Name ?? $"Stage {ps.ExecutionOrder}";
+                                                    var levelBadge = ps.ProcessingLevel switch
+                                                    {
+                                                        ProcessingLevel.Build => "🖨️",
+                                                        ProcessingLevel.Batch => "📦",
+                                                        _ => "🔧"
+                                                    };
+                                                    var matchingExecs = allExecs.Where(e => e.ProcessStageId == ps.Id || e.ProductionStageId == ps.ProductionStageId).ToList();
+                                                    var stageCompleted = matchingExecs.Any(e => e.Status == StageExecutionStatus.Completed);
+                                                    var stageInProgress = matchingExecs.Any(e => e.Status == StageExecutionStatus.InProgress);
+                                                    var stageColor = stageCompleted ? "var(--success)" : stageInProgress ? "var(--accent)" : "var(--border)";
+                                                    var stageBg = stageCompleted ? "var(--success)" : stageInProgress ? "var(--accent)" : "var(--bg-tertiary)";
+                                                    var stageTextColor = stageCompleted || stageInProgress ? "#fff" : "var(--text-secondary)";
+
+                                                    @if (i > 0)
+                                                    {
+                                                        <span style="color: var(--text-muted); font-size: 0.7rem;">→</span>
+                                                    }
+                                                    <span style="font-size: 0.72rem; padding: 2px 8px; border-radius: 10px; background: @stageBg; color: @stageTextColor; border: 1px solid @stageColor; white-space: nowrap;"
+                                                          title="@ps.ProcessingLevel level — Setup: @(ps.SetupTimeMinutes?.ToString("F0") ?? "—")m, Run: @(ps.RunTimeMinutes?.ToString("F0") ?? "—")m@(ps.AssignedMachine != null ? $" • Machine: {ps.AssignedMachine.Name}" : "")">
+                                                        @levelBadge @stageName
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    @if (allExecs.Count > 0)
+                                    {
+                                        <div style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                            Stage Executions
+                                        </div>
+                                        <table style="width: 100%; font-size: 0.78rem; border-collapse: collapse;">
+                                            <thead>
+                                                <tr style="border-bottom: 1px solid var(--border);">
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">#</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Stage</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Level</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Machine</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Operator</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Status</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Completed</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @{ var execNum = 1; }
+                                                @foreach (var exec in allExecs)
+                                                {
+                                                    var execStatusColor = exec.Status switch
+                                                    {
+                                                        StageExecutionStatus.Completed => "var(--success)",
+                                                        StageExecutionStatus.InProgress => "var(--accent)",
+                                                        StageExecutionStatus.Failed => "var(--danger)",
+                                                        StageExecutionStatus.Skipped => "var(--text-muted)",
+                                                        _ => "var(--text-secondary)"
+                                                    };
+                                                    var levelLabel = exec.ProcessStage?.ProcessingLevel.ToString() ?? "—";
+                                                    <tr style="border-bottom: 1px solid var(--bg-tertiary);">
+                                                        <td style="padding: 3px 6px;">@(execNum++)</td>
+                                                        <td style="padding: 3px 6px; font-weight: 500;">@(exec.ProductionStage?.Name ?? "—")</td>
+                                                        <td style="padding: 3px 6px;">@levelLabel</td>
+                                                        <td style="padding: 3px 6px;">@(exec.Machine?.Name ?? "—")</td>
+                                                        <td style="padding: 3px 6px;">@(exec.OperatorName ?? "—")</td>
+                                                        <td style="padding: 3px 6px; color: @execStatusColor; font-weight: 500;">@exec.Status</td>
+                                                        <td style="padding: 3px 6px;">@(exec.CompletedAt?.ToString("MMM dd HH:mm") ?? "—")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                </td>
+                            </tr>
+                        }
                     }
                 </tbody>
             </table>
@@ -645,22 +735,41 @@ else
             return;
         }
 
-        var linesHtml = "<table><thead><tr><th>Part</th><th>Qty</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead><tbody>";
+        var linesHtml = "<table><thead><tr><th>Part</th><th>Process</th><th>Qty</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead><tbody>";
         foreach (var l in _order.Lines)
         {
-            linesHtml += $"<tr><td>{l.Part?.PartNumber ?? "—"} — {l.Part?.Name ?? ""}</td><td>{l.Quantity}</td><td>{l.ProducedQuantity}</td><td>{l.ShippedQuantity}</td><td>{l.Status}</td></tr>";
+            var proc = l.Part?.ManufacturingProcess;
+            var procName = proc?.Name ?? "—";
+            var stagesSummary = proc?.Stages?.OrderBy(s => s.ExecutionOrder)
+                .Select(s => s.ProductionStage?.Name ?? $"Stage {s.ExecutionOrder}")
+                .ToList();
+            var procDetail = stagesSummary?.Count > 0
+                ? $"{procName}<br/><small style='color:#888;'>{string.Join(" → ", stagesSummary)}</small>"
+                : procName;
+            linesHtml += $"<tr><td>{l.Part?.PartNumber ?? "—"} — {l.Part?.Name ?? ""}</td><td>{procDetail}</td><td>{l.Quantity}</td><td>{l.ProducedQuantity}</td><td>{l.ShippedQuantity}</td><td>{l.Status}</td></tr>";
         }
         linesHtml += "</tbody></table>";
 
-        var routingHtml = "<table><thead><tr><th>#</th><th>Stage</th><th>Status</th><th>Operator</th><th>Date</th><th>Sign-off</th></tr></thead><tbody>";
+        var routingHtml = "<table><thead><tr><th>#</th><th>Stage</th><th>Level</th><th>Setup</th><th>Run</th><th>Machine</th><th>Status</th><th>Operator</th><th>Date</th><th>Sign-off</th></tr></thead><tbody>";
         var stageNum = 1;
         foreach (var line in _order.Lines)
         {
+            var proc = line.Part?.ManufacturingProcess;
+            if (proc != null)
+            {
+                routingHtml += $"<tr><td colspan='10' style='background:#f5f5f5; font-weight:bold; padding:6px;'>{line.Part?.PartNumber} — {proc.Name} ({proc.Stages?.Count ?? 0} stages)</td></tr>";
+            }
+
             foreach (var job in line.Jobs.OrderBy(j => j.Id))
             {
                 foreach (var stage in job.Stages.OrderBy(s => s.SortOrder))
                 {
-                    routingHtml += $"<tr><td>{stageNum++}</td><td>{stage.ProductionStage?.Name ?? "—"}</td><td>{stage.Status}</td><td>{stage.OperatorName ?? ""}</td><td>{stage.CompletedAt?.ToString("yyyy-MM-dd") ?? ""}</td><td><span class='sign-line'></span></td></tr>";
+                    var ps = stage.ProcessStage;
+                    var level = ps?.ProcessingLevel.ToString() ?? "—";
+                    var setup = ps?.SetupTimeMinutes?.ToString("F0") ?? "—";
+                    var run = ps?.RunTimeMinutes?.ToString("F0") ?? "—";
+                    var machine = stage.Machine?.Name ?? ps?.AssignedMachine?.Name ?? "—";
+                    routingHtml += $"<tr><td>{stageNum++}</td><td>{stage.ProductionStage?.Name ?? "—"}</td><td>{level}</td><td>{setup}m</td><td>{run}m</td><td>{machine}</td><td>{stage.Status}</td><td>{stage.OperatorName ?? ""}</td><td>{stage.CompletedAt?.ToString("yyyy-MM-dd") ?? ""}</td><td><span class='sign-line'></span></td></tr>";
                 }
             }
         }
