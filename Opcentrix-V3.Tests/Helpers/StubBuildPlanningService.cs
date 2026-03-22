@@ -26,9 +26,9 @@ internal sealed class StubBuildPlanningService : IBuildPlanningService
     public Task<BuildFileInfo> SaveBuildFileInfoAsync(BuildFileInfo info) => Task.FromResult(info);
     public Task<BuildFileInfo> GenerateSpoofBuildFileAsync(int packageId, string importedBy) => Task.FromResult(new BuildFileInfo());
     public Task UpdateBuildDurationFromSliceAsync(int buildPackageId) => Task.CompletedTask;
-    public Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy)
+    public Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy, bool forceNewJob = false)
         => Task.FromResult(new List<StageExecution>());
-    public Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null)
+    public Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null, bool forceNewJobs = false)
         => Task.FromResult(new List<int>());
     public Task<BuildPackageRevision> CreateRevisionAsync(int buildPackageId, string changedBy, string? notes = null)
         => Task.FromResult(new BuildPackageRevision());

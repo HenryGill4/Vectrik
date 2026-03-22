@@ -194,6 +194,7 @@ public class BuildPlanningService : IBuildPlanningService
             Notes = source.Notes,
             IsSlicerDataEntered = source.IsSlicerDataEntered,
             BuildParameters = source.BuildParameters,
+            SourceBuildPackageId = source.SourceBuildPackageId ?? source.Id,
             CreatedBy = createdBy,
             LastModifiedBy = createdBy,
             CreatedDate = DateTime.UtcNow,
@@ -419,7 +420,7 @@ public class BuildPlanningService : IBuildPlanningService
         await _db.SaveChangesAsync();
     }
 
-    public async Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy)
+    public async Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy, bool forceNewJob = false)
     {
         var package = await _db.BuildPackages
             .Include(p => p.BuildFileInfo)
@@ -450,8 +451,9 @@ public class BuildPlanningService : IBuildPlanningService
         if (!processes.Any() || !buildStages.Any())
             return new List<StageExecution>();
 
-        // Use the package's ScheduledJob, or create one if it doesn't exist
-        var job = package.ScheduledJob;
+        // Use the package's ScheduledJob, or create one if it doesn't exist.
+        // When forceNewJob is true (additional runs of same build), always create a new Job.
+        var job = forceNewJob ? null : package.ScheduledJob;
         if (job == null)
         {
             var firstPart = await _db.BuildPackageParts
@@ -568,7 +570,7 @@ public class BuildPlanningService : IBuildPlanningService
         return executions;
     }
 
-    public async Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null)
+    public async Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null, bool forceNewJobs = false)
     {
         var package = await _db.BuildPackages
             .Include(p => p.Parts)
@@ -577,20 +579,24 @@ public class BuildPlanningService : IBuildPlanningService
 
         if (package == null) throw new InvalidOperationException("Build package not found.");
 
-        // Check if per-part jobs already exist for this build (idempotent)
-        var partIds = package.Parts.Select(p => p.PartId).Distinct().ToList();
-        var existingPartJobs = await _db.Jobs
-            .Where(j => partIds.Contains(j.PartId)
-                && j.Scope == JobScope.Part
-                && j.ManufacturingProcessId != null
-                && j.Stages.Any(s => s.BuildPackageId == buildPackageId))
-            .Select(j => j.Id)
-            .ToListAsync();
+        // Check if per-part jobs already exist for this build (idempotent — skip when not forcing new)
+        if (!forceNewJobs)
+        {
+            var partIds2 = package.Parts.Select(p => p.PartId).Distinct().ToList();
+            var existingPartJobs = await _db.Jobs
+                .Where(j => partIds2.Contains(j.PartId)
+                    && j.Scope == JobScope.Part
+                    && j.ManufacturingProcessId != null
+                    && j.Stages.Any(s => s.BuildPackageId == buildPackageId))
+                .Select(j => j.Id)
+                .ToListAsync();
 
-        if (existingPartJobs.Count > 0)
-            return existingPartJobs;
+            if (existingPartJobs.Count > 0)
+                return existingPartJobs;
+        }
 
         // Load ManufacturingProcess definitions for parts in this build
+        var partIds = package.Parts.Select(p => p.PartId).Distinct().ToList();
         var processes = await _db.ManufacturingProcesses
             .Include(p => p.Stages.OrderBy(s => s.ExecutionOrder))
                 .ThenInclude(s => s.ProductionStage)

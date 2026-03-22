@@ -352,50 +352,83 @@
 
                                                 @if (!isConfigured && outstanding > 1)
                                                 {
-                                                    var existingBuilds = GetBuildsForPart(line.PartId);
-                                                    @if (existingBuilds.Any())
+                                                    var sourceBuilds = GetSourceBuildsForPart(line.PartId);
+                                                    @if (sourceBuilds.Any())
                                                     {
-                                                        <div class="wo-config-warning" style="flex-direction: column; align-items: flex-start; gap: 6px;">
-                                                            <span style="font-size: 0.8rem; color: var(--text-muted);">📦 Available build files for this part:</span>
-                                                            @foreach (var eb in existingBuilds)
+                                                        <div class="wo-config-warning" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                                                            <span style="font-size: 0.8rem; color: var(--text-muted);">📦 Build files for this part:</span>
+                                                            @foreach (var src in sourceBuilds)
                                                             {
-                                                                var ebStatusIcon = eb.Status switch
-                                                                {
-                                                                    BuildPackageStatus.Completed => "✅",
-                                                                    BuildPackageStatus.PostPrint => "📦",
-                                                                    BuildPackageStatus.Printing => "🖨️",
-                                                                    BuildPackageStatus.Scheduled => "📅",
-                                                                    BuildPackageStatus.Ready => "🟢",
-                                                                    BuildPackageStatus.Sliced => "📐",
-                                                                    _ => "📝"
-                                                                };
-                                                                var ebPartQty = eb.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
-                                                                var canScheduleFrom = eb.IsSlicerDataEntered && eb.Status != BuildPackageStatus.Cancelled;
-                                                                <div style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; flex-wrap: wrap;">
-                                                                    <span>@ebStatusIcon @eb.Name — @ebPartQty pcs/run — @eb.Status</span>
+                                                                var srcStatusIcon = GetBuildStatusIcon(src.Status);
+                                                                var srcPartQty = src.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
+                                                                var canScheduleFrom = src.IsSlicerDataEntered && src.Status != BuildPackageStatus.Cancelled;
+                                                                var runs = GetRunsForSourceBuild(src.Id);
+                                                                var scheduledRuns = runs.Count(r => r.Status is BuildPackageStatus.Scheduled or BuildPackageStatus.Printing or BuildPackageStatus.PostPrint);
+                                                                var completedRuns = runs.Count(r => r.Status == BuildPackageStatus.Completed);
+                                                                var partsInRuns = runs
+                                                                    .Where(r => r.Status != BuildPackageStatus.Cancelled && r.Status != BuildPackageStatus.Completed)
+                                                                    .Sum(r => r.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0);
+
+                                                                <div class="wo-build-file-card" style="display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; width: 100%;">
+                                                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                                        <span style="font-weight: 600; font-size: 0.82rem;">@srcStatusIcon @src.Name</span>
+                                                                        <span class="badge badge-info" style="font-size: 0.7rem;">@srcPartQty pcs/run</span>
+                                                                        <span class="badge badge-@(src.Status.ToString().ToLower())" style="font-size: 0.7rem;">@src.Status</span>
+                                                                    </div>
+
+                                                                    @if (runs.Count > 0)
+                                                                    {
+                                                                        <div style="display: flex; gap: 8px; font-size: 0.75rem; color: var(--text-secondary); flex-wrap: wrap;">
+                                                                            @if (scheduledRuns > 0)
+                                                                            {
+                                                                                <span>📅 @scheduledRuns active run(s) (@partsInRuns pcs)</span>
+                                                                            }
+                                                                            @if (completedRuns > 0)
+                                                                            {
+                                                                                <span>✅ @completedRuns completed</span>
+                                                                            }
+                                                                        </div>
+                                                                    }
+
                                                                     @if (canScheduleFrom)
                                                                     {
-                                                                        var runsNeeded = ebPartQty > 0 ? Math.Max(1, (int)Math.Ceiling((double)outstanding / ebPartQty)) : 1;
-                                                                        var runKey = $"{eb.Id}-{line.Id}";
+                                                                        var remainingForBuild = Math.Max(0, outstanding - partsInRuns);
+                                                                        var runsNeeded = srcPartQty > 0 && remainingForBuild > 0
+                                                                            ? Math.Max(1, (int)Math.Ceiling((double)remainingForBuild / srcPartQty))
+                                                                            : 0;
+                                                                        var runKey = $"{src.Id}-{line.Id}";
                                                                         if (!_buildRunCounts.ContainsKey(runKey))
                                                                             _buildRunCounts[runKey] = runsNeeded;
-                                                                        <input type="number" min="1" max="100"
-                                                                               value="@_buildRunCounts[runKey]"
-                                                                               @onchange="e => UpdateRunCount(runKey, e)"
-                                                                               class="form-control form-control-sm"
-                                                                               style="width: 60px; padding: 2px 6px; font-size: 0.75rem;" />
-                                                                        <button class="btn btn-sm btn-primary" style="padding: 2px 8px; font-size: 0.75rem;"
-                                                                                @onclick="() => ScheduleRunsFromBuildAsync(eb, line, _buildRunCounts[runKey])"
-                                                                                disabled="@_schedulingBuildRuns"
-                                                                                title="Schedule @(_buildRunCounts[runKey]) run(s) from this build file">
-                                                                            @if (_schedulingBuildRuns) { <span>...</span> } else { <span>📅 Schedule @(_buildRunCounts[runKey]) Run(s)</span> }
-                                                                        </button>
+
+                                                                        @if (runsNeeded > 0)
+                                                                        {
+                                                                            <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                                                                                <span style="font-size: 0.75rem; color: var(--text-secondary);">Runs:</span>
+                                                                                <input type="number" min="1" max="100"
+                                                                                       value="@_buildRunCounts[runKey]"
+                                                                                       @onchange="e => UpdateRunCount(runKey, e)"
+                                                                                       class="form-control form-control-sm"
+                                                                                       style="width: 56px; padding: 2px 6px; font-size: 0.75rem;" />
+                                                                                <button class="btn btn-sm btn-primary" style="padding: 2px 8px; font-size: 0.75rem;"
+                                                                                        @onclick="() => ScheduleRunsFromBuildAsync(src, line, _buildRunCounts[runKey])"
+                                                                                        disabled="@_schedulingBuildRuns"
+                                                                                        title="Schedule @(_buildRunCounts[runKey]) run(s) → @(_buildRunCounts[runKey] * srcPartQty) parts">
+                                                                                    @if (_schedulingBuildRuns) { <span>...</span> } else { <span>📅 Schedule @(_buildRunCounts[runKey]) Run(s)</span> }
+                                                                                </button>
+                                                                            </div>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <div style="font-size: 0.75rem; color: var(--success);">✅ Demand covered by active runs</div>
+                                                                        }
                                                                     }
-                                                                    @if (eb.Status == BuildPackageStatus.Draft)
+                                                                    @if (src.Status == BuildPackageStatus.Draft)
                                                                     {
-                                                                        <button class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" @onclick="() => OpenWoBuildModal(wo, line)">
-                                                                            ✏️ Setup
-                                                                        </button>
+                                                                        <div style="margin-top: 2px;">
+                                                                            <button class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" @onclick="() => OpenWoBuildModal(wo, line)">
+                                                                                ✏️ Setup Build File
+                                                                            </button>
+                                                                        </div>
                                                                     }
                                                                 </div>
                                                             }
@@ -718,11 +751,11 @@
 
                     var outstanding = GetOutstanding(line);
 
-                    // Schedule runs from existing build files to fill demand
-                    var existingBuilds = GetBuildsForPart(line.PartId)
+                    // Schedule runs from source build files (not copies) to fill demand
+                    var sourceBuilds = GetSourceBuildsForPart(line.PartId)
                         .Where(b => b.IsSlicerDataEntered)
                         .ToList();
-                    foreach (var build in existingBuilds)
+                    foreach (var build in sourceBuilds)
                     {
                         if (outstanding <= 0) break;
                         var buildPartQty = build.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
@@ -733,9 +766,7 @@
                         {
                             try
                             {
-                                var copy = await BuildPlanning.CreateScheduledCopyAsync(build.Id, UserName, line.Id);
-                                buildsCreated++;
-                                await BuildScheduling.ScheduleBuildAsync(copy.Id, machineId);
+                                await BuildScheduling.ScheduleBuildRunAsync(build.Id, machineId);
                                 buildsScheduled++;
                                 outstanding -= buildPartQty;
                             }
@@ -812,8 +843,8 @@
             }
 
             var parts = new List<string>();
-            if (buildsCreated > 0) parts.Add($"{buildsCreated} build(s) created");
-            if (buildsScheduled > 0) parts.Add($"{buildsScheduled} build(s) scheduled");
+            if (buildsCreated > 0) parts.Add($"{buildsCreated} build(s) created from templates");
+            if (buildsScheduled > 0) parts.Add($"{buildsScheduled} run(s) scheduled");
             if (jobsCreated > 0) parts.Add($"{jobsCreated} job(s) created");
             if (jobsScheduled > 0) parts.Add($"{jobsScheduled} job(s) scheduled");
             if (slsNoTemplate > 0) parts.Add($"{slsNoTemplate} SLS line(s) need certified templates");
@@ -838,6 +869,38 @@
             .ToList();
 
     /// <summary>
+    /// Returns only source/original build files (not scheduled copies) for a part.
+    /// </summary>
+    private List<BuildPackage> GetSourceBuildsForPart(int partId) =>
+        BuildPackages
+            .Where(bp => bp.Parts != null && bp.Parts.Any(p => p.PartId == partId)
+                && bp.Status != BuildPackageStatus.Cancelled
+                && !bp.IsScheduledCopy)
+            .OrderByDescending(bp => bp.CreatedDate)
+            .ToList();
+
+    /// <summary>
+    /// Returns all scheduled run copies created from a source build.
+    /// </summary>
+    private List<BuildPackage> GetRunsForSourceBuild(int sourceBuildId) =>
+        BuildPackages
+            .Where(bp => bp.SourceBuildPackageId == sourceBuildId
+                && bp.Status != BuildPackageStatus.Cancelled)
+            .OrderBy(bp => bp.CreatedDate)
+            .ToList();
+
+    private static string GetBuildStatusIcon(BuildPackageStatus status) => status switch
+    {
+        BuildPackageStatus.Completed => "✅",
+        BuildPackageStatus.PostPrint => "📦",
+        BuildPackageStatus.Printing => "🖨️",
+        BuildPackageStatus.Scheduled => "📅",
+        BuildPackageStatus.Ready => "🟢",
+        BuildPackageStatus.Sliced => "📐",
+        _ => "📝"
+    };
+
+    /// <summary>
     /// Schedule a single run from an existing build — creates a copy and schedules it.
     /// The original build file stays at its current status.
     /// </summary>
@@ -852,9 +915,8 @@
                 return;
             }
 
-            var copy = await BuildPlanning.CreateScheduledCopyAsync(build.Id, UserName);
-            await BuildScheduling.ScheduleBuildAsync(copy.Id, machineId.Value);
-            Toast.ShowSuccess($"Run '{copy.Name}' scheduled from build '{build.Name}'.");
+            await BuildScheduling.ScheduleBuildRunAsync(build.Id, machineId.Value);
+            Toast.ShowSuccess($"Run scheduled from build '{build.Name}'.");
             await OnRefreshRequested.InvokeAsync();
         }
         catch (Exception ex)
@@ -892,8 +954,7 @@
             {
                 try
                 {
-                    var copy = await BuildPlanning.CreateScheduledCopyAsync(build.Id, UserName, line.Id);
-                    await BuildScheduling.ScheduleBuildAsync(copy.Id, machineId.Value);
+                    await BuildScheduling.ScheduleBuildRunAsync(build.Id, machineId.Value);
                     scheduled++;
                 }
                 catch { /* skip runs that fail to schedule */ }

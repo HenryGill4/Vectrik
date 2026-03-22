@@ -350,16 +350,25 @@ public class SchedulingService : ISchedulingService
             result.Insert(0, def); // high priority
         }
 
-        // 8. If still nothing, and stage doesn't require machine, use all machines
+        // Additive machines (SLS/Additive) should only receive build-level work;
+        // exclude them from fallback candidates for batch/part-level stages.
+        // When processStage is null (unknown context), include all machines.
+        var isNonBuildLevel = processStage is not null
+            && processStage.ProcessingLevel != ProcessingLevel.Build;
+        var fallbackMachines = isNonBuildLevel
+            ? allMachines.Where(m => !m.IsAdditiveMachine).ToList()
+            : allMachines;
+
+        // 8. If still nothing, and stage doesn't require machine, use fallback machines
         if (!result.Any() && !stage.RequiresMachineAssignment)
         {
-            result.AddRange(allMachines.OrderBy(m => m.Priority));
+            result.AddRange(fallbackMachines.OrderBy(m => m.Priority));
         }
 
         // 9. If stage requires assignment but nothing found, return whatever is capable
         if (!result.Any() && stage.RequiresMachineAssignment)
         {
-            result.AddRange(allMachines
+            result.AddRange(fallbackMachines
                 .Where(m => stage.CanMachineExecuteStage(m.MachineId))
                 .OrderBy(m => m.Priority));
         }
@@ -448,5 +457,96 @@ public class SchedulingService : ISchedulingService
 
         // Fallback: if shifts don't cover enough time, add remaining as calendar hours
         return current.AddHours(remaining);
+    }
+
+    /// <inheritdoc />
+    public async Task<ScheduleClearResult> ClearAllScheduleDataAsync()
+    {
+        // 1. Clear scheduling fields on all non-completed stage executions
+        var executions = await _db.StageExecutions
+            .Where(se => se.Status != StageExecutionStatus.Completed
+                      && se.Status != StageExecutionStatus.Failed)
+            .ToListAsync();
+
+        foreach (var se in executions)
+        {
+            se.ScheduledStartAt = null;
+            se.ScheduledEndAt = null;
+            se.MachineId = null;
+            se.Status = StageExecutionStatus.NotStarted;
+        }
+
+        // 2. Reset jobs that haven't actually started
+        var jobs = await _db.Jobs
+            .Where(j => j.Status == JobStatus.Scheduled || j.Status == JobStatus.Draft)
+            .ToListAsync();
+
+        foreach (var job in jobs)
+        {
+            job.ScheduledStart = default;
+            job.ScheduledEnd = default;
+            job.Status = JobStatus.Draft;
+        }
+
+        // 3. Unlock and unschedule build packages that haven't started printing
+        var builds = await _db.BuildPackages
+            .Where(bp => bp.Status == BuildPackageStatus.Scheduled
+                      || bp.Status == BuildPackageStatus.Ready)
+            .ToListAsync();
+
+        foreach (var bp in builds)
+        {
+            bp.ScheduledDate = null;
+            bp.ScheduledJobId = null;
+            bp.IsLocked = false;
+            if (bp.Status == BuildPackageStatus.Scheduled)
+                bp.Status = BuildPackageStatus.Ready;
+        }
+
+        await _db.SaveChangesAsync();
+
+        return new ScheduleClearResult(executions.Count, jobs.Count, builds.Count);
+    }
+
+    /// <inheritdoc />
+    public async Task<DataDeleteResult> DeleteAllSchedulingDataAsync()
+    {
+        // Delete in FK-safe order: children first, parents last
+
+        // 1. Stage executions (references Jobs and BuildPackages)
+        var execCount = await _db.StageExecutions.CountAsync();
+        _db.StageExecutions.RemoveRange(_db.StageExecutions);
+        await _db.SaveChangesAsync();
+
+        // 2. Part instance stage logs, then part instances
+        _db.PartInstanceStageLogs.RemoveRange(_db.PartInstanceStageLogs);
+        var instanceCount = await _db.PartInstances.CountAsync();
+        _db.PartInstances.RemoveRange(_db.PartInstances);
+        await _db.SaveChangesAsync();
+
+        // 3. Batch assignments, then batches
+        _db.BatchPartAssignments.RemoveRange(_db.BatchPartAssignments);
+        var batchCount = await _db.ProductionBatches.CountAsync();
+        _db.ProductionBatches.RemoveRange(_db.ProductionBatches);
+        await _db.SaveChangesAsync();
+
+        // 4. Jobs (references Parts — keep parts)
+        var jobCount = await _db.Jobs.CountAsync();
+        _db.JobNotes.RemoveRange(_db.JobNotes);
+        _db.Jobs.RemoveRange(_db.Jobs);
+        await _db.SaveChangesAsync();
+
+        // 5. Build package children: revisions, parts, file info
+        _db.BuildPackageRevisions.RemoveRange(_db.BuildPackageRevisions);
+        _db.BuildPackageParts.RemoveRange(_db.BuildPackageParts);
+        _db.BuildFileInfos.RemoveRange(_db.BuildFileInfos);
+        await _db.SaveChangesAsync();
+
+        // 6. Build packages
+        var buildCount = await _db.BuildPackages.CountAsync();
+        _db.BuildPackages.RemoveRange(_db.BuildPackages);
+        await _db.SaveChangesAsync();
+
+        return new DataDeleteResult(execCount, jobCount, buildCount, instanceCount, batchCount);
     }
 }

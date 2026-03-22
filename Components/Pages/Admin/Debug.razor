@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Components.Authorization
 @inject IUserSettingsService SettingsService
+@inject ISchedulingService SchedulingService
 @inject IJSRuntime JS
 @inject ToastService Toast
 
@@ -89,6 +90,73 @@
     }
 </div>
 
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">Clear Schedule Data</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        Reset all scheduling data so you can re-run the scheduler from scratch.
+        This clears schedule times and machine assignments on unfinished stage executions,
+        resets draft/scheduled jobs, and unlocks scheduled build packages.
+        <strong>Completed and in-progress work is preserved.</strong>
+    </p>
+
+    @if (_clearResult is not null)
+    {
+        <div style="background: var(--surface-alt, #f0f0f0); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem;">
+            <strong>Last clear:</strong>
+            @_clearResult.ExecutionsCleared executions cleared,
+            @_clearResult.JobsReset jobs reset,
+            @_clearResult.BuildsUnlocked builds unlocked
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-danger" @onclick="ClearSchedule" disabled="@_clearing">
+            @(_clearing ? "Clearing…" : "🗑️ Clear All Schedule Data")
+        </button>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">⚠️ Delete All Scheduling Data</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        <strong style="color: var(--danger);">Destructive:</strong> Hard-deletes all stage executions, jobs,
+        build packages (parts, revisions, file info), part instances, and batches.
+        Part definitions, machines, work orders, and manufacturing processes are preserved.
+        <strong>This cannot be undone.</strong>
+    </p>
+
+    @if (_deleteResult is not null)
+    {
+        <div style="background: var(--surface-alt, #f0f0f0); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem;">
+            <strong>Last delete:</strong>
+            @_deleteResult.StageExecutionsDeleted executions,
+            @_deleteResult.JobsDeleted jobs,
+            @_deleteResult.BuildsDeleted builds,
+            @_deleteResult.PartInstancesDeleted part instances,
+            @_deleteResult.BatchesDeleted batches
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; align-items:center;">
+        @if (!_deleteConfirmShown)
+        {
+            <button class="btn btn-danger" @onclick="() => _deleteConfirmShown = true" disabled="@_deleting">
+                🗑️ Delete All Builds, Jobs & Executions
+            </button>
+        }
+        else
+        {
+            <span style="color: var(--danger); font-weight: 600; font-size: 0.85rem;">Are you sure?</span>
+            <button class="btn btn-danger" @onclick="DeleteAllSchedulingData" disabled="@_deleting">
+                @(_deleting ? "Deleting…" : "Yes, Delete Everything")
+            </button>
+            <button class="btn btn-secondary" @onclick="() => _deleteConfirmShown = false" disabled="@_deleting">
+                Cancel
+            </button>
+        }
+    </div>
+</div>
+
 @code {
     [CascadingParameter]
     private Task<AuthenticationState>? AuthState { get; set; }
@@ -99,6 +167,11 @@
     private bool _capturing;
     private bool _testCopied;
     private string _testText = "";
+    private bool _clearing;
+    private ScheduleClearResult? _clearResult;
+    private bool _deleting;
+    private bool _deleteConfirmShown;
+    private DataDeleteResult? _deleteResult;
 
     protected override async Task OnInitializedAsync()
     {
@@ -183,6 +256,50 @@ This is a test capture from the Debug Tools admin page.
         finally
         {
             _capturing = false;
+        }
+    }
+
+    private async Task ClearSchedule()
+    {
+        _clearing = true;
+        _clearResult = null;
+
+        try
+        {
+            _clearResult = await SchedulingService.ClearAllScheduleDataAsync();
+            Toast.ShowSuccess($"Schedule cleared: {_clearResult.ExecutionsCleared} executions, {_clearResult.JobsReset} jobs, {_clearResult.BuildsUnlocked} builds");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to clear schedule: {ex.Message}");
+        }
+        finally
+        {
+            _clearing = false;
+        }
+    }
+
+    private async Task DeleteAllSchedulingData()
+    {
+        _deleting = true;
+        _deleteResult = null;
+
+        try
+        {
+            _deleteResult = await SchedulingService.DeleteAllSchedulingDataAsync();
+            _deleteConfirmShown = false;
+            Toast.ShowSuccess(
+                $"Deleted: {_deleteResult.StageExecutionsDeleted} executions, " +
+                $"{_deleteResult.JobsDeleted} jobs, {_deleteResult.BuildsDeleted} builds, " +
+                $"{_deleteResult.PartInstancesDeleted} instances, {_deleteResult.BatchesDeleted} batches");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to delete: {ex.Message}");
+        }
+        finally
+        {
+            _deleting = false;
         }
     }
 }

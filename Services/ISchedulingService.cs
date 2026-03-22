@@ -34,6 +34,29 @@ public interface ISchedulingService
     /// ordered by job priority then due date.
     /// </summary>
     Task<int> AutoScheduleAllAsync();
+
+    /// <summary>
+    /// Clear all scheduling data: nulls StageExecution schedule fields,
+    /// resets Job schedule windows, and unlocks BuildPackages.
+    /// Returns the number of entities affected.
+    /// </summary>
+    Task<ScheduleClearResult> ClearAllScheduleDataAsync();
+
+    /// <summary>
+    /// Hard-delete all scheduling-related data: stage executions, jobs, build packages
+    /// (including parts, revisions, file info), part instances, and batches.
+    /// Use with extreme caution — this is a full data wipe for debugging.
+    /// </summary>
+    Task<DataDeleteResult> DeleteAllSchedulingDataAsync();
 }
+
+public record ScheduleClearResult(int ExecutionsCleared, int JobsReset, int BuildsUnlocked);
+
+public record DataDeleteResult(
+    int StageExecutionsDeleted,
+    int JobsDeleted,
+    int BuildsDeleted,
+    int PartInstancesDeleted,
+    int BatchesDeleted);
 
 public record ScheduleSlot(DateTime Start, DateTime End, int MachineId);

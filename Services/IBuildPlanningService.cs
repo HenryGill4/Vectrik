@@ -27,14 +27,22 @@ public interface IBuildPlanningService
 
     // Build Plate Execution (CHUNK-09)
     Task UpdateBuildDurationFromSliceAsync(int buildPackageId);
-    Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy);
+
+    /// <summary>
+    /// Create build-level stage executions for a build package.
+    /// When forceNewJob is true, always creates a new Job (used for additional print runs
+    /// of the same build file). When false, reuses the package's existing ScheduledJob.
+    /// </summary>
+    Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int buildPackageId, string createdBy, bool forceNewJob = false);
 
     /// <summary>
     /// Create per-part jobs and stage executions for parts in a build package.
     /// Returns the created Job IDs so the caller can auto-schedule them.
+    /// When forceNewJobs is true, always creates new jobs even if matching ones exist
+    /// (used for additional print runs).
     /// </summary>
     /// <param name="startAfter">Earliest start time for per-part jobs (e.g. last build-level stage end).</param>
-    Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null);
+    Task<List<int>> CreatePartStageExecutionsAsync(int buildPackageId, string createdBy, DateTime? startAfter = null, bool forceNewJobs = false);
     Task<BuildPackageRevision> CreateRevisionAsync(int buildPackageId, string changedBy, string? notes = null);
 
     // Build Plate UI (CHUNK-10)

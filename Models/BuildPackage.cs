@@ -53,6 +53,12 @@ public class BuildPackage
     // Changeover chain: links to the build that was printing before this one
     public int? PredecessorBuildPackageId { get; set; }
 
+    /// <summary>
+    /// FK to the original build file this run was copied from.
+    /// Null for original/source builds; set for scheduled copies created via CreateScheduledCopyAsync.
+    /// </summary>
+    public int? SourceBuildPackageId { get; set; }
+
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
 
@@ -69,6 +75,7 @@ public class BuildPackage
     public virtual BuildFileInfo? BuildFileInfo { get; set; }
     public virtual Job? ScheduledJob { get; set; }
     public virtual BuildPackage? PredecessorBuildPackage { get; set; }
+    public virtual BuildPackage? SourceBuildPackage { get; set; }
 
     // Computed
     [NotMapped]
@@ -79,6 +86,12 @@ public class BuildPackage
 
     [NotMapped]
     public bool IsReadyToSchedule => Status == BuildPackageStatus.Ready && IsSlicerDataEntered && Parts?.Any() == true;
+
+    /// <summary>
+    /// True if this build is a scheduled copy/run created from a source build file.
+    /// </summary>
+    [NotMapped]
+    public bool IsScheduledCopy => SourceBuildPackageId.HasValue;
 }
 
 public class BuildPackagePart

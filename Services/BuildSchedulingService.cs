@@ -114,6 +114,81 @@ public class BuildSchedulingService : IBuildSchedulingService
         return new BuildScheduleResult(slot, changeoverInfo, stageExecutions);
     }
 
+    public async Task<BuildScheduleResult> ScheduleBuildRunAsync(
+        int buildPackageId, int machineId, DateTime? startAfter = null)
+    {
+        var package = await _db.BuildPackages
+            .Include(p => p.Parts)
+            .Include(p => p.BuildFileInfo)
+            .FirstOrDefaultAsync(p => p.Id == buildPackageId)
+            ?? throw new InvalidOperationException("Build package not found.");
+
+        if (!package.IsSlicerDataEntered || !package.EstimatedDurationHours.HasValue)
+            throw new InvalidOperationException("Slicer data must be entered before scheduling a run.");
+
+        var machine = await _db.Machines.FindAsync(machineId)
+            ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
+
+        var durationHours = package.EstimatedDurationHours.Value;
+        var notBefore = startAfter ?? DateTime.UtcNow;
+
+        var slot = await FindEarliestBuildSlotAsync(machine.Id, durationHours, notBefore);
+
+        ChangeoverAnalysis? changeoverInfo = null;
+        if (machine.AutoChangeoverEnabled)
+        {
+            changeoverInfo = await AnalyzeChangeoverAsync(machine.Id, slot.PrintEnd);
+        }
+
+        // Ensure the build package is marked as scheduled and locked
+        if (package.Status is BuildPackageStatus.Ready or BuildPackageStatus.Sliced)
+        {
+            package.Status = BuildPackageStatus.Scheduled;
+            package.IsLocked = true;
+            package.MachineId ??= machine.Id;
+        }
+        package.ScheduledDate ??= slot.PrintStart;
+        package.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        // Create build-level stage executions for this run (always new Job)
+        var stageExecutions = await _buildPlanning.CreateBuildStageExecutionsAsync(buildPackageId, "Scheduler", forceNewJob: true);
+
+        // Per-part stage executions: start after the last build-level stage ends
+        var lastBuildStageEnd = stageExecutions
+            .Where(e => e.ScheduledEndAt.HasValue)
+            .MaxBy(e => e.ScheduledEndAt)?.ScheduledEndAt ?? slot.PrintEnd;
+
+        var partJobIds = await _buildPlanning.CreatePartStageExecutionsAsync(
+            buildPackageId, "Scheduler", lastBuildStageEnd, forceNewJobs: true);
+
+        // Auto-schedule each per-part job
+        var autoScheduled = 0;
+        foreach (var jobId in partJobIds)
+        {
+            try
+            {
+                await _scheduling.AutoScheduleJobAsync(jobId, lastBuildStageEnd);
+                autoScheduled++;
+            }
+            catch
+            {
+                // Job keeps its pre-filled schedule times
+            }
+        }
+
+        // Determine run number for revision note
+        var existingRunJobs = await _db.Jobs
+            .CountAsync(j => j.Scope == JobScope.Build
+                && j.Stages.Any(s => s.BuildPackageId == buildPackageId));
+
+        await _buildPlanning.CreateRevisionAsync(buildPackageId, "Scheduler",
+            $"Run #{existingRunJobs} on {machine.Name} starting {slot.PrintStart:g}; " +
+            $"{partJobIds.Count} per-part job(s) ({autoScheduled} auto-scheduled)");
+
+        return new BuildScheduleResult(slot, changeoverInfo, stageExecutions);
+    }
+
     public async Task<BuildScheduleSlot> FindEarliestBuildSlotAsync(
         int machineId, double durationHours, DateTime notBefore)
     {

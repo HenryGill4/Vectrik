@@ -16,6 +16,13 @@ public interface IBuildSchedulingService
     Task<BuildScheduleResult> ScheduleBuildAsync(int buildPackageId, int machineId, DateTime? startAfter = null);
 
     /// <summary>
+    /// Schedule an additional print run of the SAME build package on a machine.
+    /// Reuses the existing build file — does not create a copy.
+    /// Creates a new build-level Job + stage executions + per-part jobs for this run.
+    /// </summary>
+    Task<BuildScheduleResult> ScheduleBuildRunAsync(int buildPackageId, int machineId, DateTime? startAfter = null);
+
+    /// <summary>
     /// Find the earliest slot for a build on a specific machine,
     /// factoring in changeover time between consecutive builds.
     /// </summary>
