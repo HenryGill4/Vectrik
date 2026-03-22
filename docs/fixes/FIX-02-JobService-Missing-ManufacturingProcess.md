@@ -119,9 +119,15 @@ if (job.PartId > 0)
             var sortOrder = 0;
             foreach (var processStage in stages)
             {
+                // Option A: use injected _processService
                 var dur = _processService.CalculateStageDuration(
                     processStage, job.Quantity, batchCount: 1, buildConfigHours: null);
                 var estimatedHours = dur.TotalMinutes / 60.0;
+                var setupHours = dur.SetupMinutes / 60.0;
+
+                // Option B (no extra injection): inline simple calc
+                // double estimatedHours = (processStage.ActualAverageDurationMinutes ?? processStage.RunTimeMinutes ?? 60.0) / 60.0;
+                // double setupHours = (processStage.SetupTimeMinutes ?? 0) / 60.0;
 
                 // Resolve machine from ProcessStage (int-based)
                 int? machineIntId = null;
@@ -155,7 +161,7 @@ if (job.PartId > 0)
                     ProcessStageId = processStage.Id,  // ← SET CORRECTLY
                     SortOrder = sortOrder++,
                     EstimatedHours = estimatedHours,
-                    SetupHours = dur.SetupMinutes / 60.0,
+                    SetupHours = setupHours,
                     QualityCheckRequired = processStage.RequiresQualityCheck,
                     MachineId = machineIntId,
                     CreatedBy = job.CreatedBy,
@@ -219,13 +225,39 @@ if (job.PartId > 0)
 }
 ```
 
-**Note**: This fix requires access to `IManufacturingProcessService` (or its CalculateStageDuration helper) injected into `JobService`. Alternatively, use `ManufacturingProcessService.CalculateStageDuration()` directly or inline the simple duration calculation.
+**Note on duration calculation**: The fix code above uses `_processService.CalculateStageDuration()`. `JobService` currently only injects `TenantDbContext` and `ISchedulingService`. Two options:
+
+**Option A (preferred)**: Inject `IManufacturingProcessService` into `JobService`:
+```csharp
+// In JobService constructor:
+private readonly IManufacturingProcessService _processService;
+public JobService(TenantDbContext db, ISchedulingService scheduler, IManufacturingProcessService processService)
+{
+    _db = db;
+    _scheduler = scheduler;
+    _processService = processService;
+}
+```
+`IManufacturingProcessService` → `ManufacturingProcessService` only depends on `TenantDbContext`, so no circular dependency risk.
+
+**Option B (inline)**: Replace `_processService.CalculateStageDuration()` with a simple inline calculation for direct jobs:
+```csharp
+// Simple fallback: use EMA if available, else RunTimeMinutes converted to hours
+double estimatedHours = processStage.ActualAverageDurationMinutes.HasValue
+    ? processStage.ActualAverageDurationMinutes.Value / 60.0
+    : (processStage.RunTimeMinutes ?? 60.0) / 60.0;
+double setupHours = (processStage.SetupTimeMinutes ?? 0) / 60.0;
+```
+This is less precise (ignores PerBatch/PerPart scaling) but avoids the new injection.
+
+Option A is recommended because `CalculateStageDuration` handles EMA, mode scaling (PerBatch, PerPart), and edge cases correctly.
 
 ---
 
 ## Dependencies
 
-- Requires `IManufacturingProcessService` injected into `JobService` (or inline the duration math)
+- `IManufacturingProcessService` needs to be injected into `JobService` (if using Option A)
+- Both `IJobService` and `IManufacturingProcessService` are already registered as scoped services in `Program.cs` — no DI changes needed beyond adding the constructor parameter
 - FIX-01 should land first or simultaneously so that `AutoScheduleJobAsync` correctly routes the newly-set ProcessStage references
 
 ---
