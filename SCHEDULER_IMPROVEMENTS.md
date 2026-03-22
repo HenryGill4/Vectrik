@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Superseded by `docs/context/` and `docs/fixes/`. Do not use for new development.
+
 # Scheduler Page — Analysis Report & Improvement Plan
 
 ## Current State Analysis

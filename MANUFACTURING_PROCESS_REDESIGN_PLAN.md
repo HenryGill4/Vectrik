@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Superseded by `docs/context/` and `docs/fixes/`. Do not use for new development.
+
 # Manufacturing Workflow Redesign — Implementation Plan
 
 > **Note**: This plan is a reference document for implementation in Visual Studio. It is not intended to be executed by Claude Code. All file paths, entity designs, and method signatures are provided for manual implementation.

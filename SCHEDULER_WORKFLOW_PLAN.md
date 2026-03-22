@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Superseded by `docs/context/` and `docs/fixes/`. Do not use for new development.
+
 # Scheduler Workflow Overhaul Plan
 
 > **Created**: 2026-03-20

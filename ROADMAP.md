@@ -1,3 +1,5 @@
+> ⚠️ **LEGACY** — Superseded by `docs/context/` and `docs/fixes/`. Do not use for new development.
+
 # OpCentrix V3 — Unified Implementation Roadmap
 
 > **Created**: 2026-03-17
