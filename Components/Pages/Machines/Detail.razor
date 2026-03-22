@@ -195,6 +195,9 @@ else
                 <div class="card-header">Scheduling & Changeover</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div class="form-group">
+                        <label class="form-label"><input type="checkbox" @bind="_editModel.IsAdditiveMachine" style="margin-right: 6px;" />Additive Machine (uses build plates)</label>
+                    </div>
+                    <div class="form-group">
                         <label class="form-label"><input type="checkbox" @bind="_editModel.AutoChangeoverEnabled" style="margin-right: 6px;" />Auto Changeover</label>
                     </div>
                     <div class="form-group">
@@ -817,6 +820,7 @@ else
             HourlyRate = _machine.HourlyRate,
             AutoChangeoverEnabled = _machine.AutoChangeoverEnabled,
             ChangeoverMinutes = _machine.ChangeoverMinutes,
+            IsAdditiveMachine = _machine.IsAdditiveMachine,
             CreatedBy = _machine.CreatedBy,
             LastModifiedBy = "System"
         };
@@ -877,6 +881,7 @@ else
                 _machine.HourlyRate = _editModel.HourlyRate;
                 _machine.AutoChangeoverEnabled = _editModel.AutoChangeoverEnabled;
                 _machine.ChangeoverMinutes = _editModel.ChangeoverMinutes;
+                _machine.IsAdditiveMachine = _editModel.IsAdditiveMachine;
                 _machine.LastModifiedBy = "System";
                 _machine.LastModifiedDate = DateTime.UtcNow;
                 await MachineService.UpdateMachineAsync(_machine);

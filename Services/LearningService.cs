@@ -6,12 +6,27 @@ namespace Opcentrix_V3.Services;
 public class LearningService : ILearningService
 {
     private readonly TenantDbContext _db;
-    private const double Alpha = 0.3; // EMA smoothing factor
-    private const int AutoSwitchThreshold = 3; // Switch to "Auto" after this many samples
+
+    private static readonly double DefaultAlpha = 0.3;
+    private static readonly int DefaultAutoSwitchThreshold = 3;
 
     public LearningService(TenantDbContext db)
     {
         _db = db;
+    }
+
+    private async Task<double> GetAlphaAsync()
+    {
+        var setting = await _db.SystemSettings
+            .FirstOrDefaultAsync(s => s.Key == "scheduling.ema_alpha");
+        return setting is not null && double.TryParse(setting.Value, out var v) ? v : DefaultAlpha;
+    }
+
+    private async Task<int> GetAutoSwitchThresholdAsync()
+    {
+        var setting = await _db.SystemSettings
+            .FirstOrDefaultAsync(s => s.Key == "scheduling.ema_auto_switch_samples");
+        return setting is not null && int.TryParse(setting.Value, out var v) ? v : DefaultAutoSwitchThreshold;
     }
 
     public async Task UpdateEstimateAsync(int partId, int productionStageId, double actualDurationHours)
@@ -23,6 +38,9 @@ public class LearningService : ILearningService
 
         if (requirement == null) return;
 
+        var alpha = await GetAlphaAsync();
+        var autoSwitchThreshold = await GetAutoSwitchThresholdAsync();
+
         requirement.LastActualDurationHours = actualDurationHours;
         requirement.ActualSampleCount++;
 
@@ -30,7 +48,7 @@ public class LearningService : ILearningService
         if (requirement.ActualAverageDurationHours.HasValue)
         {
             requirement.ActualAverageDurationHours =
-                Alpha * actualDurationHours + (1 - Alpha) * requirement.ActualAverageDurationHours.Value;
+                alpha * actualDurationHours + (1 - alpha) * requirement.ActualAverageDurationHours.Value;
         }
         else
         {
@@ -39,7 +57,7 @@ public class LearningService : ILearningService
         }
 
         // Auto-switch to "Auto" after enough samples
-        if (requirement.ActualSampleCount >= AutoSwitchThreshold && requirement.EstimateSource == "Manual")
+        if (requirement.ActualSampleCount >= autoSwitchThreshold && requirement.EstimateSource == "Manual")
         {
             requirement.EstimateSource = "Auto";
         }
@@ -55,6 +73,9 @@ public class LearningService : ILearningService
         var stage = await _db.ProcessStages.FindAsync(processStageId);
         if (stage is null) return;
 
+        var alpha = await GetAlphaAsync();
+        var autoSwitchThreshold = await GetAutoSwitchThresholdAsync();
+
         var sampleCount = stage.ActualSampleCount ?? 0;
         sampleCount++;
 
@@ -62,7 +83,7 @@ public class LearningService : ILearningService
         if (stage.ActualAverageDurationMinutes.HasValue)
         {
             stage.ActualAverageDurationMinutes =
-                Alpha * actualDurationMinutes + (1 - Alpha) * stage.ActualAverageDurationMinutes.Value;
+                alpha * actualDurationMinutes + (1 - alpha) * stage.ActualAverageDurationMinutes.Value;
         }
         else
         {
@@ -72,7 +93,7 @@ public class LearningService : ILearningService
         stage.ActualSampleCount = sampleCount;
 
         // Auto-switch to "Auto" after enough samples
-        if (sampleCount >= AutoSwitchThreshold && stage.EstimateSource != "Auto")
+        if (sampleCount >= autoSwitchThreshold && stage.EstimateSource != "Auto")
         {
             stage.EstimateSource = "Auto";
         }

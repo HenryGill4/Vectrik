@@ -1440,6 +1440,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsAdditiveMachine")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsAvailableForScheduling")
                         .HasColumnType("INTEGER");
 

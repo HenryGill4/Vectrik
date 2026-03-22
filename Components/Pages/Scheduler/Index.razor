@@ -8,6 +8,7 @@
 @inject IWorkOrderService WorkOrderService
 @inject IBuildTemplateService BuildTemplateService
 @inject IBuildSuggestionService BuildSuggestionService
+@inject Opcentrix_V3.Data.TenantDbContext Db
 @inject ToastService Toast
 @implements IAsyncDisposable
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
@@ -189,6 +190,9 @@ else if (_viewMode == "table")
     private DateTime _dataRangeStart = DateTime.UtcNow.Date.AddDays(-7);
     private DateTime _dataRangeEnd = DateTime.UtcNow.Date.AddDays(21);
 
+    // Configurable settings (loaded from SystemSettings)
+    private int _autoRefreshSeconds = 30;
+
     private bool _showCreate;
     private bool _showReschedule;
     private ConfirmDialog _confirmDialog = null!;
@@ -214,6 +218,7 @@ else if (_viewMode == "table")
         }
         try
         {
+            await LoadSchedulerSettingsAsync();
             _parts = await PartService.GetAllPartsAsync();
             _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
             _stages = await StageService.GetAllStagesAsync(activeOnly: true);
@@ -282,12 +287,37 @@ else if (_viewMode == "table")
                 await LoadData(isBackgroundRefresh: true);
                 StateHasChanged();
             });
-        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        }, null, TimeSpan.FromSeconds(_autoRefreshSeconds), TimeSpan.FromSeconds(_autoRefreshSeconds));
     }
 
     private void ToggleAutoRefresh() => _autoRefreshEnabled = !_autoRefreshEnabled;
 
     private Task ManualRefreshAsync() => LoadData(isBackgroundRefresh: true);
+
+    private async Task LoadSchedulerSettingsAsync()
+    {
+        try
+        {
+            var settingsList = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                Db.SystemSettings.Where(s => s.Key.StartsWith("scheduler.") || s.Key.StartsWith("scheduling.")));
+            var settings = settingsList.ToDictionary(s => s.Key, s => s.Value);
+
+            if (settings.TryGetValue("scheduler.auto_refresh_seconds", out var refreshVal) && int.TryParse(refreshVal, out var refreshSec))
+                _autoRefreshSeconds = refreshSec;
+            if (settings.TryGetValue("scheduler.gantt_lookback_days", out var lookbackVal) && int.TryParse(lookbackVal, out var lookback))
+                _dataRangeStart = DateTime.UtcNow.Date.AddDays(-lookback);
+            if (settings.TryGetValue("scheduler.gantt_lookahead_days", out var lookaheadVal) && int.TryParse(lookaheadVal, out var lookahead))
+                _viewportEnd = DateTime.UtcNow.Date.AddDays(lookahead);
+            if (settings.TryGetValue("scheduler.gantt_data_range_days", out var dataRangeVal) && int.TryParse(dataRangeVal, out var dataRange))
+                _dataRangeEnd = DateTime.UtcNow.Date.AddDays(dataRange);
+            if (settings.TryGetValue("scheduler.gantt_default_zoom", out var zoomVal) && double.TryParse(zoomVal, out var zoom))
+                _pixelsPerHour = zoom;
+        }
+        catch
+        {
+            // Use defaults if settings can't be loaded
+        }
+    }
 
     private List<BuildPackage> ReadyBuilds => _buildPackages
         .Where(b => b.Status == BuildPackageStatus.Ready || (b.Status == BuildPackageStatus.Sliced && b.IsSlicerDataEntered))

@@ -825,11 +825,16 @@ public class BuildPlanningService : IBuildPlanningService
             .ToListAsync();
     }
 
-    private const string DefaultBuildNameTemplate = "{PARTS}-{DATE}-{SEQ}";
+    private static readonly string DefaultBuildNameTemplate = "{PARTS}-{DATE}-{SEQ}";
 
     public async Task<string> GenerateBuildNameAsync(List<int> partIds, int machineId = 0, string? template = null)
     {
-        template = string.IsNullOrWhiteSpace(template) ? DefaultBuildNameTemplate : template;
+        if (string.IsNullOrWhiteSpace(template))
+        {
+            var setting = await _db.SystemSettings
+                .FirstOrDefaultAsync(s => s.Key == "builds.name_template");
+            template = !string.IsNullOrWhiteSpace(setting?.Value) ? setting.Value : DefaultBuildNameTemplate;
+        }
 
         // Resolve part numbers for {PARTS} token
         string partsToken;
@@ -855,7 +860,7 @@ public class BuildPlanningService : IBuildPlanningService
 
         // Resolve machine info for {MACHINE} and {MATERIAL} tokens
         var machine = machineId > 0 ? await _db.Machines.FindAsync(machineId) : null;
-        var machineName = machine?.MachineId ?? machine?.Name ?? "SLS";
+        var machineName = machine?.MachineId ?? machine?.Name ?? "Unknown";
 
         // Determine sequence number: count of builds this month + 1
         var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);

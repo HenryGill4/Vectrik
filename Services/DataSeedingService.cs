@@ -32,6 +32,7 @@ public class DataSeedingService : IDataSeedingService
         await SeedManufacturingApproachesAsync(tenantDb);
         await SeedOperatingShiftsAsync(tenantDb);
         await SeedSystemSettingsAsync(tenantDb);
+        await EnsureSystemSettingsAsync(tenantDb);
         await SeedDefaultAdminUserAsync(tenantDb);
         await SeedTestUsersAsync(tenantDb);
         await SeedDocumentTemplatesAsync(tenantDb);
@@ -402,6 +403,9 @@ public class DataSeedingService : IDataSeedingService
                 if (expected.ChangeoverMinutes > 0 && existing.ChangeoverMinutes != expected.ChangeoverMinutes)
                 { existing.ChangeoverMinutes = expected.ChangeoverMinutes; changed = true; }
 
+                if (existing.IsAdditiveMachine != expected.IsAdditiveMachine)
+                { existing.IsAdditiveMachine = expected.IsAdditiveMachine; changed = true; }
+
                 if (changed) machinesUpdated++;
             }
             else
@@ -462,7 +466,7 @@ public class DataSeedingService : IDataSeedingService
             MachineModel = "EOS M 400-4", Department = "SLS",
             BuildLengthMm = 450, BuildWidthMm = 450, BuildHeightMm = 400,
             BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30,
-            LaserCount = 6, MaxLaserPowerWatts = 1000,
+            LaserCount = 6, MaxLaserPowerWatts = 1000, IsAdditiveMachine = true,
             HourlyRate = 200.00m, CreatedBy = "System", LastModifiedBy = "System"
         },
         new()
@@ -471,7 +475,7 @@ public class DataSeedingService : IDataSeedingService
             MachineModel = "EOS M 400-4", Department = "SLS",
             BuildLengthMm = 450, BuildWidthMm = 450, BuildHeightMm = 400,
             BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30,
-            LaserCount = 6, MaxLaserPowerWatts = 1000,
+            LaserCount = 6, MaxLaserPowerWatts = 1000, IsAdditiveMachine = true,
             HourlyRate = 200.00m, CreatedBy = "System", LastModifiedBy = "System"
         },
         new()
@@ -1017,10 +1021,74 @@ public class DataSeedingService : IDataSeedingService
             new() { Key = "workflow.wo_auto_release", Value = "false", Category = "Workflow", Description = "Auto-release WOs from quotes", LastModifiedBy = "System" },
             new() { Key = "workflow.require_job_approval", Value = "false", Category = "Workflow", Description = "Jobs need approval before start", LastModifiedBy = "System" },
             new() { Key = "workflow.stage_pause_allowed", Value = "true", Category = "Workflow", Description = "Allow operators to pause stages", LastModifiedBy = "System" },
+
+            // Scheduling
+            new() { Key = "scheduling.ema_alpha", Value = "0.3", Category = "Scheduling", Description = "EMA smoothing factor for duration learning (0.0-1.0, higher = faster adaptation)", LastModifiedBy = "System" },
+            new() { Key = "scheduling.ema_auto_switch_samples", Value = "3", Category = "Scheduling", Description = "Number of actual samples before auto-switching estimate source to Auto", LastModifiedBy = "System" },
+            new() { Key = "scheduling.parallel_build_limit", Value = "0", Category = "Scheduling", Description = "Max concurrent builds per additive machine (0 = unlimited by plate capacity)", LastModifiedBy = "System" },
+
+            // Scheduler UI
+            new() { Key = "scheduler.auto_refresh_seconds", Value = "30", Category = "Scheduler UI", Description = "Auto-refresh interval for the scheduler dashboard (seconds)", LastModifiedBy = "System" },
+            new() { Key = "scheduler.gantt_lookback_days", Value = "7", Category = "Scheduler UI", Description = "Days of history to show on the Gantt chart", LastModifiedBy = "System" },
+            new() { Key = "scheduler.gantt_lookahead_days", Value = "14", Category = "Scheduler UI", Description = "Days of future to show in the Gantt viewport", LastModifiedBy = "System" },
+            new() { Key = "scheduler.gantt_data_range_days", Value = "21", Category = "Scheduler UI", Description = "Total days of data to query for Gantt rendering", LastModifiedBy = "System" },
+            new() { Key = "scheduler.gantt_default_zoom", Value = "6.0", Category = "Scheduler UI", Description = "Default pixels-per-hour zoom on the Gantt chart", LastModifiedBy = "System" },
+
+            // Builds
+            new() { Key = "builds.name_template", Value = "{PARTS}-{DATE}-{SEQ}", Category = "Builds", Description = "Template for auto-generated build names. Tokens: {PARTS}, {MACHINE}, {DATE}, {SEQ}, {MATERIAL}", LastModifiedBy = "System" },
+            new() { Key = "builds.default_batch_capacity", Value = "60", Category = "Builds", Description = "Default batch capacity for new manufacturing processes", LastModifiedBy = "System" },
         };
 
         db.SystemSettings.AddRange(settings);
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Idempotent: adds any missing SystemSettings to existing databases without
+    /// overwriting admin-customized values. Safe to call on every startup.
+    /// </summary>
+    private static async Task EnsureSystemSettingsAsync(TenantDbContext db)
+    {
+        var expectedSettings = new Dictionary<string, (string Value, string Category, string Description)>
+        {
+            ["scheduling.ema_alpha"] = ("0.3", "Scheduling", "EMA smoothing factor for duration learning (0.0-1.0, higher = faster adaptation)"),
+            ["scheduling.ema_auto_switch_samples"] = ("3", "Scheduling", "Number of actual samples before auto-switching estimate source to Auto"),
+            ["scheduling.parallel_build_limit"] = ("0", "Scheduling", "Max concurrent builds per additive machine (0 = unlimited by plate capacity)"),
+            ["scheduler.auto_refresh_seconds"] = ("30", "Scheduler UI", "Auto-refresh interval for the scheduler dashboard (seconds)"),
+            ["scheduler.gantt_lookback_days"] = ("7", "Scheduler UI", "Days of history to show on the Gantt chart"),
+            ["scheduler.gantt_lookahead_days"] = ("14", "Scheduler UI", "Days of future to show in the Gantt viewport"),
+            ["scheduler.gantt_data_range_days"] = ("21", "Scheduler UI", "Total days of data to query for Gantt rendering"),
+            ["scheduler.gantt_default_zoom"] = ("6.0", "Scheduler UI", "Default pixels-per-hour zoom on the Gantt chart"),
+            ["builds.name_template"] = ("{PARTS}-{DATE}-{SEQ}", "Builds", "Template for auto-generated build names. Tokens: {PARTS}, {MACHINE}, {DATE}, {SEQ}, {MATERIAL}"),
+            ["builds.default_batch_capacity"] = ("60", "Builds", "Default batch capacity for new manufacturing processes"),
+        };
+
+        var existingKeys = await db.SystemSettings
+            .Select(s => s.Key)
+            .ToListAsync();
+        var existingKeySet = new HashSet<string>(existingKeys);
+
+        var toAdd = new List<SystemSetting>();
+        foreach (var (key, (value, category, description)) in expectedSettings)
+        {
+            if (!existingKeySet.Contains(key))
+            {
+                toAdd.Add(new SystemSetting
+                {
+                    Key = key,
+                    Value = value,
+                    Category = category,
+                    Description = description,
+                    LastModifiedBy = "System"
+                });
+            }
+        }
+
+        if (toAdd.Count > 0)
+        {
+            db.SystemSettings.AddRange(toAdd);
+            await db.SaveChangesAsync();
+        }
     }
 
     private async Task SeedDefaultAdminUserAsync(TenantDbContext db)

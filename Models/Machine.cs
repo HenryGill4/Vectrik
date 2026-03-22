@@ -82,14 +82,12 @@ public class Machine
     [MaxLength(100)]
     public string LastModifiedBy { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether this machine is an additive/build-plate machine (SLS, DMLS, MJF, EBM, etc.).
+    /// Persisted in DB so admins can set this for any machine type.
+    /// </summary>
+    public bool IsAdditiveMachine { get; set; }
+
     // Navigation
     public virtual ICollection<MachineComponent> Components { get; set; } = new List<MachineComponent>();
-
-    /// <summary>
-    /// Whether this machine is an additive/SLS-type machine that runs build packages.
-    /// </summary>
-    [NotMapped]
-    public bool IsAdditiveMachine =>
-        MachineType.Equals("SLS", StringComparison.OrdinalIgnoreCase)
-        || MachineType.Equals("Additive", StringComparison.OrdinalIgnoreCase);
 }

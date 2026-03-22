@@ -413,11 +413,11 @@ public class BuildSchedulingService : IBuildSchedulingService
     public async Task<BestBuildSlot> FindBestBuildSlotAsync(
         double durationHours, DateTime notBefore, int? forBuildPackageId = null)
     {
-        // Query all SLS/additive machines that are active and available for scheduling
+        // Query all additive machines that are active and available for scheduling
         var slsMachines = await _db.Machines
             .Where(m => m.IsActive
                 && m.IsAvailableForScheduling
-                && (m.MachineType == "SLS" || m.MachineType == "Additive"))
+                && m.IsAdditiveMachine)
             .OrderBy(m => m.Priority)
             .ThenBy(m => m.Id)
             .ToListAsync();
