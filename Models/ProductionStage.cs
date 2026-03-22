@@ -112,6 +112,33 @@ public class ProductionStage
         return assigned.Count == 0 || assigned.Contains(machineId);
     }
 
+    /// <summary>
+    /// Returns assigned machine IDs as integers (Machine.Id), parsed from the
+    /// comma-separated AssignedMachineIds field which stores Machine.Id int values.
+    /// </summary>
+    public List<int> GetAssignedMachineIntIds()
+    {
+        if (string.IsNullOrWhiteSpace(AssignedMachineIds))
+            return new List<int>();
+        var result = new List<int>();
+        foreach (var entry in AssignedMachineIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (int.TryParse(entry, out var id))
+                result.Add(id);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Checks whether the given machine (by int PK) can execute this stage.
+    /// Returns true if no machines are assigned (any machine is capable) or the machine is in the assigned list.
+    /// </summary>
+    public bool CanMachineExecuteStage(int machineId)
+    {
+        var assigned = GetAssignedMachineIntIds();
+        return assigned.Count == 0 || assigned.Contains(machineId);
+    }
+
     public decimal GetTotalEstimatedCost()
     {
         return (DefaultHourlyRate * (decimal)DefaultDurationHours) + DefaultMaterialCost;

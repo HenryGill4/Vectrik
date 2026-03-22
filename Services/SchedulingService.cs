@@ -333,12 +333,12 @@ public class SchedulingService : ISchedulingService
         }
 
         // 6. Assigned machines from the ProductionStage definition
-        var stageCapable = stage.GetAssignedMachineIds();
-        if (stageCapable.Any())
+        var stageCapableIds = stage.GetAssignedMachineIntIds();
+        if (stageCapableIds.Any())
         {
-            foreach (var sid in stageCapable)
+            foreach (var intId in stageCapableIds)
             {
-                if (machineLookup.TryGetValue(sid, out var m) && !result.Contains(m))
+                if (machineIdLookup.TryGetValue(intId, out var m) && !result.Contains(m))
                     result.Add(m);
             }
         }
@@ -368,8 +368,9 @@ public class SchedulingService : ISchedulingService
         // 9. If stage requires assignment but nothing found, return whatever is capable
         if (!result.Any() && stage.RequiresMachineAssignment)
         {
+            var capableIntIds = stage.GetAssignedMachineIntIds();
             result.AddRange(fallbackMachines
-                .Where(m => stage.CanMachineExecuteStage(m.MachineId))
+                .Where(m => capableIntIds.Count == 0 || capableIntIds.Contains(m.Id))
                 .OrderBy(m => m.Priority));
         }
 
