@@ -254,15 +254,40 @@ public class StageService : IStageService
         {
             var shouldRelease = false;
 
-            // Check ProcessStageId against ManufacturingProcess.PlateReleaseStageId
             if (execution.ProcessStageId.HasValue)
             {
+                // New system: check if this ProcessStage is the designated plate release trigger
                 var processStage = await _db.ProcessStages
                     .Include(ps => ps.ManufacturingProcess)
                     .FirstOrDefaultAsync(ps => ps.Id == execution.ProcessStageId.Value);
 
                 if (processStage?.ManufacturingProcess?.PlateReleaseStageId == processStage?.Id)
                     shouldRelease = true;
+            }
+            else
+            {
+                // Fallback: ProcessStageId not set (legacy-created execution)
+                // Check if this ProductionStage matches the plate release stage's ProductionStageId
+                // for any ManufacturingProcess of a part in this build
+                var buildPartIds = await _db.BuildPackageParts
+                    .Where(bp => bp.BuildPackageId == execution.BuildPackageId.Value)
+                    .Select(bp => bp.PartId)
+                    .Distinct()
+                    .ToListAsync();
+
+                if (buildPartIds.Count > 0)
+                {
+                    var plateReleaseProductionStageId = await _db.ManufacturingProcesses
+                        .Where(p => buildPartIds.Contains(p.PartId) && p.IsActive && p.PlateReleaseStageId.HasValue)
+                        .Select(p => (int?)p.PlateReleaseStage!.ProductionStageId)
+                        .FirstOrDefaultAsync();
+
+                    if (plateReleaseProductionStageId.HasValue
+                        && plateReleaseProductionStageId.Value == execution.ProductionStageId)
+                    {
+                        shouldRelease = true;
+                    }
+                }
             }
 
             if (shouldRelease)
