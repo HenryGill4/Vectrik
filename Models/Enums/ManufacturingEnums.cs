@@ -193,3 +193,6 @@ public enum BatchStatus { Open, Sealed, InProcess, Completed, Dissolved }
 public enum BatchAssignmentAction { Assigned, Removed }
 
 public enum JobScope { Build, Batch, Part }
+
+// Machine Programs
+public enum ProgramStatus { Draft, Active, Superseded, Archived }

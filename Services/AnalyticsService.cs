@@ -10,12 +10,24 @@ public class AnalyticsService : IAnalyticsService
     private readonly TenantDbContext _db;
     private readonly IPartTrackerService _partTracker;
     private readonly IMaintenanceService _maintenance;
+    private readonly IStageCostService _costService;
+    private readonly IPartPricingService _pricingService;
+    private readonly IManufacturingProcessService _processService;
 
-    public AnalyticsService(TenantDbContext db, IPartTrackerService partTracker, IMaintenanceService maintenance)
+    public AnalyticsService(
+        TenantDbContext db,
+        IPartTrackerService partTracker,
+        IMaintenanceService maintenance,
+        IStageCostService costService,
+        IPartPricingService pricingService,
+        IManufacturingProcessService processService)
     {
         _db = db;
         _partTracker = partTracker;
         _maintenance = maintenance;
+        _costService = costService;
+        _pricingService = pricingService;
+        _processService = processService;
     }
 
     public async Task<DashboardKpis> GetDashboardKpisAsync()
@@ -93,11 +105,12 @@ public class AnalyticsService : IAnalyticsService
             }
             else
             {
-                // Calculate: ActualHours × HourlyRate + MaterialCost
+                // Use cost profile for detailed breakdown; falls back to DefaultHourlyRate
                 var hours = exec.ActualHours ?? exec.EstimatedHours ?? 0;
-                var rate = exec.ProductionStage?.DefaultHourlyRate ?? 0;
-                var materialCost = exec.MaterialCost ?? 0;
-                totalCost += (decimal)hours * rate + materialCost;
+                var partCount = exec.BatchPartCount ?? 1;
+                var estimate = await _costService.EstimateCostAsync(
+                    exec.ProductionStageId, hours, partCount);
+                totalCost += estimate.TotalCost + (exec.MaterialCost ?? 0);
             }
         }
 
@@ -489,5 +502,332 @@ public class AnalyticsService : IAnalyticsService
             _db.SavedReports.Remove(report);
             await _db.SaveChangesAsync();
         }
+    }
+
+    // ── Profit & Revenue Analytics ────────────────────────────────
+
+    public async Task<ProfitSummary> GetProfitSummaryAsync(DateTime from, DateTime to)
+    {
+        var jobs = await _db.Jobs
+            .Include(j => j.Part)
+            .Include(j => j.WorkOrderLine!)
+                .ThenInclude(l => l.WorkOrder)
+            .Where(j => j.Status == JobStatus.Completed && j.ActualEnd >= from && j.ActualEnd <= to)
+            .ToListAsync();
+
+        var pricings = await _db.PartPricings.ToListAsync();
+        var pricingLookup = pricings.ToDictionary(p => p.PartId);
+
+        var totalRevenue = 0m;
+        var totalCost = 0m;
+        var totalMaterial = 0m;
+        var totalLabor = 0m;
+        var totalOverhead = 0m;
+        var totalParts = 0;
+        var unprofitableCount = 0;
+
+        foreach (var job in jobs)
+        {
+            var produced = job.ProducedQuantity;
+            totalParts += produced;
+
+            var jobCost = await CalculateJobCostAsync(job.Id);
+            totalCost += jobCost;
+
+            // Revenue from pricing or quote
+            var revenue = 0m;
+            if (pricingLookup.TryGetValue(job.PartId, out var pricing))
+            {
+                revenue = pricing.SellPricePerUnit * produced;
+                totalMaterial += pricing.MaterialCostPerUnit * produced;
+            }
+            else if (job.WorkOrderLine?.WorkOrder?.Quote != null)
+            {
+                var quoteLines = await _db.QuoteLines
+                    .Where(ql => ql.QuoteId == job.WorkOrderLine.WorkOrder.QuoteId && ql.PartId == job.PartId)
+                    .FirstOrDefaultAsync();
+                revenue = quoteLines != null ? quoteLines.QuotedPricePerPart * produced : 0;
+            }
+
+            totalRevenue += revenue;
+
+            // Cost category breakdown from stage executions
+            var executions = await _db.StageExecutions
+                .Where(e => e.JobId == job.Id && e.Status == StageExecutionStatus.Completed)
+                .ToListAsync();
+
+            foreach (var exec in executions)
+            {
+                var hours = exec.ActualHours ?? exec.EstimatedHours ?? 0;
+                var partCount = exec.BatchPartCount ?? 1;
+                var estimate = await _costService.EstimateCostAsync(exec.ProductionStageId, hours, partCount);
+                totalLabor += estimate.LaborCost;
+                totalOverhead += estimate.OverheadCost;
+            }
+
+            if (revenue < jobCost) unprofitableCount++;
+        }
+
+        var grossProfit = totalRevenue - totalCost;
+        var grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+        var avgProfitPerPart = totalParts > 0 ? grossProfit / totalParts : 0;
+
+        return new ProfitSummary
+        {
+            TotalRevenue = totalRevenue,
+            TotalCost = totalCost,
+            GrossProfit = grossProfit,
+            GrossMarginPct = grossMargin,
+            TotalMaterialCost = totalMaterial,
+            TotalLaborCost = totalLabor,
+            TotalOverheadCost = totalOverhead,
+            CompletedJobs = jobs.Count,
+            TotalPartsProduced = totalParts,
+            AverageProfitPerPart = avgProfitPerPart,
+            UnprofitableJobCount = unprofitableCount
+        };
+    }
+
+    public async Task<List<ProfitByPartRow>> GetProfitByPartAsync(DateTime from, DateTime to)
+    {
+        var jobs = await _db.Jobs
+            .Include(j => j.Part)
+            .Where(j => j.Status == JobStatus.Completed && j.ActualEnd >= from && j.ActualEnd <= to)
+            .ToListAsync();
+
+        var pricings = await _db.PartPricings.ToListAsync();
+        var pricingLookup = pricings.ToDictionary(p => p.PartId);
+
+        var grouped = jobs.GroupBy(j => new { j.PartId, j.Part.PartNumber, j.Part.Name });
+        var rows = new List<ProfitByPartRow>();
+
+        foreach (var group in grouped)
+        {
+            var produced = group.Sum(j => j.ProducedQuantity);
+            var totalCost = 0m;
+            foreach (var job in group)
+                totalCost += await CalculateJobCostAsync(job.Id);
+
+            var hasPricing = pricingLookup.TryGetValue(group.Key.PartId, out var pricing);
+            var sellPrice = pricing?.SellPricePerUnit ?? 0;
+            var revenue = sellPrice * produced;
+            var profit = revenue - totalCost;
+            var margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+            var costPerUnit = produced > 0 ? totalCost / produced : 0;
+
+            rows.Add(new ProfitByPartRow
+            {
+                PartId = group.Key.PartId,
+                PartNumber = group.Key.PartNumber ?? "",
+                PartName = group.Key.Name,
+                TotalProduced = produced,
+                TotalRevenue = revenue,
+                TotalCost = totalCost,
+                Profit = profit,
+                MarginPct = margin,
+                SellPricePerUnit = sellPrice,
+                CostPerUnit = costPerUnit,
+                HasPricing = hasPricing
+            });
+        }
+
+        return rows.OrderByDescending(r => Math.Abs(r.Profit)).ToList();
+    }
+
+    public async Task<List<ProfitByCustomerRow>> GetProfitByCustomerAsync(DateTime from, DateTime to)
+    {
+        var jobs = await _db.Jobs
+            .Include(j => j.Part)
+            .Include(j => j.WorkOrderLine!)
+                .ThenInclude(l => l.WorkOrder)
+            .Where(j => j.Status == JobStatus.Completed && j.ActualEnd >= from && j.ActualEnd <= to
+                && j.WorkOrderLineId != null)
+            .ToListAsync();
+
+        var pricings = await _db.PartPricings.ToListAsync();
+        var pricingLookup = pricings.ToDictionary(p => p.PartId);
+
+        var grouped = jobs
+            .Where(j => j.WorkOrderLine?.WorkOrder != null)
+            .GroupBy(j => j.WorkOrderLine!.WorkOrder.CustomerName);
+
+        var rows = new List<ProfitByCustomerRow>();
+
+        foreach (var group in grouped)
+        {
+            var produced = group.Sum(j => j.ProducedQuantity);
+            var orderIds = group.Select(j => j.WorkOrderLine!.WorkOrderId).Distinct().Count();
+            var totalCost = 0m;
+            var totalRevenue = 0m;
+
+            foreach (var job in group)
+            {
+                totalCost += await CalculateJobCostAsync(job.Id);
+                if (pricingLookup.TryGetValue(job.PartId, out var pricing))
+                    totalRevenue += pricing.SellPricePerUnit * job.ProducedQuantity;
+            }
+
+            var profit = totalRevenue - totalCost;
+            var margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
+
+            rows.Add(new ProfitByCustomerRow
+            {
+                CustomerName = group.Key,
+                OrderCount = orderIds,
+                TotalParts = produced,
+                TotalRevenue = totalRevenue,
+                TotalCost = totalCost,
+                Profit = profit,
+                MarginPct = margin
+            });
+        }
+
+        return rows.OrderByDescending(r => r.TotalRevenue).ToList();
+    }
+
+    public async Task<List<DailyProfitPoint>> GetProfitTrendAsync(DateTime from, DateTime to)
+    {
+        var jobs = await _db.Jobs
+            .Include(j => j.Part)
+            .Where(j => j.Status == JobStatus.Completed && j.ActualEnd >= from && j.ActualEnd <= to)
+            .ToListAsync();
+
+        var pricings = await _db.PartPricings.ToListAsync();
+        var pricingLookup = pricings.ToDictionary(p => p.PartId);
+
+        var dailyData = new Dictionary<DateTime, DailyProfitPoint>();
+
+        foreach (var job in jobs)
+        {
+            var date = job.ActualEnd!.Value.Date;
+            if (!dailyData.ContainsKey(date))
+                dailyData[date] = new DailyProfitPoint { Date = date };
+
+            var point = dailyData[date];
+            var cost = await CalculateJobCostAsync(job.Id);
+            point.Cost += cost;
+            point.PartsProduced += job.ProducedQuantity;
+
+            if (pricingLookup.TryGetValue(job.PartId, out var pricing))
+                point.Revenue += pricing.SellPricePerUnit * job.ProducedQuantity;
+        }
+
+        foreach (var point in dailyData.Values)
+            point.Profit = point.Revenue - point.Cost;
+
+        return dailyData.Values.OrderBy(p => p.Date).ToList();
+    }
+
+    public async Task<List<UnprofitableJobRow>> GetUnprofitableJobsAsync(DateTime from, DateTime to, int maxResults = 20)
+    {
+        var jobs = await _db.Jobs
+            .Include(j => j.Part)
+            .Include(j => j.WorkOrderLine!)
+                .ThenInclude(l => l.WorkOrder)
+            .Where(j => j.Status == JobStatus.Completed && j.ActualEnd >= from && j.ActualEnd <= to)
+            .ToListAsync();
+
+        var pricings = await _db.PartPricings.ToListAsync();
+        var pricingLookup = pricings.ToDictionary(p => p.PartId);
+
+        var unprofitable = new List<UnprofitableJobRow>();
+
+        foreach (var job in jobs)
+        {
+            var cost = await CalculateJobCostAsync(job.Id);
+            var revenue = 0m;
+
+            if (pricingLookup.TryGetValue(job.PartId, out var pricing))
+                revenue = pricing.SellPricePerUnit * job.ProducedQuantity;
+
+            if (revenue < cost && revenue > 0)
+            {
+                var loss = cost - revenue;
+                var margin = revenue > 0 ? ((revenue - cost) / revenue) * 100 : -100;
+
+                unprofitable.Add(new UnprofitableJobRow
+                {
+                    JobId = job.Id,
+                    PartNumber = job.Part?.PartNumber ?? job.PartNumber ?? "",
+                    CustomerName = job.WorkOrderLine?.WorkOrder?.CustomerName ?? "",
+                    Revenue = revenue,
+                    Cost = cost,
+                    Loss = loss,
+                    MarginPct = margin,
+                    CompletedDate = job.ActualEnd!.Value
+                });
+            }
+        }
+
+        return unprofitable.OrderByDescending(r => r.Loss).Take(maxResults).ToList();
+    }
+
+    public async Task<PartCostBreakdown> GetPartCostBreakdownAsync(int partId, int quantity = 60)
+    {
+        var part = await _db.Parts.FindAsync(partId);
+        if (part == null)
+            throw new InvalidOperationException($"Part {partId} not found.");
+
+        var pricing = await _pricingService.GetByPartIdAsync(partId);
+        var process = await _processService.GetByPartIdAsync(partId);
+
+        var breakdown = new PartCostBreakdown
+        {
+            PartId = partId,
+            PartNumber = part.PartNumber,
+            PartName = part.Name,
+            SellPricePerUnit = pricing?.SellPricePerUnit ?? 0,
+            MaterialCostPerUnit = pricing?.MaterialCostPerUnit ?? 0,
+            TargetMarginPct = pricing?.TargetMarginPct ?? 25,
+            Quantity = quantity
+        };
+
+        if (process != null)
+        {
+            var batchCapacity = process.DefaultBatchCapacity;
+            var batchCount = batchCapacity > 0
+                ? (int)Math.Ceiling((double)quantity / batchCapacity)
+                : 1;
+
+            var totalMfgCost = 0m;
+
+            foreach (var stage in process.Stages.OrderBy(s => s.ExecutionOrder))
+            {
+                var batchCountForStage = stage.ProcessingLevel == Models.Enums.ProcessingLevel.Build ? 1 : batchCount;
+                var duration = _processService.CalculateStageDuration(stage, quantity, batchCountForStage, buildConfigHours: null);
+                var hours = duration.TotalMinutes / 60.0;
+
+                var estimate = await _costService.EstimateCostAsync(
+                    stage.ProductionStageId, hours, quantity, batchCountForStage);
+
+                totalMfgCost += estimate.TotalCost;
+
+                breakdown.StageBreakdown.Add(new StageCostRow
+                {
+                    StageName = stage.ProductionStage.Name,
+                    StageIcon = stage.ProductionStage.StageIcon ?? "",
+                    StageColor = stage.ProductionStage.StageColor ?? "",
+                    ProcessingLevel = stage.ProcessingLevel.ToString(),
+                    DurationMinutes = duration.TotalMinutes,
+                    LaborCost = estimate.LaborCost,
+                    EquipmentCost = estimate.EquipmentCost,
+                    OverheadCost = estimate.OverheadCost,
+                    PerPartCost = estimate.PerPartCost,
+                    ExternalCost = estimate.ExternalCost,
+                    TotalCost = estimate.TotalCost,
+                    CostPerPart = estimate.CostPerPart
+                });
+            }
+
+            breakdown.ManufacturingCostPerUnit = quantity > 0 ? totalMfgCost / quantity : 0;
+        }
+
+        breakdown.TotalCostPerUnit = breakdown.ManufacturingCostPerUnit + breakdown.MaterialCostPerUnit;
+        breakdown.ProfitPerUnit = breakdown.SellPricePerUnit - breakdown.TotalCostPerUnit;
+        breakdown.MarginPct = breakdown.SellPricePerUnit > 0
+            ? (breakdown.ProfitPerUnit / breakdown.SellPricePerUnit) * 100
+            : 0;
+
+        return breakdown;
     }
 }

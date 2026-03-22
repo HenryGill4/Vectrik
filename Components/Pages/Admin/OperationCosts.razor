@@ -1,0 +1,627 @@
+@page "/admin/operation-costs"
+@inject IStageCostService CostService
+@inject IStageService StageService
+@inject IManufacturingProcessService ProcessService
+@inject IPartService PartService
+@inject IPartPricingService PricingService
+@inject ToastService Toast
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Operation Costs - Admin - OpCentrix</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }
+    </Authorized>
+</AuthorizeView>
+
+<div class="page-header">
+    <h1 class="page-title">💲 Operation Costs</h1>
+    <div style="font-size: 0.85rem; color: var(--text-muted);">True cost tracking per production stage — labor, equipment, overhead, and external expenses.</div>
+</div>
+
+@if (_stages == null)
+{
+    <div class="loading"><span class="spinner"></span></div>
+}
+else
+{
+    @* ── Summary KPIs ── *@
+    <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+        <div class="card" style="flex: 1; min-width: 140px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: 700; color: var(--success);">@_profiles.Count</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">Configured</div>
+        </div>
+        <div class="card" style="flex: 1; min-width: 140px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: 700; color: @(_stages!.Count - _profiles.Count > 0 ? "var(--warning)" : "var(--text-muted)");">@(_stages!.Count - _profiles.Count)</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">Unconfigured</div>
+        </div>
+        <div class="card" style="flex: 1; min-width: 140px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: 700;">$@(_profiles.Any() ? _profiles.Average(p => p.FullyLoadedHourlyRate).ToString("F0") : "0")</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">Avg $/hr (loaded)</div>
+        </div>
+        <div class="card" style="flex: 1; min-width: 140px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: 700;">$@(_profiles.Any() ? _profiles.Max(p => p.FullyLoadedHourlyRate).ToString("F0") : "0")</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">Max $/hr (loaded)</div>
+        </div>
+    </div>
+
+    @* ── Pricing Coverage & Profit Quick View ── *@
+    @if (_coverageStats != null)
+    {
+        <div class="card" style="margin-bottom: 16px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div style="font-weight: 600;">📊 Pricing & Profit Overview</div>
+                <a href="/analytics/profit" class="btn btn-sm btn-primary">Open Profit Dashboard →</a>
+            </div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">Parts Priced</div>
+                    <div style="font-size: 1.3rem; font-weight: 700; color: @(_coverageStats.PartsWithPricing > 0 ? "var(--success)" : "var(--warning)");">@_coverageStats.PartsWithPricing / @_coverageStats.TotalActiveParts</div>
+                </div>
+                <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">Fully Configured</div>
+                    <div style="font-size: 1.3rem; font-weight: 700; color: var(--success);">@_coverageStats.PartsFullyConfigured</div>
+                    <div style="font-size: 0.65rem; color: var(--text-muted);">pricing + process</div>
+                </div>
+                <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">Avg Sell Price</div>
+                    <div style="font-size: 1.3rem; font-weight: 700;">$@_coverageStats.AverageSellPrice.ToString("F0")</div>
+                </div>
+                <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">Avg Target Margin</div>
+                    <div style="font-size: 1.3rem; font-weight: 700;">@_coverageStats.AverageMarginPct.ToString("F0")%</div>
+                </div>
+            </div>
+            @if (_coverageStats.PartsFullyConfigured < _coverageStats.TotalActiveParts)
+            {
+                <div style="margin-top: 8px; font-size: 0.8rem; color: var(--warning);">
+                    💡 @(_coverageStats.TotalActiveParts - _coverageStats.PartsFullyConfigured) part(s) still need pricing or a ManufacturingProcess configured for full profit tracking.
+                </div>
+            }
+        </div>
+    }
+
+    @* ── Stage Cost Table ── *@
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Stage</th>
+                    <th style="text-align:right;">Labor $/hr</th>
+                    <th style="text-align:right;">Equipment $/hr</th>
+                    <th style="text-align:right;">Overhead $/hr</th>
+                    <th style="text-align:right;">Loaded $/hr</th>
+                    <th style="text-align:right;">Per Part $</th>
+                    <th>Status</th>
+                    <th style="width:80px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var stage in _stages)
+                {
+                    var profile = _profiles.FirstOrDefault(p => p.ProductionStageId == stage.Id);
+                    <tr>
+                        <td>
+                            <span style="color: @stage.StageColor">@ResolveStageIcon(stage.StageIcon)</span>
+                            <strong>@stage.Name</strong>
+                            @if (!string.IsNullOrEmpty(stage.Department))
+                            {
+                                <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 6px;">@stage.Department</span>
+                            }
+                        </td>
+                        @if (profile != null)
+                        {
+                            <td style="text-align:right;">$@profile.LaborCostPerHour.ToString("F2")</td>
+                            <td style="text-align:right;">$@profile.EquipmentCostPerHour.ToString("F2")</td>
+                            <td style="text-align:right;">$@profile.OverheadCostPerHour.ToString("F2")</td>
+                            <td style="text-align:right; font-weight: 600;">$@profile.FullyLoadedHourlyRate.ToString("F2")</td>
+                            <td style="text-align:right;">$@profile.PerPartCost.ToString("F2")</td>
+                            <td><span class="badge badge-active">Configured</span></td>
+                        }
+                        else
+                        {
+                            <td style="text-align:right; color: var(--text-muted);">—</td>
+                            <td style="text-align:right; color: var(--text-muted);">—</td>
+                            <td style="text-align:right; color: var(--text-muted);">—</td>
+                            <td style="text-align:right; color: var(--text-muted);">$@stage.DefaultHourlyRate/hr</td>
+                            <td style="text-align:right; color: var(--text-muted);">—</td>
+                            <td><span class="badge badge-cancelled">Default only</span></td>
+                        }
+                        <td>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditCost(stage, profile)">
+                                @(profile != null ? "Edit" : "Set Up")
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@* ── Edit Modal ── *@
+@if (_showEdit && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showEdit = false">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">
+                    <span style="color: @_editStage!.StageColor">@ResolveStageIcon(_editStage.StageIcon)</span>
+                    Cost Profile — @_editStage.Name
+                </span>
+                <button class="modal-close" @onclick="() => _showEdit = false">&times;</button>
+            </div>
+
+            <div class="tab-bar" style="margin-bottom: 16px;">
+                <button class="tab @(_editTab == "labor" ? "active" : "")" @onclick='() => _editTab = "labor"'>👷 Labor</button>
+                <button class="tab @(_editTab == "equipment" ? "active" : "")" @onclick='() => _editTab = "equipment"'>🖥️ Equipment</button>
+                <button class="tab @(_editTab == "overhead" ? "active" : "")" @onclick='() => _editTab = "overhead"'>🏢 Overhead</button>
+                <button class="tab @(_editTab == "external" ? "active" : "")" @onclick='() => _editTab = "external"'>🚚 External</button>
+                <button class="tab @(_editTab == "summary" ? "active" : "")" @onclick='() => _editTab = "summary"'>📊 Summary</button>
+            </div>
+
+            @if (_editTab == "labor")
+            {
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Operator Hourly Rate ($)</label>
+                        <input class="form-control" type="number" step="0.50" min="0" @bind="_edit.OperatorHourlyRate" />
+                        <small style="color: var(--text-muted);">Base pay rate for the primary operator</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Operators Required</label>
+                        <input class="form-control" type="number" min="0" max="20" @bind="_edit.OperatorsRequired" />
+                        <small style="color: var(--text-muted);">Number of operators needed to run this stage</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Supervision Hourly Rate ($)</label>
+                        <input class="form-control" type="number" step="0.50" min="0" @bind="_edit.SupervisionHourlyRate" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Supervision Allocation (%)</label>
+                        <input class="form-control" type="number" step="5" min="0" max="100" @bind="_edit.SupervisionAllocationPercent" />
+                        <small style="color: var(--text-muted);">Percentage of supervisor's time allocated here</small>
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label class="form-label">Labor Burden (%)</label>
+                        <input class="form-control" type="number" step="1" min="0" max="200" @bind="_edit.LaborBurdenPercent" />
+                        <small style="color: var(--text-muted);">Benefits, payroll taxes, insurance — applied on top of direct labor</small>
+                    </div>
+                </div>
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px 14px; margin-top: 12px;">
+                    <span class="form-label">Labor Cost Preview</span>
+                    <div style="font-size: 1.1rem; font-weight: 600;">$@_edit.LaborCostPerHour.ToString("F2") / hr</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">
+                        ($@_edit.OperatorHourlyRate × @_edit.OperatorsRequired operators)
+                        + ($@_edit.SupervisionHourlyRate × @_edit.SupervisionAllocationPercent%)
+                        × (1 + @_edit.LaborBurdenPercent% burden)
+                    </div>
+                </div>
+            }
+
+            @if (_editTab == "equipment")
+            {
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Equipment Hourly Rate ($)</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_edit.EquipmentHourlyRate" />
+                        <small style="color: var(--text-muted);">Depreciation, lease, maintenance amortized per hour</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tooling Cost Per Run ($)</label>
+                        <input class="form-control" type="number" step="0.50" min="0" @bind="_edit.ToolingCostPerRun" />
+                        <small style="color: var(--text-muted);">Tool wear/replacement amortized per batch run</small>
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label class="form-label">Consumables Per Part ($)</label>
+                        <input class="form-control" type="number" step="0.10" min="0" @bind="_edit.ConsumablesPerPart" />
+                        <small style="color: var(--text-muted);">Gas, coolant, abrasives, media — cost per individual part</small>
+                    </div>
+                </div>
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px 14px; margin-top: 12px;">
+                    <span class="form-label">Equipment Cost Preview</span>
+                    <div style="font-size: 1.1rem; font-weight: 600;">$@_edit.EquipmentCostPerHour.ToString("F2") / hr + $@_edit.ConsumablesPerPart.ToString("F2") / part</div>
+                </div>
+            }
+
+            @if (_editTab == "overhead")
+            {
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Facility Hourly Rate ($)</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_edit.FacilityHourlyRate" />
+                        <small style="color: var(--text-muted);">Rent / floor space allocation per hour</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Utilities Hourly Rate ($)</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_edit.UtilitiesHourlyRate" />
+                        <small style="color: var(--text-muted);">Electricity, gas, compressed air per hour</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Quality / Inspection Per Part ($)</label>
+                        <input class="form-control" type="number" step="0.50" min="0" @bind="_edit.QualityInspectionCostPerPart" />
+                        <small style="color: var(--text-muted);">QC labor + equipment cost per part at this stage</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">General Overhead (%)</label>
+                        <input class="form-control" type="number" step="1" min="0" max="200" @bind="_edit.OverheadPercent" />
+                        <small style="color: var(--text-muted);">Applied to all time-based costs (admin, IT, etc.)</small>
+                    </div>
+                </div>
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px 14px; margin-top: 12px;">
+                    <span class="form-label">Overhead Cost Preview</span>
+                    <div style="font-size: 1.1rem; font-weight: 600;">$@_edit.OverheadCostPerHour.ToString("F2") / hr + @_edit.OverheadPercent% markup</div>
+                </div>
+            }
+
+            @if (_editTab == "external")
+            {
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Vendor Cost Per Part ($)</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_edit.ExternalVendorCostPerPart" />
+                        <small style="color: var(--text-muted);">Subcontractor / vendor charge per part</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Shipping Per Batch ($)</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_edit.ExternalShippingCost" />
+                        <small style="color: var(--text-muted);">Logistics cost per shipment (one per batch)</small>
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label class="form-label">External Markup (%)</label>
+                        <input class="form-control" type="number" step="5" min="0" max="200" @bind="_edit.ExternalMarkupPercent" />
+                        <small style="color: var(--text-muted);">Markup applied to vendor + shipping costs</small>
+                    </div>
+                </div>
+            }
+
+            @if (_editTab == "summary")
+            {
+                <div class="card" style="padding: 14px;">
+                    <div class="form-label" style="margin-bottom: 10px;">Cost Rate Breakdown</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9rem;">
+                        <div>👷 Labor</div><div style="text-align: right; font-weight: 600;">$@_edit.LaborCostPerHour.ToString("F2") / hr</div>
+                        <div>🖥️ Equipment</div><div style="text-align: right; font-weight: 600;">$@_edit.EquipmentCostPerHour.ToString("F2") / hr</div>
+                        <div>🏢 Facility + Utilities</div><div style="text-align: right; font-weight: 600;">$@_edit.OverheadCostPerHour.ToString("F2") / hr</div>
+                        @if (_edit.OverheadPercent > 0)
+                        {
+                            <div>📊 General Overhead</div><div style="text-align: right; font-weight: 600;">+@_edit.OverheadPercent%</div>
+                        }
+                        <div>🧪 Per-Part (consumables + QC)</div><div style="text-align: right; font-weight: 600;">$@_edit.PerPartCost.ToString("F2") / part</div>
+                        <div>🔧 Tooling</div><div style="text-align: right; font-weight: 600;">$@_edit.ToolingCostPerRun.ToString("F2") / run</div>
+                        @if (_edit.ExternalVendorCostPerPart > 0 || _edit.ExternalShippingCost > 0)
+                        {
+                            <div>🚚 External</div><div style="text-align: right; font-weight: 600;">$@_edit.ExternalVendorCostPerPart.ToString("F2") / part + $@_edit.ExternalShippingCost.ToString("F2") / batch</div>
+                        }
+                    </div>
+                    <hr style="margin: 10px 0; border-color: var(--border);" />
+                    <div style="display: flex; justify-content: space-between; font-size: 1.1rem; font-weight: 700;">
+                        <span>Fully-Loaded Rate</span>
+                        <span>$@_edit.FullyLoadedHourlyRate.ToString("F2") / hr</span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                        This rate is used when estimating build costs. Per-part and per-batch costs are added on top.
+                    </div>
+                </div>
+            }
+
+            @* ── Notes ── *@
+            <div class="form-group" style="margin-top: 12px;">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" rows="2" @bind="_edit.Notes" placeholder="Cost assumptions, sources, review date..."></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="SaveCost" disabled="@_saving">
+                    @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    Save
+                </button>
+                @if (_edit.Id > 0)
+                {
+                    <button class="btn btn-danger" @onclick="DeleteCost" disabled="@_saving">Delete Profile</button>
+                }
+                <button class="btn btn-secondary" @onclick="() => _showEdit = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Build Cost Calculator ── *@
+@if (_stages != null)
+{
+    <div class="card" style="margin-top: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div>
+                <h3 style="margin: 0;">🧮 Build Cost Calculator</h3>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Select a part to see the full manufacturing cost breakdown with separated labor, equipment, overhead, and external costs.</div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; margin-bottom: 16px;">
+            <div class="form-group" style="margin: 0;">
+                <label class="form-label">Part</label>
+                <select class="form-control" @onchange="OnCalcPartChanged">
+                    <option value="">— Select a part —</option>
+                    @if (_calcParts != null)
+                    {
+                        @foreach (var p in _calcParts)
+                        {
+                            <option value="@p.Id" selected="@(_calcSelectedPartId == p.Id)">@p.PartNumber — @p.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="form-group" style="margin: 0; width: 120px;">
+                <label class="form-label">Quantity</label>
+                <input class="form-control" type="number" min="1" @bind="_calcQuantity" @bind:after="RecalculateBuildCost" />
+            </div>
+            <button class="btn btn-primary" @onclick="RecalculateBuildCost" disabled="@(_calcProcess == null)" style="height: 38px;">Calculate</button>
+        </div>
+
+        @if (_calcProcess == null && _calcSelectedPartId > 0)
+        {
+            <div style="padding: 16px; text-align: center; color: var(--warning);">
+                ⚠️ This part has no Manufacturing Process defined. <a href="/parts/@_calcSelectedPartId/edit">Set one up</a>.
+            </div>
+        }
+        else if (_calcResults.Count > 0)
+        {
+            <div style="display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Total Cost</div>
+                    <div style="font-size: 1.4rem; font-weight: 700;">$@_calcGrandTotal.ToString("F2")</div>
+                </div>
+                <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Cost / Part</div>
+                    <div style="font-size: 1.4rem; font-weight: 700;">$@(_calcQuantity > 0 ? (_calcGrandTotal / _calcQuantity).ToString("F2") : "—")</div>
+                </div>
+                <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">👷 Labor</div>
+                    <div style="font-size: 1.2rem; font-weight: 600;">$@_calcResults.Sum(r => r.Estimate.LaborCost).ToString("F2")</div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">@(CalcPercent(_calcResults.Sum(r => r.Estimate.LaborCost)))%</div>
+                </div>
+                <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">🖥️ Equipment</div>
+                    <div style="font-size: 1.2rem; font-weight: 600;">$@_calcResults.Sum(r => r.Estimate.EquipmentCost).ToString("F2")</div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">@(CalcPercent(_calcResults.Sum(r => r.Estimate.EquipmentCost)))%</div>
+                </div>
+                <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">🏢 Overhead</div>
+                    <div style="font-size: 1.2rem; font-weight: 600;">$@_calcResults.Sum(r => r.Estimate.OverheadCost).ToString("F2")</div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">@(CalcPercent(_calcResults.Sum(r => r.Estimate.OverheadCost)))%</div>
+                </div>
+            </div>
+
+            <table class="data-table" style="font-size: 0.85rem;">
+                <thead>
+                    <tr>
+                        <th>Stage</th>
+                        <th>Level</th>
+                        <th style="text-align:right;">Duration</th>
+                        <th style="text-align:right;">👷 Labor</th>
+                        <th style="text-align:right;">🖥️ Equipment</th>
+                        <th style="text-align:right;">🏢 Overhead</th>
+                        <th style="text-align:right;">🔧 Tooling</th>
+                        <th style="text-align:right;">🧪 Per-Part</th>
+                        <th style="text-align:right;">🚚 External</th>
+                        <th style="text-align:right; font-weight: 700;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _calcResults)
+                    {
+                        <tr>
+                            <td>
+                                <span style="color: @r.Stage.ProductionStage.StageColor">@ResolveStageIcon(r.Stage.ProductionStage.StageIcon)</span>
+                                @r.Stage.ProductionStage.Name
+                            </td>
+                            <td><span class="badge @(r.Stage.ProcessingLevel == ProcessingLevel.Build ? "badge-active" : r.Stage.ProcessingLevel == ProcessingLevel.Batch ? "badge-pending" : "badge-info")">@r.Stage.ProcessingLevel</span></td>
+                            <td style="text-align:right;">@FormatDuration(r.Duration.TotalMinutes)</td>
+                            <td style="text-align:right;">$@r.Estimate.LaborCost.ToString("F2")</td>
+                            <td style="text-align:right;">$@r.Estimate.EquipmentCost.ToString("F2")</td>
+                            <td style="text-align:right;">$@r.Estimate.OverheadCost.ToString("F2")</td>
+                            <td style="text-align:right;">$@r.Estimate.ToolingCost.ToString("F2")</td>
+                            <td style="text-align:right;">$@r.Estimate.PerPartCost.ToString("F2")</td>
+                            <td style="text-align:right;">@(r.Estimate.ExternalCost > 0 ? "$" + r.Estimate.ExternalCost.ToString("F2") : "—")</td>
+                            <td style="text-align:right; font-weight: 700;">$@r.Estimate.TotalCost.ToString("F2")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight: 700; border-top: 2px solid var(--border);">
+                        <td colspan="3">Totals (@_calcQuantity parts, @_calcBatchCount batch(es))</td>
+                        <td style="text-align:right;">$@_calcResults.Sum(r => r.Estimate.LaborCost).ToString("F2")</td>
+                        <td style="text-align:right;">$@_calcResults.Sum(r => r.Estimate.EquipmentCost).ToString("F2")</td>
+                        <td style="text-align:right;">$@_calcResults.Sum(r => r.Estimate.OverheadCost).ToString("F2")</td>
+                        <td style="text-align:right;">$@_calcResults.Sum(r => r.Estimate.ToolingCost).ToString("F2")</td>
+                        <td style="text-align:right;">$@_calcResults.Sum(r => r.Estimate.PerPartCost).ToString("F2")</td>
+                        <td style="text-align:right;">$@_calcResults.Sum(r => r.Estimate.ExternalCost).ToString("F2")</td>
+                        <td style="text-align:right;">$@_calcGrandTotal.ToString("F2")</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            @if (!_calcAllProfiled)
+            {
+                <div style="margin-top: 8px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.8rem; color: var(--warning);">
+                    ⚠️ Some stages are using the flat default hourly rate because no cost profile has been configured.
+                    Set up profiles above for accurate labor/equipment/overhead breakdown.
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private string _currentUser = "System";
+    private List<ProductionStage>? _stages;
+    private List<StageCostProfile> _profiles = new();
+    private bool _showEdit;
+    private bool _saving;
+    private StageCostProfile? _edit;
+    private ProductionStage? _editStage;
+    private string _editTab = "labor";
+
+    // Build Cost Calculator
+    private List<Part>? _calcParts;
+    private int _calcSelectedPartId;
+    private int _calcQuantity = 60;
+    private ManufacturingProcess? _calcProcess;
+    private List<StageCalcResult> _calcResults = new();
+    private decimal _calcGrandTotal;
+    private int _calcBatchCount;
+    private bool _calcAllProfiled = true;
+
+    // Pricing Coverage
+    private PricingCoverageStats? _coverageStats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _stages = await StageService.GetAllStagesAsync(activeOnly: false);
+            _profiles = await CostService.GetAllAsync();
+            _calcParts = await PartService.GetAllPartsAsync(activeOnly: true);
+            _coverageStats = await PricingService.GetCoverageStatsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load: {ex.Message}");
+            _stages = new();
+        }
+    }
+
+    private void EditCost(ProductionStage stage, StageCostProfile? existing)
+    {
+        _editStage = stage;
+        _editTab = "labor";
+
+        if (existing != null)
+        {
+            _edit = existing;
+        }
+        else
+        {
+            _edit = new StageCostProfile
+            {
+                ProductionStageId = stage.Id,
+                OperatorHourlyRate = stage.DefaultHourlyRate * 0.35m, // rough starting point
+                OperatorsRequired = 1,
+                LaborBurdenPercent = 30,
+                EquipmentHourlyRate = stage.DefaultHourlyRate * 0.40m,
+                CreatedBy = _currentUser,
+                LastModifiedBy = _currentUser
+            };
+        }
+
+        _showEdit = true;
+    }
+
+    private async Task SaveCost()
+    {
+        if (_edit == null) return;
+        _saving = true;
+        try
+        {
+            _edit.LastModifiedBy = _currentUser;
+            await CostService.SaveAsync(_edit);
+            Toast.ShowSuccess("Cost profile saved.");
+            _profiles = await CostService.GetAllAsync();
+            _showEdit = false;
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteCost()
+    {
+        if (_edit == null || _edit.Id == 0) return;
+        _saving = true;
+        try
+        {
+            await CostService.DeleteAsync(_edit.Id);
+            Toast.ShowSuccess("Cost profile deleted.");
+            _profiles = await CostService.GetAllAsync();
+            _showEdit = false;
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private static string ResolveStageIcon(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return "⚙️";
+        if (!icon.StartsWith("fas ") && !icon.StartsWith("far ") && !icon.StartsWith("fa-")) return icon;
+        return icon switch
+        {
+            "fas fa-print"           => "🖨️",
+            "fas fa-wind"            => "💨",
+            "fas fa-fire"            => "🔥",
+            "fas fa-bolt"            => "⚡",
+            "fas fa-cog"             => "⚙️",
+            "fas fa-pen-nib"         => "✒️",
+            "fas fa-spray-can"       => "🎨",
+            "fas fa-clipboard-check" => "✅",
+            "fas fa-truck"           => "🚚",
+            _                        => "⚙️"
+        };
+    }
+
+    // ── Build Cost Calculator ────────────────────────────────
+
+    private async Task OnCalcPartChanged(ChangeEventArgs e)
+    {
+        _calcResults.Clear();
+        _calcGrandTotal = 0;
+        _calcProcess = null;
+        _calcSelectedPartId = 0;
+
+        if (int.TryParse(e.Value?.ToString(), out var partId) && partId > 0)
+        {
+            _calcSelectedPartId = partId;
+            _calcProcess = await ProcessService.GetByPartIdAsync(partId);
+            if (_calcProcess != null)
+                await RecalculateBuildCost();
+        }
+    }
+
+    private async Task RecalculateBuildCost()
+    {
+        if (_calcProcess == null || _calcQuantity < 1) return;
+
+        _calcResults.Clear();
+        _calcGrandTotal = 0;
+        _calcAllProfiled = true;
+
+        var batchCapacity = _calcProcess.DefaultBatchCapacity;
+        _calcBatchCount = batchCapacity > 0
+            ? (int)Math.Ceiling((double)_calcQuantity / batchCapacity)
+            : 1;
+
+        foreach (var stage in _calcProcess.Stages.OrderBy(s => s.ExecutionOrder))
+        {
+            var batchCountForStage = stage.ProcessingLevel == ProcessingLevel.Build ? 1 : _calcBatchCount;
+            var duration = ProcessService.CalculateStageDuration(stage, _calcQuantity, batchCountForStage, buildConfigHours: null);
+            var hours = duration.TotalMinutes / 60.0;
+
+            var estimate = await CostService.EstimateCostAsync(
+                stage.ProductionStageId, hours, _calcQuantity, batchCountForStage);
+
+            if (!estimate.UsedCostProfile)
+                _calcAllProfiled = false;
+
+            _calcResults.Add(new StageCalcResult(stage, duration, estimate));
+            _calcGrandTotal += estimate.TotalCost;
+        }
+    }
+
+    private string CalcPercent(decimal portion) =>
+        _calcGrandTotal > 0 ? (portion / _calcGrandTotal * 100).ToString("F0") : "0";
+
+    private static string FormatDuration(double totalMinutes) =>
+        totalMinutes >= 60 ? $"{totalMinutes / 60:F1}h" : $"{totalMinutes:F0}m";
+
+    private record StageCalcResult(ProcessStage Stage, DurationResult Duration, StageCostEstimate Estimate);
+}

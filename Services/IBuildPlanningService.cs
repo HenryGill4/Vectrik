@@ -39,4 +39,11 @@ public interface IBuildPlanningService
 
     // Build Plate UI (CHUNK-10)
     Task<List<BuildPackageRevision>> GetRevisionsAsync(int buildPackageId);
+
+    /// <summary>
+    /// Generates a formatted build name using token-based template.
+    /// Tokens: {PARTS}, {MACHINE}, {DATE}, {SEQ}, {MATERIAL}
+    /// Name is driven by the selected parts; machine is optional context.
+    /// </summary>
+    Task<string> GenerateBuildNameAsync(List<int> partIds, int machineId = 0, string? template = null);
 }

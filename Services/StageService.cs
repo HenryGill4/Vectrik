@@ -10,12 +10,14 @@ public class StageService : IStageService
     private readonly TenantDbContext _db;
     private readonly IBuildPlanningService _buildPlanning;
     private readonly IWorkOrderService _workOrderService;
+    private readonly ILearningService _learning;
 
-    public StageService(TenantDbContext db, IBuildPlanningService buildPlanning, IWorkOrderService workOrderService)
+    public StageService(TenantDbContext db, IBuildPlanningService buildPlanning, IWorkOrderService workOrderService, ILearningService learning)
     {
         _db = db;
         _buildPlanning = buildPlanning;
         _workOrderService = workOrderService;
+        _learning = learning;
     }
 
     // ── Stage CRUD ──────────────────────────────────────────────
@@ -232,6 +234,20 @@ public class StageService : IStageService
         }
 
         await _db.SaveChangesAsync();
+
+        // Update EMA estimate on the ProcessStage if linked
+        if (execution.ProcessStageId.HasValue && execution.ActualHours.HasValue)
+        {
+            try
+            {
+                var actualMinutes = execution.ActualHours.Value * 60.0;
+                await _learning.UpdateProcessStageEstimateAsync(execution.ProcessStageId.Value, actualMinutes);
+            }
+            catch
+            {
+                // EMA update is non-critical — don't fail the completion
+            }
+        }
 
         // Check if this build-level stage triggers plate release
         if (execution.BuildPackageId.HasValue)

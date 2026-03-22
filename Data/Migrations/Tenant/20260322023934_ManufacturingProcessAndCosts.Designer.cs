@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Opcentrix_V3.Data;
 
@@ -10,9 +11,11 @@ using Opcentrix_V3.Data;
 namespace Opcentrix_V3.Data.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    partial class TenantDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260322023934_ManufacturingProcessAndCosts")]
+    partial class ManufacturingProcessAndCosts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.4");
@@ -2837,73 +2840,6 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("PartNotes");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartPricing", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("EffectiveDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("ExpirationDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastModifiedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("LastModifiedDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal>("MaterialCostPerUnit")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<decimal>("MaterialWeightPerUnitKg")
-                        .HasColumnType("decimal(8,4)");
-
-                    b.Property<int>("MinimumOrderQty")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("PartId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("PricingNotes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PricingTier")
-                        .HasMaxLength(50)
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal>("SellPricePerUnit")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<decimal>("TargetMarginPct")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PartId")
-                        .IsUnique();
-
-                    b.ToTable("PartPricings");
-                });
-
             modelBuilder.Entity("Opcentrix_V3.Models.PartRevisionHistory", b =>
                 {
                     b.Property<int>("Id")
@@ -5453,17 +5389,6 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Part");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartPricing", b =>
-                {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
-                        .WithOne("Pricing")
-                        .HasForeignKey("Opcentrix_V3.Models.PartPricing", "PartId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Part");
-                });
-
             modelBuilder.Entity("Opcentrix_V3.Models.PartRevisionHistory", b =>
                 {
                     b.HasOne("Opcentrix_V3.Models.Part", "Part")
@@ -5982,8 +5907,6 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("ManufacturingProcess");
 
                     b.Navigation("Notes");
-
-                    b.Navigation("Pricing");
 
                     b.Navigation("RevisionHistory");
 

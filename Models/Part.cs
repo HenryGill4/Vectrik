@@ -83,4 +83,7 @@ public class Part
 
     // Manufacturing process definition (1:0..1 — configurable process per part type)
     public virtual ManufacturingProcess? ManufacturingProcess { get; set; }
+
+    // Pricing configuration (1:0..1)
+    public virtual PartPricing? Pricing { get; set; }
 }

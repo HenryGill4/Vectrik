@@ -1,0 +1,593 @@
+@page "/programs"
+@inject IMachineProgramService ProgramService
+@inject IPartService PartService
+@inject IMachineService MachineService
+@inject IManufacturingProcessService ProcessService
+@inject ToastService Toast
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using System.Security.Claims
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>Machine Programs - OpCentrix</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }
+    </Authorized>
+</AuthorizeView>
+
+<div class="page-header">
+    <h1 class="page-title">Machine Programs</h1>
+    <div class="page-actions">
+        <select class="form-control" style="width:150px;display:inline-block" @bind="_filterStatus" @bind:after="ApplyFilters">
+            <option value="">All Statuses</option>
+            @foreach (var s in Enum.GetValues<ProgramStatus>()) { <option value="@s">@s</option> }
+        </select>
+        <select class="form-control" style="width:150px;display:inline-block" @bind="_filterMachineType" @bind:after="ApplyFilters">
+            <option value="">All Types</option>
+            @if (_machineTypes != null)
+            {
+                @foreach (var t in _machineTypes) { <option value="@t">@t</option> }
+            }
+        </select>
+        <input class="form-control" style="width:200px;display:inline-block" placeholder="Search programs…" @bind="_searchTerm" @bind:after="ApplyFilters" />
+        <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="ShowCreate">+ New Program</button>
+    </div>
+</div>
+
+@if (_programs == null)
+{
+    <div class="loading"><span class="spinner"></span></div>
+}
+else if (!_filteredPrograms.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">📄</div>
+        <div class="empty-state-text">No machine programs found. Create one to define CNC, EDM, or laser programs for your parts.</div>
+    </div>
+}
+else
+{
+    @* ── KPI Summary ── *@
+    <div class="kpi-grid" style="margin-bottom: 16px;">
+        <div class="kpi-card"><div class="kpi-label">Total Programs</div><div class="kpi-value">@_programs.Count</div></div>
+        <div class="kpi-card"><div class="kpi-label">Active</div><div class="kpi-value" style="color:var(--success)">@_programs.Count(p => p.Status == ProgramStatus.Active)</div></div>
+        <div class="kpi-card"><div class="kpi-label">Draft</div><div class="kpi-value" style="color:var(--warning)">@_programs.Count(p => p.Status == ProgramStatus.Draft)</div></div>
+        <div class="kpi-card"><div class="kpi-label">With Files</div><div class="kpi-value">@_programs.Count(p => p.HasFiles)</div></div>
+    </div>
+
+    @* ── Program Cards ── *@
+    @foreach (var program in _filteredPrograms)
+    {
+        <div class="card" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <strong style="font-size: 1.1em;">@program.ProgramNumber</strong>
+                        <span class="badge badge-@program.Status.ToString().ToLower()">@program.Status</span>
+                        <span class="badge badge-secondary">v@program.Version</span>
+                        @if (!string.IsNullOrEmpty(program.MachineType))
+                        {
+                            <span class="badge badge-info">@program.MachineType</span>
+                        }
+                    </div>
+                    <div style="color: var(--text-muted); font-size: 0.9em;">@program.Name</div>
+                    @if (program.Part != null)
+                    {
+                        <div style="font-size: 0.85em; margin-top: 2px;">
+                            🔩 <a href="/parts/@program.Part.Id">@program.Part.PartNumber — @program.Part.Name</a>
+                        </div>
+                    }
+                    @if (program.Machine != null)
+                    {
+                        <div style="font-size: 0.85em;">🖥️ @program.Machine.Name (@program.Machine.MachineType)</div>
+                    }
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                    <button class="btn btn-sm btn-secondary" @onclick="() => ShowDetail(program)">📋 Details</button>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => ShowEdit(program)">✏️ Edit</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteProgram(program)">🗑</button>
+                </div>
+            </div>
+
+            @* Duration summary row *@
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; font-size: 0.85em;">
+                @if (program.SetupTimeMinutes.HasValue)
+                {
+                    <div><span class="form-label">Setup</span><div>@program.SetupTimeMinutes.Value.ToString("F0") min</div></div>
+                }
+                @if (program.RunTimeMinutes.HasValue)
+                {
+                    <div><span class="form-label">Run / Part</span><div>@program.RunTimeMinutes.Value.ToString("F1") min</div></div>
+                }
+                @if (program.CycleTimeMinutes.HasValue)
+                {
+                    <div><span class="form-label">Cycle</span><div>@program.CycleTimeMinutes.Value.ToString("F1") min</div></div>
+                }
+                <div><span class="form-label">Files</span><div>@(program.Files?.Count ?? 0)</div></div>
+                @if (!string.IsNullOrEmpty(program.ToolingRequired))
+                {
+                    <div style="grid-column: span 2;"><span class="form-label">Tooling</span><div>@program.ToolingRequired</div></div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@* ═══════════════════════════════════════════════════════════════
+   CREATE / EDIT MODAL
+   ═══════════════════════════════════════════════════════════════ *@
+@if (_showEditor)
+{
+    <div class="modal-overlay" @onclick="CloseEditor">
+        <div class="modal-content" style="max-width: 800px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@(_editingProgram.Id == 0 ? "New Machine Program" : $"Edit {_editingProgram.ProgramNumber}")</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="CloseEditor">✕</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Program Number <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="_editingProgram.ProgramNumber" placeholder="e.g. CNC-001" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="_editingProgram.Name" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Part</label>
+                    <select class="form-control" @bind="_editPartId">
+                        <option value="">— None (multi-part/fixture) —</option>
+                        @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber — @p.Name</option> } }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Machine</label>
+                    <select class="form-control" @bind="_editMachineId" @bind:after="OnMachineChanged">
+                        <option value="">— None (machine-type level) —</option>
+                        @if (_machines != null) { @foreach (var m in _machines) { <option value="@m.Id">@m.Name (@m.MachineType)</option> } }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Machine Type</label>
+                    <input class="form-control" list="programMachineTypes" @bind="_editingProgram.MachineType" placeholder="CNC, EDM, Laser…" />
+                    <datalist id="programMachineTypes">
+                        @if (_machineTypes != null) { @foreach (var t in _machineTypes) { <option value="@t" /> } }
+                    </datalist>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-control" @bind="_editingProgram.Status">
+                        @foreach (var s in Enum.GetValues<ProgramStatus>()) { <option value="@s">@s</option> }
+                    </select>
+                </div>
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" rows="2" @bind="_editingProgram.Description"></textarea>
+                </div>
+            </div>
+
+            @* Duration section *@
+            <div class="card-header" style="margin-top: 12px; margin-bottom: 8px;">⏱️ Duration Estimates</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Setup Time (min)</label>
+                    <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Run Time / Part (min)</label>
+                    <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Cycle Time (min)</label>
+                    <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.CycleTimeMinutes" />
+                </div>
+            </div>
+
+            @* Tooling section *@
+            <div class="card-header" style="margin-top: 12px; margin-bottom: 8px;">🔧 Tooling & Fixtures</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Tooling Required</label>
+                    <input class="form-control" @bind="_editingProgram.ToolingRequired" placeholder="T1: 6mm End Mill, T2: M6 Tap" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Fixture Required</label>
+                    <input class="form-control" @bind="_editingProgram.FixtureRequired" placeholder="Fixture-A-07" />
+                </div>
+            </div>
+
+            @* Parameters JSON section *@
+            <div class="card-header" style="margin-top: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span>⚙️ Parameters (JSON)</span>
+                <div style="display: flex; gap: 6px;">
+                    @if (!string.IsNullOrEmpty(_editingProgram.MachineType))
+                    {
+                        <button class="btn btn-sm btn-secondary" @onclick="LoadDefaultParameters" title="Load default template for machine type">📋 Load Template</button>
+                    }
+                    <button class="btn btn-sm btn-accent" @onclick="CopyParametersToClipboard" title="Copy JSON to clipboard for AI instructions">🤖 Copy for AI</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <textarea class="form-control" rows="6" style="font-family: monospace; font-size: 0.85em;" @bind="_editingProgram.Parameters" placeholder='{ "param1": "value" }'></textarea>
+            </div>
+
+            @* Notes *@
+            <div class="form-group" style="margin-top: 8px;">
+                <label class="form-label">Operator Notes</label>
+                <textarea class="form-control" rows="2" @bind="_editingProgram.Notes" placeholder="Special instructions for the operator…"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="CloseEditor">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveProgram" disabled="@_saving">
+                    @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                    @(_editingProgram.Id == 0 ? "Create Program" : "Save Changes")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ═══════════════════════════════════════════════════════════════
+   DETAIL MODAL (read-only with file management)
+   ═══════════════════════════════════════════════════════════════ *@
+@if (_showDetail && _detailProgram != null)
+{
+    <div class="modal-overlay" @onclick="CloseDetail">
+        <div class="modal-content" style="max-width: 800px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@_detailProgram.ProgramNumber — @_detailProgram.Name</h3>
+                <div style="display: flex; gap: 6px;">
+                    <span class="badge badge-@_detailProgram.Status.ToString().ToLower()">@_detailProgram.Status</span>
+                    <span class="badge badge-secondary">v@_detailProgram.Version</span>
+                    <button class="btn btn-sm btn-secondary" @onclick="CloseDetail">✕</button>
+                </div>
+            </div>
+
+            @* Info grid *@
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 16px;">
+                <div><span class="form-label">Machine Type</span><div>@(_detailProgram.MachineType ?? "—")</div></div>
+                <div><span class="form-label">Part</span><div>@(_detailProgram.Part != null ? $"{_detailProgram.Part.PartNumber} — {_detailProgram.Part.Name}" : "Multi-part")</div></div>
+                <div><span class="form-label">Machine</span><div>@(_detailProgram.Machine?.Name ?? "Any")</div></div>
+                <div><span class="form-label">Setup</span><div>@(_detailProgram.SetupTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+                <div><span class="form-label">Run / Part</span><div>@(_detailProgram.RunTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+                <div><span class="form-label">Cycle</span><div>@(_detailProgram.CycleTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_detailProgram.ToolingRequired))
+            {
+                <div style="margin-bottom: 8px;"><span class="form-label">Tooling</span><div>@_detailProgram.ToolingRequired</div></div>
+            }
+            @if (!string.IsNullOrEmpty(_detailProgram.FixtureRequired))
+            {
+                <div style="margin-bottom: 8px;"><span class="form-label">Fixture</span><div>@_detailProgram.FixtureRequired</div></div>
+            }
+            @if (!string.IsNullOrEmpty(_detailProgram.Notes))
+            {
+                <div style="margin-bottom: 12px;"><span class="form-label">Notes</span><div style="white-space:pre-wrap;">@_detailProgram.Notes</div></div>
+            }
+
+            @* Parameters *@
+            @if (!string.IsNullOrEmpty(_detailProgram.Parameters))
+            {
+                <div style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span class="form-label">Parameters</span>
+                        <button class="btn btn-sm btn-accent" @onclick="CopyDetailParametersToClipboard">🤖 Copy for AI</button>
+                    </div>
+                    <pre style="background: var(--bg-tertiary); padding: 10px; border-radius: 6px; font-size: 0.85em; overflow-x: auto; margin: 0;">@_detailProgram.Parameters</pre>
+                </div>
+            }
+
+            @* ── Files Section ── *@
+            <div class="card-header" style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span>📁 Files (@(_detailProgram.Files?.Count ?? 0))</span>
+            </div>
+
+            @if (_detailProgram.Files?.Any() == true)
+            {
+                <table class="data-table" style="font-size: 0.85rem; margin-bottom: 12px;">
+                    <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Primary</th><th>Uploaded</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var file in _detailProgram.Files.OrderByDescending(f => f.IsPrimary).ThenByDescending(f => f.UploadedDate))
+                        {
+                            <tr>
+                                <td>
+                                    <a href="@file.FilePath" target="_blank">@file.FileName</a>
+                                    @if (!string.IsNullOrEmpty(file.Description)) { <div style="font-size:0.8em;color:var(--text-muted);">@file.Description</div> }
+                                </td>
+                                <td><span class="badge badge-secondary">@file.FileType</span></td>
+                                <td>@FormatFileSize(file.FileSizeBytes)</td>
+                                <td>
+                                    @if (file.IsPrimary) { <span class="badge badge-success">Primary</span> }
+                                    else { <button class="btn btn-sm btn-secondary" @onclick="() => SetPrimaryFile(file)">Set Primary</button> }
+                                </td>
+                                <td>@file.UploadedDate.ToString("MMM dd, yyyy")</td>
+                                <td><button class="btn btn-sm btn-danger" @onclick="() => DeleteFile(file)">🗑</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div class="empty-state" style="padding: 16px;"><div class="empty-state-text">No files attached yet.</div></div>
+            }
+
+            @* File upload *@
+            <div style="display: flex; gap: 8px; align-items: end; margin-bottom: 12px;">
+                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                    <label class="form-label">Upload File</label>
+                    <InputFile OnChange="HandleFileUpload" accept=".nc,.tap,.mpf,.dxf,.pdf,.step,.stp,.txt,.csv,.gcode,.ngc" style="display:block;" />
+                </div>
+                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                    <label class="form-label">Description (optional)</label>
+                    <input class="form-control" @bind="_uploadDescription" placeholder="Setup sheet, G-code…" />
+                </div>
+            </div>
+            @if (_uploading)
+            {
+                <div style="font-size: 0.85em; color: var(--text-muted);"><span class="spinner" style="width:12px;height:12px;margin-right:4px;"></span> Uploading…</div>
+            }
+
+            @* Actions *@
+            <div style="display: flex; gap: 8px; justify-content: space-between; margin-top: 16px;">
+                <div style="display: flex; gap: 6px;">
+                    <button class="btn btn-sm btn-secondary" @onclick="() => CloneProgramFromDetail()">📋 Clone</button>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => CreateNewVersion()">📝 New Version</button>
+                </div>
+                <button class="btn btn-secondary" @onclick="CloseDetail">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string _currentUser = "System";
+
+    // Data
+    private List<MachineProgram>? _programs;
+    private List<MachineProgram> _filteredPrograms = new();
+    private List<Part>? _parts;
+    private List<Machine>? _machines;
+    private List<string>? _machineTypes;
+
+    // Filters
+    private string _filterStatus = "";
+    private string _filterMachineType = "";
+    private string _searchTerm = "";
+
+    // Editor
+    private bool _showEditor;
+    private bool _saving;
+    private MachineProgram _editingProgram = new();
+    private string _editPartId = "";
+    private string _editMachineId = "";
+
+    // Detail
+    private bool _showDetail;
+    private MachineProgram? _detailProgram;
+    private string? _uploadDescription;
+    private bool _uploading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _programs = await ProgramService.GetAllAsync();
+        _parts = await PartService.GetAllPartsAsync();
+        _machines = await MachineService.GetAllMachinesAsync();
+        _machineTypes = _machines?.Select(m => m.MachineType).Distinct().OrderBy(t => t).ToList() ?? new();
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        if (_programs == null) { _filteredPrograms = new(); return; }
+        var q = _programs.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(_filterStatus) && Enum.TryParse<ProgramStatus>(_filterStatus, out var status))
+            q = q.Where(p => p.Status == status);
+        if (!string.IsNullOrEmpty(_filterMachineType))
+            q = q.Where(p => string.Equals(p.MachineType, _filterMachineType, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(p.Machine?.MachineType, _filterMachineType, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(_searchTerm))
+            q = q.Where(p => (p.ProgramNumber?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+                            || (p.Name?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+                            || (p.Part?.PartNumber?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+                            || (p.Machine?.Name?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
+
+        _filteredPrograms = q.ToList();
+    }
+
+    // ── Create / Edit ────────────────────────────────────────
+
+    private void ShowCreate()
+    {
+        _editingProgram = new MachineProgram();
+        _editPartId = "";
+        _editMachineId = "";
+        _showEditor = true;
+    }
+
+    private void ShowEdit(MachineProgram program)
+    {
+        _editingProgram = program;
+        _editPartId = program.PartId?.ToString() ?? "";
+        _editMachineId = program.MachineId?.ToString() ?? "";
+        _showEditor = true;
+    }
+
+    private void CloseEditor() => _showEditor = false;
+
+    private void OnMachineChanged()
+    {
+        if (int.TryParse(_editMachineId, out var machineId))
+        {
+            var machine = _machines?.FirstOrDefault(m => m.Id == machineId);
+            if (machine != null && string.IsNullOrEmpty(_editingProgram.MachineType))
+            {
+                _editingProgram.MachineType = machine.MachineType;
+            }
+        }
+    }
+
+    private void LoadDefaultParameters()
+    {
+        if (!string.IsNullOrEmpty(_editingProgram.MachineType))
+        {
+            _editingProgram.Parameters = ProgramService.GetDefaultParametersForMachineType(_editingProgram.MachineType);
+        }
+    }
+
+    private async Task CopyParametersToClipboard()
+    {
+        var text = _editingProgram.Parameters;
+        if (string.IsNullOrWhiteSpace(text)) { Toast.ShowWarning("No parameters to copy."); return; }
+
+        var aiText = $"Machine Program: {_editingProgram.ProgramNumber}\nMachine Type: {_editingProgram.MachineType ?? "Unknown"}\nParameters:\n{text}";
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", aiText);
+        Toast.ShowSuccess("Parameters copied to clipboard for AI instructions.");
+    }
+
+    private async Task CopyDetailParametersToClipboard()
+    {
+        if (_detailProgram == null || string.IsNullOrWhiteSpace(_detailProgram.Parameters)) return;
+        var aiText = $"Machine Program: {_detailProgram.ProgramNumber}\nMachine Type: {_detailProgram.MachineType ?? "Unknown"}\nParameters:\n{_detailProgram.Parameters}";
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", aiText);
+        Toast.ShowSuccess("Parameters copied to clipboard for AI instructions.");
+    }
+
+    private async Task SaveProgram()
+    {
+        if (string.IsNullOrWhiteSpace(_editingProgram.ProgramNumber) || string.IsNullOrWhiteSpace(_editingProgram.Name))
+        {
+            Toast.ShowError("Program number and name are required.");
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            _editingProgram.PartId = int.TryParse(_editPartId, out var pid) ? pid : null;
+            _editingProgram.MachineId = int.TryParse(_editMachineId, out var mid) ? mid : null;
+
+            if (_editingProgram.Id == 0)
+            {
+                await ProgramService.CreateAsync(_editingProgram, _currentUser);
+                Toast.ShowSuccess($"Program {_editingProgram.ProgramNumber} created.");
+            }
+            else
+            {
+                await ProgramService.UpdateAsync(_editingProgram, _currentUser);
+                Toast.ShowSuccess($"Program {_editingProgram.ProgramNumber} saved.");
+            }
+
+            _showEditor = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteProgram(MachineProgram program)
+    {
+        await ProgramService.DeleteAsync(program.Id);
+        Toast.ShowSuccess($"Program {program.ProgramNumber} deleted.");
+        await LoadData();
+    }
+
+    // ── Detail ───────────────────────────────────────────────
+
+    private async Task ShowDetail(MachineProgram program)
+    {
+        _detailProgram = await ProgramService.GetByIdAsync(program.Id);
+        _uploadDescription = null;
+        _showDetail = true;
+    }
+
+    private void CloseDetail()
+    {
+        _showDetail = false;
+        _detailProgram = null;
+    }
+
+    // ── File Management ──────────────────────────────────────
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        if (_detailProgram == null) return;
+        _uploading = true;
+        StateHasChanged();
+
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024); // 100MB max
+            await ProgramService.UploadFileAsync(_detailProgram.Id, file.Name, stream, file.Size, _currentUser, _uploadDescription);
+            Toast.ShowSuccess($"File {file.Name} uploaded.");
+            _uploadDescription = null;
+            _detailProgram = await ProgramService.GetByIdAsync(_detailProgram.Id);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Upload failed: {ex.Message}");
+        }
+        finally { _uploading = false; }
+    }
+
+    private async Task DeleteFile(MachineProgramFile file)
+    {
+        await ProgramService.DeleteFileAsync(file.Id);
+        Toast.ShowSuccess($"File {file.FileName} deleted.");
+        if (_detailProgram != null)
+            _detailProgram = await ProgramService.GetByIdAsync(_detailProgram.Id);
+    }
+
+    private async Task SetPrimaryFile(MachineProgramFile file)
+    {
+        if (_detailProgram == null) return;
+        await ProgramService.SetPrimaryFileAsync(_detailProgram.Id, file.Id);
+        _detailProgram = await ProgramService.GetByIdAsync(_detailProgram.Id);
+        Toast.ShowSuccess($"{file.FileName} set as primary.");
+    }
+
+    // ── Versioning & Cloning ─────────────────────────────────
+
+    private async Task CreateNewVersion()
+    {
+        if (_detailProgram == null) return;
+        var newVersion = await ProgramService.CreateNewVersionAsync(_detailProgram.Id, _currentUser);
+        Toast.ShowSuccess($"Version {newVersion.Version} created. Old version marked as Superseded.");
+        _detailProgram = await ProgramService.GetByIdAsync(newVersion.Id);
+        await LoadData();
+    }
+
+    private async Task CloneProgramFromDetail()
+    {
+        if (_detailProgram == null) return;
+        var clone = await ProgramService.CloneProgramAsync(_detailProgram.Id, _detailProgram.PartId, _detailProgram.MachineId, _currentUser);
+        Toast.ShowSuccess($"Cloned as {clone.ProgramNumber}.");
+        await LoadData();
+    }
+
+    // ── Helpers ──────────────────────────────────────────────
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F1} MB";
+    }
+}

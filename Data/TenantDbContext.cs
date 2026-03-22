@@ -134,6 +134,16 @@ public class TenantDbContext : DbContext
     public DbSet<ProductionBatch> ProductionBatches { get; set; }
     public DbSet<BatchPartAssignment> BatchPartAssignments { get; set; }
 
+    // Machine Programs
+    public DbSet<MachineProgram> MachinePrograms { get; set; }
+    public DbSet<MachineProgramFile> MachineProgramFiles { get; set; }
+
+    // Operation Cost Profiles
+    public DbSet<StageCostProfile> StageCostProfiles { get; set; }
+
+    // Part Pricing
+    public DbSet<PartPricing> PartPricings { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -915,6 +925,64 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.ProcessStageId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── Machine Programs ─────────────────────────────────────
+
+        // MachineProgram
+        modelBuilder.Entity<MachineProgram>(entity =>
+        {
+            entity.HasIndex(e => e.ProgramNumber);
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Machine)
+                .WithMany()
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ProcessStage)
+                .WithMany()
+                .HasForeignKey(e => e.ProcessStageId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // MachineProgramFile
+        modelBuilder.Entity<MachineProgramFile>(entity =>
+        {
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany(e => e.Files)
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ProcessStage — MachineProgram FK
+        modelBuilder.Entity<ProcessStage>(entity =>
+        {
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany()
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // StageCostProfile — 1:1 with ProductionStage
+        modelBuilder.Entity<StageCostProfile>(entity =>
+        {
+            entity.HasIndex(e => e.ProductionStageId).IsUnique();
+            entity.HasOne(e => e.ProductionStage)
+                .WithOne()
+                .HasForeignKey<StageCostProfile>(e => e.ProductionStageId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PartPricing — 1:1 with Part
+        modelBuilder.Entity<PartPricing>(entity =>
+        {
+            entity.HasIndex(e => e.PartId).IsUnique();
+            entity.HasOne(e => e.Part)
+                .WithOne(e => e.Pricing)
+                .HasForeignKey<PartPricing>(e => e.PartId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

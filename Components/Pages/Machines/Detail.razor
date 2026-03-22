@@ -3,6 +3,7 @@
 @inject IMachineService MachineService
 @inject IMaintenanceService MaintenanceService
 @inject IOeeService OeeService
+@inject IMachineProgramService MachineProgramService
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using Opcentrix_V3.Models.Maintenance
@@ -81,6 +82,7 @@ else
         <button class="tab @(_tab == "overview" ? "active" : "")" @onclick='() => _tab = "overview"'>Overview</button>
         <button class="tab @(_tab == "components" ? "active" : "")" @onclick='() => _tab = "components"'>Components (@(_machine.Components?.Count(c => c.IsActive) ?? 0))</button>
         <button class="tab @(_tab == "maintenance" ? "active" : "")" @onclick="SelectMaintenanceTab">Maintenance@(_alertCount > 0 ? $" ({_alertCount})" : "")</button>
+        <button class="tab @(_tab == "programs" ? "active" : "")" @onclick="SelectProgramsTab">Programs (@(_machinePrograms?.Count ?? 0))</button>
         <button class="tab @(_tab == "schedule" ? "active" : "")" @onclick="SelectScheduleTab">Schedule (@(_schedule?.Count ?? 0))</button>
     </div>
     }
@@ -472,6 +474,66 @@ else
         }
     }
 
+    @* ══════ PROGRAMS TAB ══════ *@
+    @if (!IsNew && _tab == "programs")
+    {
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 class="card-title" style="margin: 0;">Machine Programs</h3>
+                <a href="/programs" class="btn btn-sm btn-primary">+ Manage All Programs</a>
+            </div>
+
+            @if (_machinePrograms == null || !_machinePrograms.Any())
+            {
+                <div class="empty-state" style="padding: 24px;">
+                    <div class="empty-state-text">No machine programs linked to this machine yet.</div>
+                    <a href="/programs" class="btn btn-sm btn-secondary" style="margin-top: 8px;">Go to Machine Programs →</a>
+                </div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Program #</th>
+                            <th>Name</th>
+                            <th>Part</th>
+                            <th>Status</th>
+                            <th style="text-align: right;">Setup</th>
+                            <th style="text-align: right;">Run/Part</th>
+                            <th style="text-align: right;">Cycle</th>
+                            <th style="text-align: right;">Files</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var prog in _machinePrograms)
+                        {
+                            <tr>
+                                <td><a href="/programs" style="font-weight: 600; text-decoration: none; color: var(--primary);">@prog.ProgramNumber</a></td>
+                                <td>@prog.Name</td>
+                                <td>
+                                    @if (prog.Part != null)
+                                    {
+                                        <a href="/parts/@prog.Part.Id" style="text-decoration: none; color: var(--primary);">@prog.Part.PartNumber</a>
+                                    }
+                                    else
+                                    {
+                                        <span style="color: var(--text-muted);">Multi-part</span>
+                                    }
+                                </td>
+                                <td><span class="badge badge-@prog.Status.ToString().ToLower()">@prog.Status</span></td>
+                                <td style="text-align: right;">@(prog.SetupTimeMinutes?.ToString("F0") ?? "—") min</td>
+                                <td style="text-align: right;">@(prog.RunTimeMinutes?.ToString("F1") ?? "—") min</td>
+                                <td style="text-align: right;">@(prog.CycleTimeMinutes?.ToString("F1") ?? "—") min</td>
+                                <td style="text-align: right;">@(prog.Files?.Count ?? 0)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
     @* ══════ SCHEDULE TAB ══════ *@
     @if (!IsNew && _tab == "schedule")
     {
@@ -540,6 +602,7 @@ else
     private List<MaintenanceAlert>? _machineAlerts;
     private List<MaintenanceWorkOrder>? _workOrders;
     private List<StageExecution>? _schedule;
+    private List<MachineProgram>? _machinePrograms;
     private int _alertCount;
 
     private bool IsNew => Id == 0;
@@ -615,6 +678,17 @@ else
             Toast.ShowError($"Error loading maintenance data: {ex.Message}");
             _machineAlerts ??= new();
             _workOrders ??= new();
+        }
+    }
+
+    private async Task SelectProgramsTab()
+    {
+        _tab = "programs";
+        try { _machinePrograms = await MachineProgramService.GetProgramsForMachineAsync(_machine!.Id); }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading programs: {ex.Message}");
+            _machinePrograms ??= new();
         }
     }
 

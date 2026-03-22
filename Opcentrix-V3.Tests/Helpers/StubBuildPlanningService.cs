@@ -34,4 +34,6 @@ internal sealed class StubBuildPlanningService : IBuildPlanningService
         => Task.FromResult(new BuildPackageRevision());
     public Task<List<BuildPackageRevision>> GetRevisionsAsync(int buildPackageId)
         => Task.FromResult(new List<BuildPackageRevision>());
+    public Task<string> GenerateBuildNameAsync(List<int> partIds, int machineId = 0, string? template = null)
+        => Task.FromResult($"BUILD-{DateTime.UtcNow:yyMMdd}-01");
 }

@@ -85,7 +85,7 @@ else if (_process != null)
             <button class="btn btn-sm btn-primary" @onclick="AddStage" disabled="@(_addStageId == 0)">+ Add Stage</button>
         </div>
 
-        @* ── Stage List ── *@
+        @* ── Stage List (Unified Flow) ── *@
         @if (!_stages.Any())
         {
             <div class="empty-state">
@@ -95,44 +95,209 @@ else if (_process != null)
         }
         else
         {
-            @* ── Build-Level Stages ── *@
-            var buildStages = _stages.Where(s => s.ProcessingLevel == ProcessingLevel.Build).OrderBy(s => s.ExecutionOrder).ToList();
-            @if (buildStages.Any())
-            {
-                <div style="margin-bottom: 20px;">
-                    <h4 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                        <span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">BUILD</span>
-                        Build-Level Stages
-                    </h4>
-                    @RenderStageTable(buildStages)
-                </div>
-            }
+            var orderedStages = _stages.OrderBy(s => s.ExecutionOrder).ToList();
+            var batchCap = _process.DefaultBatchCapacity;
 
-            @* ── Batch-Level Stages ── *@
-            var batchStages = _stages.Where(s => s.ProcessingLevel == ProcessingLevel.Batch).OrderBy(s => s.ExecutionOrder).ToList();
-            @if (batchStages.Any())
-            {
-                <div style="margin-bottom: 20px;">
-                    <h4 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                        <span style="background: var(--warning); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">BATCH</span>
-                        Batch-Level Stages
-                    </h4>
-                    @RenderStageTable(batchStages)
-                </div>
-            }
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:50px;">Order</th>
+                        <th>Stage</th>
+                        <th style="width:70px;">Level</th>
+                        <th>Per Part</th>
+                        <th>Per Batch (@batchCap)</th>
+                        <th>Per Build</th>
+                        <th>Machine</th>
+                        <th>Flags</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < orderedStages.Count; i++)
+                    {
+                        var s = orderedStages[i];
+                        var level = s.ProcessingLevel;
+                        var badgeColor = level switch
+                        {
+                            ProcessingLevel.Build => "var(--accent)",
+                            ProcessingLevel.Batch => "var(--warning)",
+                            _ => "var(--success)"
+                        };
+                        var isPlateRelease = _process.PlateReleaseStageId == s.Id;
+                        var perPart = CalcPerPart(s);
+                        var perBatch = CalcPerBatch(s, batchCap);
+                        var perBuild = CalcPerBuild(s, _previewPartCount, batchCap);
 
-            @* ── Part-Level Stages ── *@
-            var partStages = _stages.Where(s => s.ProcessingLevel == ProcessingLevel.Part).OrderBy(s => s.ExecutionOrder).ToList();
-            @if (partStages.Any())
-            {
-                <div style="margin-bottom: 20px;">
-                    <h4 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                        <span style="background: var(--success); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">PART</span>
-                        Part-Level Stages
-                    </h4>
-                    @RenderStageTable(partStages)
+                        <tr style="@(level == ProcessingLevel.Build ? "background: color-mix(in srgb, var(--accent) 6%, transparent);" : "")">
+                            <td>
+                                <div style="display: flex; gap: 2px; align-items: center;">
+                                    <button class="btn btn-sm" style="padding:2px 4px;" @onclick="() => MoveStageUp(s)" title="Move up">▲</button>
+                                    <button class="btn btn-sm" style="padding:2px 4px;" @onclick="() => MoveStageDown(s)" title="Move down">▼</button>
+                                </div>
+                            </td>
+                            <td>
+                                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:@GetStageColor(s);margin-right:6px;"></span>
+                                @GetStageIcon(s) @GetStageName(s)
+                                @if (isPlateRelease)
+                                {
+                                    <span style="margin-left: 6px; font-size: 0.7rem; background: var(--warning); color: white; padding: 1px 4px; border-radius: 3px;">PLATE RELEASE</span>
+                                }
+                            </td>
+                            <td>
+                                <select class="form-control form-control-sm" style="width: auto; padding: 2px 4px;"
+                                        value="@s.ProcessingLevel"
+                                        @onchange="e => OnLevelChanged(s, e)">
+                                    <option value="@ProcessingLevel.Build">Build</option>
+                                    <option value="@ProcessingLevel.Batch">Batch</option>
+                                    <option value="@ProcessingLevel.Part">Part</option>
+                                </select>
+                            </td>
+                            @* ── Per Part column ── *@
+                            <td>
+                                <div style="display: flex; flex-direction: column; gap: 2px;">
+                                    <div style="display: flex; align-items: center; gap: 4px;">
+                                        <input class="form-control form-control-sm" type="number" step="0.1" style="width: 70px;"
+                                               value="@s.RunTimeMinutes"
+                                               @onchange="e => OnPerPartChanged(s, e)" />
+                                        <span style="font-size: 0.7rem; color: var(--text-muted);">min</span>
+                                    </div>
+                                    @if (s.SetupTimeMinutes.HasValue && s.SetupTimeMinutes > 0)
+                                    {
+                                        <div style="font-size: 0.7rem; color: var(--text-muted);">+@(s.SetupTimeMinutes.Value.ToString("F0"))m setup</div>
+                                    }
+                                </div>
+                            </td>
+                            @* ── Per Batch column ── *@
+                            <td>
+                                @if (level == ProcessingLevel.Build)
+                                {
+                                    <span style="color: var(--text-muted); font-size: 0.8rem;">—</span>
+                                }
+                                else
+                                {
+                                    <div style="display: flex; flex-direction: column; gap: 2px;">
+                                        <div style="display: flex; align-items: center; gap: 4px;">
+                                            <input class="form-control form-control-sm" type="number" step="1" style="width: 80px;"
+                                                   value="@perBatch"
+                                                   @onchange="e => OnPerBatchChanged(s, e, batchCap)" />
+                                            <span style="font-size: 0.7rem; color: var(--text-muted);">min</span>
+                                        </div>
+                                        <div style="font-size: 0.65rem; color: var(--text-muted);">
+                                            @if (s.RunTimeMinutes.HasValue && s.RunTimeMinutes > 0)
+                                            {
+                                                @($"{s.RunTimeMinutes:F1}m × {batchCap}")
+                                                @if (s.SetupTimeMinutes.HasValue && s.SetupTimeMinutes > 0)
+                                                {
+                                                    @($" + {s.SetupTimeMinutes:F0}m setup")
+                                                }
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </td>
+                            @* ── Per Build column ── *@
+                            <td>
+                                <div style="display: flex; flex-direction: column; gap: 2px;">
+                                    <span style="font-weight: 600; font-size: 0.85rem;">@FormatMin(perBuild)</span>
+                                    @if (level == ProcessingLevel.Build && s.DurationFromBuildConfig)
+                                    {
+                                        <span class="badge badge-info" style="font-size: 0.6rem;">From Slicer</span>
+                                    }
+                                </div>
+                            </td>
+                            <td>
+                                <select class="form-control form-control-sm" style="width: auto; min-width: 100px;"
+                                        value="@(s.AssignedMachineId?.ToString() ?? "")"
+                                        @onchange="e => { s.AssignedMachineId = int.TryParse(e.Value?.ToString(), out var mid) ? mid : null; _ = UpdateStage(s); }">
+                                    <option value="">Any</option>
+                                    @if (_machines != null)
+                                    {
+                                        @foreach (var m in _machines)
+                                        {
+                                            <option value="@m.Id">@m.Name</option>
+                                        }
+                                    }
+                                </select>
+                            </td>
+                            <td style="font-size: 0.8rem; white-space: nowrap;">
+                                @if (s.IsRequired) { <span title="Required">✓</span> }
+                                @if (s.RequiresQualityCheck) { <span title="QC Required">🔍</span> }
+                                @if (s.AllowSkip) { <span title="Skippable">⏭️</span> }
+                                @if (s.IsExternalOperation) { <span title="External">🏢</span> }
+                                @if (s.ConsolidateBatchesAtStage) { <span title="Consolidation">🔀</span> }
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-danger" @onclick="() => RemoveStage(s)">✕</button>
+                            </td>
+                        </tr>
+
+                        @* Plate release divider *@
+                        @if (isPlateRelease && i < orderedStages.Count - 1)
+                        {
+                            <tr>
+                                <td colspan="9" style="padding: 0; height: 2px; background: linear-gradient(90deg, var(--warning), transparent); border: none;"></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+
+            @* ── Setup Time Editor ── *@
+            <details style="margin-top: 12px;">
+                <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-secondary); font-weight: 600;">
+                    ⚙️ Setup Times & Advanced Duration
+                </summary>
+                <div style="margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px;">
+                    @foreach (var s in orderedStages)
+                    {
+                        <div style="background: var(--bg-secondary); padding: 8px 12px; border-radius: 6px; display: flex; flex-direction: column; gap: 4px;">
+                            <div style="font-size: 0.8rem; font-weight: 600;">@GetStageName(s)</div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <label style="font-size: 0.75rem; color: var(--text-muted); min-width: 65px;">Setup (min)</label>
+                                <input class="form-control form-control-sm" type="number" step="1" style="width: 70px;"
+                                       value="@s.SetupTimeMinutes"
+                                       @onchange="e => { s.SetupTimeMinutes = double.TryParse(e.Value?.ToString(), out var v) ? v : null; _ = UpdateStage(s); }" />
+                                <select class="form-control form-control-sm" style="width: auto; font-size: 0.75rem;"
+                                        value="@s.SetupDurationMode"
+                                        @onchange="e => { s.SetupDurationMode = Enum.Parse<DurationMode>(e.Value?.ToString() ?? nameof(DurationMode.None)); _ = UpdateStage(s); }">
+                                    @foreach (var dm in Enum.GetValues<DurationMode>())
+                                    {
+                                        <option value="@dm">@dm</option>
+                                    }
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <label style="font-size: 0.75rem; color: var(--text-muted); min-width: 65px;">Run mode</label>
+                                <select class="form-control form-control-sm" style="width: auto; font-size: 0.75rem;"
+                                        value="@s.RunDurationMode"
+                                        @onchange="e => { s.RunDurationMode = Enum.Parse<DurationMode>(e.Value?.ToString() ?? nameof(DurationMode.PerPart)); _ = UpdateStage(s); }">
+                                    @foreach (var dm in Enum.GetValues<DurationMode>())
+                                    {
+                                        <option value="@dm">@dm</option>
+                                    }
+                                </select>
+                            </div>
+                            @if (s.ProcessingLevel == ProcessingLevel.Batch)
+                            {
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <label style="font-size: 0.75rem; color: var(--text-muted); min-width: 65px;">Batch cap</label>
+                                    <input class="form-control form-control-sm" type="number" style="width: 60px;"
+                                           value="@s.BatchCapacityOverride"
+                                           @onchange="e => { s.BatchCapacityOverride = int.TryParse(e.Value?.ToString(), out var bc) ? bc : null; _ = UpdateStage(s); }"
+                                           placeholder="@(_process.DefaultBatchCapacity)" />
+                                </div>
+                            }
+                            <div style="display: flex; gap: 4px; align-items: center;">
+                                <label style="margin: 0;">
+                                    <input type="checkbox" checked="@s.DurationFromBuildConfig"
+                                           @onchange="e => { s.DurationFromBuildConfig = (bool)(e.Value ?? false); _ = UpdateStage(s); }" />
+                                    <span style="font-size: 0.75rem; color: var(--text-muted);">From slicer</span>
+                                </label>
+                            </div>
+                        </div>
+                    }
                 </div>
-            }
+            </details>
 
             @* ── Duration Preview Calculator ── *@
             <div style="background: var(--bg-secondary); border-radius: 8px; padding: 12px; margin-top: 16px;">
@@ -153,7 +318,7 @@ else if (_process != null)
                             {
                                 <tr>
                                     <td>@pr.StageName</td>
-                                    <td><span class="badge badge-@pr.Level.ToString().ToLower()">@pr.Level</span></td>
+                                    <td><span style="background: @(pr.Level switch { ProcessingLevel.Build => "var(--accent)", ProcessingLevel.Batch => "var(--warning)", _ => "var(--success)" }); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem;">@pr.Level</span></td>
                                     <td>@pr.SetupMinutes.ToString("F0") min</td>
                                     <td>@pr.RunMinutes.ToString("F0") min</td>
                                     <td><strong>@pr.TotalMinutes.ToString("F0") min</strong></td>
@@ -391,6 +556,77 @@ else if (_process != null)
 
     private string GetStageIcon(ProcessStage stage) =>
         stage.ProductionStage?.StageIcon ?? "⚙️";
+
+    // ── Duration recalculation helpers ──
+
+    /// <summary>Per-part run time in minutes (the base input).</summary>
+    private static double CalcPerPart(ProcessStage s) =>
+        s.RunTimeMinutes ?? 0;
+
+    /// <summary>Per-batch total = setup + (run × batchCap).</summary>
+    private static double CalcPerBatch(ProcessStage s, int batchCap)
+    {
+        var run = s.RunTimeMinutes ?? 0;
+        var setup = s.SetupTimeMinutes ?? 0;
+        return setup + (run * batchCap);
+    }
+
+    /// <summary>Per-build estimate based on level.</summary>
+    private static double CalcPerBuild(ProcessStage s, int totalParts, int batchCap)
+    {
+        var run = s.RunTimeMinutes ?? 0;
+        var setup = s.SetupTimeMinutes ?? 0;
+        return s.ProcessingLevel switch
+        {
+            ProcessingLevel.Build => setup + run,
+            ProcessingLevel.Batch => (setup + (run * batchCap)) * Math.Ceiling((double)totalParts / batchCap),
+            _ => (setup * Math.Ceiling((double)totalParts / batchCap)) + (run * totalParts)
+        };
+    }
+
+    /// <summary>User edited per-part → update RunTimeMinutes, recalculate batch/build.</summary>
+    private async Task OnPerPartChanged(ProcessStage s, ChangeEventArgs e)
+    {
+        s.RunTimeMinutes = double.TryParse(e.Value?.ToString(), out var v) && v >= 0 ? v : null;
+        await UpdateStage(s);
+    }
+
+    /// <summary>User edited per-batch total → back-calculate per-part run time.</summary>
+    private async Task OnPerBatchChanged(ProcessStage s, ChangeEventArgs e, int batchCap)
+    {
+        if (double.TryParse(e.Value?.ToString(), out var batchTotal) && batchTotal >= 0)
+        {
+            var setup = s.SetupTimeMinutes ?? 0;
+            var runPortion = batchTotal - setup;
+            s.RunTimeMinutes = batchCap > 0 ? Math.Max(0, runPortion / batchCap) : 0;
+        }
+        await UpdateStage(s);
+    }
+
+    /// <summary>User changed the processing level dropdown.</summary>
+    private async Task OnLevelChanged(ProcessStage s, ChangeEventArgs e)
+    {
+        if (Enum.TryParse<ProcessingLevel>(e.Value?.ToString(), out var level))
+        {
+            s.ProcessingLevel = level;
+            // Auto-set sensible run mode
+            s.RunDurationMode = level switch
+            {
+                ProcessingLevel.Build => DurationMode.PerBuild,
+                ProcessingLevel.Batch => DurationMode.PerBatch,
+                _ => DurationMode.PerPart
+            };
+            await UpdateStage(s);
+        }
+    }
+
+    private static string FormatMin(double minutes)
+    {
+        if (minutes < 60) return $"{minutes:F0}m";
+        var h = (int)(minutes / 60);
+        var m = (int)(minutes % 60);
+        return m > 0 ? $"{h}h {m}m" : $"{h}h";
+    }
 
     private RenderFragment RenderStageTable(List<ProcessStage> stages) => __builder =>
     {

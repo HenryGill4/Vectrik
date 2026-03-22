@@ -78,6 +78,11 @@ public class ProcessStage
     [MaxLength(500)]
     public string? PreferredMachineIds { get; set; }
 
+    /// <summary>
+    /// FK to MachineProgram — optional link to the program to use at this stage.
+    /// </summary>
+    public int? MachineProgramId { get; set; }
+
     // ── Cost ─────────────────────────────────────────────────
     [Column(TypeName = "decimal(8,2)")]
     public decimal? HourlyRateOverride { get; set; }
@@ -134,4 +139,5 @@ public class ProcessStage
     public virtual ManufacturingProcess ManufacturingProcess { get; set; } = null!;
     public virtual ProductionStage ProductionStage { get; set; } = null!;
     public virtual Machine? AssignedMachine { get; set; }
+    public virtual MachineProgram? MachineProgram { get; set; }
 }

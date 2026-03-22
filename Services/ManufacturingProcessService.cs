@@ -198,6 +198,14 @@ public class ManufacturingProcessService : IManufacturingProcessService
             return new DurationResult(0, totalFromConfig, totalFromConfig, $"{buildConfigHours.Value:F1}h from build config");
         }
 
+        // Prefer EMA-learned duration when available and auto-switched
+        if (stage.EstimateSource == "Auto" && stage.ActualAverageDurationMinutes.HasValue)
+        {
+            var ema = stage.ActualAverageDurationMinutes.Value;
+            return new DurationResult(0, ema, ema,
+                $"{ema:F0}min EMA ({stage.ActualSampleCount} samples)");
+        }
+
         double setupMinutes = CalculateModeMinutes(stage.SetupDurationMode, stage.SetupTimeMinutes ?? 0, partCount, batchCount);
         double runMinutes = CalculateModeMinutes(stage.RunDurationMode, stage.RunTimeMinutes ?? 0, partCount, batchCount);
         double total = setupMinutes + runMinutes;

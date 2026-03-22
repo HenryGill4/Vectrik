@@ -12,17 +12,20 @@ public class BuildPlanningService : IBuildPlanningService
     private readonly INumberSequenceService _numberSeq;
     private readonly IManufacturingProcessService _processService;
     private readonly IBatchService _batchService;
+    private readonly IStageCostService _costService;
 
     public BuildPlanningService(
         TenantDbContext db,
         INumberSequenceService numberSeq,
         IManufacturingProcessService processService,
-        IBatchService batchService)
+        IBatchService batchService,
+        IStageCostService costService)
     {
         _db = db;
         _numberSeq = numberSeq;
         _processService = processService;
         _batchService = batchService;
+        _costService = costService;
     }
 
     public async Task<List<BuildPackage>> GetAllPackagesAsync()
@@ -529,6 +532,10 @@ public class BuildPlanningService : IBuildPlanningService
 
             var scheduledEnd = currentStart.AddHours(estimatedHours);
 
+            // Use cost profile for detailed cost breakdown; fall back to flat rate
+            var costEstimate = await _costService.EstimateCostAsync(
+                processStage.ProductionStageId, estimatedHours, totalPartCount, batchCount: 1);
+
             var execution = new StageExecution
             {
                 JobId = job.Id,
@@ -538,6 +545,8 @@ public class BuildPlanningService : IBuildPlanningService
                 Status = StageExecutionStatus.NotStarted,
                 EstimatedHours = estimatedHours,
                 SetupHours = durationResult.SetupMinutes / 60.0,
+                EstimatedCost = costEstimate.TotalCost,
+                MaterialCost = processStage.MaterialCost,
                 QualityCheckRequired = processStage.RequiresQualityCheck,
                 SortOrder = sortOrder++,
                 MachineId = machineId,
@@ -670,6 +679,10 @@ public class BuildPlanningService : IBuildPlanningService
                 var stageBatchCount = (int)Math.Ceiling((double)totalQuantity / effectiveCapacity);
                 var dur = _processService.CalculateStageDuration(stage, totalQuantity, stageBatchCount, null);
 
+                // Use cost profile for detailed cost breakdown
+                var batchCostEstimate = await _costService.EstimateCostAsync(
+                    stage.ProductionStageId, dur.TotalMinutes / 60.0, totalQuantity, stageBatchCount);
+
                 var execution = new StageExecution
                 {
                     JobId = job.Id,
@@ -678,9 +691,7 @@ public class BuildPlanningService : IBuildPlanningService
                     Status = StageExecutionStatus.NotStarted,
                     EstimatedHours = dur.TotalMinutes / 60.0,
                     SetupHours = dur.SetupMinutes / 60.0,
-                    EstimatedCost = stage.HourlyRateOverride.HasValue
-                        ? stage.HourlyRateOverride.Value * (decimal)(dur.TotalMinutes / 60.0)
-                        : null,
+                    EstimatedCost = batchCostEstimate.TotalCost,
                     MaterialCost = stage.MaterialCost,
                     QualityCheckRequired = stage.RequiresQualityCheck,
                     BatchPartCount = totalQuantity,
@@ -699,6 +710,10 @@ public class BuildPlanningService : IBuildPlanningService
             {
                 var dur = _processService.CalculateStageDuration(stage, totalQuantity, batchCount, null);
 
+                // Use cost profile for detailed cost breakdown
+                var partCostEstimate = await _costService.EstimateCostAsync(
+                    stage.ProductionStageId, dur.TotalMinutes / 60.0, totalQuantity, batchCount);
+
                 var execution = new StageExecution
                 {
                     JobId = job.Id,
@@ -707,9 +722,7 @@ public class BuildPlanningService : IBuildPlanningService
                     Status = StageExecutionStatus.NotStarted,
                     EstimatedHours = dur.TotalMinutes / 60.0,
                     SetupHours = dur.SetupMinutes / 60.0,
-                    EstimatedCost = stage.HourlyRateOverride.HasValue
-                        ? stage.HourlyRateOverride.Value * (decimal)(dur.TotalMinutes / 60.0)
-                        : null,
+                    EstimatedCost = partCostEstimate.TotalCost,
                     MaterialCost = stage.MaterialCost,
                     QualityCheckRequired = stage.RequiresQualityCheck,
                     MachineId = stage.AssignedMachineId,
@@ -774,5 +787,54 @@ public class BuildPlanningService : IBuildPlanningService
             .Where(r => r.BuildPackageId == buildPackageId)
             .OrderByDescending(r => r.RevisionNumber)
             .ToListAsync();
+    }
+
+    private const string DefaultBuildNameTemplate = "{PARTS}-{DATE}-{SEQ}";
+
+    public async Task<string> GenerateBuildNameAsync(List<int> partIds, int machineId = 0, string? template = null)
+    {
+        template = string.IsNullOrWhiteSpace(template) ? DefaultBuildNameTemplate : template;
+
+        // Resolve part numbers for {PARTS} token
+        string partsToken;
+        if (partIds.Count > 0)
+        {
+            var partNumbers = await _db.Parts
+                .Where(p => partIds.Contains(p.Id))
+                .Select(p => p.PartNumber)
+                .ToListAsync();
+
+            partsToken = partNumbers.Count switch
+            {
+                0 => "BUILD",
+                1 => partNumbers[0],
+                2 => string.Join("+", partNumbers),
+                _ => $"{partNumbers[0]}+{partNumbers.Count - 1}more"
+            };
+        }
+        else
+        {
+            partsToken = "BUILD";
+        }
+
+        // Resolve machine info for {MACHINE} and {MATERIAL} tokens
+        var machine = machineId > 0 ? await _db.Machines.FindAsync(machineId) : null;
+        var machineName = machine?.MachineId ?? machine?.Name ?? "SLS";
+
+        // Determine sequence number: count of builds this month + 1
+        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+        var seqQuery = _db.BuildPackages.Where(b => b.CreatedDate >= monthStart);
+        if (machineId > 0)
+            seqQuery = seqQuery.Where(b => b.MachineId == machineId);
+        var seq = await seqQuery.CountAsync() + 1;
+
+        var name = template
+            .Replace("{PARTS}", partsToken, StringComparison.OrdinalIgnoreCase)
+            .Replace("{MACHINE}", machineName, StringComparison.OrdinalIgnoreCase)
+            .Replace("{DATE}", DateTime.UtcNow.ToString("yyMMdd"), StringComparison.OrdinalIgnoreCase)
+            .Replace("{SEQ}", seq.ToString("D2"), StringComparison.OrdinalIgnoreCase)
+            .Replace("{MATERIAL}", machine?.CurrentMaterial ?? "Mixed", StringComparison.OrdinalIgnoreCase);
+
+        return name;
     }
 }

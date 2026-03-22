@@ -49,4 +49,36 @@ public class LearningService : ILearningService
 
         await _db.SaveChangesAsync();
     }
+
+    public async Task UpdateProcessStageEstimateAsync(int processStageId, double actualDurationMinutes)
+    {
+        var stage = await _db.ProcessStages.FindAsync(processStageId);
+        if (stage is null) return;
+
+        var sampleCount = stage.ActualSampleCount ?? 0;
+        sampleCount++;
+
+        // EMA calculation: newAvg = α * actual + (1 - α) * previousAvg
+        if (stage.ActualAverageDurationMinutes.HasValue)
+        {
+            stage.ActualAverageDurationMinutes =
+                Alpha * actualDurationMinutes + (1 - Alpha) * stage.ActualAverageDurationMinutes.Value;
+        }
+        else
+        {
+            stage.ActualAverageDurationMinutes = actualDurationMinutes;
+        }
+
+        stage.ActualSampleCount = sampleCount;
+
+        // Auto-switch to "Auto" after enough samples
+        if (sampleCount >= AutoSwitchThreshold && stage.EstimateSource != "Auto")
+        {
+            stage.EstimateSource = "Auto";
+        }
+
+        stage.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
 }

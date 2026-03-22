@@ -1,0 +1,766 @@
+@page "/analytics/profit"
+@inject IAnalyticsService AnalyticsService
+@inject IPartPricingService PricingService
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Profit Dashboard - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">📊 Profit Dashboard</h1>
+    <div class="page-actions">
+        <select class="form-control" style="width:160px;display:inline-block" @onchange="OnRangeChanged">
+            <option value="7">Last 7 Days</option>
+            <option value="30" selected>Last 30 Days</option>
+            <option value="60">Last 60 Days</option>
+            <option value="90">Last 90 Days</option>
+            <option value="180">Last 6 Months</option>
+            <option value="365">Last Year</option>
+        </select>
+        <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="LoadDataAsync">
+            @if (_loading) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+            Refresh
+        </button>
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
+    </div>
+</div>
+
+@if (_loading && _summary == null)
+{
+    <div class="loading"><span class="spinner"></span> Calculating profitability...</div>
+}
+else if (_summary != null)
+{
+    @* ── Profit KPIs ── *@
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Total Revenue</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: var(--primary);">$@_summary.TotalRevenue.ToString("N0")</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">@_summary.CompletedJobs jobs</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Total Cost</div>
+            <div style="font-size: 1.6rem; font-weight: 700;">$@_summary.TotalCost.ToString("N0")</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">@_summary.TotalPartsProduced parts</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Gross Profit</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: @(_summary.GrossProfit >= 0 ? "var(--success)" : "var(--danger)");">$@_summary.GrossProfit.ToString("N0")</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">$@_summary.AverageProfitPerPart.ToString("F2") / part</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Gross Margin</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: @(_summary.GrossMarginPct >= 20 ? "var(--success)" : _summary.GrossMarginPct >= 10 ? "var(--warning)" : "var(--danger)");">@_summary.GrossMarginPct.ToString("F1")%</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">target: 25%+</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Unprofitable Jobs</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: @(_summary.UnprofitableJobCount > 0 ? "var(--danger)" : "var(--success)");">@_summary.UnprofitableJobCount</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">of @_summary.CompletedJobs total</div>
+        </div>
+    </div>
+
+    @* ── Cost Breakdown Bar ── *@
+    @if (_summary.TotalCost > 0)
+    {
+        <div class="card" style="margin-bottom: 20px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">Cost Structure</div>
+            <div style="display: flex; height: 28px; border-radius: 6px; overflow: hidden; background: var(--bg-tertiary);">
+                @{ var total = _summary.TotalLaborCost + _summary.TotalOverheadCost + _summary.TotalMaterialCost + (_summary.TotalCost - _summary.TotalLaborCost - _summary.TotalOverheadCost - _summary.TotalMaterialCost); }
+                @if (_summary.TotalLaborCost > 0)
+                {
+                    <div style="width: @(CostBarPct(_summary.TotalLaborCost, total))%; background: #3b82f6; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.7rem; font-weight: 600; min-width: 30px;"
+                         title="Labor: $@_summary.TotalLaborCost.ToString("N0")">
+                        👷 @(CostBarPct(_summary.TotalLaborCost, total))%
+                    </div>
+                }
+                @if (_summary.TotalOverheadCost > 0)
+                {
+                    <div style="width: @(CostBarPct(_summary.TotalOverheadCost, total))%; background: #8b5cf6; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.7rem; font-weight: 600; min-width: 30px;"
+                         title="Overhead: $@_summary.TotalOverheadCost.ToString("N0")">
+                        🏢 @(CostBarPct(_summary.TotalOverheadCost, total))%
+                    </div>
+                }
+                @if (_summary.TotalMaterialCost > 0)
+                {
+                    <div style="width: @(CostBarPct(_summary.TotalMaterialCost, total))%; background: #f59e0b; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.7rem; font-weight: 600; min-width: 30px;"
+                         title="Material: $@_summary.TotalMaterialCost.ToString("N0")">
+                        🧪 @(CostBarPct(_summary.TotalMaterialCost, total))%
+                    </div>
+                }
+                @{ var otherCost = _summary.TotalCost - _summary.TotalLaborCost - _summary.TotalOverheadCost - _summary.TotalMaterialCost; }
+                @if (otherCost > 0)
+                {
+                    <div style="width: @(CostBarPct(otherCost, total))%; background: #6b7280; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.7rem; font-weight: 600; min-width: 30px;"
+                         title="Equipment/Other: $@otherCost.ToString("N0")">
+                        🖥️ @(CostBarPct(otherCost, total))%
+                    </div>
+                }
+            </div>
+            <div style="display: flex; gap: 16px; margin-top: 6px; font-size: 0.75rem; color: var(--text-muted); flex-wrap: wrap;">
+                <span>👷 Labor: $@_summary.TotalLaborCost.ToString("N0")</span>
+                <span>🏢 Overhead: $@_summary.TotalOverheadCost.ToString("N0")</span>
+                <span>🧪 Material: $@_summary.TotalMaterialCost.ToString("N0")</span>
+                <span>🖥️ Other: $@otherCost.ToString("N0")</span>
+            </div>
+        </div>
+    }
+
+    @* ── Tab Navigation ── *@
+    <div class="tab-bar" style="margin-bottom: 16px;">
+        <button class="tab @(_activeTab == "parts" ? "active" : "")" @onclick='() => _activeTab = "parts"'>💰 By Part</button>
+        <button class="tab @(_activeTab == "customers" ? "active" : "")" @onclick='() => _activeTab = "customers"'>👤 By Customer</button>
+        <button class="tab @(_activeTab == "trend" ? "active" : "")" @onclick='() => _activeTab = "trend"'>📈 Trend</button>
+        <button class="tab @(_activeTab == "unprofitable" ? "active" : "")" @onclick='() => _activeTab = "unprofitable"'>
+            ⚠️ Unprofitable
+            @if (_unprofitable.Count > 0)
+            {
+                <span class="badge badge-cancelled" style="margin-left: 4px;">@_unprofitable.Count</span>
+            }
+        </button>
+        <button class="tab @(_activeTab == "breakdown" ? "active" : "")" @onclick='() => _activeTab = "breakdown"'>🔍 Part Drilldown</button>
+        <button class="tab @(_activeTab == "coverage" ? "active" : "")" @onclick='() => _activeTab = "coverage"'>📋 Pricing Coverage</button>
+    </div>
+
+    @* ── By Part Tab ── *@
+    @if (_activeTab == "parts")
+    {
+        <div class="card">
+            @if (_byPart.Count > 0)
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Part</th>
+                            <th style="text-align:right;">Produced</th>
+                            <th style="text-align:right;">Sell Price</th>
+                            <th style="text-align:right;">Cost/Unit</th>
+                            <th style="text-align:right;">Revenue</th>
+                            <th style="text-align:right;">Cost</th>
+                            <th style="text-align:right;">Profit</th>
+                            <th style="text-align:right;">Margin</th>
+                            <th style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _byPart)
+                        {
+                            <tr style="@(row.Profit < 0 ? "background: rgba(239,68,68,0.06);" : "")">
+                                <td>
+                                    <a href="/parts/@row.PartId" style="text-decoration: none;">
+                                        <strong>@row.PartNumber</strong>
+                                    </a>
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">@row.PartName</div>
+                                    @if (!row.HasPricing)
+                                    {
+                                        <span class="badge badge-cancelled" style="font-size: 0.65rem;">No pricing</span>
+                                    }
+                                </td>
+                                <td style="text-align:right;">@row.TotalProduced</td>
+                                <td style="text-align:right;">@(row.HasPricing ? "$" + row.SellPricePerUnit.ToString("F2") : "—")</td>
+                                <td style="text-align:right;">$@row.CostPerUnit.ToString("F2")</td>
+                                <td style="text-align:right;">@(row.TotalRevenue > 0 ? "$" + row.TotalRevenue.ToString("N0") : "—")</td>
+                                <td style="text-align:right;">$@row.TotalCost.ToString("N0")</td>
+                                <td style="text-align:right; font-weight: 600; color: @(row.Profit >= 0 ? "var(--success)" : "var(--danger)");">
+                                    $@row.Profit.ToString("N0")
+                                </td>
+                                <td style="text-align:right; color: @(row.MarginPct >= 20 ? "var(--success)" : row.MarginPct >= 0 ? "var(--warning)" : "var(--danger)");">
+                                    @(row.TotalRevenue > 0 ? row.MarginPct.ToString("F1") + "%" : "—")
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => DrilldownPart(row.PartId)" title="Cost breakdown">🔍</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight: 700; border-top: 2px solid var(--border);">
+                            <td>Totals</td>
+                            <td style="text-align:right;">@_byPart.Sum(r => r.TotalProduced)</td>
+                            <td></td>
+                            <td></td>
+                            <td style="text-align:right;">$@_byPart.Sum(r => r.TotalRevenue).ToString("N0")</td>
+                            <td style="text-align:right;">$@_byPart.Sum(r => r.TotalCost).ToString("N0")</td>
+                            <td style="text-align:right; color: @(_byPart.Sum(r => r.Profit) >= 0 ? "var(--success)" : "var(--danger)");">
+                                $@_byPart.Sum(r => r.Profit).ToString("N0")
+                            </td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            }
+            else
+            {
+                <div style="padding: 24px; text-align: center; color: var(--text-muted);">No completed jobs in the selected period.</div>
+            }
+        </div>
+    }
+
+    @* ── By Customer Tab ── *@
+    @if (_activeTab == "customers")
+    {
+        <div class="card">
+            @if (_byCustomer.Count > 0)
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th style="text-align:right;">Orders</th>
+                            <th style="text-align:right;">Parts</th>
+                            <th style="text-align:right;">Revenue</th>
+                            <th style="text-align:right;">Cost</th>
+                            <th style="text-align:right;">Profit</th>
+                            <th style="text-align:right;">Margin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _byCustomer)
+                        {
+                            <tr style="@(row.Profit < 0 ? "background: rgba(239,68,68,0.06);" : "")">
+                                <td><strong>@row.CustomerName</strong></td>
+                                <td style="text-align:right;">@row.OrderCount</td>
+                                <td style="text-align:right;">@row.TotalParts</td>
+                                <td style="text-align:right;">$@row.TotalRevenue.ToString("N0")</td>
+                                <td style="text-align:right;">$@row.TotalCost.ToString("N0")</td>
+                                <td style="text-align:right; font-weight: 600; color: @(row.Profit >= 0 ? "var(--success)" : "var(--danger)");">
+                                    $@row.Profit.ToString("N0")
+                                </td>
+                                <td style="text-align:right; color: @(row.MarginPct >= 20 ? "var(--success)" : row.MarginPct >= 0 ? "var(--warning)" : "var(--danger)");">
+                                    @(row.TotalRevenue > 0 ? row.MarginPct.ToString("F1") + "%" : "—")
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight: 700; border-top: 2px solid var(--border);">
+                            <td>Totals</td>
+                            <td style="text-align:right;">@_byCustomer.Sum(r => r.OrderCount)</td>
+                            <td style="text-align:right;">@_byCustomer.Sum(r => r.TotalParts)</td>
+                            <td style="text-align:right;">$@_byCustomer.Sum(r => r.TotalRevenue).ToString("N0")</td>
+                            <td style="text-align:right;">$@_byCustomer.Sum(r => r.TotalCost).ToString("N0")</td>
+                            <td style="text-align:right; color: @(_byCustomer.Sum(r => r.Profit) >= 0 ? "var(--success)" : "var(--danger)");">
+                                $@_byCustomer.Sum(r => r.Profit).ToString("N0")
+                            </td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            }
+            else
+            {
+                <div style="padding: 24px; text-align: center; color: var(--text-muted);">No customer data in the selected period.</div>
+            }
+        </div>
+    }
+
+    @* ── Trend Tab ── *@
+    @if (_activeTab == "trend")
+    {
+        <div class="card">
+            @if (_trend.Count > 0)
+            {
+                <div style="font-weight: 600; margin-bottom: 12px;">Daily Profit Trend</div>
+                @* Visual bar chart using CSS *@
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                    @{ var maxVal = _trend.Max(t => Math.Max(Math.Abs(t.Profit), Math.Max(t.Revenue, t.Cost))); }
+                    @foreach (var point in _trend)
+                    {
+                        var barWidth = maxVal > 0 ? (int)(Math.Abs(point.Profit) / maxVal * 100) : 0;
+                        var barColor = point.Profit >= 0 ? "var(--success)" : "var(--danger)";
+                        <div style="display: grid; grid-template-columns: 90px 1fr 200px; align-items: center; gap: 8px; font-size: 0.8rem;">
+                            <div style="color: var(--text-muted);">@point.Date.ToString("MMM dd")</div>
+                            <div style="display: flex; align-items: center; height: 20px;">
+                                <div style="width: @(barWidth)%; min-width: 2px; height: 16px; background: @barColor; border-radius: 3px; transition: width 0.3s;"></div>
+                            </div>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; white-space: nowrap;">
+                                <span style="color: var(--primary);">R: $@point.Revenue.ToString("N0")</span>
+                                <span>C: $@point.Cost.ToString("N0")</span>
+                                <span style="font-weight: 600; color: @barColor;">P: $@point.Profit.ToString("N0")</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @* Summary row *@
+                <div style="display: grid; grid-template-columns: 90px 1fr 200px; margin-top: 10px; padding-top: 8px; border-top: 2px solid var(--border); font-weight: 700; font-size: 0.85rem;">
+                    <div>Total</div>
+                    <div></div>
+                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                        <span style="color: var(--primary);">$@_trend.Sum(t => t.Revenue).ToString("N0")</span>
+                        <span>$@_trend.Sum(t => t.Cost).ToString("N0")</span>
+                        <span style="color: @(_trend.Sum(t => t.Profit) >= 0 ? "var(--success)" : "var(--danger)");">$@_trend.Sum(t => t.Profit).ToString("N0")</span>
+                    </div>
+                </div>
+
+                @* Period table *@
+                <table class="data-table" style="margin-top: 16px; font-size: 0.8rem;">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th style="text-align:right;">Parts</th>
+                            <th style="text-align:right;">Revenue</th>
+                            <th style="text-align:right;">Cost</th>
+                            <th style="text-align:right;">Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in _trend)
+                        {
+                            <tr>
+                                <td>@p.Date.ToString("yyyy-MM-dd")</td>
+                                <td style="text-align:right;">@p.PartsProduced</td>
+                                <td style="text-align:right;">$@p.Revenue.ToString("N2")</td>
+                                <td style="text-align:right;">$@p.Cost.ToString("N2")</td>
+                                <td style="text-align:right; color: @(p.Profit >= 0 ? "var(--success)" : "var(--danger)"); font-weight: 600;">
+                                    $@p.Profit.ToString("N2")
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div style="padding: 24px; text-align: center; color: var(--text-muted);">No trend data for the selected period.</div>
+            }
+        </div>
+    }
+
+    @* ── Unprofitable Jobs Tab ── *@
+    @if (_activeTab == "unprofitable")
+    {
+        <div class="card">
+            @if (_unprofitable.Count > 0)
+            {
+                <div style="padding: 10px 14px; background: rgba(239,68,68,0.08); border-radius: 6px; margin-bottom: 12px; font-size: 0.85rem;">
+                    ⚠️ <strong>@_unprofitable.Count job(s)</strong> completed below cost. Total loss:
+                    <strong style="color: var(--danger);">$@_unprofitable.Sum(r => r.Loss).ToString("N0")</strong>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Job</th>
+                            <th>Part</th>
+                            <th>Customer</th>
+                            <th style="text-align:right;">Revenue</th>
+                            <th style="text-align:right;">Cost</th>
+                            <th style="text-align:right;">Loss</th>
+                            <th style="text-align:right;">Margin</th>
+                            <th>Completed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _unprofitable)
+                        {
+                            <tr style="background: rgba(239,68,68,0.04);">
+                                <td>#@row.JobId</td>
+                                <td><strong>@row.PartNumber</strong></td>
+                                <td>@row.CustomerName</td>
+                                <td style="text-align:right;">$@row.Revenue.ToString("N2")</td>
+                                <td style="text-align:right;">$@row.Cost.ToString("N2")</td>
+                                <td style="text-align:right; font-weight: 600; color: var(--danger);">-$@row.Loss.ToString("N2")</td>
+                                <td style="text-align:right; color: var(--danger);">@row.MarginPct.ToString("F1")%</td>
+                                <td style="font-size: 0.8rem; color: var(--text-muted);">@row.CompletedDate.ToString("MMM dd")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div style="padding: 24px; text-align: center; color: var(--success);">
+                    ✅ All jobs in this period were profitable. Great work!
+                </div>
+            }
+        </div>
+    }
+
+    @* ── Part Drilldown Tab ── *@
+    @if (_activeTab == "breakdown")
+    {
+        <div class="card">
+            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; margin-bottom: 16px;">
+                <div class="form-group" style="margin: 0;">
+                    <label class="form-label">Select Part</label>
+                    <select class="form-control" @onchange="OnDrilldownPartChanged">
+                        <option value="">— Select a part —</option>
+                        @if (_allParts != null)
+                        {
+                            @foreach (var p in _allParts)
+                            {
+                                <option value="@p.PartId" selected="@(_drilldownPartId == p.PartId)">@p.PartNumber — @p.PartName</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div class="form-group" style="margin: 0; width: 120px;">
+                    <label class="form-label">Quantity</label>
+                    <input class="form-control" type="number" min="1" @bind="_drilldownQty" />
+                </div>
+                <button class="btn btn-primary" @onclick="LoadDrilldown" disabled="@(_drilldownPartId == 0)" style="height: 38px;">Analyze</button>
+            </div>
+
+            @if (_drilldownLoading)
+            {
+                <div class="loading"><span class="spinner"></span></div>
+            }
+            else if (_breakdown != null)
+            {
+                @* Profit Preview Cards *@
+                <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 12px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Sell Price</div>
+                        <div style="font-size: 1.4rem; font-weight: 700; color: var(--primary);">$@_breakdown.SellPricePerUnit.ToString("F2")</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">per unit</div>
+                    </div>
+                    <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 12px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Mfg Cost</div>
+                        <div style="font-size: 1.4rem; font-weight: 700;">$@_breakdown.ManufacturingCostPerUnit.ToString("F2")</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">per unit</div>
+                    </div>
+                    <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 12px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Material</div>
+                        <div style="font-size: 1.4rem; font-weight: 700;">$@_breakdown.MaterialCostPerUnit.ToString("F2")</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">per unit</div>
+                    </div>
+                    <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 12px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Total Cost</div>
+                        <div style="font-size: 1.4rem; font-weight: 700;">$@_breakdown.TotalCostPerUnit.ToString("F2")</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">per unit</div>
+                    </div>
+                    <div style="flex: 1; min-width: 120px; background: @(_breakdown.ProfitPerUnit >= 0 ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)"); border-radius: 6px; padding: 12px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Profit / Unit</div>
+                        <div style="font-size: 1.4rem; font-weight: 700; color: @(_breakdown.ProfitPerUnit >= 0 ? "var(--success)" : "var(--danger)");">$@_breakdown.ProfitPerUnit.ToString("F2")</div>
+                        <div style="font-size: 0.7rem; color: @(_breakdown.MarginPct >= _breakdown.TargetMarginPct ? "var(--success)" : "var(--danger)");">@_breakdown.MarginPct.ToString("F1")% margin (target: @_breakdown.TargetMarginPct.ToString("F0")%)</div>
+                    </div>
+                </div>
+
+                @* Margin Gauge *@
+                <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                        <span>Margin</span>
+                        <span style="font-weight: 600;">@_breakdown.MarginPct.ToString("F1")% / @_breakdown.TargetMarginPct.ToString("F0")% target</span>
+                    </div>
+                    <div style="height: 12px; background: var(--border); border-radius: 6px; overflow: hidden; position: relative;">
+                        @{ var marginWidth = Math.Clamp((double)_breakdown.MarginPct, -20, 100); }
+                        @if (_breakdown.MarginPct >= 0)
+                        {
+                            <div style="width: @(marginWidth)%; height: 100%; background: @(_breakdown.MarginPct >= _breakdown.TargetMarginPct ? "var(--success)" : "var(--warning)"); border-radius: 6px; transition: width 0.3s;"></div>
+                        }
+                        else
+                        {
+                            <div style="width: @(Math.Abs(marginWidth))%; height: 100%; background: var(--danger); border-radius: 6px;"></div>
+                        }
+                        @* Target marker *@
+                        <div style="position: absolute; left: @((double)_breakdown.TargetMarginPct)%; top: -2px; bottom: -2px; width: 2px; background: var(--text-primary); opacity: 0.6;" title="Target: @_breakdown.TargetMarginPct%"></div>
+                    </div>
+                </div>
+
+                @* Stage Cost Breakdown Table *@
+                @if (_breakdown.StageBreakdown.Count > 0)
+                {
+                    <div style="font-weight: 600; margin-bottom: 8px;">Manufacturing Cost Breakdown (@_breakdown.Quantity parts)</div>
+                    <table class="data-table" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Stage</th>
+                                <th>Level</th>
+                                <th style="text-align:right;">Duration</th>
+                                <th style="text-align:right;">👷 Labor</th>
+                                <th style="text-align:right;">🖥️ Equipment</th>
+                                <th style="text-align:right;">🏢 Overhead</th>
+                                <th style="text-align:right;">🚚 External</th>
+                                <th style="text-align:right; font-weight: 700;">Total</th>
+                                <th style="text-align:right;">$/Part</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _breakdown.StageBreakdown)
+                            {
+                                <tr>
+                                    <td>
+                                        <span style="color: @s.StageColor">@ResolveStageIcon(s.StageIcon)</span>
+                                        @s.StageName
+                                    </td>
+                                    <td><span class="badge @(s.ProcessingLevel == "Build" ? "badge-active" : s.ProcessingLevel == "Batch" ? "badge-pending" : "badge-info")">@s.ProcessingLevel</span></td>
+                                    <td style="text-align:right;">@FormatDuration(s.DurationMinutes)</td>
+                                    <td style="text-align:right;">$@s.LaborCost.ToString("F2")</td>
+                                    <td style="text-align:right;">$@s.EquipmentCost.ToString("F2")</td>
+                                    <td style="text-align:right;">$@s.OverheadCost.ToString("F2")</td>
+                                    <td style="text-align:right;">@(s.ExternalCost > 0 ? "$" + s.ExternalCost.ToString("F2") : "—")</td>
+                                    <td style="text-align:right; font-weight: 700;">$@s.TotalCost.ToString("F2")</td>
+                                    <td style="text-align:right;">$@s.CostPerPart.ToString("F2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr style="font-weight: 700; border-top: 2px solid var(--border);">
+                                <td colspan="3">Manufacturing Total</td>
+                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.LaborCost).ToString("F2")</td>
+                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.EquipmentCost).ToString("F2")</td>
+                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.OverheadCost).ToString("F2")</td>
+                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.ExternalCost).ToString("F2")</td>
+                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.TotalCost).ToString("F2")</td>
+                                <td style="text-align:right;">$@_breakdown.ManufacturingCostPerUnit.ToString("F2")</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                }
+                else
+                {
+                    <div style="padding: 16px; text-align: center; color: var(--warning);">
+                        ⚠️ No ManufacturingProcess defined for this part.
+                        <a href="/parts/@_breakdown.PartId/edit">Set one up</a> to see the cost breakdown.
+                    </div>
+                }
+
+                @if (_breakdown.SellPricePerUnit == 0)
+                {
+                    <div style="margin-top: 12px; padding: 10px 14px; background: rgba(245,158,11,0.08); border-radius: 6px; font-size: 0.85rem; color: var(--warning);">
+                        💡 No sell price configured for this part. <a href="/parts/@_breakdown.PartId/edit">Set pricing</a> to see profit analysis.
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    @* ── Pricing Coverage Tab ── *@
+    @if (_activeTab == "coverage")
+    {
+        <div class="card">
+            @if (_coverage != null)
+            {
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;">
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 14px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Active Parts</div>
+                        <div style="font-size: 1.6rem; font-weight: 700;">@_coverage.TotalActiveParts</div>
+                    </div>
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 14px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">With Pricing</div>
+                        <div style="font-size: 1.6rem; font-weight: 700; color: @(_coverage.PartsWithPricing == _coverage.TotalActiveParts ? "var(--success)" : "var(--warning)");">@_coverage.PartsWithPricing</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">@(_coverage.TotalActiveParts > 0 ? ((double)_coverage.PartsWithPricing / _coverage.TotalActiveParts * 100).ToString("F0") : "0")%</div>
+                    </div>
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 14px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">With Process</div>
+                        <div style="font-size: 1.6rem; font-weight: 700;">@_coverage.PartsWithProcess</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">@(_coverage.TotalActiveParts > 0 ? ((double)_coverage.PartsWithProcess / _coverage.TotalActiveParts * 100).ToString("F0") : "0")%</div>
+                    </div>
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 14px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Fully Configured</div>
+                        <div style="font-size: 1.6rem; font-weight: 700; color: var(--success);">@_coverage.PartsFullyConfigured</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">pricing + process</div>
+                    </div>
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 14px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Avg Sell Price</div>
+                        <div style="font-size: 1.6rem; font-weight: 700;">$@_coverage.AverageSellPrice.ToString("F0")</div>
+                    </div>
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 14px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Avg Target Margin</div>
+                        <div style="font-size: 1.6rem; font-weight: 700;">@_coverage.AverageMarginPct.ToString("F0")%</div>
+                    </div>
+                </div>
+
+                @* Coverage Progress Bar *@
+                @if (_coverage.TotalActiveParts > 0)
+                {
+                    <div style="margin-bottom: 16px;">
+                        <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;">Pricing Coverage</div>
+                        <div style="height: 16px; background: var(--border); border-radius: 8px; overflow: hidden;">
+                            @{ var coveragePct = (double)_coverage.PartsFullyConfigured / _coverage.TotalActiveParts * 100; }
+                            <div style="width: @(coveragePct.ToString("F0"))%; height: 100%; background: @(coveragePct >= 80 ? "var(--success)" : coveragePct >= 50 ? "var(--warning)" : "var(--danger)"); border-radius: 8px; transition: width 0.3s;"></div>
+                        </div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                            @_coverage.PartsFullyConfigured of @_coverage.TotalActiveParts parts fully configured (@coveragePct.ToString("F0")%)
+                        </div>
+                    </div>
+                }
+
+                @* All pricings table *@
+                @if (_allPricings.Count > 0)
+                {
+                    <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Configured Pricing</div>
+                    <table class="data-table" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Part</th>
+                                <th style="text-align:right;">Sell Price</th>
+                                <th style="text-align:right;">Material Cost</th>
+                                <th style="text-align:right;">Target Margin</th>
+                                <th>Tier</th>
+                                <th>Effective</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in _allPricings)
+                            {
+                                <tr>
+                                    <td>
+                                        <a href="/parts/@p.PartId" style="text-decoration: none;">
+                                            <strong>@p.Part.PartNumber</strong>
+                                        </a>
+                                        <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 4px;">@p.Part.Name</span>
+                                    </td>
+                                    <td style="text-align:right; font-weight: 600;">$@p.SellPricePerUnit.ToString("F2")</td>
+                                    <td style="text-align:right;">$@p.MaterialCostPerUnit.ToString("F2")</td>
+                                    <td style="text-align:right;">@p.TargetMarginPct.ToString("F0")%</td>
+                                    <td>@(p.PricingTier ?? "—")</td>
+                                    <td style="font-size: 0.8rem; color: var(--text-muted);">@p.EffectiveDate.ToString("MMM dd, yyyy")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            }
+            else
+            {
+                <div class="loading"><span class="spinner"></span></div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private bool _loading;
+    private int _rangeDays = 30;
+    private string _activeTab = "parts";
+
+    // Data
+    private ProfitSummary? _summary;
+    private List<ProfitByPartRow> _byPart = new();
+    private List<ProfitByCustomerRow> _byCustomer = new();
+    private List<DailyProfitPoint> _trend = new();
+    private List<UnprofitableJobRow> _unprofitable = new();
+    private PricingCoverageStats? _coverage;
+    private List<PartPricing> _allPricings = new();
+
+    // Drilldown
+    private List<ProfitByPartRow>? _allParts;
+    private int _drilldownPartId;
+    private int _drilldownQty = 60;
+    private bool _drilldownLoading;
+    private PartCostBreakdown? _breakdown;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            var from = now.AddDays(-_rangeDays);
+
+            var summaryTask = AnalyticsService.GetProfitSummaryAsync(from, now);
+            var byPartTask = AnalyticsService.GetProfitByPartAsync(from, now);
+            var byCustomerTask = AnalyticsService.GetProfitByCustomerAsync(from, now);
+            var trendTask = AnalyticsService.GetProfitTrendAsync(from, now);
+            var unprofitableTask = AnalyticsService.GetUnprofitableJobsAsync(from, now);
+            var coverageTask = PricingService.GetCoverageStatsAsync();
+            var pricingsTask = PricingService.GetAllAsync();
+
+            await Task.WhenAll(summaryTask, byPartTask, byCustomerTask, trendTask, unprofitableTask, coverageTask, pricingsTask);
+
+            _summary = await summaryTask;
+            _byPart = await byPartTask;
+            _byCustomer = await byCustomerTask;
+            _trend = await trendTask;
+            _unprofitable = await unprofitableTask;
+            _coverage = await coverageTask;
+            _allPricings = await pricingsTask;
+            _allParts = _byPart;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load profit data: {ex.Message}");
+            _summary = new ProfitSummary();
+        }
+
+        _loading = false;
+    }
+
+    private async Task OnRangeChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var d))
+        {
+            _rangeDays = d;
+            await LoadDataAsync();
+        }
+    }
+
+    private void DrilldownPart(int partId)
+    {
+        _drilldownPartId = partId;
+        _activeTab = "breakdown";
+        _ = LoadDrilldown();
+    }
+
+    private async Task OnDrilldownPartChanged(ChangeEventArgs e)
+    {
+        _breakdown = null;
+        _drilldownPartId = 0;
+        if (int.TryParse(e.Value?.ToString(), out var id) && id > 0)
+        {
+            _drilldownPartId = id;
+            await LoadDrilldown();
+        }
+    }
+
+    private async Task LoadDrilldown()
+    {
+        if (_drilldownPartId == 0) return;
+        _drilldownLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            _breakdown = await AnalyticsService.GetPartCostBreakdownAsync(_drilldownPartId, _drilldownQty);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed: {ex.Message}");
+        }
+
+        _drilldownLoading = false;
+    }
+
+    private static string CostBarPct(decimal portion, decimal total) =>
+        total > 0 ? ((double)(portion / total) * 100).ToString("F0") : "0";
+
+    private static string FormatDuration(double totalMinutes) =>
+        totalMinutes >= 60 ? $"{totalMinutes / 60:F1}h" : $"{totalMinutes:F0}m";
+
+    private static string ResolveStageIcon(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return "⚙️";
+        if (!icon.StartsWith("fas ") && !icon.StartsWith("far ") && !icon.StartsWith("fa-")) return icon;
+        return icon switch
+        {
+            "fas fa-print"           => "🖨️",
+            "fas fa-wind"            => "💨",
+            "fas fa-fire"            => "🔥",
+            "fas fa-bolt"            => "⚡",
+            "fas fa-cog"             => "⚙️",
+            "fas fa-pen-nib"         => "✒️",
+            "fas fa-spray-can"       => "🎨",
+            "fas fa-clipboard-check" => "✅",
+            "fas fa-truck"           => "🚚",
+            _                        => "⚙️"
+        };
+    }
+
+    private void ExportCsv()
+    {
+        if (_byPart.Count == 0) return;
+        var csv = "PartNumber,PartName,Produced,SellPrice,CostPerUnit,Revenue,Cost,Profit,Margin%\n" +
+            string.Join("\n", _byPart.Select(r =>
+                $"{r.PartNumber},{r.PartName},{r.TotalProduced},{r.SellPricePerUnit:F2},{r.CostPerUnit:F2},{r.TotalRevenue:F2},{r.TotalCost:F2},{r.Profit:F2},{r.MarginPct:F1}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+    }
+}
