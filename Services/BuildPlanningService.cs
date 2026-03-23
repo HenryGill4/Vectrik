@@ -451,6 +451,8 @@ public class BuildPlanningService : IBuildPlanningService
         var processes = await _db.ManufacturingProcesses
             .Include(p => p.Stages.OrderBy(s => s.ExecutionOrder))
                 .ThenInclude(s => s.ProductionStage)
+            .Include(p => p.Stages)
+                .ThenInclude(s => s.MachineProgram)
             .Where(p => partIds.Contains(p.PartId) && p.IsActive)
             .ToListAsync();
 
@@ -589,6 +591,7 @@ public class BuildPlanningService : IBuildPlanningService
                 JobId = job.Id,
                 ProductionStageId = processStage.ProductionStageId,
                 ProcessStageId = processStage.Id,
+                MachineProgramId = processStage.MachineProgramId,
                 BuildPackageId = buildPackageId,
                 Status = StageExecutionStatus.NotStarted,
                 EstimatedHours = estimatedHours,
@@ -646,6 +649,8 @@ public class BuildPlanningService : IBuildPlanningService
         var processes = await _db.ManufacturingProcesses
             .Include(p => p.Stages.OrderBy(s => s.ExecutionOrder))
                 .ThenInclude(s => s.ProductionStage)
+            .Include(p => p.Stages)
+                .ThenInclude(s => s.MachineProgram)
             .Where(p => partIds.Contains(p.PartId) && p.IsActive)
             .ToDictionaryAsync(p => p.PartId, p => p);
 
@@ -752,6 +757,7 @@ public class BuildPlanningService : IBuildPlanningService
                     JobId = job.Id,
                     ProductionStageId = stage.ProductionStageId,
                     ProcessStageId = stage.Id,
+                    MachineProgramId = stage.MachineProgramId,
                     Status = StageExecutionStatus.NotStarted,
                     EstimatedHours = estimatedHours,
                     SetupHours = dur.SetupMinutes / 60.0,
@@ -793,6 +799,7 @@ public class BuildPlanningService : IBuildPlanningService
                     JobId = job.Id,
                     ProductionStageId = stage.ProductionStageId,
                     ProcessStageId = stage.Id,
+                    MachineProgramId = stage.MachineProgramId,
                     Status = StageExecutionStatus.NotStarted,
                     EstimatedHours = estimatedHours,
                     SetupHours = dur.SetupMinutes / 60.0,

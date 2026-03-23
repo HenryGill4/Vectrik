@@ -1,6 +1,7 @@
 @inject IManufacturingProcessService ProcessService
 @inject IStageService StageService
 @inject IMachineService MachineService
+@inject IMachineProgramService ProgramService
 @inject ToastService Toast
 @using Opcentrix_V3.Models.Enums
 
@@ -108,6 +109,7 @@ else if (_process != null)
                         <th>Per Batch (@batchCap)</th>
                         <th>Per Build</th>
                         <th>Machine</th>
+                        <th>Program</th>
                         <th>Flags</th>
                         <th></th>
                     </tr>
@@ -215,6 +217,20 @@ else if (_process != null)
                                         @foreach (var m in _machines)
                                         {
                                             <option value="@m.Id">@m.Name</option>
+                                        }
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-control form-control-sm" style="width: auto; min-width: 100px;"
+                                        value="@(s.MachineProgramId?.ToString() ?? "")"
+                                        @onchange="e => { s.MachineProgramId = int.TryParse(e.Value?.ToString(), out var pid) ? pid : null; _ = UpdateStage(s); }">
+                                    <option value="">None</option>
+                                    @if (_programs != null)
+                                    {
+                                        @foreach (var p in _programs.Where(p => p.Status == ProgramStatus.Active || p.Id == s.MachineProgramId))
+                                        {
+                                            <option value="@p.Id">@p.ProgramNumber — @p.Name (v@(p.Version))</option>
                                         }
                                     }
                                 </select>
@@ -355,6 +371,7 @@ else if (_process != null)
     private List<ProcessStage> _stages = [];
     private List<ProductionStage>? _catalogStages;
     private List<Machine>? _machines;
+    private List<MachineProgram>? _programs;
     private bool _loading = true;
     private bool _isNew;
     private bool _saving;
@@ -372,6 +389,7 @@ else if (_process != null)
         {
             _catalogStages = await StageService.GetAllStagesAsync(activeOnly: true);
             _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+            _programs = await ProgramService.GetProgramsForPartAsync(PartId);
             _process = await ProcessService.GetByPartIdAsync(PartId);
 
             if (_process != null)
@@ -640,6 +658,7 @@ else if (_process != null)
                     <th>Run Mode</th>
                     <th>Run Min</th>
                     <th>Machine</th>
+                    <th>Program</th>
                     <th>Batch Cap</th>
                     <th>Flags</th>
                     <th></th>
@@ -697,6 +716,20 @@ else if (_process != null)
                                     @foreach (var m in _machines)
                                     {
                                         <option value="@m.Id">@m.Name</option>
+                                    }
+                                }
+                            </select>
+                        </td>
+                        <td>
+                            <select class="form-control form-control-sm" style="width: auto; min-width: 100px;"
+                                    value="@(s.MachineProgramId?.ToString() ?? "")"
+                                    @onchange="e => { s.MachineProgramId = int.TryParse(e.Value?.ToString(), out var pid) ? pid : null; _ = UpdateStage(s); }">
+                                <option value="">None</option>
+                                @if (_programs != null)
+                                {
+                                    @foreach (var p in _programs.Where(p => p.Status == ProgramStatus.Active || p.Id == s.MachineProgramId))
+                                    {
+                                        <option value="@p.Id">@p.ProgramNumber — @p.Name (v@(p.Version))</option>
                                     }
                                 }
                             </select>

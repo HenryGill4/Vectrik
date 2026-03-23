@@ -1640,6 +1640,12 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<double?>("ActualAverageDurationMinutes")
+                        .HasColumnType("REAL");
+
+                    b.Property<int?>("ActualSampleCount")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1653,6 +1659,10 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EstimateSource")
+                        .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("FixtureRequired")
@@ -1711,6 +1721,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<string>("ToolingRequired")
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("TotalRunCount")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("Version")
                         .HasColumnType("INTEGER");
@@ -4119,6 +4132,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int?>("MachineId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("MachineProgramId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<decimal?>("MaterialCost")
                         .HasColumnType("decimal(10,2)");
 
@@ -4192,6 +4208,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("JobId");
 
                     b.HasIndex("MachineId");
+
+                    b.HasIndex("MachineProgramId");
 
                     b.HasIndex("OperatorUserId");
 
@@ -5823,6 +5841,11 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .WithMany()
                         .HasForeignKey("MachineId");
 
+                    b.HasOne("Opcentrix_V3.Models.MachineProgram", "MachineProgram")
+                        .WithMany()
+                        .HasForeignKey("MachineProgramId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Opcentrix_V3.Models.User", "Operator")
                         .WithMany()
                         .HasForeignKey("OperatorUserId");
@@ -5848,6 +5871,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Job");
 
                     b.Navigation("Machine");
+
+                    b.Navigation("MachineProgram");
 
                     b.Navigation("Operator");
 

@@ -367,4 +367,157 @@ public class BuildPlanningServiceTests : IDisposable
 
         Assert.Equal(printExec.ScheduledEndAt, depowderExec.ScheduledStartAt);
     }
+
+    // ══════════════════════════════════════════════════════════
+    // MachineProgramId stamping on StageExecutions
+    // ══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Seeds a build with a ProcessStage linked to a MachineProgram, returns IDs for assertions.
+    /// </summary>
+    private async Task<(int PackageId, int ProgramId, int SlsMachineId)> SeedBuildWithProgramAsync()
+    {
+        // Machine
+        var machine = new Machine
+        {
+            MachineId = "CNC-1",
+            Name = "CNC Mill #1",
+            MachineType = "CNC",
+            IsActive = true,
+            IsAvailableForScheduling = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.Machines.Add(machine);
+        await _db.SaveChangesAsync();
+
+        // Production stage
+        var prodStage = new ProductionStage
+        {
+            Name = "CNC Milling",
+            StageSlug = "cnc-milling",
+            DisplayOrder = 1,
+            DefaultMachineId = machine.MachineId,
+            IsActive = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.ProductionStages.Add(prodStage);
+        await _db.SaveChangesAsync();
+
+        // Part
+        var part = new Part
+        {
+            PartNumber = "PROG-001",
+            Name = "Program Test Part",
+            Material = "Al-6061"
+        };
+        _db.Parts.Add(part);
+        await _db.SaveChangesAsync();
+
+        // Manufacturing process with one build-level stage
+        var process = new ManufacturingProcess
+        {
+            PartId = part.Id,
+            Name = "CNC Process",
+            IsActive = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.ManufacturingProcesses.Add(process);
+        await _db.SaveChangesAsync();
+
+        var processStage = new ProcessStage
+        {
+            ManufacturingProcessId = process.Id,
+            ProductionStageId = prodStage.Id,
+            ExecutionOrder = 1,
+            ProcessingLevel = ProcessingLevel.Build,
+            DurationFromBuildConfig = false,
+            RunDurationMode = DurationMode.PerBuild,
+            RunTimeMinutes = 45,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.ProcessStages.Add(processStage);
+        await _db.SaveChangesAsync();
+
+        // MachineProgram linked to the process stage
+        var program = new MachineProgram
+        {
+            PartId = part.Id,
+            MachineId = machine.Id,
+            ProcessStageId = processStage.Id,
+            ProgramNumber = "P-1001",
+            Name = "Mill Op1",
+            Version = 1,
+            Status = ProgramStatus.Active,
+            RunTimeMinutes = 42,
+            SetupTimeMinutes = 5,
+            IsActive = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.MachinePrograms.Add(program);
+        await _db.SaveChangesAsync();
+
+        // Link the process stage to the program
+        processStage.MachineProgramId = program.Id;
+        await _db.SaveChangesAsync();
+
+        // Build package
+        var package = new BuildPackage
+        {
+            Name = "Build-Prog-001",
+            MachineId = machine.Id,
+            ScheduledDate = BaseDate,
+            EstimatedDurationHours = 1,
+            Status = BuildPackageStatus.Scheduled,
+            IsSlicerDataEntered = true,
+            IsLocked = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.BuildPackages.Add(package);
+        await _db.SaveChangesAsync();
+
+        _db.BuildPackageParts.Add(new BuildPackagePart
+        {
+            BuildPackageId = package.Id,
+            PartId = part.Id,
+            Quantity = 1
+        });
+        await _db.SaveChangesAsync();
+
+        return (package.Id, program.Id, machine.Id);
+    }
+
+    [Fact]
+    public async Task CreateBuildStageExecutions_StampsMachineProgramId_WhenProcessStageHasProgram()
+    {
+        // Arrange
+        var (packageId, programId, _) = await SeedBuildWithProgramAsync();
+        var sut = CreateSut();
+
+        // Act
+        var executions = await sut.CreateBuildStageExecutionsAsync(packageId, "test", startAfter: BaseDate);
+
+        // Assert: the execution should carry the program ID from the ProcessStage
+        Assert.Single(executions);
+        Assert.Equal(programId, executions[0].MachineProgramId);
+    }
+
+    [Fact]
+    public async Task CreateBuildStageExecutions_MachineProgramIdNull_WhenNoProgram()
+    {
+        // Arrange: use the shared-stage seed (no MachineProgram linked)
+        var (packageId, _, _, _) = await SeedBuildWithSharedStageAsync();
+        var sut = CreateSut();
+
+        // Act
+        var executions = await sut.CreateBuildStageExecutionsAsync(packageId, "test", startAfter: BaseDate);
+
+        // Assert: no program linked → MachineProgramId stays null
+        Assert.All(executions, e => Assert.Null(e.MachineProgramId));
+    }
 }

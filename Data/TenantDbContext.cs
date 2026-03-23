@@ -978,6 +978,15 @@ public class TenantDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
+        // StageExecution — MachineProgram FK (records which program version was used)
+        modelBuilder.Entity<StageExecution>(entity =>
+        {
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany()
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
         // StageCostProfile — 1:1 with ProductionStage
         modelBuilder.Entity<StageCostProfile>(entity =>
         {

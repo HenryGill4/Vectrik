@@ -76,6 +76,25 @@ public class MachineProgramService : IMachineProgramService
             .FirstOrDefaultAsync(p => p.ProcessStageId == processStageId && p.Status == ProgramStatus.Active);
     }
 
+    public async Task<List<MachineProgram>> GetActiveProgramsAsync(int? partId = null, int? machineId = null, int? processStageId = null)
+    {
+        var query = _db.MachinePrograms
+            .Include(p => p.Part)
+            .Include(p => p.Machine)
+            .Include(p => p.ProcessStage)
+                .ThenInclude(ps => ps!.ProductionStage)
+            .Where(p => p.Status == ProgramStatus.Active);
+
+        if (partId.HasValue)
+            query = query.Where(p => p.PartId == partId.Value);
+        if (machineId.HasValue)
+            query = query.Where(p => p.MachineId == machineId.Value);
+        if (processStageId.HasValue)
+            query = query.Where(p => p.ProcessStageId == processStageId.Value);
+
+        return await query.OrderBy(p => p.ProgramNumber).ToListAsync();
+    }
+
     public async Task<MachineProgram> CreateAsync(MachineProgram program, string createdBy)
     {
         ArgumentNullException.ThrowIfNull(program);

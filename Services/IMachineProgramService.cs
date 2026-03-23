@@ -10,6 +10,13 @@ public interface IMachineProgramService
     Task<List<MachineProgram>> GetProgramsForPartAsync(int partId);
     Task<List<MachineProgram>> GetProgramsForMachineAsync(int machineId);
     Task<MachineProgram?> GetProgramForStageAsync(int processStageId);
+
+    /// <summary>
+    /// Returns active programs that match a specific part and optionally a specific machine.
+    /// Used by scheduling pipeline to resolve the best program for a stage execution.
+    /// </summary>
+    Task<List<MachineProgram>> GetActiveProgramsAsync(int? partId = null, int? machineId = null, int? processStageId = null);
+
     Task<MachineProgram> CreateAsync(MachineProgram program, string createdBy);
     Task UpdateAsync(MachineProgram program, string modifiedBy);
     Task DeleteAsync(int id);

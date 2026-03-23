@@ -102,4 +102,40 @@ public class LearningService : ILearningService
 
         await _db.SaveChangesAsync();
     }
+
+    public async Task UpdateMachineProgramEstimateAsync(int machineProgramId, double actualDurationMinutes)
+    {
+        var program = await _db.MachinePrograms.FindAsync(machineProgramId);
+        if (program is null) return;
+
+        var alpha = await GetAlphaAsync();
+        var autoSwitchThreshold = await GetAutoSwitchThresholdAsync();
+
+        var sampleCount = program.ActualSampleCount ?? 0;
+        sampleCount++;
+
+        // EMA calculation: newAvg = α * actual + (1 - α) * previousAvg
+        if (program.ActualAverageDurationMinutes.HasValue)
+        {
+            program.ActualAverageDurationMinutes =
+                alpha * actualDurationMinutes + (1 - alpha) * program.ActualAverageDurationMinutes.Value;
+        }
+        else
+        {
+            program.ActualAverageDurationMinutes = actualDurationMinutes;
+        }
+
+        program.ActualSampleCount = sampleCount;
+        program.TotalRunCount++;
+
+        // Auto-switch to "Auto" after enough samples
+        if (sampleCount >= autoSwitchThreshold && program.EstimateSource != "Auto")
+        {
+            program.EstimateSource = "Auto";
+        }
+
+        program.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
 }

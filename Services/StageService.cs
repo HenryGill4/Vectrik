@@ -249,6 +249,20 @@ public class StageService : IStageService
             }
         }
 
+        // Update EMA estimate on the MachineProgram if linked
+        if (execution.MachineProgramId.HasValue && execution.ActualHours.HasValue)
+        {
+            try
+            {
+                var actualMinutes = execution.ActualHours.Value * 60.0;
+                await _learning.UpdateMachineProgramEstimateAsync(execution.MachineProgramId.Value, actualMinutes);
+            }
+            catch
+            {
+                // EMA update is non-critical — don't fail the completion
+            }
+        }
+
         // Check if this build-level stage triggers plate release
         if (execution.BuildPackageId.HasValue)
         {

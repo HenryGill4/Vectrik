@@ -206,12 +206,37 @@ public class ManufacturingProcessService : IManufacturingProcessService
                 $"{ema:F0}min EMA ({stage.ActualSampleCount} samples)");
         }
 
+        // Prefer linked MachineProgram durations when program is Active and has times configured
+        if (stage.MachineProgram is { Status: ProgramStatus.Active })
+        {
+            var prog = stage.MachineProgram;
+
+            // If the program has its own EMA data, prefer that
+            if (prog.EstimateSource == "Auto" && prog.ActualAverageDurationMinutes.HasValue)
+            {
+                var ema = prog.ActualAverageDurationMinutes.Value;
+                return new DurationResult(
+                    prog.SetupTimeMinutes ?? 0, ema, (prog.SetupTimeMinutes ?? 0) + ema,
+                    $"{ema:F0}min program EMA ({prog.ActualSampleCount} samples)");
+            }
+
+            // Fall back to program's configured durations (CycleTime > RunTime)
+            var progRun = prog.CycleTimeMinutes ?? prog.RunTimeMinutes;
+            if (progRun.HasValue)
+            {
+                double progSetup = prog.SetupTimeMinutes ?? 0;
+                double total = progSetup + progRun.Value;
+                return new DurationResult(progSetup, progRun.Value, total,
+                    $"Program {prog.ProgramNumber} v{prog.Version}: {progSetup:F0}m setup + {progRun.Value:F0}m run");
+            }
+        }
+
         double setupMinutes = CalculateModeMinutes(stage.SetupDurationMode, stage.SetupTimeMinutes ?? 0, partCount, batchCount);
         double runMinutes = CalculateModeMinutes(stage.RunDurationMode, stage.RunTimeMinutes ?? 0, partCount, batchCount);
-        double total = setupMinutes + runMinutes;
+        double total2 = setupMinutes + runMinutes;
 
         var breakdown = BuildBreakdownString(stage, setupMinutes, runMinutes, partCount, batchCount);
-        return new DurationResult(setupMinutes, runMinutes, total, breakdown);
+        return new DurationResult(setupMinutes, runMinutes, total2, breakdown);
     }
 
     public async Task<ManufacturingProcess> CloneProcessAsync(int sourceProcessId, int targetPartId, string createdBy)

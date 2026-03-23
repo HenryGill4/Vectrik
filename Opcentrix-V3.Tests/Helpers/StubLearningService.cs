@@ -11,4 +11,6 @@ internal sealed class StubLearningService : ILearningService
         => Task.CompletedTask;
     public Task UpdateProcessStageEstimateAsync(int processStageId, double actualDurationMinutes)
         => Task.CompletedTask;
+    public Task UpdateMachineProgramEstimateAsync(int machineProgramId, double actualDurationMinutes)
+        => Task.CompletedTask;
 }

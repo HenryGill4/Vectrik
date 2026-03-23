@@ -105,6 +105,12 @@ public class StageExecution
     /// </summary>
     public int? ProcessStageId { get; set; }
 
+    /// <summary>
+    /// FK to MachineProgram — records which program version was used for this execution.
+    /// Enables tracking of program performance across runs and learning feedback.
+    /// </summary>
+    public int? MachineProgramId { get; set; }
+
     // Audit
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
@@ -129,4 +135,5 @@ public class StageExecution
 
     public virtual ProductionBatch? ProductionBatch { get; set; }
     public virtual ProcessStage? ProcessStage { get; set; }
+    public virtual MachineProgram? MachineProgram { get; set; }
 }

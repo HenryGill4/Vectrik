@@ -102,20 +102,14 @@
                     </NavSection>
                 }
 
-                @* ──────────── PARTS & SETUP ──────────── *@
-                @if (SectionVisible("parts", "Parts Library", "Production Stages", "Machine Programs", "Materials", "Approaches", "Work Instructions", "Custom Fields"))
+                @* ──────────── ENGINEERING ──────────── *@
+                @if (SectionVisible("engineering", "Parts Library", "Machine Programs", "Work Instructions", "Approaches", "Production Stages", "Materials", "Custom Fields"))
                 {
-                    <NavSection @ref="_sectionRefs[SectionId.PartsSetup]" Title="Parts & Setup" SectionKey="parts">
+                    <NavSection @ref="_sectionRefs[SectionId.Engineering]" Title="Engineering" SectionKey="engineering">
                         @if (ItemVisible("Parts Library"))
                         {
                             <NavLink class="nav-item" href="parts">
                                 <span class="nav-icon">🔩</span> Parts Library
-                            </NavLink>
-                        }
-                        @if (ItemVisible("Production Stages"))
-                        {
-                            <NavLink class="nav-item" href="admin/stages">
-                                <span class="nav-icon">📋</span> Production Stages
                             </NavLink>
                         }
                         @if (ItemVisible("Machine Programs"))
@@ -124,10 +118,10 @@
                                 <span class="nav-icon">📄</span> Machine Programs
                             </NavLink>
                         }
-                        @if (ItemVisible("Materials"))
+                        @if (ItemVisible("Work Instructions"))
                         {
-                            <NavLink class="nav-item" href="admin/materials">
-                                <span class="nav-icon">🧪</span> Materials
+                            <NavLink class="nav-item" href="admin/work-instructions">
+                                <span class="nav-icon">📖</span> Work Instructions
                             </NavLink>
                         }
                         @if (ItemVisible("Approaches"))
@@ -136,10 +130,16 @@
                                 <span class="nav-icon">🏭</span> Approaches
                             </NavLink>
                         }
-                        @if (isAdmin && ItemVisible("Work Instructions"))
+                        @if (ItemVisible("Production Stages"))
                         {
-                            <NavLink class="nav-item nav-item-admin" href="admin/work-instructions">
-                                <span class="nav-icon">📋</span> Work Instructions
+                            <NavLink class="nav-item" href="admin/stages">
+                                <span class="nav-icon">📋</span> Production Stages
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Materials"))
+                        {
+                            <NavLink class="nav-item" href="admin/materials">
+                                <span class="nav-icon">🧪</span> Materials
                             </NavLink>
                         }
                         @if (isAdmin && ItemVisible("Custom Fields"))
@@ -235,13 +235,19 @@
                 }
 
                 @* ──────────── MACHINES ──────────── *@
-                @if (SectionVisible("machines", "Machines", "Maintenance Alerts", "Maintenance Work Orders", "Maintenance Rules"))
+                @if (SectionVisible("machines", "Machines", "Machine Programs", "Maintenance Alerts", "Maintenance Work Orders", "Maintenance Rules"))
                 {
                     <NavSection @ref="_sectionRefs[SectionId.Machines]" Title="Machines" SectionKey="machines">
                         @if (ItemVisible("Machines"))
                         {
                             <NavLink class="nav-item" href="machines">
                                 <span class="nav-icon">🖥️</span> Machines
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Machine Programs"))
+                        {
+                            <NavLink class="nav-item" href="programs">
+                                <span class="nav-icon">📄</span> Programs
                             </NavLink>
                         }
                         @if (Features.IsEnabled("module.maintenance"))
@@ -470,13 +476,13 @@
         ("production", SectionId.Production),
         ("admin/operation-costs", SectionId.Production),
         ("admin/workflows", SectionId.Production),
-        ("parts", SectionId.PartsSetup),
-        ("programs", SectionId.PartsSetup),
-        ("admin/stages", SectionId.PartsSetup),
-        ("admin/materials", SectionId.PartsSetup),
-        ("admin/manufacturing", SectionId.PartsSetup),
-        ("admin/work-instructions", SectionId.PartsSetup),
-        ("admin/custom-fields", SectionId.PartsSetup),
+        ("parts", SectionId.Engineering),
+        ("programs", SectionId.Engineering),
+        ("admin/stages", SectionId.Engineering),
+        ("admin/materials", SectionId.Engineering),
+        ("admin/manufacturing", SectionId.Engineering),
+        ("admin/work-instructions", SectionId.Engineering),
+        ("admin/custom-fields", SectionId.Engineering),
         ("shopfloor", SectionId.ShopFloor),
         ("tracking", SectionId.Visibility),
         ("analytics", SectionId.Visibility),
@@ -501,7 +507,7 @@
     private enum SectionId
     {
         Production,
-        PartsSetup,
+        Engineering,
         ShopFloor,
         Visibility,
         Machines,

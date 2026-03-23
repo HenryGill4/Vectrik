@@ -86,6 +86,25 @@ public class MachineProgram
 
     public bool IsActive { get; set; } = true;
 
+    // ── Learning / EMA ───────────────────────────────────────
+    /// <summary>
+    /// Exponential Moving Average of actual run duration across all executions using this program.
+    /// </summary>
+    public double? ActualAverageDurationMinutes { get; set; }
+
+    public int? ActualSampleCount { get; set; }
+
+    /// <summary>
+    /// "Manual" (user-entered times) or "Auto" (EMA-learned from actual runs).
+    /// </summary>
+    [MaxLength(50)]
+    public string? EstimateSource { get; set; }
+
+    /// <summary>
+    /// Total number of completed runs that used this program version.
+    /// </summary>
+    public int TotalRunCount { get; set; }
+
     // ── Audit ────────────────────────────────────────────────
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
