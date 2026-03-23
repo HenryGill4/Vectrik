@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Opcentrix_V3.Data;
 using Opcentrix_V3.Models;
 using Opcentrix_V3.Models.Enums;
+using Opcentrix_V3.Models.Maintenance;
 using Opcentrix_V3.Services;
 using Opcentrix_V3.Tests.Helpers;
 
@@ -1112,5 +1113,243 @@ public class StageServiceTests : IDisposable
         var result = start.Date;
         while (result.DayOfWeek != day) result = result.AddDays(1);
         return result;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // Tooling Blocking (Program → Component wear life)
+    // ══════════════════════════════════════════════════════════
+
+    private async Task<MachineProgram> SeedMachineProgramAsync(string number = "CNC-001")
+    {
+        var program = new MachineProgram
+        {
+            ProgramNumber = number,
+            Name = "Test Program",
+            Status = ProgramStatus.Active,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.MachinePrograms.Add(program);
+        await _db.SaveChangesAsync();
+        return program;
+    }
+
+    private async Task<MachineComponent> SeedComponentAsync(
+        string machineId = "SLS-001",
+        double? currentHours = null,
+        int? currentBuilds = null)
+    {
+        var component = new MachineComponent
+        {
+            MachineId = machineId,
+            Name = "Test Component",
+            CurrentHours = currentHours,
+            CurrentBuilds = currentBuilds,
+            IsActive = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.MachineComponents.Add(component);
+        await _db.SaveChangesAsync();
+        return component;
+    }
+
+    [Fact]
+    public async Task StartStageExecutionAsync_WhenToolingWearExceeded_ThrowsAndBlocksStart()
+    {
+        var stage = await SeedStageAsync();
+        var program = await SeedMachineProgramAsync();
+
+        // Component has 120 hours — exceeds 100h wear life
+        var component = await SeedComponentAsync(currentHours: 120);
+
+        _db.ProgramToolingItems.Add(new ProgramToolingItem
+        {
+            MachineProgramId = program.Id,
+            ToolPosition = "T1",
+            Name = "6mm End Mill",
+            MachineComponentId = component.Id,
+            WearLifeHours = 100,
+            IsActive = true,
+            CreatedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        var exec = await SeedExecutionAsync(stage.Id);
+        exec.MachineProgramId = program.Id;
+        await _db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.StartStageExecutionAsync(exec.Id, 1, "Op"));
+
+        Assert.Contains("tooling components require maintenance", ex.Message);
+        Assert.Contains("T1", ex.Message);
+
+        // Verify execution was NOT started
+        var unchanged = await _db.StageExecutions.FindAsync(exec.Id);
+        Assert.Equal(StageExecutionStatus.NotStarted, unchanged!.Status);
+    }
+
+    [Fact]
+    public async Task StartStageExecutionAsync_WhenCriticalMaintenanceRuleOverdue_ThrowsAndBlocksStart()
+    {
+        var stage = await SeedStageAsync();
+        var program = await SeedMachineProgramAsync();
+
+        // Component at 600 hours, critical rule triggers at 500 hours
+        var component = await SeedComponentAsync(currentHours: 600);
+
+        _db.MaintenanceRules.Add(new MaintenanceRule
+        {
+            MachineComponentId = component.Id,
+            Name = "Spindle Replacement",
+            TriggerType = MaintenanceTriggerType.HoursRun,
+            ThresholdValue = 500,
+            Severity = MaintenanceSeverity.Critical,
+            IsActive = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        _db.ProgramToolingItems.Add(new ProgramToolingItem
+        {
+            MachineProgramId = program.Id,
+            ToolPosition = "T2",
+            Name = "Spindle Holder",
+            MachineComponentId = component.Id,
+            // No wear life configured — blocking comes from maintenance rule
+            IsActive = true,
+            CreatedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        var exec = await SeedExecutionAsync(stage.Id);
+        exec.MachineProgramId = program.Id;
+        await _db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.StartStageExecutionAsync(exec.Id, 1, "Op"));
+
+        Assert.Contains("tooling components require maintenance", ex.Message);
+        Assert.Contains("Spindle Replacement", ex.Message);
+    }
+
+    [Fact]
+    public async Task StartStageExecutionAsync_WhenToolingWithinLimits_Succeeds()
+    {
+        var stage = await SeedStageAsync();
+        var program = await SeedMachineProgramAsync();
+
+        // Component at 50 hours — well within 100h wear life
+        var component = await SeedComponentAsync(currentHours: 50);
+
+        _db.ProgramToolingItems.Add(new ProgramToolingItem
+        {
+            MachineProgramId = program.Id,
+            ToolPosition = "T1",
+            Name = "6mm End Mill",
+            MachineComponentId = component.Id,
+            WearLifeHours = 100,
+            IsActive = true,
+            CreatedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        var exec = await SeedExecutionAsync(stage.Id);
+        exec.MachineProgramId = program.Id;
+        await _db.SaveChangesAsync();
+
+        var result = await _sut.StartStageExecutionAsync(exec.Id, 1, "Operator");
+
+        Assert.Equal(StageExecutionStatus.InProgress, result.Status);
+    }
+
+    [Fact]
+    public async Task StartStageExecutionAsync_WhenNoProgramLinked_SkipsToolingCheck()
+    {
+        var stage = await SeedStageAsync();
+        var exec = await SeedExecutionAsync(stage.Id);
+
+        // No MachineProgramId set — should start without tooling check
+        var result = await _sut.StartStageExecutionAsync(exec.Id, 1, "Operator");
+
+        Assert.Equal(StageExecutionStatus.InProgress, result.Status);
+    }
+
+    [Fact]
+    public async Task StartStageExecutionAsync_WhenToolingBuildWearExceeded_ThrowsAndBlocksStart()
+    {
+        var stage = await SeedStageAsync();
+        var program = await SeedMachineProgramAsync();
+
+        // Component has 110 builds — exceeds 100-build wear life
+        var component = await SeedComponentAsync(currentBuilds: 110);
+
+        _db.ProgramToolingItems.Add(new ProgramToolingItem
+        {
+            MachineProgramId = program.Id,
+            ToolPosition = "FIX-01",
+            Name = "Build Plate Fixture",
+            MachineComponentId = component.Id,
+            WearLifeBuilds = 100,
+            IsFixture = true,
+            IsActive = true,
+            CreatedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        var exec = await SeedExecutionAsync(stage.Id);
+        exec.MachineProgramId = program.Id;
+        await _db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.StartStageExecutionAsync(exec.Id, 1, "Op"));
+
+        Assert.Contains("tooling components require maintenance", ex.Message);
+        Assert.Contains("FIX-01", ex.Message);
+    }
+
+    [Fact]
+    public async Task StartStageExecutionAsync_WhenWarningRuleNotCritical_DoesNotBlock()
+    {
+        var stage = await SeedStageAsync();
+        var program = await SeedMachineProgramAsync();
+
+        // Component at 600 hours with Warning-severity rule at 500 hours
+        var component = await SeedComponentAsync(currentHours: 600);
+
+        _db.MaintenanceRules.Add(new MaintenanceRule
+        {
+            MachineComponentId = component.Id,
+            Name = "Coolant Check",
+            TriggerType = MaintenanceTriggerType.HoursRun,
+            ThresholdValue = 500,
+            Severity = MaintenanceSeverity.Warning, // Not Critical — should not block
+            IsActive = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        _db.ProgramToolingItems.Add(new ProgramToolingItem
+        {
+            MachineProgramId = program.Id,
+            ToolPosition = "T3",
+            Name = "Coolant Nozzle",
+            MachineComponentId = component.Id,
+            IsActive = true,
+            CreatedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        var exec = await SeedExecutionAsync(stage.Id);
+        exec.MachineProgramId = program.Id;
+        await _db.SaveChangesAsync();
+
+        // Warning-severity rule should not block — only Critical blocks
+        var result = await _sut.StartStageExecutionAsync(exec.Id, 1, "Operator");
+
+        Assert.Equal(StageExecutionStatus.InProgress, result.Status);
     }
 }

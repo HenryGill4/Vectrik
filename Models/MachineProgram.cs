@@ -120,6 +120,9 @@ public class MachineProgram
     public virtual Machine? Machine { get; set; }
     public virtual ProcessStage? ProcessStage { get; set; }
     public virtual ICollection<MachineProgramFile> Files { get; set; } = new List<MachineProgramFile>();
+    public virtual ICollection<ProgramToolingItem> ToolingItems { get; set; } = new List<ProgramToolingItem>();
+    public virtual ICollection<ProgramFeedback> Feedbacks { get; set; } = new List<ProgramFeedback>();
+    public virtual ICollection<MachineProgramAssignment> MachineAssignments { get; set; } = new List<MachineProgramAssignment>();
 
     // ── Computed ─────────────────────────────────────────────
     [NotMapped]

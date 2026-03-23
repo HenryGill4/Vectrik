@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Opcentrix_V3.Data;
 using Opcentrix_V3.Models;
 using Opcentrix_V3.Models.Enums;
+using Opcentrix_V3.Models.Maintenance;
 
 namespace Opcentrix_V3.Services;
 
@@ -95,6 +96,7 @@ public class StageService : IStageService
                 .ThenInclude(j => j!.Machine)
             .Include(e => e.Operator)
             .Include(e => e.Machine)
+            .Include(e => e.MachineProgram)
             .Where(e => e.ProductionStageId == stageId
                 && (e.Status == StageExecutionStatus.InProgress || e.Status == StageExecutionStatus.Paused))
             .OrderBy(e => e.StartedAt)
@@ -122,6 +124,18 @@ public class StageService : IStageService
             .Include(e => e.Machine)
             .FirstOrDefaultAsync(e => e.Id == executionId);
         if (execution == null) throw new InvalidOperationException("Stage execution not found.");
+
+        // Check tooling readiness when a MachineProgram is linked
+        if (execution.MachineProgramId.HasValue)
+        {
+            var blockingAlerts = await GetBlockingToolingAlertsAsync(execution.MachineProgramId.Value);
+            if (blockingAlerts.Count > 0)
+            {
+                var messages = string.Join("; ", blockingAlerts.Select(a => a.Message));
+                throw new InvalidOperationException(
+                    $"Cannot start: tooling components require maintenance. {messages}");
+            }
+        }
 
         execution.Status = StageExecutionStatus.InProgress;
         execution.StartedAt = DateTime.UtcNow;
@@ -787,5 +801,55 @@ public class StageService : IStageService
         execution.LastModifiedDate = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+    }
+
+    // ── Tooling readiness (private) ─────────────────────────────
+
+    private record ToolingBlockingAlert(string Message);
+
+    private async Task<List<ToolingBlockingAlert>> GetBlockingToolingAlertsAsync(int machineProgramId)
+    {
+        var alerts = new List<ToolingBlockingAlert>();
+
+        var toolingItems = await _db.ProgramToolingItems
+            .Include(t => t.MachineComponent)
+                .ThenInclude(c => c!.MaintenanceRules)
+            .Where(t => t.MachineProgramId == machineProgramId && t.IsActive && t.MachineComponentId.HasValue)
+            .ToListAsync();
+
+        foreach (var item in toolingItems)
+        {
+            var component = item.MachineComponent;
+            if (component is null || !component.IsActive) continue;
+
+            // Check wear life exceeded
+            var wearPercent = item.WearPercent;
+            if (wearPercent.HasValue && wearPercent.Value >= 100)
+            {
+                alerts.Add(new ToolingBlockingAlert(
+                    $"{item.ToolPosition} ({item.Name}): component '{component.Name}' has exceeded wear life ({wearPercent.Value:F0}%)."));
+                continue;
+            }
+
+            // Check critical maintenance rules that are overdue
+            foreach (var rule in component.MaintenanceRules.Where(r => r.IsActive && r.Severity == MaintenanceSeverity.Critical))
+            {
+                double currentValue = rule.TriggerType switch
+                {
+                    MaintenanceTriggerType.HoursRun => component.CurrentHours ?? 0,
+                    MaintenanceTriggerType.BuildsCompleted => component.CurrentBuilds ?? 0,
+                    _ => 0
+                };
+
+                var rulePercent = rule.ThresholdValue > 0 ? (currentValue / rule.ThresholdValue) * 100 : 0;
+                if (rulePercent >= 100)
+                {
+                    alerts.Add(new ToolingBlockingAlert(
+                        $"{item.ToolPosition} ({item.Name}): critical maintenance rule '{rule.Name}' overdue for component '{component.Name}'."));
+                }
+            }
+        }
+
+        return alerts;
     }
 }

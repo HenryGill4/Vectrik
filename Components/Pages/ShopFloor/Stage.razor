@@ -1,8 +1,10 @@
 @page "/shopfloor/stage/{Slug}"
 @inject IStageService StageService
+@inject IMachineProgramService ProgramService
 @inject ToastService Toast
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
+@using Opcentrix_V3.Models.Enums
 
 <PageTitle>@(_stage?.Name ?? "Shop Floor") - OpCentrix</PageTitle>
 
@@ -76,8 +78,14 @@ else
                             }
                         }
                     </div>
+                    @if (exec.MachineProgramId.HasValue && exec.MachineProgram != null)
+                    {
+                        <div style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 8px;">
+                            📄 Program: <strong>@exec.MachineProgram.ProgramNumber</strong> — @exec.MachineProgram.Name
+                        </div>
+                    }
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-success" @onclick="() => CompleteWork(exec.Id)" disabled="@_actionInProgress">Complete</button>
+                        <button class="btn btn-success" @onclick="() => ShowCompleteModal(exec)" disabled="@_actionInProgress">Complete</button>
                         <button class="btn btn-danger btn-sm" @onclick="() => FailWork(exec.Id)" disabled="@_actionInProgress">Fail</button>
                     </div>
                 </div>
@@ -107,6 +115,84 @@ else
     }
 }
 
+@* ═══════════════════════════════════════════════════════════════
+   COMPLETION + FEEDBACK MODAL
+   ═══════════════════════════════════════════════════════════════ *@
+@if (_showCompleteModal && _completingExecution != null)
+{
+    <div class="modal-overlay" @onclick="CloseCompleteModal">
+        <div class="modal-content" style="max-width: 520px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>✅ Complete Stage</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="CloseCompleteModal">✕</button>
+            </div>
+
+            <div style="margin-bottom: 12px;">
+                <div style="font-size: 0.9em;">Job #@_completingExecution.JobId — @_completingExecution.Job?.Part?.PartNumber</div>
+                @if (_completingExecution.MachineProgramId.HasValue && _completingExecution.MachineProgram != null)
+                {
+                    <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 4px;">
+                        📄 Program: <strong>@_completingExecution.MachineProgram.ProgramNumber</strong> v@_completingExecution.MachineProgram.Version
+                    </div>
+                }
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Completion Notes (optional)</label>
+                <textarea class="form-control" rows="2" @bind="_completionNotes" placeholder="Any notes about this run…"></textarea>
+            </div>
+
+            @if (_completingExecution.MachineProgramId.HasValue)
+            {
+                <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; margin-top: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <label style="margin: 0; font-weight: 600;">💬 Program Feedback</label>
+                        <span style="font-size: 0.8em; color: var(--text-muted);">(optional — helps engineers improve this program)</span>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label">Category</label>
+                            <select class="form-control" @bind="_feedbackCategory">
+                                <option value="">— No feedback —</option>
+                                @foreach (var c in Enum.GetValues<ProgramFeedbackCategory>())
+                                {
+                                    <option value="@c">@c</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label">Severity</label>
+                            <select class="form-control" @bind="_feedbackSeverity">
+                                @foreach (var s in Enum.GetValues<ProgramFeedbackSeverity>())
+                                {
+                                    <option value="@s">@s</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_feedbackCategory))
+                    {
+                        <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+                            <label class="form-label">Comment <span style="color:var(--danger)">*</span></label>
+                            <textarea class="form-control" rows="2" @bind="_feedbackComment" placeholder="Describe the issue or suggestion…"></textarea>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="CloseCompleteModal">Cancel</button>
+                <button class="btn btn-success" @onclick="ConfirmComplete" disabled="@_actionInProgress">
+                    @if (_actionInProgress) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                    Complete Stage
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 <AuthorizeView>
     <Authorized>
         @{ _currentUserId = int.TryParse(context.User.FindFirst("UserId")?.Value, out var uid) ? uid : 0; _currentUserName = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "Operator"; }
@@ -121,6 +207,14 @@ else
     private int _currentUserId;
     private string _currentUserName = "";
     private bool _actionInProgress;
+
+    // Completion modal
+    private bool _showCompleteModal;
+    private StageExecution? _completingExecution;
+    private string? _completionNotes;
+    private string _feedbackCategory = "";
+    private ProgramFeedbackSeverity _feedbackSeverity = ProgramFeedbackSeverity.Low;
+    private string? _feedbackComment;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -155,14 +249,63 @@ else
         finally { _actionInProgress = false; }
     }
 
-    private async Task CompleteWork(int executionId)
+    private void ShowCompleteModal(StageExecution exec)
     {
-        if (_actionInProgress) return;
+        _completingExecution = exec;
+        _completionNotes = null;
+        _feedbackCategory = "";
+        _feedbackSeverity = ProgramFeedbackSeverity.Low;
+        _feedbackComment = null;
+        _showCompleteModal = true;
+    }
+
+    private void CloseCompleteModal()
+    {
+        _showCompleteModal = false;
+        _completingExecution = null;
+    }
+
+    private async Task ConfirmComplete()
+    {
+        if (_completingExecution == null || _actionInProgress) return;
+
+        // Validate feedback comment is provided when a category is selected
+        if (!string.IsNullOrEmpty(_feedbackCategory) && string.IsNullOrWhiteSpace(_feedbackComment))
+        {
+            Toast.ShowError("Please provide a comment for your feedback.");
+            return;
+        }
+
         _actionInProgress = true;
         try
         {
-            await StageService.CompleteStageExecutionAsync(executionId);
-            Toast.ShowSuccess("Stage completed");
+            await StageService.CompleteStageExecutionAsync(_completingExecution.Id, notes: _completionNotes);
+
+            // Submit program feedback if provided
+            if (!string.IsNullOrEmpty(_feedbackCategory)
+                && _completingExecution.MachineProgramId.HasValue
+                && Enum.TryParse<ProgramFeedbackCategory>(_feedbackCategory, out var category))
+            {
+                var feedback = new ProgramFeedback
+                {
+                    MachineProgramId = _completingExecution.MachineProgramId.Value,
+                    StageExecutionId = _completingExecution.Id,
+                    OperatorUserId = _currentUserId.ToString(),
+                    OperatorName = _currentUserName,
+                    Category = category,
+                    Severity = _feedbackSeverity,
+                    Comment = _feedbackComment!,
+                    SubmittedAt = DateTime.UtcNow
+                };
+                await ProgramService.SubmitFeedbackAsync(feedback);
+                Toast.ShowSuccess("Stage completed. Feedback submitted — thank you!");
+            }
+            else
+            {
+                Toast.ShowSuccess("Stage completed");
+            }
+
+            CloseCompleteModal();
             await LoadData();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }

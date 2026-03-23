@@ -517,6 +517,7 @@ else
                             <th>Name</th>
                             <th>Part</th>
                             <th>Status</th>
+                            <th>Preferred</th>
                             <th style="text-align: right;">Setup</th>
                             <th style="text-align: right;">Run/Part</th>
                             <th style="text-align: right;">Cycle</th>
@@ -526,6 +527,7 @@ else
                     <tbody>
                         @foreach (var prog in _machinePrograms)
                         {
+                            var assignment = prog.MachineAssignments?.FirstOrDefault(a => a.MachineId == _machine!.Id);
                             <tr>
                                 <td><a href="/programs" style="font-weight: 600; text-decoration: none; color: var(--primary);">@prog.ProgramNumber</a></td>
                                 <td>@prog.Name</td>
@@ -540,6 +542,20 @@ else
                                     }
                                 </td>
                                 <td><span class="badge badge-@prog.Status.ToString().ToLower()">@prog.Status</span></td>
+                                <td>
+                                    @if (assignment?.IsPreferred == true)
+                                    {
+                                        <span class="badge badge-success">★ Preferred</span>
+                                    }
+                                    else if (assignment != null)
+                                    {
+                                        <span style="color: var(--text-muted);">—</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-secondary" title="Legacy single-machine FK">Legacy</span>
+                                    }
+                                </td>
                                 <td style="text-align: right;">@(prog.SetupTimeMinutes?.ToString("F0") ?? "—") min</td>
                                 <td style="text-align: right;">@(prog.RunTimeMinutes?.ToString("F1") ?? "—") min</td>
                                 <td style="text-align: right;">@(prog.CycleTimeMinutes?.ToString("F1") ?? "—") min</td>

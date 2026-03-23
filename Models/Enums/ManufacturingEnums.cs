@@ -198,3 +198,14 @@ public enum JobScope { Build, Batch, Part }
 
 // Machine Programs
 public enum ProgramStatus { Draft, Active, Superseded, Archived }
+
+// Program Feedback (from operators on machine programs)
+public enum ProgramFeedbackCategory
+{
+    ToolingIssue, ParameterAdjustment, SafetyConcern, SetupDifficulty,
+    QualityIssue, CycleTimeDeviation, Suggestion, Other
+}
+
+public enum ProgramFeedbackSeverity { Low, Medium, High, Critical }
+
+public enum ProgramFeedbackStatus { New, Acknowledged, InReview, Resolved, WontFix }

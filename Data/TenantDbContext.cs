@@ -138,6 +138,9 @@ public class TenantDbContext : DbContext
     // Machine Programs
     public DbSet<MachineProgram> MachinePrograms { get; set; }
     public DbSet<MachineProgramFile> MachineProgramFiles { get; set; }
+    public DbSet<ProgramToolingItem> ProgramToolingItems { get; set; }
+    public DbSet<ProgramFeedback> ProgramFeedbacks { get; set; }
+    public DbSet<MachineProgramAssignment> MachineProgramAssignments { get; set; }
 
     // Operation Cost Profiles
     public DbSet<StageCostProfile> StageCostProfiles { get; set; }
@@ -967,6 +970,48 @@ public class TenantDbContext : DbContext
                 .WithMany(e => e.Files)
                 .HasForeignKey(e => e.MachineProgramId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ProgramToolingItem
+        modelBuilder.Entity<ProgramToolingItem>(entity =>
+        {
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany(e => e.ToolingItems)
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.MachineComponent)
+                .WithMany()
+                .HasForeignKey(e => e.MachineComponentId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => new { e.MachineProgramId, e.ToolPosition });
+        });
+
+        // ProgramFeedback
+        modelBuilder.Entity<ProgramFeedback>(entity =>
+        {
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany(e => e.Feedbacks)
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.StageExecution)
+                .WithMany()
+                .HasForeignKey(e => e.StageExecutionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => new { e.MachineProgramId, e.Status });
+        });
+
+        // MachineProgramAssignment (many-to-many join)
+        modelBuilder.Entity<MachineProgramAssignment>(entity =>
+        {
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany(e => e.MachineAssignments)
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Machine)
+                .WithMany(e => e.ProgramAssignments)
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.MachineProgramId, e.MachineId }).IsUnique();
         });
 
         // ProcessStage — MachineProgram FK
