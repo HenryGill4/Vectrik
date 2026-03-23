@@ -725,6 +725,32 @@ public class DataSeedingService : IDataSeedingService
             }
         }
 
+        // Ensure ALL additive machines are assigned to SLS/build-level stages.
+        // EnsureStageWorkstationsAsync only adds the DefaultMachineId, so additional
+        // SLS machines (e.g., M4-2) are missing from AssignedMachineIds.
+        var additiveMachineIds = machines
+            .Where(m => m.IsAdditiveMachine && m.IsActive)
+            .Select(m => m.Id)
+            .ToList();
+
+        if (additiveMachineIds.Count > 0)
+        {
+            foreach (var stage in stages.Where(s =>
+                s.Department?.Equals("SLS", StringComparison.OrdinalIgnoreCase) == true))
+            {
+                var existingIds = stage.GetAssignedMachineIntIds();
+                foreach (var mid in additiveMachineIds)
+                {
+                    if (!existingIds.Contains(mid))
+                    {
+                        existingIds.Add(mid);
+                        dirty = true;
+                    }
+                }
+                stage.AssignedMachineIds = string.Join(",", existingIds);
+            }
+        }
+
         if (dirty)
         {
             await db.SaveChangesAsync();

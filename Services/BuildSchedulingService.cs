@@ -148,134 +148,44 @@ public class BuildSchedulingService : IBuildSchedulingService
         return new BuildScheduleResult(slot, changeoverInfo, stageExecutions, report);
     }
 
+    /// <inheritdoc />
     public async Task<BuildScheduleResult> ScheduleBuildRunAsync(
         int buildPackageId, int machineId, DateTime? startAfter = null)
     {
-        var report = new ScheduleDiagnosticReport
-        {
-            Operation = "ScheduleBuildRun",
-            BuildPackageId = buildPackageId,
-            MachineId = machineId
-        };
-
-        var package = await _db.BuildPackages
+        var source = await _db.BuildPackages
             .Include(p => p.Parts)
-            .Include(p => p.BuildFileInfo)
-            .Include(p => p.BuildTemplate)
             .FirstOrDefaultAsync(p => p.Id == buildPackageId)
             ?? throw new InvalidOperationException("Build package not found.");
 
-        if (!package.IsSlicerDataEntered || !package.EstimatedDurationHours.HasValue)
+        if (!source.IsSlicerDataEntered || !source.EstimatedDurationHours.HasValue)
             throw new InvalidOperationException("Slicer data must be entered before scheduling a run.");
 
-        var machine = await _db.Machines.FindAsync(machineId)
-            ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
+        // Each run is a separate BuildPackage copy linked back to the source via
+        // SourceBuildPackageId, so the WO view can track runs and part quantities.
+        var copy = await _buildPlanning.CreateScheduledCopyAsync(buildPackageId, "Scheduler");
 
-        var durationHours = package.EstimatedDurationHours.Value;
-        var notBefore = startAfter ?? DateTime.UtcNow;
-
-        var slot = await FindEarliestBuildSlotAsync(machine.Id, durationHours, notBefore, buildPackageId);
-
-        ChangeoverAnalysis? changeoverInfo = null;
-        if (machine.AutoChangeoverEnabled)
-        {
-            changeoverInfo = await AnalyzeChangeoverAsync(machine.Id, slot.PrintEnd);
-        }
-
-        // Ensure the build package is marked as scheduled and locked
-#pragma warning disable CS0618 // Sliced is obsolete — needed for legacy packages
-        if (package.Status is BuildPackageStatus.Ready or BuildPackageStatus.Sliced)
-#pragma warning restore CS0618
-        {
-            package.Status = BuildPackageStatus.Scheduled;
-            package.IsLocked = true;
-            package.MachineId ??= machine.Id;
-        }
-        package.ScheduledDate ??= slot.PrintStart;
-        package.LastModifiedDate = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-
-        // Create build-level stage executions for this run (always new Job)
-        var stageExecutions = await _buildPlanning.CreateBuildStageExecutionsAsync(buildPackageId, "Scheduler", forceNewJob: true, startAfter: slot.PrintStart);
-
-        // Collect build slot diagnostic
-        var buildJob = stageExecutions.FirstOrDefault()?.JobId;
-        if (buildJob.HasValue)
-        {
-            report.BuildSlots.Add(new BuildSlotDiagnostic
-            {
-                JobId = buildJob.Value,
-                SlotStart = slot.PrintStart,
-                SlotEnd = slot.PrintEnd,
-                MachineId = machine.Id,
-                MachineName = machine.Name ?? machine.MachineId,
-                DurationHours = durationHours
-            });
-        }
-
-        // Per-part stage executions: start after the last build-level stage ends
-        var lastBuildStageEnd = stageExecutions
-            .Where(e => e.ScheduledEndAt.HasValue)
-            .MaxBy(e => e.ScheduledEndAt)?.ScheduledEndAt ?? slot.PrintEnd;
-
-        var partJobIds = await _buildPlanning.CreatePartStageExecutionsAsync(
-            buildPackageId, "Scheduler", lastBuildStageEnd, forceNewJobs: true);
-
-        // Auto-schedule each per-part job with diagnostics
-        var autoScheduled = 0;
-        foreach (var jobId in partJobIds)
-        {
-            try
-            {
-                var jobDiag = await _scheduling.AutoScheduleJobWithDiagnosticsAsync(jobId, lastBuildStageEnd);
-                report.Jobs.Add(jobDiag);
-                autoScheduled++;
-            }
-            catch (Exception ex)
-            {
-                report.Warnings.Add($"Job {jobId} failed to auto-schedule: {ex.Message}");
-            }
-        }
-
-        // Determine run number for revision note
-        var existingRunJobs = await _db.Jobs
-            .CountAsync(j => j.Scope == JobScope.Build
-                && j.Stages.Any(s => s.BuildPackageId == buildPackageId));
-
-        await _buildPlanning.CreateRevisionAsync(buildPackageId, "Scheduler",
-            $"Run #{existingRunJobs} on {machine.Name} starting {slot.PrintStart:g}; " +
-            $"{partJobIds.Count} per-part job(s) ({autoScheduled} auto-scheduled)");
-
-        // Detect changeover conflicts (cooldown chamber stacking)
-        if (machine.AutoChangeoverEnabled)
-        {
-            var lookAhead = slot.PrintEnd.AddDays(7);
-            var conflicts = await DetectChangeoverConflictsAsync(machine.Id, slot.PrintStart.AddDays(-1), lookAhead);
-            foreach (var conflict in conflicts)
-            {
-                report.Warnings.Add(conflict.Warning);
-            }
-        }
-
-        return new BuildScheduleResult(slot, changeoverInfo, stageExecutions, report);
+        return await ScheduleBuildAsync(copy.Id, machineId, startAfter);
     }
 
     /// <inheritdoc />
     public async Task<BuildScheduleResult> ScheduleBuildRunAutoMachineAsync(
         int buildPackageId, DateTime? startAfter = null)
     {
-        var package = await _db.BuildPackages
+        var source = await _db.BuildPackages
             .FirstOrDefaultAsync(p => p.Id == buildPackageId)
             ?? throw new InvalidOperationException("Build package not found.");
 
-        if (!package.IsSlicerDataEntered || !package.EstimatedDurationHours.HasValue)
+        if (!source.IsSlicerDataEntered || !source.EstimatedDurationHours.HasValue)
             throw new InvalidOperationException("Slicer data must be entered before scheduling a run.");
+
+        // Create a copy first so slot detection uses the copy's ID
+        var copy = await _buildPlanning.CreateScheduledCopyAsync(buildPackageId, "Scheduler");
 
         var notBefore = startAfter ?? DateTime.UtcNow;
         var bestSlot = await FindBestBuildSlotAsync(
-            package.EstimatedDurationHours.Value, notBefore, buildPackageId);
+            copy.EstimatedDurationHours!.Value, notBefore, copy.Id);
 
-        return await ScheduleBuildRunAsync(buildPackageId, bestSlot.MachineId, startAfter);
+        return await ScheduleBuildAsync(copy.Id, bestSlot.MachineId, startAfter);
     }
 
     public async Task<BuildScheduleSlot> FindEarliestBuildSlotAsync(
@@ -294,7 +204,6 @@ public class BuildSchedulingService : IBuildSchedulingService
         // Query build-level stage executions on this machine for collision detection.
         // Each ScheduleBuildRunAsync call creates a separate Job with its own StageExecution
         // rows, so this correctly detects ALL scheduled runs — not just a single BuildPackage row.
-        // Include BuildPackageId so we can skip changeover between same-build consecutive runs.
         var existingBuildExecutions = await _db.StageExecutions
             .Where(e => e.MachineId == machine.Id
                 && e.BuildPackageId != null
@@ -338,53 +247,6 @@ public class BuildSchedulingService : IBuildSchedulingService
 
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
 
-        // Resolve the "build family" for same-build detection: a scheduled copy shares a
-        // SourceBuildPackageId with other copies of the same build file. Runs created via
-        // ScheduleBuildRunAsync reuse the same BuildPackageId directly.
-        // Also: packages sharing the same BuildTemplateId are the same build file.
-        var sameBuildIds = new HashSet<int>();
-        if (forBuildPackageId.HasValue)
-        {
-            sameBuildIds.Add(forBuildPackageId.Value);
-
-            // If the incoming build is a copy, its siblings share the same source
-            var sourceBp = await _db.BuildPackages
-                .Where(bp => bp.Id == forBuildPackageId.Value)
-                .Select(bp => new { bp.SourceBuildPackageId, bp.BuildTemplateId })
-                .FirstOrDefaultAsync();
-
-            if (sourceBp?.SourceBuildPackageId.HasValue == true)
-            {
-                sameBuildIds.Add(sourceBp.SourceBuildPackageId.Value);
-                // Also include all other copies from the same source
-                var siblingIds = await _db.BuildPackages
-                    .Where(bp => bp.SourceBuildPackageId == sourceBp.SourceBuildPackageId)
-                    .Select(bp => bp.Id)
-                    .ToListAsync();
-                foreach (var id in siblingIds) sameBuildIds.Add(id);
-            }
-            else if (sourceBp != null)
-            {
-                // The incoming build IS the source — include all its copies
-                var copyIds = await _db.BuildPackages
-                    .Where(bp => bp.SourceBuildPackageId == forBuildPackageId.Value)
-                    .Select(bp => bp.Id)
-                    .ToListAsync();
-                foreach (var id in copyIds) sameBuildIds.Add(id);
-            }
-
-            // Also include packages sharing the same BuildTemplate (same slicer file)
-            if (sourceBp?.BuildTemplateId.HasValue == true)
-            {
-                var templateSiblingIds = await _db.BuildPackages
-                    .Where(bp => bp.BuildTemplateId == sourceBp.BuildTemplateId
-                        && bp.Status != BuildPackageStatus.Cancelled)
-                    .Select(bp => bp.Id)
-                    .ToListAsync();
-                foreach (var id in templateSiblingIds) sameBuildIds.Add(id);
-            }
-        }
-
         // Continuous machines start whenever ready; shift-bound machines snap to shift starts
         var candidateStart = isContinuous ? notBefore : SnapToNextShiftStart(notBefore, shifts);
         var candidateEnd = isContinuous
@@ -393,12 +255,9 @@ public class BuildSchedulingService : IBuildSchedulingService
 
         foreach (var block in blocks)
         {
-            // Same-build consecutive runs (same material, same plate layout) don't need
-            // changeover — the auto plate change system can swap identical plates immediately.
-            var needsChangeover = changeoverMinutes > 0
-                && !sameBuildIds.Contains(block.BuildPackageId);
-
-            var blockEnd = needsChangeover
+            // Always apply changeover between consecutive builds — even same-build runs
+            // need cool-down, powder extraction, and plate loading time.
+            var blockEnd = changeoverMinutes > 0
                 ? block.End.AddMinutes(changeoverMinutes)
                 : block.End;
 
@@ -406,7 +265,7 @@ public class BuildSchedulingService : IBuildSchedulingService
             if (candidateEnd <= block.Start)
                 break;
 
-            // Otherwise, try starting after this block (including changeover if needed)
+            // Otherwise, try starting after this block (including changeover)
             candidateStart = isContinuous ? blockEnd : SnapToNextShiftStart(blockEnd, shifts);
             candidateEnd = isContinuous
                 ? candidateStart.AddHours(durationHours)
@@ -1015,7 +874,8 @@ public class BuildSchedulingService : IBuildSchedulingService
                 if (shift.EndTime <= shift.StartTime)
                     shiftEnd = shiftEnd.AddDays(1);
 
-                if (from <= shiftEnd)
+                // Strict < because at exactly shiftEnd there are zero work hours remaining.
+                if (from < shiftEnd)
                     return from > shiftStart ? from : shiftStart;
             }
         }

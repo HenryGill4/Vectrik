@@ -30,8 +30,8 @@ public interface IBuildSchedulingService
 
     /// <summary>
     /// Find the best (earliest) slot across ALL available SLS machines.
-    /// Evaluates every active additive machine and returns the one that can start soonest.
-    /// Changeover is skipped when scheduling a same-build consecutive run.
+    /// Evaluates every active additive machine and returns the one that can start soonest,
+    /// including changeover time between consecutive builds.
     /// </summary>
     Task<BestBuildSlot> FindBestBuildSlotAsync(double durationHours, DateTime notBefore, int? forBuildPackageId = null);
 

@@ -633,6 +633,636 @@ public class SchedulingServiceTests : IDisposable
         await _sut.AutoScheduleJobAsync(job.Id);
     }
 
+    // ── Block Placement — Exact Time Assertions (24/7 mode) ──
+
+    // Fixed Monday for deterministic tests. No shifts = 24/7 continuous operation.
+    private static readonly DateTime Mon = new(2025, 7, 7, 0, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public async Task BlockPlacement_SingleStage_24x7_ExactStartAndEnd()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 4.0, machine.Id.ToString(), true);
+
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 4.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(8), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(8));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(Mon.AddHours(8), scheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(12), scheduled.ScheduledEndAt);
+        Assert.Equal(machine.Id, scheduled.MachineId);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_ThreeSequentialStages_EachStartsWhereLastEnds()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var s1 = await AddStageAsync("Stage A", "a", 2.0, machine.Id.ToString(), true);
+        var s2 = await AddStageAsync("Stage B", "b", 3.0, machine.Id.ToString(), true);
+        var s3 = await AddStageAsync("Stage C", "c", 1.5, machine.Id.ToString(), true);
+
+        var e1 = new StageExecution { ProductionStageId = s1.Id, EstimatedHours = 2.0 };
+        var e2 = new StageExecution { ProductionStageId = s2.Id, EstimatedHours = 3.0 };
+        var e3 = new StageExecution { ProductionStageId = s3.Id, EstimatedHours = 1.5 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(6), e1, e2, e3);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(6));
+
+        var execs = await _db.StageExecutions
+            .Where(e => e.JobId == job.Id)
+            .OrderBy(e => e.SortOrder)
+            .ToListAsync();
+
+        // Stage A: 06:00 – 08:00
+        Assert.Equal(Mon.AddHours(6), execs[0].ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(8), execs[0].ScheduledEndAt);
+
+        // Stage B: 08:00 – 11:00
+        Assert.Equal(Mon.AddHours(8), execs[1].ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(11), execs[1].ScheduledEndAt);
+
+        // Stage C: 11:00 – 12:30
+        Assert.Equal(Mon.AddHours(11), execs[2].ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(12.5), execs[2].ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_SetupHoursIncludedInBlock_ExactDuration()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 4.0, machine.Id.ToString(), true);
+
+        var exec = new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            EstimatedHours = 4.0,
+            SetupHours = 1.5
+        };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(10), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(10));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        // Block = 4.0 run + 1.5 setup = 5.5 hours total
+        Assert.Equal(Mon.AddHours(10), scheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(15.5), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_ExistingBlock_NewJobScheduledAfterIt()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 3.0, machine.Id.ToString(), true);
+
+        // Pre-existing block: Mon 08:00 – 14:00
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(8),
+            ScheduledEndAt = Mon.AddHours(14),
+            Status = StageExecutionStatus.InProgress
+        });
+        await _db.SaveChangesAsync();
+
+        // New job wants 3h starting at Mon 08:00 — must land after existing block
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 3.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(8), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(8));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(Mon.AddHours(14), scheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(17), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_FitsInGapBetweenExistingBlocks()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 2.0, machine.Id.ToString(), true);
+
+        // Block A: Mon 06:00 – 10:00
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(6),
+            ScheduledEndAt = Mon.AddHours(10),
+            Status = StageExecutionStatus.NotStarted
+        });
+
+        // Block B: Mon 14:00 – 18:00 (leaves a 4h gap from 10:00-14:00)
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(14),
+            ScheduledEndAt = Mon.AddHours(18),
+            Status = StageExecutionStatus.NotStarted
+        });
+        await _db.SaveChangesAsync();
+
+        // New 2h job starting at Mon 06:00 — should fit in the gap at 10:00
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 2.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(6), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(6));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(Mon.AddHours(10), scheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(12), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_NoOverlap_ThreeJobsSameMachine()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 3.0, machine.Id.ToString(), true);
+
+        // Schedule 3 jobs one by one on the same machine, all wanting Mon 08:00
+        var jobs = new List<Job>();
+        for (int i = 0; i < 3; i++)
+        {
+            var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 3.0 };
+            var job = await AddJobAsync(part.Id, Mon.AddHours(8), exec);
+            await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(8));
+            jobs.Add(job);
+        }
+
+        var allExecs = await _db.StageExecutions
+            .Where(e => jobs.Select(j => j.Id).Contains(e.JobId!.Value))
+            .OrderBy(e => e.ScheduledStartAt)
+            .ToListAsync();
+
+        Assert.Equal(3, allExecs.Count);
+
+        // Each block: start, end, no overlap
+        Assert.Equal(Mon.AddHours(8), allExecs[0].ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(11), allExecs[0].ScheduledEndAt);
+
+        Assert.Equal(Mon.AddHours(11), allExecs[1].ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(14), allExecs[1].ScheduledEndAt);
+
+        Assert.Equal(Mon.AddHours(14), allExecs[2].ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(17), allExecs[2].ScheduledEndAt);
+
+        // Verify no pair overlaps
+        for (int i = 0; i < allExecs.Count - 1; i++)
+        {
+            Assert.True(allExecs[i].ScheduledEndAt <= allExecs[i + 1].ScheduledStartAt,
+                $"Block {i} end ({allExecs[i].ScheduledEndAt}) overlaps block {i + 1} start ({allExecs[i + 1].ScheduledStartAt})");
+        }
+    }
+
+    [Fact]
+    public async Task BlockPlacement_PredecessorGap_ExactHours()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 2.0, machine.Id.ToString(), true);
+
+        // Predecessor: scheduled Mon 08:00 – 12:00
+        var predExec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 4.0 };
+        var predJob = await AddJobAsync(part.Id, Mon.AddHours(8), predExec);
+        await _sut.AutoScheduleJobAsync(predJob.Id, startAfter: Mon.AddHours(8));
+
+        var predScheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == predJob.Id);
+        Assert.Equal(Mon.AddHours(8), predScheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(12), predScheduled.ScheduledEndAt);
+
+        // Refresh predJob to get updated ScheduledEnd
+        await _db.Entry(predJob).ReloadAsync();
+
+        // Successor with 2h gap after predecessor
+        var succExec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 2.0 };
+        var succJob = await AddJobAsync(part.Id, Mon.AddHours(8), succExec);
+        succJob.PredecessorJobId = predJob.Id;
+        succJob.UpstreamGapHours = 2.0;
+        await _db.SaveChangesAsync();
+
+        await _sut.AutoScheduleJobAsync(succJob.Id);
+
+        var succScheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == succJob.Id);
+        // Predecessor ends at 12:00, +2h gap = 14:00 start
+        Assert.Equal(Mon.AddHours(14), succScheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(16), succScheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_OptimalMachineSelection_PicksLeastLoaded()
+    {
+        var m1 = await AddMachineAsync("SLS-001", "Printer 1");
+        var m2 = await AddMachineAsync("SLS-002", "Printer 2");
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 4.0, $"{m1.Id},{m2.Id}", true);
+
+        // m1 is loaded until Mon 20:00, m2 is loaded until Mon 12:00
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = m1.Id,
+            ScheduledStartAt = Mon.AddHours(8),
+            ScheduledEndAt = Mon.AddHours(20),
+            Status = StageExecutionStatus.NotStarted
+        });
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = m2.Id,
+            ScheduledStartAt = Mon.AddHours(8),
+            ScheduledEndAt = Mon.AddHours(12),
+            Status = StageExecutionStatus.NotStarted
+        });
+        await _db.SaveChangesAsync();
+
+        // New 4h job starting Mon 08:00 — m2 finishes earliest (12:00+4=16:00 vs 20:00+4=24:00)
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 4.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(8), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(8));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(m2.Id, scheduled.MachineId);
+        Assert.Equal(Mon.AddHours(12), scheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(16), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_JobWindowUpdated_MatchesFirstAndLastBlock()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var s1 = await AddStageAsync("Stage A", "a", 2.0, machine.Id.ToString(), true);
+        var s2 = await AddStageAsync("Stage B", "b", 3.0, machine.Id.ToString(), true);
+
+        var e1 = new StageExecution { ProductionStageId = s1.Id, EstimatedHours = 2.0 };
+        var e2 = new StageExecution { ProductionStageId = s2.Id, EstimatedHours = 3.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(9), e1, e2);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(9));
+
+        var updatedJob = await _db.Jobs.FindAsync(job.Id);
+        Assert.NotNull(updatedJob);
+        Assert.Equal(Mon.AddHours(9), updatedJob.ScheduledStart);
+        Assert.Equal(Mon.AddHours(14), updatedJob.ScheduledEnd);
+        Assert.Equal(5.0, updatedJob.EstimatedHours, precision: 1);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_DefaultDurationUsedWhenEstimatedHoursNull()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        // Stage default is 4.0 hours
+        var stage = await AddStageAsync("Print", "print", 4.0, machine.Id.ToString(), true);
+
+        // Execution has no EstimatedHours — should fall back to stage DefaultDurationHours
+        var exec = new StageExecution { ProductionStageId = stage.Id };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(10), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(10));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(Mon.AddHours(10), scheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(14), scheduled.ScheduledEndAt);
+    }
+
+    // ── Block Placement — Shift-Aware Tests ─────────────────────
+
+    [Fact]
+    public async Task BlockPlacement_ShiftBoundary_SnapsToShiftStart()
+    {
+        // Day shift: 08:00 - 17:00, Mon-Fri
+        await AddShiftAsync("Day", new TimeSpan(8, 0, 0), new TimeSpan(17, 0, 0));
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 3.0, machine.Id.ToString(), true);
+
+        // Request at Mon 05:00 (before shift) — should snap to 08:00
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 3.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(5), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(5));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(Mon.AddHours(8), scheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(11), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_MidShiftStart_UsesExactRequestTime()
+    {
+        await AddShiftAsync("Day", new TimeSpan(8, 0, 0), new TimeSpan(17, 0, 0));
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 2.0, machine.Id.ToString(), true);
+
+        // Request at Mon 10:30 (mid-shift) — should start at 10:30
+        var tenThirty = Mon.AddHours(10).AddMinutes(30);
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 2.0 };
+        var job = await AddJobAsync(part.Id, tenThirty, exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: tenThirty);
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(tenThirty, scheduled.ScheduledStartAt);
+        Assert.Equal(tenThirty.AddHours(2), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_WorkSpansShiftBoundary_WrapsToNextDay()
+    {
+        // 8-hour day shift Mon-Fri
+        await AddShiftAsync("Day", new TimeSpan(8, 0, 0), new TimeSpan(16, 0, 0));
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 12.0, machine.Id.ToString(), true);
+
+        // 12h task starting Mon 08:00 — 8h on Mon, 4h on Tue
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 12.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(8), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(8));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(Mon.AddHours(8), scheduled.ScheduledStartAt);
+        // 8h Mon (08:00-16:00) + 4h Tue (08:00-12:00) = Tue 12:00
+        var tue = Mon.AddDays(1);
+        Assert.Equal(tue.AddHours(12), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_FridayAfternoon_WrapsToMonday()
+    {
+        // 8-hour day shift Mon-Fri
+        await AddShiftAsync("Day", new TimeSpan(8, 0, 0), new TimeSpan(16, 0, 0));
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 6.0, machine.Id.ToString(), true);
+
+        // Friday = Mon + 4 days (2025-07-11). Start at 14:00, only 2h left in shift.
+        // 6h task: 2h Fri (14:00-16:00) + 4h Mon (08:00-12:00) = next Mon 12:00
+        var fri = Mon.AddDays(4);
+        var nextMon = Mon.AddDays(7);
+
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 6.0 };
+        var job = await AddJobAsync(part.Id, fri.AddHours(14), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: fri.AddHours(14));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(fri.AddHours(14), scheduled.ScheduledStartAt);
+        Assert.Equal(nextMon.AddHours(12), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_WeekendRequest_SnapsToMondayShift()
+    {
+        await AddShiftAsync("Day", new TimeSpan(8, 0, 0), new TimeSpan(16, 0, 0));
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 3.0, machine.Id.ToString(), true);
+
+        // Saturday = Mon + 5
+        var sat = Mon.AddDays(5);
+        var nextMon = Mon.AddDays(7);
+
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 3.0 };
+        var job = await AddJobAsync(part.Id, sat.AddHours(10), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: sat.AddHours(10));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        // Should snap to next Monday 08:00
+        Assert.Equal(nextMon.AddHours(8), scheduled.ScheduledStartAt);
+        Assert.Equal(nextMon.AddHours(11), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_TwoShifts_WorkSpansMorningGap()
+    {
+        // Morning: 06:00-12:00, Afternoon: 14:00-20:00 (2h lunch gap)
+        await AddShiftAsync("Morning", new TimeSpan(6, 0, 0), new TimeSpan(12, 0, 0));
+        await AddShiftAsync("Afternoon", new TimeSpan(14, 0, 0), new TimeSpan(20, 0, 0));
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 10.0, machine.Id.ToString(), true);
+
+        // 10h task starting Mon 06:00. Morning has 6h, afternoon has 6h.
+        // 6h morning (06:00-12:00) + 4h afternoon (14:00-18:00) = Mon 18:00
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 10.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(6), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(6));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        Assert.Equal(Mon.AddHours(6), scheduled.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(18), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_ShiftAware_ExistingBlockPushesToNextShiftDay()
+    {
+        // 8h shift Mon-Fri
+        await AddShiftAsync("Day", new TimeSpan(8, 0, 0), new TimeSpan(16, 0, 0));
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var stage = await AddStageAsync("Print", "print", 4.0, machine.Id.ToString(), true);
+
+        // Mon fully blocked: 08:00-16:00
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(8),
+            ScheduledEndAt = Mon.AddHours(16),
+            Status = StageExecutionStatus.NotStarted
+        });
+        await _db.SaveChangesAsync();
+
+        // New 4h job wanting Mon 08:00 — Mon full, pushes to Tue 08:00
+        var exec = new StageExecution { ProductionStageId = stage.Id, EstimatedHours = 4.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(8), exec);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(8));
+
+        var scheduled = await _db.StageExecutions.FirstAsync(e => e.JobId == job.Id);
+        var tue = Mon.AddDays(1);
+        Assert.Equal(tue.AddHours(8), scheduled.ScheduledStartAt);
+        Assert.Equal(tue.AddHours(12), scheduled.ScheduledEndAt);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_MultiStage_DifferentMachines_ParallelNotForced()
+    {
+        var m1 = await AddMachineAsync("CNC-001", "CNC Mill");
+        var m2 = await AddMachineAsync("EDM-001", "Wire EDM");
+        var part = await AddPartAsync();
+        // Stage 1 on CNC, Stage 2 on EDM
+        var s1 = await AddStageAsync("CNC", "cnc", 3.0, m1.Id.ToString(), true);
+        var s2 = await AddStageAsync("EDM", "edm", 2.0, m2.Id.ToString(), true);
+
+        var e1 = new StageExecution { ProductionStageId = s1.Id, EstimatedHours = 3.0 };
+        var e2 = new StageExecution { ProductionStageId = s2.Id, EstimatedHours = 2.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(8), e1, e2);
+
+        await _sut.AutoScheduleJobAsync(job.Id, startAfter: Mon.AddHours(8));
+
+        var execs = await _db.StageExecutions
+            .Where(e => e.JobId == job.Id)
+            .OrderBy(e => e.SortOrder)
+            .ToListAsync();
+
+        // Stage 1: CNC 08:00-11:00
+        Assert.Equal(Mon.AddHours(8), execs[0].ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(11), execs[0].ScheduledEndAt);
+        Assert.Equal(m1.Id, execs[0].MachineId);
+
+        // Stage 2: EDM 11:00-13:00 (sequential — starts after stage 1 even though different machine)
+        Assert.Equal(Mon.AddHours(11), execs[1].ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(13), execs[1].ScheduledEndAt);
+        Assert.Equal(m2.Id, execs[1].MachineId);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_FindSlot_ExactGapFitting_TightFit()
+    {
+        var machine = await AddMachineAsync();
+        var stage = await AddStageAsync();
+
+        // Block A: 08:00-11:00, Block B: 13:00-17:00. Gap = 11:00-13:00 (exactly 2h).
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(8),
+            ScheduledEndAt = Mon.AddHours(11),
+            Status = StageExecutionStatus.NotStarted
+        });
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(13),
+            ScheduledEndAt = Mon.AddHours(17),
+            Status = StageExecutionStatus.NotStarted
+        });
+        await _db.SaveChangesAsync();
+
+        // 2h job fits exactly in the gap
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, 2.0, Mon.AddHours(8));
+        Assert.Equal(Mon.AddHours(11), slot.Start);
+        Assert.Equal(Mon.AddHours(13), slot.End);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_FindSlot_GapTooSmall_SkipsToAfterLastBlock()
+    {
+        var machine = await AddMachineAsync();
+        var stage = await AddStageAsync();
+
+        // Block A: 08:00-11:00, Block B: 12:00-17:00. Gap = 11:00-12:00 (1h).
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(8),
+            ScheduledEndAt = Mon.AddHours(11),
+            Status = StageExecutionStatus.NotStarted
+        });
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(12),
+            ScheduledEndAt = Mon.AddHours(17),
+            Status = StageExecutionStatus.NotStarted
+        });
+        await _db.SaveChangesAsync();
+
+        // 3h job doesn't fit in the 1h gap — must go after block B
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, 3.0, Mon.AddHours(8));
+        Assert.Equal(Mon.AddHours(17), slot.Start);
+        Assert.Equal(Mon.AddHours(20), slot.End);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_FindSlot_MultipleGaps_PicksFirst()
+    {
+        var machine = await AddMachineAsync();
+        var stage = await AddStageAsync();
+
+        // Block A: 08:00-10:00, Block B: 14:00-16:00, Block C: 20:00-22:00
+        // Gap1: 10:00-14:00 (4h), Gap2: 16:00-20:00 (4h)
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(8),
+            ScheduledEndAt = Mon.AddHours(10),
+            Status = StageExecutionStatus.NotStarted
+        });
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(14),
+            ScheduledEndAt = Mon.AddHours(16),
+            Status = StageExecutionStatus.NotStarted
+        });
+        _db.StageExecutions.Add(new StageExecution
+        {
+            ProductionStageId = stage.Id,
+            MachineId = machine.Id,
+            ScheduledStartAt = Mon.AddHours(20),
+            ScheduledEndAt = Mon.AddHours(22),
+            Status = StageExecutionStatus.NotStarted
+        });
+        await _db.SaveChangesAsync();
+
+        // 3h job — fits in Gap1 (10:00-14:00)
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, 3.0, Mon.AddHours(8));
+        Assert.Equal(Mon.AddHours(10), slot.Start);
+        Assert.Equal(Mon.AddHours(13), slot.End);
+    }
+
+    [Fact]
+    public async Task BlockPlacement_AutoScheduleExecution_ExactTimesAfterPredecessor()
+    {
+        var machine = await AddMachineAsync();
+        var part = await AddPartAsync();
+        var s1 = await AddStageAsync("Stage 1", "s1", 2.0, machine.Id.ToString(), true);
+        var s2 = await AddStageAsync("Stage 2", "s2", 3.0, machine.Id.ToString(), true);
+
+        var e1 = new StageExecution
+        {
+            ProductionStageId = s1.Id,
+            EstimatedHours = 2.0,
+            ScheduledStartAt = Mon.AddHours(8),
+            ScheduledEndAt = Mon.AddHours(10),
+            MachineId = machine.Id
+        };
+        var e2 = new StageExecution { ProductionStageId = s2.Id, EstimatedHours = 3.0 };
+        var job = await AddJobAsync(part.Id, Mon.AddHours(8), e1, e2);
+
+        // Auto-schedule just execution 2
+        var result = await _sut.AutoScheduleExecutionAsync(e2.Id, Mon.AddHours(8));
+
+        // e2 must start at or after e1's end (10:00)
+        Assert.Equal(Mon.AddHours(10), result.ScheduledStartAt);
+        Assert.Equal(Mon.AddHours(13), result.ScheduledEndAt);
+        Assert.Equal(machine.Id, result.MachineId);
+    }
+
     // ── Helpers ───────────────────────────────────────────────
 
     private static DateTime GetNextDayOfWeek(DayOfWeek target)

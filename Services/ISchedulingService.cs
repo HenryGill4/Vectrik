@@ -55,6 +55,12 @@ public interface ISchedulingService
     Task<DataDeleteResult> DeleteAllSchedulingDataAsync();
 
     /// <summary>
+    /// Hard-delete all scheduling data AND work orders.
+    /// This is the nuclear option for a completely clean slate for testing.
+    /// </summary>
+    Task<DataDeleteResult> DeleteAllSchedulingAndWorkOrderDataAsync();
+
+    /// <summary>
     /// Returns counts of key entities for the debug page.
     /// </summary>
     Task<DatabaseStats> GetDatabaseStatsAsync();
@@ -67,7 +73,8 @@ public record DataDeleteResult(
     int JobsDeleted,
     int BuildsDeleted,
     int PartInstancesDeleted,
-    int BatchesDeleted);
+    int BatchesDeleted,
+    int WorkOrdersDeleted = 0);
 
 public record ScheduleSlot(DateTime Start, DateTime End, int MachineId);
 

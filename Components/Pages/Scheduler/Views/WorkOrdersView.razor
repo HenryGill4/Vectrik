@@ -12,13 +12,12 @@
     @{
         var woAllLines = WorkOrders.SelectMany(w => w.Lines).ToList();
         var woTotalOutstanding = woAllLines.Sum(l => GetOutstanding(l));
-        var woTotalInBuilds = woAllLines.Sum(l => GetInBuildQty(l));
+        var woTotalInBuilds = woAllLines.Sum(l => GetInBuildQty(l) + GetUnlinkedBuildQty(l));
         var woTotalInProduction = woAllLines.Sum(l => GetInProductionQty(l));
         var woAddLines = woAllLines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
         var woCncLines = woAllLines.Where(l => !IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
-        var woUnscheduledLines = woAllLines.Where(l => GetOutstanding(l) > 0 && GetInBuildQty(l) == 0 && !HasExistingJobs(l)).ToList();
+        var woUnscheduledLines = woAllLines.Where(l => GetOutstanding(l) > 0 && GetInBuildQty(l) + GetUnlinkedBuildQty(l) == 0 && !HasExistingJobs(l)).ToList();
         var templatesAvailable = BuildTemplates.Count(t => t.IsCertified);
-        var templatesNeedingRecert = BuildTemplates.Count(t => t.NeedsRecertification);
         var today = DateTime.UtcNow.Date;
         var endOfWeek = today.AddDays(7 - (int)today.DayOfWeek);
         var endOfNextWeek = endOfWeek.AddDays(7);
@@ -87,13 +86,6 @@
                 <span class="wo-demand-stat-count">@templatesAvailable</span>
                 <span class="wo-demand-stat-label">Templates Available</span>
             </div>
-            @if (templatesNeedingRecert > 0)
-            {
-                <div class="wo-demand-stat wo-demand-stat--outstanding">
-                    <span class="wo-demand-stat-count">@templatesNeedingRecert</span>
-                    <span class="wo-demand-stat-label">⚠️ Needing Re-cert</span>
-                </div>
-            }
         </div>
 
         @* ── Build Suggestions (Phase C) ── *@
@@ -244,7 +236,7 @@
                                 var outstanding = GetOutstanding(line);
                                 var isAdditive = IsAdditiveLine(line);
                                 var hasJobs = HasExistingJobs(line);
-                                var inBuilds = GetInBuildQty(line);
+                                var inBuilds = GetInBuildQty(line) + GetUnlinkedBuildQty(line);
                                 var inProduction = GetInProductionQty(line);
                                 var progressPct = line.Quantity > 0 ? Math.Min(100, line.ProducedQuantity * 100.0 / line.Quantity) : 0;
                                 var prodPct = line.Quantity > 0 ? Math.Min(100 - progressPct, inProduction * 100.0 / line.Quantity) : 0;
@@ -310,7 +302,6 @@
                                             {
                                                 @* ── Certified Template Cards for SLS Lines ── *@
                                                 var matchingTemplates = GetMatchingTemplates(line.PartId);
-                                                var recertTemplates = GetRecertTemplates(line.PartId);
                                                 @if (matchingTemplates.Any())
                                                 {
                                                     @foreach (var template in matchingTemplates)
@@ -326,18 +317,6 @@
                                                         </div>
                                                     }
                                                 }
-                                                @if (recertTemplates.Any())
-                                                {
-                                                    @foreach (var template in recertTemplates)
-                                                    {
-                                                        <div class="wo-template-card wo-template-card--recert">
-                                                            <div class="wo-template-card-info">
-                                                                <span class="wo-template-card-name">⚠️ @template.Name</span>
-                                                                <span class="wo-template-card-detail">Needs re-certification (part updated)</span>
-                                                            </div>
-                                                        </div>
-                                                    }
-                                                }
                                                 @if (!matchingTemplates.Any())
                                                 {
                                                     <button class="btn btn-sm btn-accent" @onclick='() => NavigateToNewBuild(line)' title="Create a new build for this part on the Builds page">
@@ -348,107 +327,96 @@
                                                     🖨️ Create Build
                                                 </button>
 
+                                                @* ── Existing Build Files (always shown for SLS lines) ── *@
+                                                var sourceBuilds = GetSourceBuildsForPart(line.PartId);
+                                                @if (sourceBuilds.Any())
+                                                {
+                                                    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; margin-top: 4px;">
+                                                        <span style="font-size: 0.8rem; color: var(--text-muted);">📦 Build files for this part:</span>
+                                                        @foreach (var src in sourceBuilds)
+                                                        {
+                                                            var srcStatusIcon = GetBuildStatusIcon(src.Status);
+                                                            var srcPartQty = src.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
+                                                            var canScheduleFrom = src.IsSlicerDataEntered && src.Status != BuildPackageStatus.Cancelled;
+                                                            var runs = GetRunsForSourceBuild(src.Id);
+                                                            var scheduledRuns = runs.Count(r => r.Status is BuildPackageStatus.Scheduled or BuildPackageStatus.Printing or BuildPackageStatus.PostPrint);
+                                                            var completedRuns = runs.Count(r => r.Status == BuildPackageStatus.Completed);
+                                                            var partsInRuns = runs
+                                                                .Where(r => r.Status != BuildPackageStatus.Cancelled && r.Status != BuildPackageStatus.Completed)
+                                                                .Sum(r => r.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0);
+
+                                                            <div class="wo-build-file-card" style="display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; width: 100%;">
+                                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                                    <span style="font-weight: 600; font-size: 0.82rem;">@srcStatusIcon @src.Name</span>
+                                                                    <span class="badge badge-info" style="font-size: 0.7rem;">@srcPartQty pcs/run</span>
+                                                                    <span class="badge badge-@(src.Status.ToString().ToLower())" style="font-size: 0.7rem;">@src.Status</span>
+                                                                </div>
+
+                                                                @if (runs.Count > 0)
+                                                                {
+                                                                    <div style="display: flex; gap: 8px; font-size: 0.75rem; color: var(--text-secondary); flex-wrap: wrap;">
+                                                                        @if (scheduledRuns > 0)
+                                                                        {
+                                                                            <span>📅 @scheduledRuns active run(s) (@partsInRuns pcs)</span>
+                                                                        }
+                                                                        @if (completedRuns > 0)
+                                                                        {
+                                                                            <span>✅ @completedRuns completed</span>
+                                                                        }
+                                                                    </div>
+                                                                }
+
+                                                                @if (canScheduleFrom)
+                                                                {
+                                                                    var remainingForBuild = Math.Max(0, outstanding - partsInRuns);
+                                                                    var runsNeeded = srcPartQty > 0 && remainingForBuild > 0
+                                                                        ? Math.Max(1, (int)Math.Ceiling((double)remainingForBuild / srcPartQty))
+                                                                        : 0;
+                                                                    var runKey = $"{src.Id}-{line.Id}";
+                                                                    if (!_buildRunCounts.ContainsKey(runKey))
+                                                                        _buildRunCounts[runKey] = runsNeeded;
+
+                                                                    @if (runsNeeded > 0)
+                                                                    {
+                                                                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                                                                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Runs:</span>
+                                                                            <input type="number" min="1" max="100"
+                                                                                   value="@_buildRunCounts[runKey]"
+                                                                                   @onchange="e => UpdateRunCount(runKey, e)"
+                                                                                   class="form-control form-control-sm"
+                                                                                   style="width: 56px; padding: 2px 6px; font-size: 0.75rem;" />
+                                                                            <button class="btn btn-sm btn-primary" style="padding: 2px 8px; font-size: 0.75rem;"
+                                                                                    @onclick="() => ScheduleRunsFromBuildAsync(src, line, _buildRunCounts[runKey])"
+                                                                                    disabled="@_schedulingBuildRuns"
+                                                                                    title="Schedule @(_buildRunCounts[runKey]) run(s) → @(_buildRunCounts[runKey] * srcPartQty) parts">
+                                                                                @if (_schedulingBuildRuns) { <span>...</span> } else { <span>📅 Schedule @(_buildRunCounts[runKey]) Run(s)</span> }
+                                                                            </button>
+                                                                        </div>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <div style="font-size: 0.75rem; color: var(--success);">✅ Demand covered by active runs</div>
+                                                                    }
+                                                                }
+                                                                @if (src.Status == BuildPackageStatus.Draft)
+                                                                {
+                                                                    <div style="margin-top: 2px;">
+                                                                        <button class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" @onclick="() => OpenWoBuildModal(wo, line)">
+                                                                            ✏️ Setup Build File
+                                                                        </button>
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+
                                                 @* ── Split Build Suggestion or Configuration Warning ── *@
                                                 var config = line.Part?.AdditiveBuildConfig;
                                                 var isConfigured = IsBuildConfigured(config);
                                                 var partsPerBuild = GetPartsPerBuild(config, outstanding);
                                                 var needsSplit = partsPerBuild > 0 && outstanding > partsPerBuild;
-
-                                                @if (!isConfigured && outstanding > 1)
-                                                {
-                                                    var sourceBuilds = GetSourceBuildsForPart(line.PartId);
-                                                    @if (sourceBuilds.Any())
-                                                    {
-                                                        <div class="wo-config-warning" style="flex-direction: column; align-items: flex-start; gap: 8px;">
-                                                            <span style="font-size: 0.8rem; color: var(--text-muted);">📦 Build files for this part:</span>
-                                                            @foreach (var src in sourceBuilds)
-                                                            {
-                                                                var srcStatusIcon = GetBuildStatusIcon(src.Status);
-                                                                var srcPartQty = src.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
-                                                                var canScheduleFrom = src.IsSlicerDataEntered && src.Status != BuildPackageStatus.Cancelled;
-                                                                var runs = GetRunsForSourceBuild(src.Id);
-                                                                var scheduledRuns = runs.Count(r => r.Status is BuildPackageStatus.Scheduled or BuildPackageStatus.Printing or BuildPackageStatus.PostPrint);
-                                                                var completedRuns = runs.Count(r => r.Status == BuildPackageStatus.Completed);
-                                                                var partsInRuns = runs
-                                                                    .Where(r => r.Status != BuildPackageStatus.Cancelled && r.Status != BuildPackageStatus.Completed)
-                                                                    .Sum(r => r.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0);
-
-                                                                <div class="wo-build-file-card" style="display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; width: 100%;">
-                                                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                                                        <span style="font-weight: 600; font-size: 0.82rem;">@srcStatusIcon @src.Name</span>
-                                                                        <span class="badge badge-info" style="font-size: 0.7rem;">@srcPartQty pcs/run</span>
-                                                                        <span class="badge badge-@(src.Status.ToString().ToLower())" style="font-size: 0.7rem;">@src.Status</span>
-                                                                    </div>
-
-                                                                    @if (runs.Count > 0)
-                                                                    {
-                                                                        <div style="display: flex; gap: 8px; font-size: 0.75rem; color: var(--text-secondary); flex-wrap: wrap;">
-                                                                            @if (scheduledRuns > 0)
-                                                                            {
-                                                                                <span>📅 @scheduledRuns active run(s) (@partsInRuns pcs)</span>
-                                                                            }
-                                                                            @if (completedRuns > 0)
-                                                                            {
-                                                                                <span>✅ @completedRuns completed</span>
-                                                                            }
-                                                                        </div>
-                                                                    }
-
-                                                                    @if (canScheduleFrom)
-                                                                    {
-                                                                        var remainingForBuild = Math.Max(0, outstanding - partsInRuns);
-                                                                        var runsNeeded = srcPartQty > 0 && remainingForBuild > 0
-                                                                            ? Math.Max(1, (int)Math.Ceiling((double)remainingForBuild / srcPartQty))
-                                                                            : 0;
-                                                                        var runKey = $"{src.Id}-{line.Id}";
-                                                                        if (!_buildRunCounts.ContainsKey(runKey))
-                                                                            _buildRunCounts[runKey] = runsNeeded;
-
-                                                                        @if (runsNeeded > 0)
-                                                                        {
-                                                                            <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-                                                                                <span style="font-size: 0.75rem; color: var(--text-secondary);">Runs:</span>
-                                                                                <input type="number" min="1" max="100"
-                                                                                       value="@_buildRunCounts[runKey]"
-                                                                                       @onchange="e => UpdateRunCount(runKey, e)"
-                                                                                       class="form-control form-control-sm"
-                                                                                       style="width: 56px; padding: 2px 6px; font-size: 0.75rem;" />
-                                                                                <button class="btn btn-sm btn-primary" style="padding: 2px 8px; font-size: 0.75rem;"
-                                                                                        @onclick="() => ScheduleRunsFromBuildAsync(src, line, _buildRunCounts[runKey])"
-                                                                                        disabled="@_schedulingBuildRuns"
-                                                                                        title="Schedule @(_buildRunCounts[runKey]) run(s) → @(_buildRunCounts[runKey] * srcPartQty) parts">
-                                                                                    @if (_schedulingBuildRuns) { <span>...</span> } else { <span>📅 Schedule @(_buildRunCounts[runKey]) Run(s)</span> }
-                                                                                </button>
-                                                                            </div>
-                                                                        }
-                                                                        else
-                                                                        {
-                                                                            <div style="font-size: 0.75rem; color: var(--success);">✅ Demand covered by active runs</div>
-                                                                        }
-                                                                    }
-                                                                    @if (src.Status == BuildPackageStatus.Draft)
-                                                                    {
-                                                                        <div style="margin-top: 2px;">
-                                                                            <button class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" @onclick="() => OpenWoBuildModal(wo, line)">
-                                                                                ✏️ Setup Build File
-                                                                            </button>
-                                                                        </div>
-                                                                    }
-                                                                </div>
-                                                            }
-                                                        </div>
-                                                    }
-                                                    else
-                                                    {
-                                                        <div class="wo-config-warning">
-                                                            <span>⚠️ Build capacity not configured — </span>
-                                                            <a href="/parts/@line.PartId/edit" target="_blank" title="Configure how many parts fit on a build plate">
-                                                                Edit Part → Stacking tab
-                                                            </a>
-                                                        </div>
-                                                    }
-                                                }
-                                                else if (needsSplit)
+                                                @if (needsSplit)
                                                 {
                                                     var splitSuggestion = SuggestBuildSplit(outstanding, partsPerBuild);
                                                     <div class="wo-split-suggestion">
@@ -489,6 +457,15 @@
                                                                 🔀 Split & Create @splitSuggestion.Count Builds
                                                             </button>
                                                         }
+                                                    </div>
+                                                }
+                                                else if (!isConfigured && !sourceBuilds.Any() && outstanding > 1)
+                                                {
+                                                    <div class="wo-config-warning">
+                                                        <span>⚠️ Build capacity not configured — </span>
+                                                        <a href="/parts/@line.PartId/edit" target="_blank" title="Configure how many parts fit on a build plate">
+                                                            Edit Part → Stacking tab
+                                                        </a>
                                                     </div>
                                                 }
                                             }
@@ -612,6 +589,13 @@
     private List<ScheduleDiagnosticReport> _diagnosticReports = [];
     private List<string> _diagnosticWarnings = [];
 
+    /// <summary>Clear stale run counts when parent refreshes data so the UI recalculates from current demand.</summary>
+    protected override void OnParametersSet()
+    {
+        if (!_schedulingBuildRuns)
+            _buildRunCounts.Clear();
+    }
+
     private async Task OnModalConfirmedAsync()
     {
         _showWoBuildModal = false;
@@ -650,8 +634,9 @@
     {
         var produced = line.ProducedQuantity;
         var inBuilds = GetInBuildQty(line);
+        var inUnlinkedBuilds = GetUnlinkedBuildQty(line);
         var ordered = line.Quantity;
-        return Math.Max(0, ordered - produced - inBuilds);
+        return Math.Max(0, ordered - produced - inBuilds - inUnlinkedBuilds);
     }
 
     private static int GetInBuildQty(WorkOrderLine line)
@@ -662,6 +647,21 @@
                 && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
                 && bp.BuildPackage.Status != BuildPackageStatus.Completed)
             .Sum(bp => bp.Quantity);
+    }
+
+    /// <summary>
+    /// Counts parts in active builds that contain this part but are NOT linked to any WO line.
+    /// These are builds created on the Builds page without a WO line reference.
+    /// </summary>
+    private int GetUnlinkedBuildQty(WorkOrderLine line)
+    {
+        return BuildPackages
+            .Where(bp => bp.Status != BuildPackageStatus.Cancelled
+                && bp.Status != BuildPackageStatus.Completed
+                && bp.Parts != null
+                && bp.Parts.Any(p => p.PartId == line.PartId && p.WorkOrderLineId == null))
+            .SelectMany(bp => bp.Parts.Where(p => p.PartId == line.PartId && p.WorkOrderLineId == null))
+            .Sum(p => p.Quantity);
     }
 
     private static bool IsAdditiveLine(WorkOrderLine line) =>
@@ -979,11 +979,6 @@
     private List<BuildTemplate> GetMatchingTemplates(int partId) =>
         BuildTemplates
             .Where(t => t.IsCertified && t.Parts.Any(p => p.PartId == partId))
-            .ToList();
-
-    private List<BuildTemplate> GetRecertTemplates(int partId) =>
-        BuildTemplates
-            .Where(t => t.NeedsRecertification && t.Parts.Any(p => p.PartId == partId))
             .ToList();
 
     // ── Quick Schedule from Template ──

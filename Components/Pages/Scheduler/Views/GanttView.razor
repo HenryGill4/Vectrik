@@ -21,11 +21,11 @@
                         @* ── Machine rows (grouped by department, ordered by production flow) ── *@
                         @{
                             var orderedMachines = GetOrderedMachines();
-                            string? lastGroup = null;
-                        }
-                        @foreach (var machine in orderedMachines)
-                        {
-                            var groupLabel = machine.IsAdditiveMachine ? "SLS / Additive" : (machine.Department ?? machine.MachineType ?? "Other");
+                                string? lastGroup = null;
+                            }
+                            @foreach (var machine in orderedMachines)
+                            {
+                                var groupLabel = machine.Department ?? machine.MachineType ?? "Other";
                             if (groupLabel != lastGroup)
                             {
                                 lastGroup = groupLabel;
@@ -101,6 +101,7 @@
     [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
     [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
     [Parameter, EditorRequired] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public List<ProductionStage> Stages { get; set; } = [];
     [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
     [Parameter] public Dictionary<int, List<MachineTimelineEntry>> MachineTimelines { get; set; } = new();
     [Parameter] public DateTime DataRangeStart { get; set; }
@@ -118,13 +119,50 @@
     /// <summary>Exposes the inner GanttViewport for direct method calls (zoom, scroll, save state).</summary>
     public GanttViewport? Viewport { get; private set; }
 
-    private List<Machine> GetOrderedMachines() =>
-        Machines
+    private List<Machine> GetOrderedMachines()
+    {
+        // Build a mapping: Machine.Id → earliest stage DisplayOrder that uses this machine.
+        // Stages reference machines via DefaultMachineId (string MachineId) or AssignedMachineIds (int IDs).
+        var machineStageOrder = new Dictionary<int, int>();
+        foreach (var stage in Stages.OrderBy(s => s.DisplayOrder))
+        {
+            // Map via AssignedMachineIds (comma-separated int Machine.Id values)
+            foreach (var mid in stage.GetAssignedMachineIntIds())
+            {
+                machineStageOrder.TryAdd(mid, stage.DisplayOrder);
+            }
+
+            // Map via DefaultMachineId (string Machine.MachineId) — fallback for stages without assignments
+            if (!string.IsNullOrEmpty(stage.DefaultMachineId))
+            {
+                var match = Machines.FirstOrDefault(m =>
+                    m.MachineId.Equals(stage.DefaultMachineId, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                    machineStageOrder.TryAdd(match.Id, stage.DisplayOrder);
+            }
+        }
+
+        // Department fallback: machines not explicitly assigned to a stage still sort
+        // alongside their department peers (e.g., EOS M4 Onyx #2 sorts with SLS Printing
+        // even if only M4-1 is in AssignedMachineIds).
+        foreach (var stage in Stages.OrderBy(s => s.DisplayOrder))
+        {
+            if (string.IsNullOrEmpty(stage.Department)) continue;
+            foreach (var machine in Machines)
+            {
+                if (machineStageOrder.ContainsKey(machine.Id)) continue;
+                if (machine.Department?.Equals(stage.Department, StringComparison.OrdinalIgnoreCase) == true)
+                    machineStageOrder.TryAdd(machine.Id, stage.DisplayOrder);
+            }
+        }
+
+        return Machines
             .Where(m => m.IsAvailableForScheduling)
-            .OrderBy(m => m.Priority)
-            .ThenBy(m => m.MachineType, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(m => machineStageOrder.GetValueOrDefault(m.Id, int.MaxValue))
+            .ThenBy(m => m.Priority)
             .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
 
     private List<StageExecution> GetExecutionsForMachine(Machine machine)
     {

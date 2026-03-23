@@ -44,6 +44,9 @@ public class BuildPlanningService : IBuildPlanningService
                     .ThenInclude(part => part.StageRequirements)
                         .ThenInclude(sr => sr.ProductionStage)
             .Include(p => p.Parts)
+                .ThenInclude(pp => pp.Part)
+                    .ThenInclude(part => part.ManufacturingProcess)
+            .Include(p => p.Parts)
                 .ThenInclude(pp => pp.WorkOrderLine)
                     .ThenInclude(wl => wl!.WorkOrder)
             .Include(p => p.BuildFileInfo)
@@ -546,6 +549,33 @@ public class BuildPlanningService : IBuildPlanningService
                      && machineLookup.TryGetValue(processStage.ProductionStage.DefaultMachineId, out var stageIntId))
             {
                 machineId = stageIntId;
+            }
+
+            // Shared-resource collision avoidance: post-print build stages (depowder,
+            // heat-treat, wire EDM) go on shared machines. When multiple runs finish
+            // printing around the same time, their post-print stages must queue on
+            // the shared machine rather than overlap.
+            if (machineId.HasValue && machineId != buildMachineIntId)
+            {
+                var duration = TimeSpan.FromHours(estimatedHours);
+                var existingBlocks = await _db.StageExecutions
+                    .Where(e => e.MachineId == machineId
+                        && e.ScheduledStartAt != null && e.ScheduledEndAt != null
+                        && e.Status != StageExecutionStatus.Completed
+                        && e.Status != StageExecutionStatus.Skipped
+                        && e.Status != StageExecutionStatus.Failed
+                        && e.ScheduledEndAt > currentStart)
+                    .OrderBy(e => e.ScheduledStartAt)
+                    .Select(e => new { e.ScheduledStartAt, e.ScheduledEndAt })
+                    .ToListAsync();
+
+                foreach (var block in existingBlocks)
+                {
+                    if (currentStart + duration <= block.ScheduledStartAt!.Value)
+                        break; // fits in gap before this block
+                    if (block.ScheduledEndAt!.Value > currentStart)
+                        currentStart = block.ScheduledEndAt!.Value;
+                }
             }
 
             var scheduledEnd = currentStart.AddHours(estimatedHours);

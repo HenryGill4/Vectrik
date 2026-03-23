@@ -521,8 +521,9 @@ public class SchedulingService : ISchedulingService
                 if (shift.EndTime <= shift.StartTime)
                     shiftEnd = shiftEnd.AddDays(1); // overnight shift
 
-                // If we're before this shift ends, we can use it
-                if (from <= shiftEnd)
+                // If we're before this shift ends, we can use it.
+                // Strict < because at exactly shiftEnd there are zero work hours remaining.
+                if (from < shiftEnd)
                 {
                     return from > shiftStart ? from : shiftStart;
                 }
@@ -672,6 +673,25 @@ public class SchedulingService : ISchedulingService
         await _db.SaveChangesAsync();
 
         return new DataDeleteResult(execCount, jobCount, buildCount, instanceCount, batchCount);
+    }
+
+    /// <inheritdoc />
+    public async Task<DataDeleteResult> DeleteAllSchedulingAndWorkOrderDataAsync()
+    {
+        // First delete all scheduling data (FK-safe order)
+        var baseResult = await DeleteAllSchedulingDataAsync();
+
+        // Then delete work order children and work orders
+        _db.WorkOrderComments.RemoveRange(_db.WorkOrderComments);
+        await _db.SaveChangesAsync();
+
+        // WorkOrderLines reference BuildPackageParts (already deleted above) and Jobs (already deleted above)
+        var woCount = await _db.WorkOrders.CountAsync();
+        _db.WorkOrderLines.RemoveRange(_db.WorkOrderLines);
+        _db.WorkOrders.RemoveRange(_db.WorkOrders);
+        await _db.SaveChangesAsync();
+
+        return baseResult with { WorkOrdersDeleted = woCount };
     }
 
     public async Task<DatabaseStats> GetDatabaseStatsAsync()

@@ -213,6 +213,48 @@
     </div>
 </div>
 
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">☢️ Nuclear Reset — Delete Everything</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        <strong style="color: var(--danger);">Destructive:</strong> Hard-deletes all stage executions, jobs,
+        build packages, part instances, batches, <strong>AND all work orders</strong>.
+        Part definitions, machines, and manufacturing processes are preserved.
+        <strong>This cannot be undone.</strong>
+    </p>
+
+    @if (_nukeResult is not null)
+    {
+        <div style="background: var(--surface-alt, #f0f0f0); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem;">
+            <strong>Last nuke:</strong>
+            @_nukeResult.StageExecutionsDeleted executions,
+            @_nukeResult.JobsDeleted jobs,
+            @_nukeResult.BuildsDeleted builds,
+            @_nukeResult.PartInstancesDeleted part instances,
+            @_nukeResult.BatchesDeleted batches,
+            @_nukeResult.WorkOrdersDeleted work orders
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; align-items:center;">
+        @if (!_nukeConfirmShown)
+        {
+            <button class="btn btn-danger" @onclick="() => _nukeConfirmShown = true" disabled="@_nuking">
+                ☢️ Delete All Data (Including Work Orders)
+            </button>
+        }
+        else
+        {
+            <span style="color: var(--danger); font-weight: 600; font-size: 0.85rem;">Are you absolutely sure?</span>
+            <button class="btn btn-danger" @onclick="NukeEverything" disabled="@_nuking">
+                @(_nuking ? "Deleting…" : "Yes, Nuke Everything")
+            </button>
+            <button class="btn btn-secondary" @onclick="() => _nukeConfirmShown = false" disabled="@_nuking">
+                Cancel
+            </button>
+        }
+    </div>
+</div>
+
 @code {
     [CascadingParameter]
     private Task<AuthenticationState>? AuthState { get; set; }
@@ -232,6 +274,9 @@
     private bool _loadingStats;
     private bool _seeding;
     private SeedResult? _seedResult;
+    private bool _nuking;
+    private bool _nukeConfirmShown;
+    private DataDeleteResult? _nukeResult;
 
     protected override async Task OnInitializedAsync()
     {
@@ -411,6 +456,32 @@ This is a test capture from the Debug Tools admin page.
         finally
         {
             _seeding = false;
+        }
+    }
+
+    private async Task NukeEverything()
+    {
+        _nuking = true;
+        _nukeResult = null;
+
+        try
+        {
+            _nukeResult = await SchedulingService.DeleteAllSchedulingAndWorkOrderDataAsync();
+            _nukeConfirmShown = false;
+            Toast.ShowSuccess(
+                $"Nuked: {_nukeResult.StageExecutionsDeleted} executions, " +
+                $"{_nukeResult.JobsDeleted} jobs, {_nukeResult.BuildsDeleted} builds, " +
+                $"{_nukeResult.PartInstancesDeleted} instances, {_nukeResult.BatchesDeleted} batches, " +
+                $"{_nukeResult.WorkOrdersDeleted} work orders");
+            await RefreshStats();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to nuke: {ex.Message}");
+        }
+        finally
+        {
+            _nuking = false;
         }
     }
 }
