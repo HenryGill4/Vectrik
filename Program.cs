@@ -70,7 +70,6 @@ builder.Services.AddScoped<IJobService, JobService>();
 builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
 builder.Services.AddScoped<IQuoteService, QuoteService>();
 builder.Services.AddScoped<IBuildService, BuildService>();
-builder.Services.AddScoped<IBuildPlanningService, BuildPlanningService>();
 builder.Services.AddScoped<IStageService, StageService>();
 builder.Services.AddScoped<ISerialNumberService, SerialNumberService>();
 builder.Services.AddScoped<IPartTrackerService, PartTrackerService>();
@@ -83,7 +82,6 @@ builder.Services.AddScoped<IMachineService, MachineService>();
 builder.Services.AddScoped<IOperatorRoleService, OperatorRoleService>();
 builder.Services.AddScoped<IExternalOperationService, ExternalOperationService>();
 builder.Services.AddScoped<IBuildTemplateService, BuildTemplateService>();
-builder.Services.AddScoped<IBuildSuggestionService, BuildSuggestionService>();
 builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
 builder.Services.AddScoped<IDevIssueService, DevIssueService>();
 builder.Services.AddScoped<IManufacturingProcessService, ManufacturingProcessService>();
@@ -107,7 +105,6 @@ builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
 
 // Shop Floor & Scheduling (Stage 4)
 builder.Services.AddScoped<ISchedulingService, SchedulingService>();
-builder.Services.AddScoped<IBuildSchedulingService, BuildSchedulingService>();
 builder.Services.AddScoped<IProgramSchedulingService, ProgramSchedulingService>();
 builder.Services.AddScoped<IProgramPlanningService, ProgramPlanningService>();
 builder.Services.AddScoped<IDownstreamProgramService, DownstreamProgramService>();

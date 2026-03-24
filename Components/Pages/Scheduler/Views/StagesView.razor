@@ -15,7 +15,7 @@
                 <div class="stage-queue-item @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item--active" : "")" style="padding: 6px 12px;">
                     <span class="stage-queue-item-dot @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item-dot--active" : "")"></span>
                     <span class="stage-queue-item-part">@(exec.ProductionStage?.Name ?? "—")</span>
-                    <span style="opacity: 0.7;">@(exec.Job?.Part?.PartNumber ?? (exec.BuildPackage?.Name ?? "—"))</span>
+                    <span style="opacity: 0.7;">@(exec.Job?.Part?.PartNumber ?? (exec.MachineProgram?.Name ?? "—"))</span>
                     <span class="badge badge-@(exec.Status.ToString().ToLower())">@exec.Status</span>
                     <span class="stage-queue-item-hours">@(exec.EstimatedHours?.ToString("F1") ?? "—")h</span>
                     @if (exec.ScheduledStartAt != null)
@@ -144,9 +144,9 @@
                         <div class="stage-queue-item @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item--active" : "")">
                             <span class="stage-queue-item-dot @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item-dot--active" : "")"></span>
                             <span class="stage-queue-item-part">
-                                @if (exec.BuildPackageId != null)
+                                @if (exec.MachineProgramId != null)
                                 {
-                                    <text>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</text>
+                                    <text>📦 @(exec.MachineProgram?.Name ?? $"Program #{exec.MachineProgramId}")</text>
                                 }
                                 else
                                 {

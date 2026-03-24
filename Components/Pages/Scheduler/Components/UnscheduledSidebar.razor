@@ -32,12 +32,12 @@
     [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
     [Parameter] public string Title { get; set; } = "📋 Unscheduled";
     [Parameter] public bool ShowManualSchedule { get; set; }
-    [Parameter] public bool UseBuildPackageName { get; set; }
+    [Parameter] public bool UseProgramName { get; set; }
     [Parameter] public EventCallback<StageExecution> OnManualSchedule { get; set; }
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
 
     private string GetLabel(StageExecution exec) =>
-        UseBuildPackageName
-            ? $"📦 {exec.BuildPackage?.Name ?? exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}"}"
+        UseProgramName
+            ? $"📦 {exec.MachineProgram?.Name ?? exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}"}"
             : exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}";
 }

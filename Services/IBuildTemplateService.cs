@@ -33,18 +33,6 @@ public interface IBuildTemplateService
     /// </summary>
     Task<BuildTemplate> RecertifyAsync(int templateId, string certifiedBy, string? changeNotes = null);
 
-    /// <summary>
-    /// Create a BuildPackage (run) from a certified template, optionally linked to a work order line.
-    /// The run is created in Ready status with BuildTemplateId set.
-    /// </summary>
-    Task<BuildPackage> InstantiateAsync(int templateId, int machineId, string createdBy, int? workOrderLineId = null);
-
-    /// <summary>
-    /// Create a draft template from a completed build for re-use.
-    /// Copies slicer metadata from the build's associated BuildFileInfo (if any).
-    /// </summary>
-    Task<BuildTemplate> CreateFromBuildPackageAsync(int buildPackageId, string createdBy);
-
     // Part lookup
     Task<List<BuildTemplate>> GetTemplatesForPartAsync(int partId, bool certifiedOnly = true);
     Task<List<BuildTemplate>> GetTemplatesNeedingRecertificationAsync();

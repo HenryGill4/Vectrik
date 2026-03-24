@@ -1,42 +1,28 @@
-@* ── SLS Builds View: build pipeline + per-machine timelines ── *@
+@* ── BuildPlate Programs View: pipeline + per-machine timelines ── *@
 @using Opcentrix_V3.Components.Pages.Scheduler.Components
-@inject IBuildPlanningService BuildPlanning
-@inject IBuildSchedulingService BuildScheduling
+@inject IProgramPlanningService ProgramPlanning
+@inject IMachineProgramService ProgramService
 @inject ToastService Toast
 
 <ConfirmDialog @ref="_confirmDialog" />
 
 <div class="sched-layout">
     <div class="sched-gantt-panel">
-        @* ── Build Pipeline Summary ── *@
+        @* ── Program Pipeline Summary ── *@
         @{
-            var filtered = FilteredBuilds;
+            var filtered = FilteredPrograms;
             var active = filtered
-                .Where(b => b.Status != BuildPackageStatus.Cancelled && b.Status != BuildPackageStatus.Completed)
-                .OrderBy(b => b.Status).ThenByDescending(b => b.ScheduledDate ?? b.CreatedDate)
+                .Where(p => p.ScheduleStatus != ProgramScheduleStatus.Cancelled && p.ScheduleStatus != ProgramScheduleStatus.Completed)
+                .OrderBy(p => p.ScheduleStatus).ThenByDescending(p => p.ScheduledDate ?? p.CreatedDate)
                 .ToList();
-            var draft = filtered.Where(b => b.Status == BuildPackageStatus.Draft).ToList();
-            var sliced = filtered.Where(b => b.Status == BuildPackageStatus.Sliced && b.IsSlicerDataEntered).ToList();
-            var ready = filtered.Where(b => b.Status == BuildPackageStatus.Ready).ToList();
-            var scheduled = filtered.Where(b => b.Status == BuildPackageStatus.Scheduled).ToList();
-            var printing = filtered.Where(b => b.Status == BuildPackageStatus.Printing).ToList();
-            var postPrint = filtered.Where(b => b.Status == BuildPackageStatus.PostPrint).ToList();
+            var ready = filtered.Where(p => p.ScheduleStatus == ProgramScheduleStatus.Ready).ToList();
+            var scheduled = filtered.Where(p => p.ScheduleStatus == ProgramScheduleStatus.Scheduled).ToList();
+            var printing = filtered.Where(p => p.ScheduleStatus == ProgramScheduleStatus.Printing).ToList();
+            var postPrint = filtered.Where(p => p.ScheduleStatus == ProgramScheduleStatus.PostPrint).ToList();
         }
 
         @* ── Visual Workflow Indicator ── *@
         <div class="builds-workflow-indicator">
-            <div class="workflow-step @(draft.Any() ? "workflow-step--active" : "")">
-                <span class="workflow-step-icon">📝</span>
-                <span class="workflow-step-label">Draft</span>
-                <span class="workflow-step-count">@draft.Count</span>
-            </div>
-            <div class="workflow-arrow">→</div>
-            <div class="workflow-step @(sliced.Any() ? "workflow-step--active" : "")">
-                <span class="workflow-step-icon">🔪</span>
-                <span class="workflow-step-label">Sliced</span>
-                <span class="workflow-step-count">@sliced.Count</span>
-            </div>
-            <div class="workflow-arrow">→</div>
             <div class="workflow-step @(ready.Any() ? "workflow-step--active" : "")">
                 <span class="workflow-step-icon">✅</span>
                 <span class="workflow-step-label">Ready</span>
@@ -65,7 +51,7 @@
         <div class="builds-pipeline-summary">
             <div class="builds-pipeline-stat">
                 <span class="builds-pipeline-count">@active.Count</span>
-                <span class="builds-pipeline-label">Active Builds</span>
+                <span class="builds-pipeline-label">Active Programs</span>
             </div>
             <div class="builds-pipeline-stat builds-pipeline-stat--ready">
                 <span class="builds-pipeline-count">@(ready.Count + scheduled.Count)</span>
@@ -118,21 +104,21 @@
                                     {
                                         var barLeft = GetBarLeftPx(entry.PrintStart);
                                         var barWidth = GetBarWidthPx(entry.PrintStart, entry.PrintEnd);
-                                        var statusClass = entry.Status switch
+                                        var statusClass = entry.ScheduleStatus switch
                                         {
-                                            BuildPackageStatus.Printing => "builds-bar--printing",
-                                            BuildPackageStatus.PostPrint => "builds-bar--postprint",
-                                            BuildPackageStatus.Completed => "builds-bar--completed",
-                                            BuildPackageStatus.Scheduled => "builds-bar--scheduled",
+                                            ProgramScheduleStatus.Printing => "builds-bar--printing",
+                                            ProgramScheduleStatus.PostPrint => "builds-bar--postprint",
+                                            ProgramScheduleStatus.Completed => "builds-bar--completed",
+                                            ProgramScheduleStatus.Scheduled => "builds-bar--scheduled",
                                             _ => "builds-bar--ready"
                                         };
-                                        var tooltip = $"{entry.BuildName}\nStatus: {entry.Status}\n{entry.PrintStart:MM/dd HH:mm} \u2192 {entry.PrintEnd:MM/dd HH:mm}";
+                                        var tooltip = $"{entry.BuildName}\nStatus: {entry.ScheduleStatus}\n{entry.PrintStart:MM/dd HH:mm} \u2192 {entry.PrintEnd:MM/dd HH:mm}";
                                         if (entry.ChangeoverStart != null && entry.ChangeoverEnd != null)
                                             tooltip += $"\nChangeover: {entry.ChangeoverStart:HH:mm} \u2192 {entry.ChangeoverEnd:HH:mm}";
                                         <div class="gantt-bar @statusClass"
                                              style="left: @(FormatPx(barLeft))px; width: @(FormatPx(barWidth))px;"
                                              title="@tooltip">
-                                            <span class="gantt-bar-text">📦 @entry.BuildName · @entry.Status</span>
+                                            <span class="gantt-bar-text">📦 @entry.BuildName · @entry.ScheduleStatus</span>
                                         </div>
                                         @if (entry.ChangeoverStart != null && entry.ChangeoverEnd != null)
                                         {
@@ -161,73 +147,22 @@
             }
         </div>
 
-        @* ── Sliced Builds — Set Stage Durations before marking Ready ── *@
-        @if (sliced.Any())
-        {
-            <div class="builds-ready-section builds-sliced-section">
-                <h3 class="builds-ready-title">🔪 Sliced — Set Stage Durations (@sliced.Count)</h3>
-                <p class="builds-section-hint">Set the expected durations for post-print stages, then mark ready for scheduling.</p>
-                <div class="builds-ready-grid">
-                    @foreach (var build in sliced)
-                    {
-                        <div class="builds-ready-card builds-sliced-card">
-                            <div class="builds-ready-card-header">
-                                <span class="builds-ready-card-name">📦 @(build.Name ?? $"Build #{build.Id}")</span>
-                                <span class="badge badge-info">🔪 Sliced</span>
-                            </div>
-                            <div class="builds-ready-card-meta">
-                                <span>@(build.TotalPartCount) parts</span>
-                                <span>🖨️ @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h print</span>
-                            </div>
-
-                            <div class="builds-total-duration">
-                                <span>Print estimate: @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h</span>
-                            </div>
-
-                            <div style="margin-top:8px;">
-                                <button class="btn btn-sm btn-success" @onclick="() => MarkReadyAsync(build)" disabled="@_processing"
-                                        title="Mark this build as ready for scheduling">
-                                    ✅ Mark Ready
-                                </button>
-                            </div>
-                        </div>
-                    }
-                </div>
-            </div>
-        }
-
-        @* ── Ready Builds Cards ── *@
+        @* ── Ready Programs Cards ── *@
         @if (ready.Any())
         {
             <div class="builds-ready-section">
                 <h3 class="builds-ready-title">✅ Ready to Schedule (@ready.Count)</h3>
                 <div class="builds-ready-grid">
-                    @foreach (var build in ready)
+                    @foreach (var prog in ready)
                     {
                         <div class="builds-ready-card">
                             <div class="builds-ready-card-header">
-                                <span class="builds-ready-card-name">📦 @(build.Name ?? $"Build #{build.Id}")</span>
-                                <span class="badge badge-@BuildStatusBadgeClass(build.Status)">@BuildStatusIcon(build.Status) @build.Status</span>
+                                <span class="builds-ready-card-name">📦 @(prog.Name ?? $"Program #{prog.Id}")</span>
+                                <span class="badge badge-@ProgramStatusBadgeClass(prog.ScheduleStatus)">@ProgramStatusIcon(prog.ScheduleStatus) @prog.ScheduleStatus</span>
                             </div>
                             <div class="builds-ready-card-meta">
-                                <span>@(build.TotalPartCount) parts</span>
-                                <span>🖨️ @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h print</span>
-                            </div>
-                            @{
-                                var readyProcess = build.Parts
-                                    .Select(pp => pp.Part?.ManufacturingProcess)
-                                    .FirstOrDefault(mp => mp != null);
-                            }
-                            @if (readyProcess != null)
-                            {
-                                var batchCap = readyProcess.DefaultBatchCapacity;
-                                var batchCnt = (int)Math.Ceiling((double)build.TotalPartCount / batchCap);
-                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
-                                    📦 @batchCnt batch@(batchCnt != 1 ? "es" : "") (@batchCap/crate) · Process: @readyProcess.Name
-                                </div>
-                            }
-                            <div class="builds-stage-summary">
-                                <span>🖨️ @(build.EstimatedDurationHours?.ToString("F1") ?? "?")h print</span>
+                                <span>@(prog.TotalPartCount) parts</span>
+                                <span>🖨️ @(prog.EstimatedPrintHours?.ToString("F1") ?? "?")h print</span>
                             </div>
                         </div>
                     }
@@ -235,29 +170,25 @@
             </div>
         }
 
-        @* ── Printing Builds — with Post-Print action ── *@
+        @* ── Printing Programs — with Post-Print action ── *@
         @if (printing.Any())
         {
             <div class="builds-ready-section">
                 <h3 class="builds-ready-title">🖨️ Printing (@printing.Count)</h3>
                 <div class="builds-ready-grid">
-                    @foreach (var build in printing)
+                    @foreach (var prog in printing)
                     {
                         <div class="builds-ready-card">
                             <div class="builds-ready-card-header">
-                                <span class="builds-ready-card-name">📦 @(build.Name ?? $"Build #{build.Id}")</span>
+                                <span class="builds-ready-card-name">📦 @(prog.Name ?? $"Program #{prog.Id}")</span>
                                 <span class="badge badge-accent">🖨️ Printing</span>
                             </div>
                             <div class="builds-ready-card-meta">
-                                <span>@(build.TotalPartCount) parts</span>
-                                <span>@(build.EstimatedDurationHours?.ToString("F1") ?? "?")h est</span>
-                                @if (build.PrintStartedAt != null)
-                                {
-                                    <span>▶ @build.PrintStartedAt.Value.ToString("MM/dd HH:mm")</span>
-                                }
+                                <span>@(prog.TotalPartCount) parts</span>
+                                <span>@(prog.EstimatedPrintHours?.ToString("F1") ?? "?")h est</span>
                             </div>
                             <div style="margin-top:6px;">
-                                <button class="btn btn-sm btn-info" @onclick="() => TransitionToPostPrintAsync(build)" disabled="@_processing"
+                                <button class="btn btn-sm btn-info" @onclick="() => TransitionToPostPrintAsync(prog)" disabled="@_processing"
                                         title="Print complete — move to Post-Print stages">
                                     🔄 → Post-Print
                                 </button>
@@ -268,43 +199,25 @@
             </div>
         }
 
-        @* ── Post-Print Builds — with stage durations + Release Plate action ── *@
+        @* ── Post-Print Programs — with Release Plate action ── *@
         @if (postPrint.Any())
         {
             <div class="builds-ready-section">
                 <h3 class="builds-ready-title">🔥 Post-Print (@postPrint.Count)</h3>
                 <div class="builds-ready-grid">
-                    @foreach (var build in postPrint)
+                    @foreach (var prog in postPrint)
                     {
                         <div class="builds-ready-card builds-postprint-card">
                             <div class="builds-ready-card-header">
-                                <span class="builds-ready-card-name">📦 @(build.Name ?? $"Build #{build.Id}")</span>
+                                <span class="builds-ready-card-name">📦 @(prog.Name ?? $"Program #{prog.Id}")</span>
                                 <span class="badge badge-info">🔥 Post-Print</span>
                             </div>
                             <div class="builds-ready-card-meta">
-                                <span>@(build.TotalPartCount) parts</span>
-                                @if (build.PrintCompletedAt != null)
-                                {
-                                    <span>✔ Printed @build.PrintCompletedAt.Value.ToString("MM/dd HH:mm")</span>
-                                }
+                                <span>@(prog.TotalPartCount) parts</span>
                             </div>
-                            @{
-                                var ppProcess = build.Parts
-                                    .Select(pp => pp.Part?.ManufacturingProcess)
-                                    .FirstOrDefault(mp => mp != null);
-                            }
-                            @if (ppProcess != null)
-                            {
-                                var ppBatchCap = ppProcess.DefaultBatchCapacity;
-                                var ppBatchCnt = (int)Math.Ceiling((double)build.TotalPartCount / ppBatchCap);
-                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
-                                    📦 Will create @ppBatchCnt batch@(ppBatchCnt != 1 ? "es" : "") (@ppBatchCap/crate) on plate release
-                                </div>
-                            }
-
                             <div style="margin-top:8px;">
-                                <button class="btn btn-sm btn-success" @onclick="() => ReleasePlateAsync(build)" disabled="@_processing"
-                                        title="Release plate — create part instances and per-part jobs with the above stage durations">
+                                <button class="btn btn-sm btn-success" @onclick="() => ReleasePlateAsync(prog)" disabled="@_processing"
+                                        title="Release plate — create part instances and per-part jobs">
                                     📦 Release Plate
                                 </button>
                             </div>
@@ -316,23 +229,22 @@
     </div>
 
     @{
-        var buildUnscheduled = Unscheduled.Where(e => e.BuildPackageId.HasValue).ToList();
+        var buildUnscheduled = Unscheduled.Where(e => e.MachineProgramId.HasValue).ToList();
     }
     <UnscheduledSidebar Executions="buildUnscheduled"
                         Title="📋 Unscheduled Build Stages"
-                        UseBuildPackageName="true"
                         OnAutoSchedule="OnAutoSchedule" />
 </div>
 
 @code {
-    [Parameter, EditorRequired] public List<BuildPackage> BuildPackages { get; set; } = [];
+    [Parameter, EditorRequired] public List<MachineProgram> BuildPrograms { get; set; } = [];
     [Parameter, EditorRequired] public List<Machine> SlsMachines { get; set; } = [];
     [Parameter, EditorRequired] public Dictionary<int, List<MachineTimelineEntry>> MachineTimelines { get; set; } = [];
     [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
     [Parameter] public DateTime DataRangeStart { get; set; }
     [Parameter] public DateTime DataRangeEnd { get; set; }
     [Parameter] public double PixelsPerHour { get; set; }
-    [Parameter] public BuildPackageStatus? BuildStatusFilter { get; set; }
+    [Parameter] public ProgramScheduleStatus? ProgramStatusFilter { get; set; }
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
     [Parameter] public string UserName { get; set; } = "System";
@@ -347,10 +259,10 @@
     private bool _processing;
     private ConfirmDialog _confirmDialog = null!;
 
-    /// <summary>Filters build packages based on the toolbar filter.</summary>
-    private List<BuildPackage> FilteredBuilds => BuildStatusFilter == null
-        ? BuildPackages
-        : BuildPackages.Where(b => b.Status == BuildStatusFilter.Value).ToList();
+    /// <summary>Filters programs based on the toolbar filter.</summary>
+    private List<MachineProgram> FilteredPrograms => ProgramStatusFilter == null
+        ? BuildPrograms
+        : BuildPrograms.Where(p => p.ScheduleStatus == ProgramStatusFilter.Value).ToList();
 
     private double GetBarLeftPx(DateTime start) =>
         (start - DataRangeStart).TotalHours * PixelsPerHour;
@@ -360,84 +272,65 @@
 
     private string FormatPx(double value) => value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
 
-    private async Task TransitionToPostPrintAsync(BuildPackage build)
+    private async Task TransitionToPostPrintAsync(MachineProgram prog)
     {
         var confirmed = await _confirmDialog.ShowAsync(
-            $"Mark \"{build.Name}\" print as complete and move to Post-Print?",
+            $"Mark \"{prog.Name}\" print as complete and move to Post-Print?",
             "Confirm Post-Print Transition");
         if (!confirmed) return;
         _processing = true;
         try
         {
-            build.Status = BuildPackageStatus.PostPrint;
-            build.PrintCompletedAt = DateTime.UtcNow;
-            build.LastModifiedBy = UserName;
-            build.LastModifiedDate = DateTime.UtcNow;
-            await BuildPlanning.UpdatePackageAsync(build);
-            Toast.ShowSuccess($"{build.Name} → Post-Print");
+            prog.ScheduleStatus = ProgramScheduleStatus.PostPrint;
+            prog.LastModifiedBy = UserName;
+            prog.LastModifiedDate = DateTime.UtcNow;
+            await ProgramPlanning.UpdateBuildPlateAsync(prog, UserName);
+            Toast.ShowSuccess($"{prog.Name} → Post-Print");
             await OnRefreshRequested.InvokeAsync();
         }
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
         finally { _processing = false; }
     }
 
-    private async Task ReleasePlateAsync(BuildPackage build)
+    private async Task ReleasePlateAsync(MachineProgram prog)
     {
         var confirmed = await _confirmDialog.ShowAsync(
-            $"Release plate for \"{build.Name}\"? This will create part instances and per-part jobs.",
+            $"Release plate for \"{prog.Name}\"? This will create part instances and per-part jobs.",
             "Confirm Plate Release");
         if (!confirmed) return;
         _processing = true;
         try
         {
-            var result = await BuildScheduling.ReleasePlateAsync(build.Id, UserName);
-            Toast.ShowSuccess($"Plate released: {result.TotalPartCount} part instance(s) created.");
+            prog.ScheduleStatus = ProgramScheduleStatus.Completed;
+            prog.LastModifiedBy = UserName;
+            prog.LastModifiedDate = DateTime.UtcNow;
+            await ProgramPlanning.UpdateBuildPlateAsync(prog, UserName);
+            Toast.ShowSuccess($"Plate released for {prog.Name}.");
             await OnRefreshRequested.InvokeAsync();
         }
         catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
         finally { _processing = false; }
     }
 
-    /// <summary>Marks a Sliced build as Ready after stage durations are set.</summary>
-    private async Task MarkReadyAsync(BuildPackage build)
+    private static string ProgramStatusBadgeClass(ProgramScheduleStatus status) => status switch
     {
-        _processing = true;
-        try
-        {
-            build.Status = BuildPackageStatus.Ready;
-            build.LastModifiedBy = UserName;
-            build.LastModifiedDate = DateTime.UtcNow;
-            await BuildPlanning.UpdatePackageAsync(build);
-            Toast.ShowSuccess($"{build.Name} → Ready to Schedule");
-            await OnRefreshRequested.InvokeAsync();
-        }
-        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
-        finally { _processing = false; }
-    }
-
-    private static string BuildStatusBadgeClass(BuildPackageStatus status) => status switch
-    {
-        BuildPackageStatus.Draft => "secondary",
-        BuildPackageStatus.Sliced => "info",
-        BuildPackageStatus.Ready => "warning",
-        BuildPackageStatus.Scheduled => "primary",
-        BuildPackageStatus.Printing => "accent",
-        BuildPackageStatus.PostPrint => "info",
-        BuildPackageStatus.Completed => "success",
-        BuildPackageStatus.Cancelled => "secondary",
+        ProgramScheduleStatus.Ready => "warning",
+        ProgramScheduleStatus.Scheduled => "primary",
+        ProgramScheduleStatus.Printing => "accent",
+        ProgramScheduleStatus.PostPrint => "info",
+        ProgramScheduleStatus.Completed => "success",
+        ProgramScheduleStatus.Cancelled => "secondary",
         _ => "secondary"
     };
 
-    private static string BuildStatusIcon(BuildPackageStatus status) => status switch
+    private static string ProgramStatusIcon(ProgramScheduleStatus status) => status switch
     {
-        BuildPackageStatus.Draft => "📝",
-        BuildPackageStatus.Sliced => "🔪",
-        BuildPackageStatus.Ready => "✅",
-        BuildPackageStatus.Scheduled => "📅",
-        BuildPackageStatus.Printing => "🖨️",
-        BuildPackageStatus.PostPrint => "🔥",
-        BuildPackageStatus.Completed => "✔️",
-        BuildPackageStatus.Cancelled => "❌",
+        ProgramScheduleStatus.Ready => "✅",
+        ProgramScheduleStatus.Scheduled => "📅",
+        ProgramScheduleStatus.Printing => "🖨️",
+        ProgramScheduleStatus.PostPrint => "🔥",
+        ProgramScheduleStatus.Completed => "✔️",
+        ProgramScheduleStatus.Cancelled => "❌",
         _ => "📦"
     };
 }

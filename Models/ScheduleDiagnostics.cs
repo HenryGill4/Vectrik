@@ -8,7 +8,6 @@ public record ScheduleDiagnosticReport
 {
     public DateTime GeneratedAt { get; init; } = DateTime.UtcNow;
     public string Operation { get; init; } = "";
-    public int? BuildPackageId { get; init; }
     public int? MachineId { get; init; }
     public List<BuildSlotDiagnostic> BuildSlots { get; init; } = [];
     public List<JobScheduleDiagnostic> Jobs { get; init; } = [];

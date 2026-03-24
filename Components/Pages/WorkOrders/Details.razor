@@ -143,10 +143,10 @@ else
                         var lineRemaining = Math.Max(0, line.Quantity - lineProduced - lineInBuilds);
                         var lineProgressPct = line.Quantity > 0 ? Math.Min(100, (int)((lineProduced + lineInBuilds) * 100.0 / line.Quantity)) : 0;
                         var isAdditive = line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
-                        var activeBuildParts = line.BuildPackageParts?
-                            .Where(bp => bp.BuildPackage != null
-                                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
-                                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
+                        var activeProgramParts = line.ProgramParts?
+                            .Where(pp => pp.MachineProgram != null
+                                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
                             .ToList() ?? new();
 
                         <tr>
@@ -214,27 +214,27 @@ else
                             </td>
                             <td>
                                 <div style="display: flex; flex-direction: column; gap: 3px;">
-                                    @* Show active builds *@
-                                    @foreach (var bp in activeBuildParts)
+                                    @* Show active programs *@
+                                    @foreach (var pp in activeProgramParts)
                                     {
-                                        var buildStatusClass = bp.BuildPackage!.Status switch
+                                        var progStatusClass = pp.MachineProgram!.ScheduleStatus switch
                                         {
-                                            BuildPackageStatus.Printing => "accent",
-                                            BuildPackageStatus.Scheduled => "primary",
-                                            BuildPackageStatus.PostPrint => "info",
-                                            BuildPackageStatus.Ready => "warning",
+                                            ProgramScheduleStatus.Printing => "accent",
+                                            ProgramScheduleStatus.Scheduled => "primary",
+                                            ProgramScheduleStatus.PostPrint => "info",
+                                            ProgramScheduleStatus.Ready => "warning",
                                             _ => "secondary"
                                         };
-                                        var buildIcon = bp.BuildPackage.Status switch
+                                        var progIcon = pp.MachineProgram.ScheduleStatus switch
                                         {
-                                            BuildPackageStatus.Printing => "🖨️",
-                                            BuildPackageStatus.Scheduled => "📅",
-                                            BuildPackageStatus.PostPrint => "🔥",
-                                            BuildPackageStatus.Ready => "✅",
+                                            ProgramScheduleStatus.Printing => "🖨️",
+                                            ProgramScheduleStatus.Scheduled => "📅",
+                                            ProgramScheduleStatus.PostPrint => "🔥",
+                                            ProgramScheduleStatus.Ready => "✅",
                                             _ => "📦"
                                         };
-                                        <a href="/builds" style="text-decoration:none;">
-                                            <span class="badge badge-@buildStatusClass" style="font-size: 0.7rem;">@buildIcon @(bp.BuildPackage.Name) ×@bp.Quantity</span>
+                                        <a href="/programs" style="text-decoration:none;">
+                                            <span class="badge badge-@progStatusClass" style="font-size: 0.7rem;">@progIcon @(pp.MachineProgram.Name) ×@pp.Quantity</span>
                                         </a>
                                     }
                                     @* Show jobs *@
@@ -964,12 +964,12 @@ else
 
     private static int GetInBuildQuantity(WorkOrderLine line)
     {
-        if (line.BuildPackageParts == null) return 0;
-        return line.BuildPackageParts
-            .Where(bp => bp.BuildPackage != null
-                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
-                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
-            .Sum(bp => bp.Quantity);
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
+            .Sum(pp => pp.Quantity);
     }
 
     // ── Sign-off actions ─────────────────────────────────────────

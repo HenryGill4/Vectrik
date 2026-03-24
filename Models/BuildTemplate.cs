@@ -63,12 +63,6 @@ public class BuildTemplate
     public DateTime? LastUsedDate { get; set; }
 
     /// <summary>
-    /// If this template was created from a completed build.
-    /// </summary>
-    public int? SourceBuildPackageId { get; set; }
-    public virtual BuildPackage? SourceBuildPackage { get; set; }
-
-    /// <summary>
     /// Hash of part versions at certification time. When any part changes,
     /// <see cref="NeedsRecertification"/> is set and this hash becomes stale.
     /// </summary>

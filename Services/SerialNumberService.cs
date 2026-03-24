@@ -43,7 +43,7 @@ public class SerialNumberService : ISerialNumberService
         return $"{pattern}{nextNumber:D5}";
     }
 
-    public async Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy, int? buildPackageId = null)
+    public async Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
 
@@ -60,7 +60,6 @@ public class SerialNumberService : ISerialNumberService
                 IsSerialAssigned = true,
                 WorkOrderLineId = workOrderLineId,
                 PartId = partId,
-                BuildPackageId = buildPackageId,
                 Status = PartInstanceStatus.InProcess,
                 CreatedDate = DateTime.UtcNow,
                 CreatedBy = createdBy,
@@ -140,9 +139,9 @@ public class SerialNumberService : ISerialNumberService
         return instance;
     }
 
-    public Task<string> GenerateTemporaryTrackingIdAsync(int buildPackageId, int index)
+    public Task<string> GenerateTemporaryTrackingIdAsync(int programId, int index)
     {
-        return Task.FromResult($"TMP-{buildPackageId}-{index:D4}");
+        return Task.FromResult($"TMP-{programId}-{index:D4}");
     }
 
     public async Task<PartInstance> AssignOfficialSerialAsync(int partInstanceId)

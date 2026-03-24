@@ -9,9 +9,9 @@ namespace Opcentrix_V3.Services;
 public interface IBatchService
 {
     /// <summary>
-    /// Create batches from a build package's parts using ceil(N / capacity) splitting.
+    /// Create batches from a list of part instances using ceil(N / capacity) splitting.
     /// </summary>
-    Task<List<ProductionBatch>> CreateBatchesFromBuildAsync(int buildPackageId, int batchCapacity, string createdBy);
+    Task<List<ProductionBatch>> CreateBatchesFromPartsAsync(List<int> partInstanceIds, int batchCapacity, string createdBy);
 
     /// <summary>
     /// Assign a part instance to a batch, recording immutable history.
@@ -45,9 +45,9 @@ public interface IBatchService
     Task<ProductionBatch?> GetByIdAsync(int id);
 
     /// <summary>
-    /// Get all active batches for a build package.
+    /// Get all active (non-dissolved) batches.
     /// </summary>
-    Task<List<ProductionBatch>> GetBatchesForBuildAsync(int buildPackageId);
+    Task<List<ProductionBatch>> GetActiveBatchesAsync();
 
     /// <summary>
     /// Seal a batch (no more parts can be added).

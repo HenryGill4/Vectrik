@@ -1,5 +1,5 @@
 @inject IBuildTemplateService BuildTemplateService
-@inject IBuildSchedulingService BuildScheduling
+@inject IProgramSchedulingService ProgramScheduling
 @inject ToastService Toast
 
 @if (IsVisible && Template != null && WorkOrderLine != null)
@@ -135,12 +135,12 @@
                 UserName,
                 WorkOrderLine.Id);
 
-            var result = await BuildScheduling.ScheduleBuildAsync(
+            await ProgramScheduling.ScheduleBuildPlateAsync(
                 package.Id,
                 machineIntId,
                 _startAfter);
 
-            Toast.ShowSuccess($"Build '{package.Name}' scheduled on {machine.Name} at {result.Slot.PrintStart:g}");
+            Toast.ShowSuccess($"Build '{package.Name}' scheduled on {machine.Name}");
             await OnScheduled.InvokeAsync();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
@@ -157,11 +157,11 @@
 
     private static int GetInBuildQty(WorkOrderLine line)
     {
-        if (line.BuildPackageParts == null) return 0;
-        return line.BuildPackageParts
-            .Where(bp => bp.BuildPackage != null
-                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
-                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
-            .Sum(bp => bp.Quantity);
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
+            .Sum(pp => pp.Quantity);
     }
 }

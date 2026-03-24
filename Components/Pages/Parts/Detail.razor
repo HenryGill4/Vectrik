@@ -3,7 +3,7 @@
 @inject IPartFileService FileService
 @inject ICustomFieldService CustomFieldService
 @inject ITenantFeatureService Features
-@inject IBuildPlanningService BuildPlanningService
+@inject IMachineProgramService MachineProgramService
 @inject IManufacturingProcessService ProcessService
 @inject IMachineService MachineService
 @inject IMachineProgramService MachineProgramService
@@ -478,8 +478,8 @@ else
                     @if (_process.RequiresBuildPlate)
                     {
                         var cfg = _part!.AdditiveBuildConfig;
-                        var activeCount = _buildsForPart?.Count(b => b.Status != BuildPackageStatus.Completed && b.Status != BuildPackageStatus.Cancelled) ?? 0;
-                        var completedCount = _buildsForPart?.Count(b => b.Status == BuildPackageStatus.Completed) ?? 0;
+                        var activeCount = _buildsForPart?.Count(b => b.ScheduleStatus != ProgramScheduleStatus.Completed && b.ScheduleStatus != ProgramScheduleStatus.Cancelled) ?? 0;
+                        var completedCount = _buildsForPart?.Count(b => b.ScheduleStatus == ProgramScheduleStatus.Completed) ?? 0;
 
                         <div style="margin-top: 16px; padding: 16px; background: color-mix(in srgb, var(--accent) 5%, var(--bg-secondary)); border: 1px solid var(--border-color); border-radius: 8px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -577,17 +577,17 @@ else
                                         <tbody>
                                             @foreach (var build in _buildsForPart.Take(5))
                                             {
-                                                var partEntry = build.Parts.FirstOrDefault(p => p.PartId == Id);
+                                                var partEntry = build.ProgramParts?.FirstOrDefault(p => p.PartId == Id);
                                                 <tr>
                                                     <td><a href="/builds" style="font-weight: 600; text-decoration: none; color: var(--primary);">@build.Name</a></td>
                                                     <td>@(build.Machine?.Name ?? "—")</td>
                                                     <td>
-                                                        <span class="badge @(build.Status switch { BuildPackageStatus.Completed => "badge-active", BuildPackageStatus.Cancelled => "badge-cancelled", BuildPackageStatus.Printing => "badge-warning", _ => "badge-info" })">
-                                                            @build.Status
+                                                        <span class="badge @(build.ScheduleStatus switch { ProgramScheduleStatus.Completed => "badge-active", ProgramScheduleStatus.Cancelled => "badge-cancelled", ProgramScheduleStatus.Printing => "badge-warning", _ => "badge-info" })">
+                                                            @build.ScheduleStatus
                                                         </span>
                                                     </td>
                                                     <td style="text-align: right;">@(partEntry?.Quantity ?? 0)</td>
-                                                    <td style="text-align: right;">@(build.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</td>
+                                                    <td style="text-align: right;">@(build.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</td>
                                                     <td>@(build.ScheduledDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                                                 </tr>
                                             }
@@ -974,16 +974,16 @@ else
                             <option value="0">Select a build...</option>
                             @foreach (var build in _buildsForPart)
                             {
-                                var statusIcon = build.Status switch
+                                var statusIcon = build.ScheduleStatus switch
                                 {
-                                    BuildPackageStatus.Completed => "✅",
-                                    BuildPackageStatus.PostPrint => "📦",
-                                    BuildPackageStatus.Printing => "🖨️",
-                                    BuildPackageStatus.Scheduled => "📅",
+                                    ProgramScheduleStatus.Completed => "✅",
+                                    ProgramScheduleStatus.PostPrint => "📦",
+                                    ProgramScheduleStatus.Printing => "🖨️",
+                                    ProgramScheduleStatus.Scheduled => "📅",
                                     _ => "📝"
                                 };
-                                var partCount = build.Parts?.Sum(p => p.Quantity) ?? 0;
-                                <option value="@build.Id">@statusIcon @build.Name — @partCount parts — @build.Status</option>
+                                var partCount = build.ProgramParts?.Sum(p => p.Quantity) ?? 0;
+                                <option value="@build.Id">@statusIcon @build.Name — @partCount parts — @build.ScheduleStatus</option>
                             }
                         </select>
                     </div>
@@ -1437,7 +1437,7 @@ else
     private Dictionary<string, string> _customFieldValues = new();
 
     // Build comparison
-    private List<BuildPackage>? _buildsForPart;
+    private List<MachineProgram>? _buildsForPart;
     private int _selectedBuildId;
 
     // Manufacturing Process
@@ -1481,7 +1481,7 @@ else
             // Load builds for comparison (additive parts only)
             if (HasAdditiveConfig())
             {
-                _buildsForPart = await BuildPlanningService.GetBuildsForPartAsync(Id);
+                _buildsForPart = await MachineProgramService.GetProgramsForPartAsync(Id);
             }
             else
             {

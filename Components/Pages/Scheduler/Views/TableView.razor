@@ -86,7 +86,7 @@
                                 <span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority ?? JobPriority.Normal)</span>
                             </td>
                             <td>
-                                @{ var scope = exec.Job?.Scope ?? (exec.BuildPackageId != null ? JobScope.Build : JobScope.Part); }
+                                @{ var scope = exec.Job?.Scope ?? (exec.MachineProgramId != null ? JobScope.Build : JobScope.Part); }
                                 <span class="badge" style="font-size: 0.7rem; @(scope switch { JobScope.Build => "background: var(--accent); color: white;", JobScope.Batch => "background: var(--warning); color: white;", _ => "background: var(--success); color: white;" })">@scope</span>
                                 @if (exec.ProductionBatchId != null)
                                 {
@@ -97,9 +97,9 @@
                                 @(exec.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "—")
                             </td>
                             <td style="font-weight: 600;">
-                                @if (exec.BuildPackageId != null)
+                                @if (exec.MachineProgramId != null)
                                 {
-                                    <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
+                                    <span>📦 @(exec.MachineProgram?.Name ?? $"Build #{exec.MachineProgramId}")</span>
                                 }
                                 else
                                 {
@@ -221,7 +221,7 @@
                 var term = _tableSearch.Trim();
                 all = all.Where(e =>
                     (e.Job?.Part?.PartNumber?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                    (e.BuildPackage?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.MachineProgram?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
                     (e.ProductionStage?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
                     (e.Machine?.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
                     (e.OperatorName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
@@ -240,8 +240,8 @@
                     ? all.OrderBy(e => e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "zzz")
                     : all.OrderByDescending(e => e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? ""),
                 "Part" => _tableSortAsc
-                    ? all.OrderBy(e => e.Job?.Part?.PartNumber ?? e.BuildPackage?.Name ?? "")
-                    : all.OrderByDescending(e => e.Job?.Part?.PartNumber ?? e.BuildPackage?.Name ?? ""),
+                    ? all.OrderBy(e => e.Job?.Part?.PartNumber ?? e.MachineProgram?.Name ?? "")
+                    : all.OrderByDescending(e => e.Job?.Part?.PartNumber ?? e.MachineProgram?.Name ?? ""),
                 "Stage" => _tableSortAsc
                     ? all.OrderBy(e => e.ProductionStage?.Name ?? "")
                     : all.OrderByDescending(e => e.ProductionStage?.Name ?? ""),
@@ -331,10 +331,10 @@
         foreach (var e in rows)
         {
             var priority = e.Job?.Priority ?? JobPriority.Normal;
-            var jobScope = e.Job?.Scope ?? (e.BuildPackageId != null ? JobScope.Build : JobScope.Part);
+            var jobScope = e.Job?.Scope ?? (e.MachineProgramId != null ? JobScope.Build : JobScope.Part);
             var wo = Escape(e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "");
-            var part = e.BuildPackageId != null
-                ? Escape(e.BuildPackage?.Name ?? $"Build #{e.BuildPackageId}")
+            var part = e.MachineProgramId != null
+                ? Escape(e.MachineProgram?.Name ?? $"Build #{e.MachineProgramId}")
                 : Escape(e.Job?.Part?.PartNumber ?? "");
             var stage = Escape(e.ProductionStage?.Name ?? "");
             var machine = Escape(e.Machine?.Name ?? "Unassigned");

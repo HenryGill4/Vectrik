@@ -26,9 +26,6 @@ public class WorkOrderService : IWorkOrderService
                     .ThenInclude(p => p.ManufacturingApproach)
             .Include(w => w.Lines)
                 .ThenInclude(l => l.Jobs)
-            .Include(w => w.Lines)
-                .ThenInclude(l => l.BuildPackageParts)
-                    .ThenInclude(bp => bp.BuildPackage)
             .AsQueryable();
 
         if (statusFilter.HasValue)
@@ -48,9 +45,6 @@ public class WorkOrderService : IWorkOrderService
                     .ThenInclude(p => p.AdditiveBuildConfig)
             .Include(w => w.Lines)
                 .ThenInclude(l => l.Jobs)
-            .Include(w => w.Lines)
-                .ThenInclude(l => l.BuildPackageParts)
-                    .ThenInclude(bp => bp.BuildPackage)
             .Include(w => w.Lines)
                 .ThenInclude(l => l.ProgramParts)
                     .ThenInclude(pp => pp.MachineProgram)
@@ -108,9 +102,6 @@ public class WorkOrderService : IWorkOrderService
                         .ThenInclude(s => s.Machine)
             .Include(w => w.Lines)
                 .ThenInclude(l => l.PartInstances)
-            .Include(w => w.Lines)
-                .ThenInclude(l => l.BuildPackageParts)
-                    .ThenInclude(bp => bp.BuildPackage)
             .Include(w => w.Comments.Where(c => c.ParentCommentId == null))
                 .ThenInclude(c => c.Replies)
             .Include(w => w.Quote)
@@ -196,7 +187,7 @@ public class WorkOrderService : IWorkOrderService
 
             // Auto-generate jobs only for non-build-plate lines (CNC path).
             // SLS/additive parts that require a build plate stay in Pending —
-            // they get jobs when a BuildPackage is created and plate is released.
+            // they get jobs when a MachineProgram is created and plate is released.
             foreach (var line in wo.Lines)
             {
                 var requiresBuildPlate = line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;

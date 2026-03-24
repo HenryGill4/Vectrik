@@ -5,7 +5,7 @@ namespace Opcentrix_V3.Services;
 public interface ISerialNumberService
 {
     Task<string> GenerateSerialNumberAsync();
-    Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy, int? buildPackageId = null);
+    Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy);
     Task<PartInstance?> GetBySerialNumberAsync(string serialNumber);
     Task<List<PartInstance>> GetByWorkOrderLineAsync(int workOrderLineId);
     Task<PartInstance> UpdateStatusAsync(int partInstanceId, Models.Enums.PartInstanceStatus status);
@@ -13,9 +13,9 @@ public interface ISerialNumberService
 
     /// <summary>
     /// Generate a temporary tracking ID for a PartInstance (used before official serial).
-    /// Format: "TMP-{buildPackageId}-{index:D4}".
+    /// Format: "TMP-{programId}-{index:D4}".
     /// </summary>
-    Task<string> GenerateTemporaryTrackingIdAsync(int buildPackageId, int index);
+    Task<string> GenerateTemporaryTrackingIdAsync(int programId, int index);
 
     /// <summary>
     /// Assign the official serial number to a PartInstance (called at laser engraving stage).

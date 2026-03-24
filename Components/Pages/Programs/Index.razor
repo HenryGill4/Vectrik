@@ -5,8 +5,8 @@
 @inject IManufacturingProcessService ProcessService
 @inject IMaintenanceService MaintenanceService
 @inject IMaterialService MaterialService
-@inject IBuildPlanningService BuildPlanningService
-@inject IBuildSchedulingService BuildScheduling
+@inject IProgramPlanningService ProgramPlanningService
+@inject IProgramSchedulingService ProgramScheduling
 @inject ToastService Toast
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -3307,7 +3307,7 @@ else
         _buildProcessing = true;
         try
         {
-            var result = await BuildScheduling.ScheduleProgramBuildAsync(plate.Id, preferredMachine.MachineId);
+            var result = await ProgramScheduling.ScheduleBuildPlateAsync(plate.Id, preferredMachine.MachineId);
             var stageCount = result.BuildStageExecutions.Count;
             var msg = $"Scheduled: {result.Slot.PrintStart:g} → {result.Slot.PrintEnd:g} — {stageCount} stage(s)";
             if (result.Diagnostics?.Warnings.Count > 0)

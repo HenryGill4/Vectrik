@@ -2,7 +2,7 @@ namespace Opcentrix_V3.Models;
 
 public class PartSeparationResult
 {
-    public int BuildPackageId { get; set; }
+    public int MachineProgramId { get; set; }
     public List<SeparatedPart> OkParts { get; set; } = new();
     public List<DamagedPart> DamagedParts { get; set; } = new();
 }

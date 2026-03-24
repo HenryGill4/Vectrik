@@ -3,12 +3,12 @@
 @using Opcentrix_V3.Models.Enums
 @using Opcentrix_V3.Services
 
-@if (_visible && _package != null)
+@if (_visible && _program != null)
 {
     <div class="modal-overlay" style="z-index: 300;">
         <div class="modal-content" style="max-width: 800px;" @onclick:stopPropagation>
             <div class="modal-header">
-                <span class="modal-title">✂️ Part Separation — @_package.Name</span>
+                <span class="modal-title">✂️ Part Separation — @_program.Name</span>
                 <button class="modal-close" @onclick="Cancel">&times;</button>
             </div>
 
@@ -70,17 +70,17 @@
 
     private bool _visible;
     private bool _processing;
-    private BuildPackage? _package;
+    private MachineProgram? _program;
     private List<SeparationEntry> _entries = new();
     private TaskCompletionSource<bool>? _tcs;
 
-    public Task<bool> ShowAsync(BuildPackage package)
+    public Task<bool> ShowAsync(MachineProgram program)
     {
-        _package = package;
+        _program = program;
         _processing = false;
-        _entries = package.Parts.Select(pp => new SeparationEntry
+        _entries = (program.ProgramParts ?? new()).Select(pp => new SeparationEntry
         {
-            BuildPackagePartId = pp.Id,
+            ProgramPartId = pp.Id,
             PartId = pp.PartId,
             PartNumber = pp.Part?.PartNumber ?? $"Part #{pp.PartId}",
             PartName = pp.Part?.Name ?? "",
@@ -101,7 +101,7 @@
 
         var result = new PartSeparationResult
         {
-            BuildPackageId = _package!.Id,
+            MachineProgramId = _program!.Id,
             OkParts = _entries.Where(e => !e.IsDamaged).Select(e => new SeparatedPart
             {
                 PartId = e.PartId,
@@ -134,7 +134,7 @@
 
     private class SeparationEntry
     {
-        public int BuildPackagePartId { get; set; }
+        public int ProgramPartId { get; set; }
         public int PartId { get; set; }
         public string PartNumber { get; set; } = "";
         public string PartName { get; set; } = "";

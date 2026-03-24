@@ -9,14 +9,12 @@ namespace Opcentrix_V3.Services;
 public class StageService : IStageService
 {
     private readonly TenantDbContext _db;
-    private readonly IBuildPlanningService _buildPlanning;
     private readonly IWorkOrderService _workOrderService;
     private readonly ILearningService _learning;
 
-    public StageService(TenantDbContext db, IBuildPlanningService buildPlanning, IWorkOrderService workOrderService, ILearningService learning)
+    public StageService(TenantDbContext db, IWorkOrderService workOrderService, ILearningService learning)
     {
         _db = db;
-        _buildPlanning = buildPlanning;
         _workOrderService = workOrderService;
         _learning = learning;
     }
@@ -277,55 +275,6 @@ public class StageService : IStageService
             }
         }
 
-        // Check if this build-level stage triggers plate release
-        if (execution.BuildPackageId.HasValue)
-        {
-            var shouldRelease = false;
-
-            if (execution.ProcessStageId.HasValue)
-            {
-                // New system: check if this ProcessStage is the designated plate release trigger
-                var processStage = await _db.ProcessStages
-                    .Include(ps => ps.ManufacturingProcess)
-                    .FirstOrDefaultAsync(ps => ps.Id == execution.ProcessStageId.Value);
-
-                if (processStage?.ManufacturingProcess?.PlateReleaseStageId == processStage?.Id)
-                    shouldRelease = true;
-            }
-            else
-            {
-                // Fallback: ProcessStageId not set (legacy-created execution)
-                // Check if this ProductionStage matches the plate release stage's ProductionStageId
-                // for any ManufacturingProcess of a part in this build
-                var buildPartIds = await _db.BuildPackageParts
-                    .Where(bp => bp.BuildPackageId == execution.BuildPackageId.Value)
-                    .Select(bp => bp.PartId)
-                    .Distinct()
-                    .ToListAsync();
-
-                if (buildPartIds.Count > 0)
-                {
-                    var plateReleaseProductionStageId = await _db.ManufacturingProcesses
-                        .Where(p => buildPartIds.Contains(p.PartId) && p.IsActive && p.PlateReleaseStageId.HasValue)
-                        .Select(p => (int?)p.PlateReleaseStage!.ProductionStageId)
-                        .FirstOrDefaultAsync();
-
-                    if (plateReleaseProductionStageId.HasValue
-                        && plateReleaseProductionStageId.Value == execution.ProductionStageId)
-                    {
-                        shouldRelease = true;
-                    }
-                }
-            }
-
-            if (shouldRelease)
-            {
-                await _buildPlanning.CreatePartStageExecutionsAsync(
-                    execution.BuildPackageId.Value,
-                    execution.OperatorName ?? execution.CreatedBy ?? "System");
-            }
-        }
-
         return execution;
     }
 
@@ -481,7 +430,7 @@ public class StageService : IStageService
                     .ThenInclude(wl => wl!.WorkOrder)
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
-            .Include(e => e.BuildPackage)
+
             .Where(e => e.OperatorUserId == operatorUserId
                 && (e.Status == StageExecutionStatus.NotStarted
                     || e.Status == StageExecutionStatus.InProgress
@@ -500,7 +449,7 @@ public class StageService : IStageService
                 .ThenInclude(j => j!.Part)
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
-            .Include(e => e.BuildPackage)
+
             .Where(e => e.OperatorUserId == operatorUserId
                 && (e.Status == StageExecutionStatus.InProgress || e.Status == StageExecutionStatus.Paused))
             .FirstOrDefaultAsync();
@@ -513,7 +462,7 @@ public class StageService : IStageService
                 .ThenInclude(j => j!.Part)
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
-            .Include(e => e.BuildPackage)
+
             .Where(e => e.OperatorUserId == null
                 && e.Status == StageExecutionStatus.NotStarted
                 && !e.IsUnmanned)
@@ -532,7 +481,7 @@ public class StageService : IStageService
                 .ThenInclude(j => j!.Part)
             .Include(e => e.ProductionStage)
             .Include(e => e.Operator)
-            .Include(e => e.BuildPackage)
+
             .Include(e => e.ProcessStage)
             .Where(e => e.MachineId == machineId
                 && (e.Status == StageExecutionStatus.NotStarted
@@ -578,7 +527,7 @@ public class StageService : IStageService
             .Include(e => e.ProcessStage)
             .Include(e => e.Operator)
             .Include(e => e.Machine)
-            .Include(e => e.BuildPackage)
+
             .Where(e => e.Status != StageExecutionStatus.Completed
                 && e.Status != StageExecutionStatus.Skipped
                 && e.Status != StageExecutionStatus.Failed

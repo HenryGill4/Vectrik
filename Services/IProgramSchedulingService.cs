@@ -229,3 +229,27 @@ public record ProgramPlateReleaseResult(
     List<PartInstance> CreatedInstances,
     List<Job> CreatedJobs,
     int TotalPartCount);
+
+/// <summary>
+/// Result of scheduling a standard (CNC/EDM) program.
+/// </summary>
+public record StandardProgramScheduleResult(
+    int JobId,
+    string JobNumber,
+    int MachineProgramId,
+    List<StageExecution> StageExecutions,
+    DateTime ScheduledStart,
+    DateTime ScheduledEnd,
+    double? EstimatedHours,
+    List<string> Warnings);
+
+/// <summary>
+/// Result of scheduling from a work order line.
+/// </summary>
+public record WorkOrderScheduleResult(
+    int JobId,
+    string JobNumber,
+    List<StageExecution> StageExecutions,
+    DateTime ScheduledStart,
+    DateTime ScheduledEnd,
+    List<string> Warnings);

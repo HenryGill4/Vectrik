@@ -36,8 +36,6 @@ public class PartInstance
     public int WorkOrderLineId { get; set; }
     public int PartId { get; set; }
     public int? CurrentStageId { get; set; }
-    public int? BuildPackageId { get; set; }
-
     /// <summary>
     /// FK to the ProductionBatch this part instance is currently assigned to.
     /// </summary>
@@ -56,7 +54,6 @@ public class PartInstance
     public virtual WorkOrderLine WorkOrderLine { get; set; } = null!;
     public virtual Part Part { get; set; } = null!;
     public virtual ProductionStage? CurrentStage { get; set; }
-    public virtual BuildPackage? BuildPackage { get; set; }
     public virtual ProductionBatch? CurrentBatch { get; set; }
     public virtual ICollection<PartInstanceStageLog> StageLogs { get; set; } = new List<PartInstanceStageLog>();
     public virtual ICollection<QCInspection> Inspections { get; set; } = new List<QCInspection>();

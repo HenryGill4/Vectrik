@@ -556,13 +556,10 @@
     private int CalculateOutstanding(WorkOrderLine line)
     {
         var produced = line.ProducedQuantity;
-        var inBuilds = line.BuildPackageParts?
-            .Where(bp => bp.BuildPackage?.Status is not (BuildPackageStatus.Cancelled or BuildPackageStatus.Completed))
-            .Sum(bp => bp.Quantity) ?? 0;
         var inPrograms = line.ProgramParts?
             .Where(pp => pp.MachineProgram?.ScheduleStatus is not (ProgramScheduleStatus.Completed or ProgramScheduleStatus.Cancelled))
             .Sum(pp => pp.Quantity) ?? 0;
-        return Math.Max(0, line.Quantity - produced - inBuilds - inPrograms);
+        return Math.Max(0, line.Quantity - produced - inPrograms);
     }
 
     private void SelectProgram(PartSelection ps, int programId)

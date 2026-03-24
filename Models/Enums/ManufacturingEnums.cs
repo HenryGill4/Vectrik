@@ -25,20 +25,6 @@ public enum BuildJobStatus
     Pending, Preheating, Building, Cooling, Completed, Failed, Cancelled
 }
 
-public enum BuildPackageStatus
-{
-    [Obsolete("Build file drafting now happens on BuildTemplate. Existing Draft packages should be migrated to Ready.")]
-    Draft,          // Parts being assembled onto plate
-    [Obsolete("Slicer data now lives on BuildTemplate. Existing Sliced packages should be migrated to Ready.")]
-    Sliced,         // Slicer data entered (duration, actual counts)
-    Ready,          // Approved for scheduling (created from certified template)
-    Scheduled,      // Assigned to machine + time slot
-    Printing,       // Actively printing on machine
-    PostPrint,      // Plate off printer, going through post-print stages
-    Completed,      // All parts released as PartInstances
-    Cancelled
-}
-
 public enum StageExecutionStatus
 {
     NotStarted, InProgress, Paused, Completed, Skipped, Failed
@@ -237,3 +223,6 @@ public enum ProgramFeedbackCategory
 public enum ProgramFeedbackSeverity { Low, Medium, High, Critical }
 
 public enum ProgramFeedbackStatus { New, Acknowledged, InReview, Resolved, WontFix }
+
+/// <summary>Purpose tag for build variations in scheduling.</summary>
+public enum BuildPurpose { Weekday, Weekend, ChangeoverBackup, DemandFill, Custom }

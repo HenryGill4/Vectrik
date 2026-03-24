@@ -21,10 +21,6 @@
         <span class="sched-kpi-value">@UnassignedCount</span>
         <span class="sched-kpi-label">Unassigned</span>
     </div>
-    <div class="sched-kpi" title="Active builds (Scheduled, Printing, or PostPrint)">
-        <span class="sched-kpi-value">@ActiveBuildsCount</span>
-        <span class="sched-kpi-label">Builds Active</span>
-    </div>
     @if (ConflictCount > 0)
     {
         <div class="sched-kpi sched-kpi--danger" title="Overlapping executions on the same machine">
@@ -38,7 +34,6 @@
     [Parameter] public List<StageExecution> Executions { get; set; } = [];
     [Parameter] public List<StageExecution> Unscheduled { get; set; } = [];
     [Parameter] public List<Machine> Machines { get; set; } = [];
-    [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
     [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
 
     private int InProgressCount => Executions.Count(e => e.Status == StageExecutionStatus.InProgress);
@@ -75,9 +70,6 @@
     }
 
     private int UnassignedCount => Unscheduled.Count;
-
-    private int ActiveBuildsCount => BuildPackages.Count(b =>
-        b.Status is BuildPackageStatus.Scheduled or BuildPackageStatus.Printing or BuildPackageStatus.PostPrint);
 
     private int ConflictCount
     {

@@ -42,14 +42,14 @@ public interface ISchedulingService
 
     /// <summary>
     /// Clear all scheduling data: nulls StageExecution schedule fields,
-    /// resets Job schedule windows, and unlocks BuildPackages.
+    /// resets Job schedule windows.
     /// Returns the number of entities affected.
     /// </summary>
     Task<ScheduleClearResult> ClearAllScheduleDataAsync();
 
     /// <summary>
-    /// Hard-delete all scheduling-related data: stage executions, jobs, build packages
-    /// (including parts, revisions, file info), part instances, and batches.
+    /// Hard-delete all scheduling-related data: stage executions, jobs,
+    /// part instances, and batches.
     /// Use with extreme caution — this is a full data wipe for debugging.
     /// </summary>
     Task<DataDeleteResult> DeleteAllSchedulingDataAsync();

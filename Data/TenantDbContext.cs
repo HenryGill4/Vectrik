@@ -39,12 +39,6 @@ public class TenantDbContext : DbContext
     public DbSet<StageExecution> StageExecutions { get; set; }
     public DbSet<DelayLog> DelayLogs { get; set; }
 
-    // Build Planning
-    public DbSet<BuildPackage> BuildPackages { get; set; }
-    public DbSet<BuildPackagePart> BuildPackageParts { get; set; }
-    public DbSet<BuildFileInfo> BuildFileInfos { get; set; }
-    public DbSet<BuildPackageRevision> BuildPackageRevisions { get; set; }
-
     // Quality
     public DbSet<QCInspection> QCInspections { get; set; }
     public DbSet<QCChecklistItem> QCChecklistItems { get; set; }
@@ -195,19 +189,6 @@ public class TenantDbContext : DbContext
         modelBuilder.Entity<Machine>(entity =>
         {
             entity.HasIndex(e => e.MachineId).IsUnique();
-        });
-
-        // BuildPackage
-        modelBuilder.Entity<BuildPackage>(entity =>
-        {
-            entity.HasOne(e => e.Machine)
-                .WithMany()
-                .HasForeignKey(e => e.MachineId)
-                .OnDelete(DeleteBehavior.SetNull);
-            entity.HasOne(e => e.BuildTemplate)
-                .WithMany()
-                .HasForeignKey(e => e.BuildTemplateId)
-                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // BuildTemplateRevision
@@ -412,9 +393,6 @@ public class TenantDbContext : DbContext
             entity.HasMany(e => e.DelayLogs)
                 .WithOne(e => e.StageExecution)
                 .HasForeignKey(e => e.StageExecutionId);
-            entity.HasOne(e => e.BuildPackage)
-                .WithMany()
-                .HasForeignKey(e => e.BuildPackageId);
             entity.HasOne(e => e.ExternalOperation)
                 .WithOne(e => e.StageExecution)
                 .HasForeignKey<ExternalOperation>(e => e.StageExecutionId);
@@ -452,49 +430,6 @@ public class TenantDbContext : DbContext
                 .HasForeignKey(e => e.PartId);
         });
 
-        // BuildPackage
-        modelBuilder.Entity<BuildPackage>(entity =>
-        {
-            entity.HasOne(e => e.ScheduledJob)
-                .WithMany()
-                .HasForeignKey(e => e.ScheduledJobId);
-
-            entity.HasOne(e => e.PredecessorBuildPackage)
-                .WithMany()
-                .HasForeignKey(e => e.PredecessorBuildPackageId)
-                .OnDelete(DeleteBehavior.SetNull);
-        });
-
-        // BuildPackageRevision
-        modelBuilder.Entity<BuildPackageRevision>(entity =>
-        {
-            entity.HasOne(e => e.BuildPackage)
-                .WithMany(e => e.Revisions)
-                .HasForeignKey(e => e.BuildPackageId);
-        });
-
-        // BuildPackagePart
-        modelBuilder.Entity<BuildPackagePart>(entity =>
-        {
-            entity.HasOne(e => e.BuildPackage)
-                .WithMany(e => e.Parts)
-                .HasForeignKey(e => e.BuildPackageId);
-            entity.HasOne(e => e.Part)
-                .WithMany()
-                .HasForeignKey(e => e.PartId);
-            entity.HasOne(e => e.WorkOrderLine)
-                .WithMany(e => e.BuildPackageParts)
-                .HasForeignKey(e => e.WorkOrderLineId);
-        });
-
-        // BuildFileInfo
-        modelBuilder.Entity<BuildFileInfo>(entity =>
-        {
-            entity.HasOne(e => e.BuildPackage)
-                .WithOne(e => e.BuildFileInfo)
-                .HasForeignKey<BuildFileInfo>(e => e.BuildPackageId);
-        });
-
         // PartInstance
         modelBuilder.Entity<PartInstance>(entity =>
         {
@@ -511,9 +446,6 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.CurrentStage)
                 .WithMany()
                 .HasForeignKey(e => e.CurrentStageId);
-            entity.HasOne(e => e.BuildPackage)
-                .WithMany()
-                .HasForeignKey(e => e.BuildPackageId);
         });
 
         // PartInstanceStageLog
@@ -809,11 +741,6 @@ public class TenantDbContext : DbContext
                 .HasForeignKey(e => e.BuildTemplateId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(e => e.SourceBuildPackage)
-                .WithMany()
-                .HasForeignKey(e => e.SourceBuildPackageId)
-                .OnDelete(DeleteBehavior.SetNull);
-
             entity.HasOne(e => e.Material)
                 .WithMany()
                 .HasForeignKey(e => e.MaterialId)
@@ -874,10 +801,6 @@ public class TenantDbContext : DbContext
         modelBuilder.Entity<ProductionBatch>(entity =>
         {
             entity.HasIndex(e => e.BatchNumber).IsUnique();
-            entity.HasOne(e => e.OriginBuildPackage)
-                .WithMany()
-                .HasForeignKey(e => e.OriginBuildPackageId)
-                .OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.CurrentProcessStage)
                 .WithMany()
                 .HasForeignKey(e => e.CurrentProcessStageId)

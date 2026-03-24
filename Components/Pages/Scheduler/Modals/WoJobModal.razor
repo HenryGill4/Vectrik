@@ -1,5 +1,5 @@
 @inject IWorkOrderService WorkOrderService
-@inject IBuildSchedulingService BuildScheduling
+@inject IProgramSchedulingService ProgramScheduling
 @inject ToastService Toast
 
 @if (IsVisible && WorkOrderLine != null)
@@ -71,8 +71,8 @@
         StateHasChanged();
         try
         {
-            // Use the new program-aware scheduling method
-            var result = await BuildScheduling.ScheduleFromWorkOrderLineAsync(WorkOrderLine.Id);
+            // Use the program-aware scheduling method
+            var result = await ProgramScheduling.ScheduleFromWorkOrderLineAsync(WorkOrderLine.Id);
 
             var msg = $"Job {result.JobNumber} created and scheduled ({result.StageExecutions.Count} stages)";
             if (result.Warnings.Count > 0)
@@ -99,11 +99,11 @@
 
     private static int GetInBuildQty(WorkOrderLine line)
     {
-        if (line.BuildPackageParts == null) return 0;
-        return line.BuildPackageParts
-            .Where(bp => bp.BuildPackage != null
-                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
-                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
-            .Sum(bp => bp.Quantity);
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
+            .Sum(pp => pp.Quantity);
     }
 }

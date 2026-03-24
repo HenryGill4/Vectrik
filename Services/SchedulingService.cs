@@ -674,24 +674,9 @@ public class SchedulingService : ISchedulingService
             job.Status = JobStatus.Draft;
         }
 
-        // 3. Unlock and unschedule build packages that haven't started printing
-        var builds = await _db.BuildPackages
-            .Where(bp => bp.Status == BuildPackageStatus.Scheduled
-                      || bp.Status == BuildPackageStatus.Ready)
-            .ToListAsync();
-
-        foreach (var bp in builds)
-        {
-            bp.ScheduledDate = null;
-            bp.ScheduledJobId = null;
-            bp.IsLocked = false;
-            if (bp.Status == BuildPackageStatus.Scheduled)
-                bp.Status = BuildPackageStatus.Ready;
-        }
-
         await _db.SaveChangesAsync();
 
-        return new ScheduleClearResult(executions.Count, jobs.Count, builds.Count);
+        return new ScheduleClearResult(executions.Count, jobs.Count, 0);
     }
 
     /// <inheritdoc />
@@ -699,7 +684,7 @@ public class SchedulingService : ISchedulingService
     {
         // Delete in FK-safe order: children first, parents last
 
-        // 1. Stage executions (references Jobs and BuildPackages)
+        // 1. Stage executions (references Jobs)
         var execCount = await _db.StageExecutions.CountAsync();
         _db.StageExecutions.RemoveRange(_db.StageExecutions);
         await _db.SaveChangesAsync();
@@ -722,18 +707,7 @@ public class SchedulingService : ISchedulingService
         _db.Jobs.RemoveRange(_db.Jobs);
         await _db.SaveChangesAsync();
 
-        // 5. Build package children: revisions, parts, file info
-        _db.BuildPackageRevisions.RemoveRange(_db.BuildPackageRevisions);
-        _db.BuildPackageParts.RemoveRange(_db.BuildPackageParts);
-        _db.BuildFileInfos.RemoveRange(_db.BuildFileInfos);
-        await _db.SaveChangesAsync();
-
-        // 6. Build packages
-        var buildCount = await _db.BuildPackages.CountAsync();
-        _db.BuildPackages.RemoveRange(_db.BuildPackages);
-        await _db.SaveChangesAsync();
-
-        return new DataDeleteResult(execCount, jobCount, buildCount, instanceCount, batchCount);
+        return new DataDeleteResult(execCount, jobCount, 0, instanceCount, batchCount);
     }
 
     /// <inheritdoc />
@@ -746,7 +720,7 @@ public class SchedulingService : ISchedulingService
         _db.WorkOrderComments.RemoveRange(_db.WorkOrderComments);
         await _db.SaveChangesAsync();
 
-        // WorkOrderLines reference BuildPackageParts (already deleted above) and Jobs (already deleted above)
+        // WorkOrderLines reference Jobs (already deleted above)
         var woCount = await _db.WorkOrders.CountAsync();
         _db.WorkOrderLines.RemoveRange(_db.WorkOrderLines);
         _db.WorkOrders.RemoveRange(_db.WorkOrders);
@@ -764,7 +738,7 @@ public class SchedulingService : ISchedulingService
             Parts: await _db.Parts.CountAsync(),
             Jobs: await _db.Jobs.CountAsync(),
             StageExecutions: await _db.StageExecutions.CountAsync(),
-            BuildPackages: await _db.BuildPackages.CountAsync(),
+            BuildPackages: 0,
             ProductionBatches: await _db.ProductionBatches.CountAsync(),
             WorkOrders: await _db.WorkOrders.CountAsync());
     }

@@ -214,6 +214,10 @@ public class MachineProgram
     /// </summary>
     public int? ScheduledJobId { get; set; }
 
+    /// <summary>Purpose tag for build variations: Weekday, Weekend, ChangeoverBackup, DemandFill.</summary>
+    [MaxLength(50)]
+    public string? BuildPurpose { get; set; }
+
     // ── Navigation ───────────────────────────────────────────
     public virtual Part? Part { get; set; }
     public virtual Machine? Machine { get; set; }
@@ -245,8 +249,13 @@ public class MachineProgram
     [NotMapped]
     public bool HasPostProcessingPrograms => DepowderProgramId.HasValue && EdmProgramId.HasValue;
 
+    /// <summary>Total parts including stacking multiplier (Quantity * StackLevel per part).</summary>
     [NotMapped]
-    public int TotalPartCount => ProgramParts?.Sum(p => p.Quantity) ?? 0;
+    public int TotalPartCount => ProgramParts?.Sum(p => p.Quantity * p.StackLevel) ?? 0;
+
+    /// <summary>Base part count without stacking (just Quantity sum).</summary>
+    [NotMapped]
+    public int BasePartCount => ProgramParts?.Sum(p => p.Quantity) ?? 0;
 
     [NotMapped]
     public int UniquePartCount => ProgramParts?.Select(p => p.PartId).Distinct().Count() ?? 0;

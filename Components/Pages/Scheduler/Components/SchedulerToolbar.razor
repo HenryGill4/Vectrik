@@ -111,7 +111,6 @@
 
     // C5: Quick filter state parameters
     [Parameter] public bool ShowConflictsOnly { get; set; }
-    [Parameter] public BuildPackageStatus? BuildStatusFilter { get; set; }
     [Parameter] public ProgramScheduleStatus? ProgramStatusFilter { get; set; }
     [Parameter] public bool ShowOverdueOnly { get; set; }
 
@@ -129,18 +128,12 @@
 
     // C5: Quick filter EventCallbacks
     [Parameter] public EventCallback<bool> OnShowConflictsOnlyChanged { get; set; }
-    [Parameter] public EventCallback<BuildPackageStatus?> OnBuildStatusFilterChanged { get; set; }
     [Parameter] public EventCallback<ProgramScheduleStatus?> OnProgramStatusFilterChanged { get; set; }
     [Parameter] public EventCallback<bool> OnShowOverdueOnlyChanged { get; set; }
 
     private async Task ToggleConflictsOnly()
     {
         await OnShowConflictsOnlyChanged.InvokeAsync(!ShowConflictsOnly);
-    }
-
-    private async Task SetBuildStatusFilter(BuildPackageStatus? status)
-    {
-        await OnBuildStatusFilterChanged.InvokeAsync(status);
     }
 
     private async Task SetProgramStatusFilter(ProgramScheduleStatus? status)

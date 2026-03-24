@@ -9,12 +9,10 @@ namespace Opcentrix_V3.Services;
 public class SchedulingDiagnosticsService : ISchedulingDiagnosticsService
 {
     private readonly TenantDbContext _db;
-    private readonly IBuildSchedulingService _buildScheduling;
 
-    public SchedulingDiagnosticsService(TenantDbContext db, IBuildSchedulingService buildScheduling)
+    public SchedulingDiagnosticsService(TenantDbContext db)
     {
         _db = db;
-        _buildScheduling = buildScheduling;
     }
 
     /// <inheritdoc />
@@ -46,7 +44,6 @@ public class SchedulingDiagnosticsService : ISchedulingDiagnosticsService
                     .ThenInclude(wl => wl!.WorkOrder)
             .Include(e => e.ProductionStage)
             .Include(e => e.ProcessStage)
-            .Include(e => e.BuildPackage)
             .Where(e => e.MachineId == machineId
                 && e.Status != StageExecutionStatus.Completed
                 && e.Status != StageExecutionStatus.Skipped
@@ -56,26 +53,6 @@ public class SchedulingDiagnosticsService : ISchedulingDiagnosticsService
                 && (e.ScheduledEndAt ?? e.ScheduledStartAt) >= from)
             .OrderBy(e => e.ScheduledStartAt)
             .ToListAsync();
-
-        // Build packages assigned to this machine
-        var builds = await _db.BuildPackages
-            .Include(bp => bp.Parts)
-            .Where(bp => bp.MachineId == machineId
-                && bp.Status != BuildPackageStatus.Cancelled
-                && bp.Status != BuildPackageStatus.Completed)
-            .OrderBy(bp => bp.ScheduledDate)
-            .ToListAsync();
-
-        // Machine timeline (build-centric)
-        List<MachineTimelineEntry> timeline;
-        try
-        {
-            timeline = await _buildScheduling.GetMachineTimelineAsync(machineId, from, to);
-        }
-        catch
-        {
-            timeline = [];
-        }
 
         // Count unscheduled executions that could potentially go on this machine
         var unscheduledCount = await _db.StageExecutions
@@ -95,8 +72,8 @@ public class SchedulingDiagnosticsService : ISchedulingDiagnosticsService
             RangeStart: from,
             RangeEnd: to,
             Executions: executions.Select(MapExecution).ToList(),
-            BuildPackages: builds.Select(MapBuild).ToList(),
-            Timeline: timeline.Select(MapTimeline).ToList(),
+            BuildPackages: [],
+            Timeline: [],
             Conflicts: conflicts,
             UnscheduledCount: unscheduledCount);
     }
@@ -151,27 +128,9 @@ public class SchedulingDiagnosticsService : ISchedulingDiagnosticsService
         e.ScheduledStartAt,
         e.ScheduledEndAt,
         e.EstimatedHours,
-        e.BuildPackageId,
+        null,
         e.BatchGroupId,
         e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber,
         e.IsUnmanned);
 
-    private static SchedulingSnapshotBuild MapBuild(BuildPackage bp) => new(
-        bp.Id,
-        bp.Name,
-        bp.Status.ToString(),
-        bp.ScheduledDate,
-        bp.EstimatedDurationHours,
-        bp.Material,
-        bp.Parts?.Count ?? 0,
-        bp.IsLocked);
-
-    private static SchedulingSnapshotTimeline MapTimeline(MachineTimelineEntry t) => new(
-        t.BuildPackageId,
-        t.BuildName,
-        t.PrintStart,
-        t.PrintEnd,
-        t.ChangeoverStart,
-        t.ChangeoverEnd,
-        t.Status.ToString());
 }

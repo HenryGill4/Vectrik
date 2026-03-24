@@ -14,13 +14,13 @@ public class BatchService : IBatchService
         _db = db;
     }
 
-    public async Task<List<ProductionBatch>> CreateBatchesFromBuildAsync(int buildPackageId, int batchCapacity, string createdBy)
+    public async Task<List<ProductionBatch>> CreateBatchesFromPartsAsync(List<int> partInstanceIds, int batchCapacity, string createdBy)
     {
         if (batchCapacity <= 0) throw new ArgumentException("Batch capacity must be positive.", nameof(batchCapacity));
         if (string.IsNullOrWhiteSpace(createdBy)) throw new ArgumentException("CreatedBy is required.", nameof(createdBy));
 
         var partInstances = await _db.PartInstances
-            .Where(pi => pi.BuildPackageId == buildPackageId && pi.CurrentBatchId == null)
+            .Where(pi => partInstanceIds.Contains(pi.Id) && pi.CurrentBatchId == null)
             .OrderBy(pi => pi.Id)
             .ToListAsync();
 
@@ -35,7 +35,7 @@ public class BatchService : IBatchService
 
         for (int i = 0; i < batchCount; i++)
         {
-            var batchNumber = $"BATCH-{buildPackageId:D4}-{maxId + i + 1:D3}";
+            var batchNumber = $"BATCH-{maxId + i + 1:D4}";
             var partsForBatch = partInstances
                 .Skip(i * batchCapacity)
                 .Take(batchCapacity)
@@ -44,7 +44,6 @@ public class BatchService : IBatchService
             var batch = new ProductionBatch
             {
                 BatchNumber = batchNumber,
-                OriginBuildPackageId = buildPackageId,
                 Capacity = batchCapacity,
                 CurrentPartCount = partsForBatch.Count,
                 Status = BatchStatus.Open,
@@ -65,7 +64,7 @@ public class BatchService : IBatchService
                     ProductionBatchId = batch.Id,
                     PartInstanceId = pi.Id,
                     Action = BatchAssignmentAction.Assigned,
-                    Reason = $"Initial batch from build #{buildPackageId}",
+                    Reason = "Initial batch assignment",
                     PerformedBy = createdBy
                 });
             }
@@ -181,9 +180,6 @@ public class BatchService : IBatchService
 
         await _db.SaveChangesAsync();
 
-        // Determine origin build for numbering (use first part's build)
-        var originBuildId = partInstances.FirstOrDefault()?.BuildPackageId;
-
         // Create new batches
         var batchCount = (int)Math.Ceiling((double)partInstances.Count / newCapacity);
         var maxId = await _db.ProductionBatches.MaxAsync(b => (int?)b.Id) ?? 0;
@@ -200,7 +196,6 @@ public class BatchService : IBatchService
             var newBatch = new ProductionBatch
             {
                 BatchNumber = batchNumber,
-                OriginBuildPackageId = originBuildId,
                 Capacity = newCapacity,
                 CurrentPartCount = partsForBatch.Count,
                 Status = BatchStatus.Open,
@@ -255,7 +250,6 @@ public class BatchService : IBatchService
         var mergedBatch = new ProductionBatch
         {
             BatchNumber = $"BATCH-M-{maxId + 1:D4}",
-            OriginBuildPackageId = batches.FirstOrDefault()?.OriginBuildPackageId,
             Capacity = targetMachineCapacity,
             CurrentPartCount = 0,
             Status = BatchStatus.Open,
@@ -328,15 +322,14 @@ public class BatchService : IBatchService
             .Include(b => b.PartAssignments.OrderByDescending(a => a.Timestamp))
                 .ThenInclude(a => a.PartInstance)
             .Include(b => b.CurrentProcessStage)
-            .Include(b => b.OriginBuildPackage)
             .FirstOrDefaultAsync(b => b.Id == id);
     }
 
-    public async Task<List<ProductionBatch>> GetBatchesForBuildAsync(int buildPackageId)
+    public async Task<List<ProductionBatch>> GetActiveBatchesAsync()
     {
         return await _db.ProductionBatches
             .Include(b => b.CurrentProcessStage)
-            .Where(b => b.OriginBuildPackageId == buildPackageId && b.Status != BatchStatus.Dissolved)
+            .Where(b => b.Status != BatchStatus.Dissolved)
             .OrderBy(b => b.BatchNumber)
             .ToListAsync();
     }

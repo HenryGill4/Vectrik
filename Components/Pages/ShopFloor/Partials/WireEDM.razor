@@ -1,20 +1,20 @@
 @* Wire EDM - Rich built-in stage partial with build-level context *@
 @using Opcentrix_V3.Models
 @using Opcentrix_V3.Services
-@inject IBuildPlanningService BuildPlanningService
+@inject IMachineProgramService MachineProgramService
 
 <WorkInstructionBanner PartId="Execution?.Job?.Part?.Id" StageId="Stage?.Id" />
 
-@if (_buildPackage != null)
+@if (_program != null)
 {
     @* ── Build-Level Mode ── *@
     <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">📦 Build Plate: @_buildPackage.Name — Wire EDM</div>
+        <div class="card-header">📦 Build Plate: @_program.Name — Wire EDM</div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
             <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? "—")</div></div>
-            <div><span class="form-label">Material</span><div>@(_buildPackage.Material ?? "—")</div></div>
-            <div><span class="form-label">Total Parts</span><div>@_buildPackage.TotalPartCount (@_buildPackage.UniquePartCount unique)</div></div>
-            <div><span class="form-label">Status</span><div>@_buildPackage.Status</div></div>
+            <div><span class="form-label">Material</span><div>@(_program.Material ?? "—")</div></div>
+            <div><span class="form-label">Total Parts</span><div>@_program.TotalPartCount (@_program.UniquePartCount unique)</div></div>
+            <div><span class="form-label">Status</span><div>@_program.Status</div></div>
         </div>
 
         @* Parts to Separate *@
@@ -22,7 +22,7 @@
         <table class="data-table" style="font-size: 0.85rem; margin-bottom: 12px;">
             <thead><tr><th>Part #</th><th>Name</th><th>Qty</th><th>WO #</th></tr></thead>
             <tbody>
-                @foreach (var pp in _buildPackage.Parts)
+                @foreach (var pp in _program.ProgramParts)
                 {
                     <tr>
                         <td>@(pp.Part?.PartNumber ?? "—")</td>
@@ -68,25 +68,25 @@ else
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
 
-    private BuildPackage? _buildPackage;
+    private MachineProgram? _program;
     private string _operatorName => Execution?.OperatorName ?? "Operator";
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Execution?.BuildPackageId != null)
+        if (Execution?.MachineProgramId != null)
         {
             try
             {
-                _buildPackage = await BuildPlanningService.GetPackageByIdAsync(Execution.BuildPackageId.Value);
+                _program = await MachineProgramService.GetByIdAsync(Execution.MachineProgramId.Value);
             }
             catch
             {
-                _buildPackage = null;
+                _program = null;
             }
         }
         else
         {
-            _buildPackage = null;
+            _program = null;
         }
     }
 }

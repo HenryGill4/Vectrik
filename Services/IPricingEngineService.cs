@@ -6,11 +6,6 @@ public interface IPricingEngineService
     Task<decimal> GetDefaultLaborRateAsync();
     Task<decimal> GetDefaultOverheadRateAsync();
 
-    /// <summary>
-    /// Allocates build-level costs (powder, gas, laser time) across parts in a build package.
-    /// Returns a dictionary of PartId → allocated cost.
-    /// </summary>
-    Task<BuildCostAllocation> AllocateBuildCostAsync(int buildPackageId);
 }
 
 public class PricingBreakdown
@@ -42,15 +37,3 @@ public class PricingBreakdown
     public double TotalSetupMinutes { get; set; }
 }
 
-public class BuildCostAllocation
-{
-    public int BuildPackageId { get; set; }
-    public decimal PowderCost { get; set; }
-    public decimal GasCost { get; set; }
-    public decimal LaserTimeCost { get; set; }
-    public decimal TotalBuildCost => PowderCost + GasCost + LaserTimeCost;
-    public int TotalPartCount { get; set; }
-
-    /// <summary>PartId → allocated cost share</summary>
-    public Dictionary<int, decimal> PerPartCost { get; set; } = new();
-}

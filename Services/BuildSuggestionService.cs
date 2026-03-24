@@ -49,8 +49,8 @@ public class BuildSuggestionService : IBuildSuggestionService
                 .ThenInclude(l => l.Part)
                     .ThenInclude(p => p!.AdditiveBuildConfig)
             .Include(w => w.Lines)
-                .ThenInclude(l => l.BuildPackageParts)
-                    .ThenInclude(bp => bp.BuildPackage)
+                .ThenInclude(l => l.ProgramParts)
+                    .ThenInclude(pp => pp.MachineProgram)
             .Where(w => w.Status == WorkOrderStatus.Released || w.Status == WorkOrderStatus.InProgress)
             .ToListAsync();
 
@@ -88,12 +88,12 @@ public class BuildSuggestionService : IBuildSuggestionService
 
     private static int GetInBuildQty(WorkOrderLine line)
     {
-        if (line.BuildPackageParts == null) return 0;
-        return line.BuildPackageParts
-            .Where(bp => bp.BuildPackage != null
-                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
-                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
-            .Sum(bp => bp.Quantity);
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
+            .Sum(pp => pp.Quantity * pp.StackLevel);
     }
 
     // ── Template Suggestions (Single-Part) ────────────────────

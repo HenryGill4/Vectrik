@@ -1,6 +1,6 @@
 @page "/production/batches"
 @inject IBatchService BatchService
-@inject IBuildPlanningService BuildPlanningService
+@inject IMachineProgramService MachineProgramService
 @inject IMachineService MachineService
 @inject ToastService Toast
 @using Opcentrix_V3.Models.Enums
@@ -136,7 +136,7 @@ else
                             </strong>
                         </td>
                         <td>@(batch.ContainerLabel ?? "—")</td>
-                        <td>@(batch.OriginBuildPackage?.Name ?? $"Build #{batch.OriginBuildPackageId}")</td>
+                        <td>@(batch.OriginMachineProgram?.Name ?? $"Program #{batch.OriginMachineProgramId}")</td>
                         <td>
                             <strong>@batch.CurrentPartCount</strong> / @batch.Capacity
                             @if (batch.CurrentPartCount >= batch.Capacity)
@@ -229,7 +229,7 @@ else
                 </div>
                 <div>
                     <span class="form-label">Origin Build</span>
-                    <div>@(_detailBatch.OriginBuildPackage?.Name ?? $"Build #{_detailBatch.OriginBuildPackageId}")</div>
+                    <div>@(_detailBatch.OriginMachineProgram?.Name ?? $"Program #{_detailBatch.OriginMachineProgramId}")</div>
                 </div>
                 <div>
                     <span class="form-label">Container</span>
@@ -332,7 +332,7 @@ else
     private bool _loading = true;
     private bool _processing;
     private List<ProductionBatch> _allBatches = [];
-    private List<BuildPackage>? _builds;
+    private List<MachineProgram>? _builds;
     private string _statusFilter = "";
     private int _buildFilter;
     private ConfirmDialog _confirmDialog = null!;
@@ -355,7 +355,7 @@ else
             if (!string.IsNullOrEmpty(_statusFilter) && Enum.TryParse<BatchStatus>(_statusFilter, out var status))
                 q = q.Where(b => b.Status == status);
             if (_buildFilter > 0)
-                q = q.Where(b => b.OriginBuildPackageId == _buildFilter);
+                q = q.Where(b => b.OriginMachineProgramId == _buildFilter);
             return q.OrderByDescending(b => b.CreatedDate);
         }
     }
@@ -364,7 +364,7 @@ else
     {
         try
         {
-            _builds = await BuildPlanningService.GetAllPackagesAsync();
+            _builds = await MachineProgramService.GetBuildPlateProgramsAsync();
             await LoadBatches();
         }
         catch (Exception ex) { Toast.ShowError($"Failed to load: {ex.Message}"); }

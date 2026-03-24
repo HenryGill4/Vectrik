@@ -1,7 +1,7 @@
 @page "/shopfloor"
 @implements IDisposable
 @inject IStageService StageService
-@inject IBuildPlanningService BuildPlanningService
+@inject IMachineProgramService MachineProgramService
 @inject ISerialNumberService SerialNumberService
 @inject IQualityService QualityService
 @inject INumberSequenceService NumberSequenceService
@@ -45,9 +45,9 @@
                         <div>
                             <span class="form-label">Part</span>
                             <div style="font-weight: 600;">
-                                @if (_currentExecution.BuildPackageId != null)
+                                @if (_currentExecution.MachineProgramId != null)
                                         {
-                                            <span>📦 @(_currentExecution.BuildPackage?.Name ?? $"Build #{_currentExecution.BuildPackageId}")</span>
+                                            <span>📦 @(_currentExecution.MachineProgram?.Name ?? $"Build #{_currentExecution.MachineProgramId}")</span>
                                         }
                                         else
                                         {
@@ -142,9 +142,9 @@
                             {
                                 <tr>
                                     <td>
-                                        @if (exec.BuildPackageId != null)
+                                        @if (exec.MachineProgramId != null)
                                         {
-                                            <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
+                                            <span>📦 @(exec.MachineProgram?.Name ?? $"Build #{exec.MachineProgramId}")</span>
                                         }
                                         else
                                         {
@@ -186,9 +186,9 @@
                             {
                                 <tr>
                                     <td>
-                                        @if (exec.BuildPackageId != null)
+                                        @if (exec.MachineProgramId != null)
                                         {
-                                            <span>📦 @(exec.BuildPackage?.Name ?? $"Build #{exec.BuildPackageId}")</span>
+                                            <span>📦 @(exec.MachineProgram?.Name ?? $"Build #{exec.MachineProgramId}")</span>
                                         }
                                         else
                                         {
@@ -394,21 +394,21 @@
             _showCompleteDialog = false;
 
             // If this was the Wire EDM build-level stage, show the part separation dialog
-            if (_currentExecution?.BuildPackageId != null
+            if (_currentExecution?.MachineProgramId != null
                 && _currentExecution.ProductionStage?.StageSlug == "wire-edm")
             {
-                var package = await BuildPlanningService.GetPackageByIdAsync(_currentExecution.BuildPackageId.Value);
-                if (package != null)
+                var program = await MachineProgramService.GetByIdAsync(_currentExecution.MachineProgramId.Value);
+                if (program != null)
                 {
                     Toast.ShowSuccess("EDM complete — confirm part separation");
-                    await _separationDialog.ShowAsync(package);
+                    await _separationDialog.ShowAsync(program);
                     await LoadData();
                     return;
                 }
             }
 
             // Build-level stage toast with context
-            if (_currentExecution?.BuildPackageId != null)
+            if (_currentExecution?.MachineProgramId != null)
             {
                 var nextStage = _currentExecution.ProductionStage.StageSlug switch
                 {
@@ -440,7 +440,7 @@
                 {
                     await SerialNumberService.AssignSerialNumbersAsync(
                         ok.WorkOrderLineId.Value, ok.PartId, ok.Quantity, _currentUserName,
-                        buildPackageId: result.BuildPackageId);
+                        machineProgramId: result.MachineProgramId);
                 }
             }
 

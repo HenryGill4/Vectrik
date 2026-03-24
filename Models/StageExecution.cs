@@ -129,10 +129,6 @@ public class StageExecution
     public virtual ICollection<DelayLog> DelayLogs { get; set; } = new List<DelayLog>();
     public virtual ExternalOperation? ExternalOperation { get; set; }
 
-    // Build plate link (nullable — only set for build-level stage executions)
-    public int? BuildPackageId { get; set; }
-    public virtual BuildPackage? BuildPackage { get; set; }
-
     public virtual ProductionBatch? ProductionBatch { get; set; }
     public virtual ProcessStage? ProcessStage { get; set; }
     public virtual MachineProgram? MachineProgram { get; set; }

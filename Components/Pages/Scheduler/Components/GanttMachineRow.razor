@@ -13,10 +13,10 @@
         </div>
     </div>
     <div class="gantt-track">
-        @* ── Build package bars (full build duration, behind stage bars) ── *@
+        @* ── Build program bars (full build duration, behind stage bars) ── *@
         @foreach (var entry in BuildTimeline)
         {
-            var build = BuildPackages.FirstOrDefault(b => b.Id == entry.BuildPackageId);
+            var build = BuildPrograms.FirstOrDefault(b => b.Id == entry.MachineProgramId);
             if (build == null) continue;
             var barLeft = GetBarLeftPx(entry.PrintStart);
             var barWidth = GetBarWidthPx(entry.PrintStart, entry.PrintEnd);
@@ -32,15 +32,15 @@
         @{
             // Use StageExecutionId to precisely identify which executions are
             // already rendered as timeline bars. Multi-run builds share the same
-            // BuildPackageId, so matching by BuildPackageId would hide ALL runs.
+            // MachineProgramId, so matching by MachineProgramId would hide ALL runs.
             var timelineExecIds = BuildTimeline
                 .Where(t => t.StageExecutionId.HasValue)
                 .Select(t => t.StageExecutionId!.Value)
                 .ToHashSet();
             var remainingExecs = Executions.Where(e => !timelineExecIds.Contains(e.Id)).ToList();
             var buildGroups = remainingExecs
-                .Where(e => e.BuildPackageId != null)
-                .GroupBy(e => new { e.BuildPackageId, e.ProductionStageId, e.JobId })
+                .Where(e => e.MachineProgramId != null)
+                .GroupBy(e => new { e.MachineProgramId, e.ProductionStageId, e.JobId })
                 .ToList();
             var buildGroupExecIds = buildGroups.SelectMany(g => g.Select(e => e.Id)).ToHashSet();
             var individualExecs = remainingExecs.Where(e => !buildGroupExecIds.Contains(e.Id)).ToList();
@@ -80,8 +80,8 @@
     [Parameter, EditorRequired] public DateTime DataRangeStart { get; set; }
     [Parameter, EditorRequired] public double PixelsPerHour { get; set; }
     [Parameter] public EventCallback<StageExecution> OnBarClick { get; set; }
-    [Parameter] public EventCallback<(BuildPackage Build, string Action)> OnBuildAction { get; set; }
-    [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
+    [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
+    [Parameter] public List<MachineProgram> BuildPrograms { get; set; } = [];
     [Parameter] public List<MachineTimelineEntry> BuildTimeline { get; set; } = [];
 
     private double GetBarLeftPx(DateTime start) =>

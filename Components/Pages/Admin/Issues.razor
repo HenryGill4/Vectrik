@@ -277,7 +277,7 @@ else
                                 <div class="pw-snapshot-header">📸 Auto-Captured Snapshot</div>
                                 <div class="pw-snapshot-stats">
                                     <span>⏱️ @_editingSnapshot.Executions.Count executions</span>
-                                    <span>🏗️ @_editingSnapshot.BuildPackages.Count builds</span>
+                                    <span>🏗️ @_editingSnapshot.Programs.Count programs</span>
                                     <span>⚠️ @_editingSnapshot.Conflicts.Count conflicts</span>
                                     <span>📋 @_editingSnapshot.UnscheduledCount unscheduled</span>
                                 </div>
@@ -764,15 +764,15 @@ else
             sb.AppendLine();
         }
 
-        // Build packages on this machine
-        if (snapshot.BuildPackages.Count > 0)
+        // Programs on this machine
+        if (snapshot.Programs.Count > 0)
         {
-            sb.AppendLine($"Build packages on machine ({snapshot.BuildPackages.Count}):");
-            foreach (var bp in snapshot.BuildPackages)
+            sb.AppendLine($"Programs on machine ({snapshot.Programs.Count}):");
+            foreach (var prog in snapshot.Programs)
             {
-                sb.AppendLine($"  [{bp.Status}] {bp.Name} — scheduled: {bp.ScheduledDate:MM/dd HH:mm}, " +
-                    $"duration: {bp.EstimatedDurationHours:F1}h, material: {bp.Material ?? "—"}, " +
-                    $"parts: {bp.PartCount}, locked: {bp.IsLocked}");
+                sb.AppendLine($"  [{prog.Status}] {prog.Name} — scheduled: {prog.ScheduledDate:MM/dd HH:mm}, " +
+                    $"duration: {prog.EstimatedPrintHours:F1}h, material: {prog.Material ?? "—"}, " +
+                    $"parts: {prog.PartCount}, locked: {prog.IsLocked}");
             }
             sb.AppendLine();
         }
@@ -798,7 +798,7 @@ else
             foreach (var e in snapshot.Executions)
             {
                 var wo = !string.IsNullOrWhiteSpace(e.WorkOrderNumber) ? $" WO:{e.WorkOrderNumber}" : "";
-                var build = e.BuildPackageId.HasValue ? $" Build#{e.BuildPackageId}" : "";
+                var build = e.MachineProgramId.HasValue ? $" Program#{e.MachineProgramId}" : "";
                 var batch = !string.IsNullOrWhiteSpace(e.BatchGroupId) ? $" Batch:{e.BatchGroupId}" : "";
                 sb.AppendLine($"  Exec#{e.Id} [{e.Status}] {e.StageName}: {e.PartNumber ?? "no-part"} " +
                     $"({e.ScheduledStart:MM/dd HH:mm}–{e.ScheduledEnd:MM/dd HH:mm}, " +

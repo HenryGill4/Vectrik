@@ -29,7 +29,6 @@
 @code {
     [Parameter] public List<StageExecution> Executions { get; set; } = [];
     [Parameter] public List<StageExecution> Unscheduled { get; set; } = [];
-    [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
     [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
     [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
@@ -95,16 +94,6 @@
                 $"{unassignedCount} unscheduled task(s) need assignment",
                 "Click to auto-schedule or manually assign",
                 unassignedCount.ToString(), "warning", "unassigned", 3, firstUnassigned));
-        }
-
-        // 5. Ready builds not yet scheduled
-        var readyBuilds = BuildPackages.Where(b => b.Status == BuildPackageStatus.Ready).ToList();
-        if (readyBuilds.Count > 0)
-        {
-            items.Add(new ActionItem(
-                $"{readyBuilds.Count} build(s) ready to schedule",
-                string.Join(", ", readyBuilds.Take(3).Select(b => b.Name)),
-                readyBuilds.Count.ToString(), "accent", "ready", 4));
         }
 
         return items.OrderBy(a => a.Priority).ToList();

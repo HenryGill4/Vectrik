@@ -51,7 +51,7 @@ public record SchedulingSnapshotExecution(
     DateTime? ScheduledStart,
     DateTime? ScheduledEnd,
     double? EstimatedHours,
-    int? BuildPackageId,
+    int? MachineProgramId,
     string? BatchGroupId,
     string? WorkOrderNumber,
     bool IsUnmanned);
@@ -67,7 +67,7 @@ public record SchedulingSnapshotBuild(
     bool IsLocked);
 
 public record SchedulingSnapshotTimeline(
-    int BuildPackageId,
+    int MachineProgramId,
     string BuildName,
     DateTime PrintStart,
     DateTime PrintEnd,
