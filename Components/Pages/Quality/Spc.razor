@@ -1,0 +1,233 @@
+@page "/quality/spc"
+@inject IQualityService QualityService
+@inject ISpcService SpcService
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject ITenantFeatureService Features
+
+<PageTitle>SPC Charts - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.quality" ModuleName="Quality Management">
+
+<div class="page-header">
+    <h1 class="page-title">📈 SPC Control Charts</h1>
+    <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/quality")'>← Dashboard</button>
+</div>
+
+<!-- Part & Characteristic Selector -->
+<div class="card" style="margin-bottom: 20px;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: end;">
+        <div class="form-group">
+            <label class="form-label">Part</label>
+            <select class="form-control" @bind="_selectedPartId" @bind:after="OnPartChanged">
+                <option value="0">— Select Part —</option>
+                @foreach (var part in _parts)
+                {
+                    <option value="@part.Id">@part.PartNumber — @part.Name</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Characteristic</label>
+            <select class="form-control" @bind="_selectedCharacteristic" @bind:after="LoadSpcData">
+                <option value="">— Select Characteristic —</option>
+                @foreach (var c in _characteristics)
+                {
+                    <option value="@c">@c</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Sample Count</label>
+            <select class="form-control" @bind="_sampleCount" @bind:after="LoadSpcData">
+                <option value="20">Last 20</option>
+                <option value="30">Last 30</option>
+                <option value="50">Last 50</option>
+                <option value="100">Last 100</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_result != null && _dataPoints.Count > 0)
+{
+    <!-- Cp/Cpk Display -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 20px;">
+        <div class="card kpi-card">
+            <div class="kpi-label">Mean</div>
+            <div class="kpi-value">@_result.Mean</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">Std Dev</div>
+            <div class="kpi-value">@_result.StdDev</div>
+        </div>
+        <div class="card kpi-card" style="border-left: 4px solid @GetCpColor(_result.Cp);">
+            <div class="kpi-label">Cp</div>
+            <div class="kpi-value" style="color: @GetCpColor(_result.Cp);">@_result.Cp</div>
+        </div>
+        <div class="card kpi-card" style="border-left: 4px solid @GetCpColor(_result.Cpk);">
+            <div class="kpi-label">Cpk</div>
+            <div class="kpi-value" style="color: @GetCpColor(_result.Cpk);">@_result.Cpk</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">UCL</div>
+            <div class="kpi-value">@_result.Ucl</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">LCL</div>
+            <div class="kpi-value">@_result.Lcl</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">Out of Control</div>
+            <div class="kpi-value" style="color: @(_result.HasOutOfControl ? "var(--danger)" : "var(--success)");">
+                @(_result.HasOutOfControl ? "⚠️ Yes" : "✅ No")
+            </div>
+        </div>
+    </div>
+
+    <!-- Control Chart (text-based visualization) -->
+    <div class="card">
+        <div class="card-header">X-bar Control Chart — @_selectedCharacteristic</div>
+        <div style="padding: 16px; overflow-x: auto;">
+            <div style="display: flex; gap: 2px; align-items: end; min-height: 200px; position: relative;">
+                @{
+                    decimal chartMin = Math.Min(_result.Lcl, _dataPoints.Min(d => d.MeasuredValue)) - 0.001m;
+                    decimal chartMax = Math.Max(_result.Ucl, _dataPoints.Max(d => d.MeasuredValue)) + 0.001m;
+                    decimal range = chartMax - chartMin;
+                    if (range == 0) range = 1;
+                }
+                @foreach (var dp in _dataPoints)
+                {
+                    decimal pct = range > 0 ? (dp.MeasuredValue - chartMin) / range * 100 : 50;
+                    bool isOoc = dp.MeasuredValue > _result.Ucl || dp.MeasuredValue < _result.Lcl;
+                    bool isOos = dp.MeasuredValue > _result.Usl || dp.MeasuredValue < _result.Lsl;
+                    <div style="flex: 1; min-width: 8px; display: flex; flex-direction: column; align-items: center; position: relative; height: 200px;" title="@dp.MeasuredValue (@dp.RecordedAt.ToString("MMM dd"))">
+                        <div style="position: absolute; bottom: @(pct)%; width: 8px; height: 8px; border-radius: 50%; background: @(isOos ? "var(--danger)" : isOoc ? "var(--warning)" : "var(--accent)");"></div>
+                    </div>
+                }
+            </div>
+            <!-- Legend -->
+            <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 0.8rem; color: var(--text-muted);">
+                <span>USL: @_result.Usl</span>
+                <span>UCL: @_result.Ucl</span>
+                <span>Mean: @_result.Mean</span>
+                <span>LCL: @_result.Lcl</span>
+                <span>LSL: @_result.Lsl</span>
+                <span style="color: var(--accent);">● In Control</span>
+                <span style="color: var(--warning);">● Near Limit</span>
+                <span style="color: var(--danger);">● Out of Spec</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Table -->
+    <div class="card" style="margin-top: 20px;">
+        <div class="card-header">📊 Measurement Data (@_dataPoints.Count points)</div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Value</th>
+                    <th>Nominal</th>
+                    <th>Deviation</th>
+                    <th>In Spec</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ int idx = 1; }
+                @foreach (var dp in _dataPoints)
+                {
+                    decimal dev = dp.MeasuredValue - dp.NominalValue;
+                    bool inSpec = dp.MeasuredValue >= (dp.NominalValue - dp.ToleranceMinus) && dp.MeasuredValue <= (dp.NominalValue + dp.TolerancePlus);
+                    <tr>
+                        <td>@(idx++)</td>
+                        <td style="font-weight: 600;">@dp.MeasuredValue</td>
+                        <td>@dp.NominalValue</td>
+                        <td style="color: @(inSpec ? "var(--success)" : "var(--danger)");">@dev.ToString("+0.0000;-0.0000")</td>
+                        <td><span class="badge @(inSpec ? "badge-success" : "badge-danger")">@(inSpec ? "Yes" : "No")</span></td>
+                        <td>@dp.RecordedAt.ToString("MMM dd HH:mm")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else if (!_loading && _selectedPartId > 0 && !string.IsNullOrEmpty(_selectedCharacteristic))
+{
+    <div class="card" style="padding: 40px; text-align: center; color: var(--text-muted);">
+        No SPC data found for this part and characteristic. Inspect parts to generate data points.
+    </div>
+}
+
+</FeatureGate>
+
+@code {
+    private List<Part> _parts = new();
+    private List<string> _characteristics = new();
+    private List<SpcDataPoint> _dataPoints = new();
+    private SpcCalculationResult? _result;
+    private int _selectedPartId;
+    private string _selectedCharacteristic = string.Empty;
+    private int _sampleCount = 30;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _parts = await SpcService.GetActivePartsWithSpcDataAsync();
+    }
+
+    private async Task OnPartChanged()
+    {
+        _characteristics = new();
+        _selectedCharacteristic = string.Empty;
+        _result = null;
+        _dataPoints = new();
+
+        if (_selectedPartId > 0)
+        {
+            _characteristics = await SpcService.GetCharacteristicsForPartAsync(_selectedPartId);
+        }
+    }
+
+    private async Task LoadSpcData()
+    {
+        if (_selectedPartId <= 0 || string.IsNullOrEmpty(_selectedCharacteristic))
+        {
+            _result = null;
+            _dataPoints = new();
+            return;
+        }
+
+        _loading = true;
+
+        _dataPoints = await SpcService.GetDataPointsAsync(_selectedPartId, _selectedCharacteristic, _sampleCount);
+
+        if (_dataPoints.Count >= 2)
+        {
+            var first = _dataPoints.First();
+            _result = SpcService.Calculate(
+                _dataPoints.Select(d => d.MeasuredValue).ToList(),
+                first.NominalValue,
+                first.TolerancePlus,
+                first.ToleranceMinus);
+        }
+        else
+        {
+            _result = null;
+        }
+
+        _loading = false;
+    }
+
+    private static string GetCpColor(decimal value) => value switch
+    {
+        >= 1.33m => "var(--success)",
+        >= 1.0m => "var(--warning)",
+        _ => "var(--danger)"
+    };
+}

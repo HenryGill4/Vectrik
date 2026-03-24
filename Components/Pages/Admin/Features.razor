@@ -1,0 +1,128 @@
+@page "/admin/features"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject ITenantFeatureService FeatureService
+@inject ToastService Toast
+
+<PageTitle>Feature Flags - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Feature Flags</h1>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="card">
+        <div class="card-header">Module Features</div>
+        <p style="padding: 12px 16px 0; color: var(--text-muted); font-size: 0.9rem;">
+            Enable or disable feature modules for this tenant. Changes take effect immediately.
+        </p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Description</th>
+                    <th style="text-align:center;">Enabled</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var feature in _features)
+                {
+                    <tr>
+                        <td style="font-family: monospace;">@feature.Key</td>
+                        <td style="color: var(--text-muted);">@GetDescription(feature.Key)</td>
+                        <td style="text-align:center;">
+                            <input type="checkbox" checked="@feature.Enabled"
+                                   @onchange="e => ToggleFeature(feature.Key, (bool)(e.Value ?? false))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private bool _loading = true;
+    private List<(string Key, bool Enabled)> _features = new();
+    private ConfirmDialog _confirm = null!;
+
+    private static readonly HashSet<string> _criticalFeatures = new()
+    {
+        "module.shopfloor", "module.workorders", "module.quoting"
+    };
+
+    private static readonly Dictionary<string, string[]> _featureDependencies = new()
+    {
+        ["module.inventory"] = new[] { "module.purchasing" },
+        ["module.quality"] = new[] { "advanced.spc" },
+        ["dlms"] = new[] { "dlms.iuid", "dlms.wawf", "dlms.gfm", "dlms.cdrl" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _features = await FeatureService.GetAllFeaturesAsync();
+        _loading = false;
+    }
+
+    private async Task ToggleFeature(string key, bool enabled)
+    {
+        if (!enabled && _criticalFeatures.Contains(key))
+        {
+            var confirmed = await _confirm.ShowAsync(
+                $"Disabling '{GetDescription(key)}' will hide this module for all users. Are you sure?",
+                "Disable Module");
+            if (!confirmed) return;
+        }
+
+        await FeatureService.SetFeatureAsync(key, enabled);
+
+        // If disabling a parent feature, also disable dependents
+        if (!enabled && _featureDependencies.TryGetValue(key, out var dependents))
+        {
+            foreach (var dep in dependents)
+            {
+                await FeatureService.SetFeatureAsync(dep, false);
+            }
+        }
+
+        _features = await FeatureService.GetAllFeaturesAsync();
+        Toast.ShowSuccess($"{key} {(enabled ? "enabled" : "disabled")}");
+    }
+
+    private static string GetDescription(string key) => key switch
+    {
+        "module.quoting" => "Estimating & Quoting (Module 01)",
+        "module.workorders" => "Work Order Management (Module 02)",
+        "module.instructions" => "Visual Work Instructions (Module 03)",
+        "module.shopfloor" => "Shop Floor & Scheduling (Module 04)",
+        "module.quality" => "Quality Systems / QMS (Module 05)",
+        "module.inventory" => "Inventory Control (Module 06)",
+        "module.analytics" => "Reporting & Analytics (Module 07)",
+        "module.pdm" => "Parts / Product Data Management (Module 08)",
+        "module.costing" => "Job Costing & Financial (Module 09)",
+        "module.tools" => "Cutting Tool & Fixture Management (Module 10)",
+        "module.maintenance" => "Calibration & Preventative Maintenance (Module 11)",
+        "module.purchasing" => "Purchasing & Vendor Management (Module 12)",
+        "module.timeclock" => "Time Clock & Labor Tracking (Module 13)",
+        "module.documents" => "Document Control (Module 14)",
+        "module.shipping" => "Shipping & Receiving (Module 15)",
+        "module.crm" => "CRM & Contact Management (Module 16)",
+        "module.compliance" => "CMMC & Cybersecurity Compliance (Module 17)",
+        "module.training" => "Training / LMS (Module 18)",
+        "dlms" => "DLMS Defense Logistics (master toggle)",
+        "dlms.iuid" => "IUID item unique identification",
+        "dlms.wawf" => "Wide Area Workflow (WAWF) invoicing",
+        "dlms.gfm" => "Government Furnished Material tracking",
+        "dlms.cdrl" => "Contract Data Requirements Lists",
+        "advanced.spc" => "SPC control charts",
+        "advanced.workflows" => "Configurable approval workflows",
+        "advanced.custom_fields" => "Custom fields on entities",
+        _ => key
+    };
+}

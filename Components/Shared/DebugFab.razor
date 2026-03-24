@@ -1,0 +1,330 @@
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject IDevIssueService IssueService
+@inject ToastService Toast
+@implements IDisposable
+
+@if (_visible)
+{
+    <div class="dfab">
+        @if (_view == View.Form)
+        {
+            <div class="dfab-panel">
+                <div class="dfab-panel-head">
+                    <span>@_formIcon @_formTitle</span>
+                    <button class="dfab-x" @onclick="Close">✕</button>
+                </div>
+                <div class="dfab-panel-body">
+                    @switch (_formType)
+                    {
+                        case "bug":
+                            <label class="dfab-lbl">What happened?</label>
+                            <textarea class="dfab-input" @bind="_description"
+                                      placeholder="Describe the bug — what did you see?" rows="3"></textarea>
+                            <label class="dfab-lbl">Expected behavior</label>
+                            <textarea class="dfab-input" @bind="_expected"
+                                      placeholder="What should have happened instead?" rows="2"></textarea>
+                            <label class="dfab-lbl">Steps to reproduce</label>
+                            <textarea class="dfab-input" @bind="_steps"
+                                      placeholder="1. Go to ...&#10;2. Click ...&#10;3. See error" rows="3"></textarea>
+                            break;
+
+                        case "change":
+                            <label class="dfab-lbl">Current behavior</label>
+                            <textarea class="dfab-input" @bind="_description"
+                                      placeholder="How does it work right now?" rows="3"></textarea>
+                            <label class="dfab-lbl">Desired behavior</label>
+                            <textarea class="dfab-input" @bind="_expected"
+                                      placeholder="How should it work instead? Why?" rows="3"></textarea>
+                            break;
+
+                        case "style":
+                            <label class="dfab-lbl">What looks wrong?</label>
+                            <textarea class="dfab-input" @bind="_description"
+                                      placeholder="Describe the visual issue" rows="2"></textarea>
+                            <label class="dfab-lbl">Which element / area?</label>
+                            <input class="dfab-input" type="text" @bind="_element"
+                                   placeholder="e.g. sidebar, Gantt chart header, Save button" />
+                            <div class="dfab-hint">
+                                @_ctxBreakpoint viewport · @_ctxTheme theme · @_ctxViewport
+                            </div>
+                            break;
+
+                        case "scheduling":
+                            <label class="dfab-lbl">What's wrong with the schedule?</label>
+                            <textarea class="dfab-input" @bind="_description"
+                                      placeholder="e.g. Builds overlap, per-part executions missing, wrong machine" rows="3"></textarea>
+                            <label class="dfab-lbl">Which machine / build?</label>
+                            <input class="dfab-input" type="text" @bind="_element"
+                                   placeholder="e.g. EOS M4 Onyx #1, Build B-2025-042" />
+                            <label class="dfab-lbl">Expected schedule</label>
+                            <textarea class="dfab-input" @bind="_expected"
+                                      placeholder="What should the timeline look like?" rows="2"></textarea>
+                            <div class="dfab-hint">
+                                💡 Use the full Issue Tracker for auto-captured diagnostics
+                            </div>
+                            break;
+
+                        default:
+                            <label class="dfab-lbl">Description</label>
+                            <textarea class="dfab-input" @bind="_description"
+                                      placeholder="Describe the issue..." rows="4"></textarea>
+                            break;
+                    }
+
+                    <details class="dfab-details">
+                        <summary class="dfab-details-sum">Context</summary>
+                        <div class="dfab-ctx">
+                            <div><strong>Page:</strong> @_ctxUrl</div>
+                            <div><strong>Viewport:</strong> @_ctxViewport · @_ctxBreakpoint</div>
+                            <div><strong>Theme:</strong> @_ctxTheme</div>
+                            <div><strong>Time:</strong> @_ctxTime</div>
+                            @if (_formType == "bug" || _formType == "style")
+                            {
+                                <div><strong>Scroll:</strong> @(_ctxScrollY)px</div>
+                                <div><strong>DPR:</strong> @_ctxPixelRatio</div>
+                                <div class="dfab-ua"><strong>UA:</strong> @_ctxUserAgent</div>
+                            }
+                        </div>
+                    </details>
+
+                    @if (_saved)
+                    {
+                        <div class="dfab-ok">✅ Saved! <a href="/admin/issues" style="color:var(--accent);">View Issues →</a></div>
+                    }
+
+                    <div class="dfab-actions">
+                        <button class="dfab-btn dfab-btn-go" @onclick="SaveIssueAsync" disabled="@_saving">
+                            @(_saving ? "Saving…" : "💾 Submit Issue")
+                        </button>
+                        <button class="dfab-btn dfab-btn-alt" @onclick="Close">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        }
+        else if (_view == View.Menu)
+        {
+            <div class="dfab-menu">
+                <button class="dfab-opt dfab-opt-bug" @onclick='() => OpenFormAsync("bug")'>🐛 Report Bug</button>
+                <button class="dfab-opt dfab-opt-idea" @onclick='() => OpenFormAsync("change")'>💡 Request Change</button>
+                <button class="dfab-opt dfab-opt-style" @onclick='() => OpenFormAsync("style")'>🎨 Styling Issue</button>
+                <button class="dfab-opt dfab-opt-sched" @onclick='() => OpenFormAsync("scheduling")'>📅 Scheduling Issue</button>
+            </div>
+        }
+
+        <button class="dfab-trigger @(_view != View.Closed ? "dfab-trigger-on" : "")"
+                @onclick="Toggle" title="Debug Feedback">
+            @(_view != View.Closed ? "✕" : "🛠️")
+        </button>
+    </div>
+}
+
+@code {
+    private enum View { Closed, Menu, Form }
+    private bool _visible;
+    private View _view;
+    private bool _saving;
+    private bool _saved;
+
+    private string _formType = "";
+    private string _formTitle = "";
+    private string _formIcon = "";
+
+    private string _description = "";
+    private string _expected = "";
+    private string _steps = "";
+    private string _element = "";
+
+    private string _ctxUrl = "";
+    private string _ctxViewport = "";
+    private string _ctxBreakpoint = "";
+    private string _ctxTheme = "";
+    private string _ctxTime = "";
+    private string _ctxScrollY = "0";
+    private string _ctxPixelRatio = "1";
+    private string _ctxUserAgent = "";
+    private string _ctxPageTitle = "";
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnNav;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await SyncVisibilityAsync();
+    }
+
+    /// <summary>Re-check localStorage on every navigation so toggling in Settings takes effect.</summary>
+    private async void OnNav(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        try
+        {
+            await SyncVisibilityAsync();
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task SyncVisibilityAsync()
+    {
+        try
+        {
+            var on = await JS.InvokeAsync<bool>("opcentrix.debugFab.isEnabled");
+            if (on != _visible)
+            {
+                _visible = on;
+                if (!_visible) _view = View.Closed;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void Toggle()
+    {
+        if (_view != View.Closed)
+        {
+            Close();
+            return;
+        }
+        _view = View.Menu;
+    }
+
+    private async Task OpenFormAsync(string type)
+    {
+        _view = View.Form;
+        _saving = false;
+        _saved = false;
+        _description = "";
+        _expected = "";
+        _steps = "";
+        _element = "";
+        _formType = type;
+
+        (_formTitle, _formIcon) = type switch
+        {
+            "bug"        => ("Report Bug",          "🐛"),
+            "change"     => ("Request Change",       "💡"),
+            "style"      => ("Styling Issue",        "🎨"),
+            "scheduling" => ("Scheduling Issue",     "📅"),
+            _            => ("Feedback",             "📝")
+        };
+
+        _ctxUrl = Nav.Uri;
+        _ctxTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+        try
+        {
+            var ctx = await JS.InvokeAsync<Dictionary<string, string>>("opcentrix.debugFab.getContext");
+            _ctxViewport = ctx.GetValueOrDefault("viewport", "unknown");
+            _ctxBreakpoint = ctx.GetValueOrDefault("breakpoint", "unknown");
+            _ctxTheme = ctx.GetValueOrDefault("theme", "unknown");
+            _ctxPageTitle = ctx.GetValueOrDefault("pageTitle", "");
+            _ctxScrollY = ctx.GetValueOrDefault("scrollY", "0");
+            _ctxPixelRatio = ctx.GetValueOrDefault("pixelRatio", "1");
+            _ctxUserAgent = ctx.GetValueOrDefault("userAgent", "unknown");
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void Close()
+    {
+        _view = View.Closed;
+        _saving = false;
+        _saved = false;
+    }
+
+    private async Task SaveIssueAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_description)) return;
+
+        _saving = true;
+        try
+        {
+            var envParts = new List<string>();
+            if (!string.IsNullOrEmpty(_ctxViewport)) envParts.Add($"Viewport: {_ctxViewport} ({_ctxBreakpoint})");
+            if (!string.IsNullOrEmpty(_ctxTheme)) envParts.Add($"Theme: {_ctxTheme}");
+            if (!string.IsNullOrEmpty(_ctxUserAgent)) envParts.Add($"UA: {_ctxUserAgent}");
+
+            var issue = new DevIssue
+            {
+                Type = _formType switch
+                {
+                    "bug" => DevIssueType.Bug,
+                    "change" => DevIssueType.Change,
+                    "style" => DevIssueType.Styling,
+                    "scheduling" => DevIssueType.SchedulingIssue,
+                    _ => DevIssueType.Bug
+                },
+                Title = _formType switch
+                {
+                    "bug" => Truncate(_description, 200),
+                    "change" => Truncate(_description, 200),
+                    "style" => Truncate($"Styling: {_element} — {_description}", 200),
+                    "scheduling" => Truncate($"Scheduling: {_element} — {_description}", 200),
+                    _ => Truncate(_description, 200)
+                },
+                Description = _description,
+                Expected = _expected,
+                StepsOrElement = _formType is "style" or "scheduling" ? _element : _steps,
+                AffectedPage = ExtractPath(_ctxUrl),
+                SystemArea = _formType == "scheduling"
+                    ? "Scheduler — Gantt"
+                    : InferSystemArea(ExtractPath(_ctxUrl)),
+                EnvironmentContext = string.Join(" · ", envParts),
+                MachineContext = _formType == "scheduling" ? _element : null
+            };
+
+            await IssueService.CreateAsync(issue);
+            _saved = true;
+            Toast.ShowSuccess("Issue saved to tracker");
+        }
+        catch
+        {
+            Toast.ShowError("Failed to save issue");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string Truncate(string text, int max)
+        => text.Length <= max ? text : string.Concat(text.AsSpan(0, max), "…");
+
+    private static string ExtractPath(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return uri.PathAndQuery;
+        return url;
+    }
+
+    /// <summary>Maps a URL path to a system area matching the Issues.razor dropdown.</summary>
+    private static string InferSystemArea(string path)
+    {
+        var lower = path.ToLowerInvariant().TrimEnd('/');
+        return lower switch
+        {
+            _ when lower.StartsWith("/scheduler") => "Scheduler — Gantt",
+            _ when lower.StartsWith("/parts") => "Parts",
+            _ when lower.StartsWith("/workorders") || lower.StartsWith("/work-orders") => "Work Orders",
+            _ when lower.StartsWith("/builds") => "Builds / SLS Pipeline",
+            _ when lower.StartsWith("/shopfloor") || lower.StartsWith("/shop-floor") => "Shop Floor",
+            _ when lower.StartsWith("/tracking") => "Tracking",
+            _ when lower.StartsWith("/quality") => "Quality",
+            _ when lower.StartsWith("/analytics") => "Analytics",
+            _ when lower.StartsWith("/inventory") => "Inventory",
+            _ when lower.StartsWith("/maintenance") => "Maintenance",
+            _ when lower.StartsWith("/quotes") => "Quotes",
+            _ when lower.StartsWith("/admin") => "Admin",
+            _ => ""
+        };
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnNav;
+    }
+}

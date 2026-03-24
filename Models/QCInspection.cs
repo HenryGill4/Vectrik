@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Opcentrix_V3.Models.Enums;
 
 namespace Opcentrix_V3.Models;
 
@@ -13,6 +14,11 @@ public class QCInspection
 
     public int InspectorUserId { get; set; }
 
+    public int? InspectionPlanId { get; set; }
+    public bool IsFair { get; set; }
+    public InspectionResult OverallResult { get; set; } = InspectionResult.Pending;
+    public int? NonConformanceReportId { get; set; }
+
     public DateTime InspectionDate { get; set; } = DateTime.UtcNow;
 
     public bool OverallPass { get; set; }
@@ -24,7 +30,7 @@ public class QCInspection
     public string? FailureReason { get; set; }
 
     [MaxLength(200)]
-    public string? CorrectiveAction { get; set; }
+    public string? CorrectiveActionText { get; set; }
 
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 
@@ -34,7 +40,9 @@ public class QCInspection
     public virtual Part? Part { get; set; }
     public virtual PartInstance? PartInstance { get; set; }
     public virtual User Inspector { get; set; } = null!;
+    public virtual InspectionPlan? InspectionPlan { get; set; }
     public virtual ICollection<QCChecklistItem> ChecklistItems { get; set; } = new List<QCChecklistItem>();
+    public virtual ICollection<InspectionMeasurement> Measurements { get; set; } = new List<InspectionMeasurement>();
 }
 
 public class QCChecklistItem

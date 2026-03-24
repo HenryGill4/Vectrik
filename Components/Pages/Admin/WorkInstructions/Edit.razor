@@ -1,0 +1,330 @@
+@page "/admin/work-instructions/{Id:int}/edit"
+@inject IWorkInstructionService InstructionService
+@inject ToastService Toast
+@inject NavigationManager Nav
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
+
+<PageTitle>Edit Work Instruction - OpCentrix</PageTitle>
+
+@if (_instruction == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="page-header">
+        <h1 class="page-title">📋 Edit Work Instruction</h1>
+        <div style="display: flex; gap: 8px;">
+            <a href="admin/work-instructions" class="btn btn-secondary">← Back</a>
+            <a href="/shopfloor/instructions/@Id" target="_blank" class="btn btn-secondary">👁 Preview as Operator</a>
+            <button class="btn btn-primary" @onclick="SaveInstruction" disabled="@_saving">
+                @(_saving ? "Saving..." : "💾 Save")
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+
+    @* ── Header Info ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">Instruction Details — Rev @_instruction.RevisionNumber</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div><span class="form-label">Part</span><div style="font-weight: 600;">@(_instruction.Part?.PartNumber ?? "—") — @(_instruction.Part?.Name ?? "")</div></div>
+            <div><span class="form-label">Stage</span><div style="font-weight: 600;">@(_instruction.ProductionStage?.Name ?? "—")</div></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
+            <div class="form-group">
+                <label class="form-label">Title *</label>
+                <input class="form-control" @bind="_instruction.Title" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Active</label>
+                <div><input type="checkbox" @bind="_instruction.IsActive" style="width: 20px; height: 20px;" /></div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea class="form-control" @bind="_instruction.Description" rows="2"></textarea>
+        </div>
+    </div>
+
+    @* ── Steps Editor ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>📝 Steps (@_instruction.Steps.Count)</span>
+            <button class="btn btn-sm btn-primary" @onclick="AddStep">+ Add Step</button>
+        </div>
+
+        @if (!_instruction.Steps.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon">📝</div>
+                <div class="empty-state-text">No steps yet. Add your first step.</div>
+            </div>
+        }
+        else
+        {
+            @foreach (var step in _instruction.Steps.OrderBy(s => s.StepOrder))
+            {
+                <div class="wi-step-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-weight: 700; font-size: 1.1rem; color: var(--accent);">Step @step.StepOrder</span>
+                        <div style="display: flex; gap: 4px;">
+                            @if (step.StepOrder > 1)
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="() => MoveStep(step, -1)" title="Move up">↑</button>
+                            }
+                            @if (step.StepOrder < _instruction.Steps.Count)
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="() => MoveStep(step, 1)" title="Move down">↓</button>
+                            }
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteStep(step)" title="Delete step">🗑</button>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">Title *</label>
+                            <input class="form-control" @bind="step.Title" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Requires Operator Signoff</label>
+                            <div><input type="checkbox" @bind="step.RequiresOperatorSignoff" style="width: 20px; height: 20px;" /></div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Body (instructions text)</label>
+                        <textarea class="form-control" @bind="step.Body" rows="3"></textarea>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">⚠️ Warning Text</label>
+                            <input class="form-control" @bind="step.WarningText" placeholder="Safety or critical warning..." style="border-left: 3px solid var(--warning);" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">💡 Tip Text</label>
+                            <input class="form-control" @bind="step.TipText" placeholder="Helpful tip for operators..." style="border-left: 3px solid var(--accent);" />
+                        </div>
+                    </div>
+
+                    @* ── Media ── *@
+                    <div style="margin-top: 8px;">
+                        <label class="form-label">📎 Media (@step.Media.Count)</label>
+                        @if (step.Media.Any())
+                        {
+                            <div class="wi-media-grid">
+                                @foreach (var media in step.Media.OrderBy(m => m.DisplayOrder))
+                                {
+                                    <div class="wi-media-item">
+                                        @if (media.MediaType == MediaType.Image)
+                                        {
+                                            <img src="@media.FileUrl" alt="@(media.AltText ?? media.FileName)" style="max-width: 120px; max-height: 80px; border-radius: 4px; object-fit: cover;" />
+                                        }
+                                        else
+                                        {
+                                            <div style="padding: 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.8rem;">
+                                                @(media.MediaType == MediaType.Video ? "🎬" : "📄") @media.FileName
+                                            </div>
+                                        }
+                                        <button class="btn btn-sm btn-danger" style="padding: 2px 6px; font-size: 0.7rem;" @onclick="() => DeleteMedia(media.Id)">✕</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <div style="margin-top: 6px;">
+                            <InputFile OnChange="(e) => UploadMedia(step.Id, e)" accept=".jpg,.jpeg,.png,.gif,.webp,.mp4,.webm,.pdf" />
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    @* ── Revision History ── *@
+    <div class="card">
+        <div class="card-header" style="cursor: pointer;" @onclick="ToggleRevisions">
+            📜 Revision History @(_showRevisions ? "▼" : "▶")
+        </div>
+        @if (_showRevisions)
+        {
+            @if (_revisions == null)
+            {
+                <div class="loading"><span class="spinner"></span></div>
+            }
+            else if (!_revisions.Any())
+            {
+                <div class="empty-state"><div class="empty-state-text">No revisions yet. Save to create the first revision.</div></div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead><tr><th>Rev</th><th>Date</th><th>By</th><th>Notes</th></tr></thead>
+                    <tbody>
+                        @foreach (var rev in _revisions)
+                        {
+                            <tr>
+                                <td><span class="badge badge-active">Rev @rev.RevisionNumber</span></td>
+                                <td>@rev.CreatedAt.ToString("MM/dd/yy HH:mm")</td>
+                                <td>@rev.CreatedByUserId</td>
+                                <td>@(rev.ChangeNotes ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+    </div>
+}
+
+<ConfirmDialog @ref="_confirmDialog" />
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private WorkInstruction? _instruction;
+    private List<WorkInstructionRevision>? _revisions;
+    private bool _saving;
+    private bool _showRevisions;
+    private string? _error;
+    private ConfirmDialog _confirmDialog = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _instruction = await InstructionService.GetByIdAsync(Id);
+        if (_instruction == null)
+            Nav.NavigateTo("admin/work-instructions");
+    }
+
+    private async Task SaveInstruction()
+    {
+        if (_instruction == null) return;
+        if (string.IsNullOrWhiteSpace(_instruction.Title))
+        {
+            _error = "Title is required.";
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            await InstructionService.UpdateAsync(_instruction, "Updated via editor");
+
+            // Update steps individually
+            foreach (var step in _instruction.Steps)
+                await InstructionService.UpdateStepAsync(step);
+
+            // Reload to get updated revision number
+            _instruction = await InstructionService.GetByIdAsync(Id);
+            _revisions = null; // Reset so next toggle reloads
+            Toast.ShowSuccess("Saved successfully.");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Toast.ShowError($"Save failed: {ex.Message}");
+        }
+        _saving = false;
+    }
+
+    private async Task AddStep()
+    {
+        if (_instruction == null) return;
+        try
+        {
+            var step = new WorkInstructionStep
+            {
+                Title = $"Step {_instruction.Steps.Count + 1}",
+                Body = ""
+            };
+            var created = await InstructionService.AddStepAsync(_instruction.Id, step);
+            _instruction = await InstructionService.GetByIdAsync(Id);
+            Toast.ShowSuccess("Step added.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteStep(WorkInstructionStep step)
+    {
+        var confirmed = await _confirmDialog.ShowAsync("Delete Step", $"Delete \"{step.Title}\"? This will also remove all media and feedback for this step.");
+        if (confirmed)
+        {
+            try
+            {
+                await InstructionService.DeleteStepAsync(step.Id);
+                _instruction = await InstructionService.GetByIdAsync(Id);
+                Toast.ShowSuccess("Step deleted.");
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Error: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task MoveStep(WorkInstructionStep step, int direction)
+    {
+        if (_instruction == null) return;
+        var ordered = _instruction.Steps.OrderBy(s => s.StepOrder).ToList();
+        var idx = ordered.IndexOf(step);
+        var swapIdx = idx + direction;
+        if (swapIdx < 0 || swapIdx >= ordered.Count) return;
+
+        // Swap
+        var ids = ordered.Select(s => s.Id).ToList();
+        (ids[idx], ids[swapIdx]) = (ids[swapIdx], ids[idx]);
+
+        try
+        {
+            await InstructionService.ReorderStepsAsync(_instruction.Id, ids);
+            _instruction = await InstructionService.GetByIdAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task UploadMedia(int stepId, InputFileChangeEventArgs e)
+    {
+        try
+        {
+            // TODO: Get tenantCode from circuit/session — using "default" for now
+            await InstructionService.UploadMediaAsync(stepId, e.File, "default");
+            _instruction = await InstructionService.GetByIdAsync(Id);
+            Toast.ShowSuccess($"Uploaded {e.File.Name}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Upload failed: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteMedia(int mediaId)
+    {
+        try
+        {
+            await InstructionService.DeleteMediaAsync(mediaId);
+            _instruction = await InstructionService.GetByIdAsync(Id);
+            Toast.ShowSuccess("Media deleted.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleRevisions()
+    {
+        _showRevisions = !_showRevisions;
+        if (_showRevisions && _revisions == null)
+        {
+            _revisions = await InstructionService.GetRevisionsAsync(Id);
+        }
+    }
+}

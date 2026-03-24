@@ -1,0 +1,96 @@
+@* Shared delay logging panel — embedded in all stage partials *@
+@using Opcentrix_V3.Models
+@using Opcentrix_V3.Models.Enums
+@inject IStageService StageService
+@inject ToastService Toast
+
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>⏱️ Log Delay</span>
+        @if (!_showForm)
+        {
+            <button class="btn btn-warning btn-sm" @onclick="() => _showForm = true">+ Log Delay</button>
+        }
+    </div>
+    @if (_showForm)
+    {
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+            <div class="form-group">
+                <label class="form-label">Category *</label>
+                <select class="form-control" @bind="_category">
+                    @foreach (var cat in Enum.GetValues<DelayCategory>())
+                    {
+                        <option value="@cat">@cat</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Duration (min) *</label>
+                <input class="form-control" type="number" min="1" max="9999" inputmode="numeric" @bind="_delayMinutes" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Reason *</label>
+            <input class="form-control" @bind="_reason" placeholder="Describe the delay..." />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" rows="2" @bind="_notes" placeholder="Additional details..."></textarea>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary btn-sm" @onclick="SubmitDelay" disabled="@_saving">@(_saving ? "Saving..." : "Save Delay")</button>
+            <button class="btn btn-secondary btn-sm" @onclick="Cancel">Cancel</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public string LoggedBy { get; set; } = "Operator";
+
+    private bool _showForm;
+    private bool _saving;
+    private DelayCategory _category = DelayCategory.Other;
+    private int _delayMinutes = 15;
+    private string _reason = "";
+    private string? _notes;
+
+    private async Task SubmitDelay()
+    {
+        if (Execution == null) return;
+        if (string.IsNullOrWhiteSpace(_reason))
+        {
+            Toast.ShowError("Reason is required.");
+            return;
+        }
+        if (_delayMinutes < 1)
+        {
+            Toast.ShowError("Duration must be at least 1 minute.");
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await StageService.LogDelayAsync(Execution.Id, _reason, _category, _delayMinutes, LoggedBy, _notes);
+            Toast.ShowSuccess("Delay logged.");
+            _showForm = false;
+            _reason = "";
+            _notes = null;
+            _delayMinutes = 15;
+            _category = DelayCategory.Other;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+        finally { _saving = false; }
+    }
+
+    private void Cancel()
+    {
+        _showForm = false;
+        _reason = "";
+        _notes = null;
+    }
+}

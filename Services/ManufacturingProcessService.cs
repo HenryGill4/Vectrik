@@ -1,0 +1,560 @@
+using Microsoft.EntityFrameworkCore;
+using Opcentrix_V3.Data;
+using Opcentrix_V3.Models;
+using Opcentrix_V3.Models.Enums;
+
+namespace Opcentrix_V3.Services;
+
+public class ManufacturingProcessService : IManufacturingProcessService
+{
+    private readonly TenantDbContext _db;
+
+    public ManufacturingProcessService(TenantDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<ManufacturingProcess?> GetByPartIdAsync(int partId)
+    {
+        return await _db.ManufacturingProcesses
+            .Include(p => p.Stages.OrderBy(s => s.ExecutionOrder))
+                .ThenInclude(s => s.ProductionStage)
+            .Include(p => p.Stages)
+                .ThenInclude(s => s.AssignedMachine)
+            .Include(p => p.Stages)
+                .ThenInclude(s => s.MachineProgram)
+            .Include(p => p.PlateReleaseStage)
+            .FirstOrDefaultAsync(p => p.PartId == partId);
+    }
+
+    public async Task<ManufacturingProcess?> GetByIdAsync(int id)
+    {
+        return await _db.ManufacturingProcesses
+            .Include(p => p.Stages.OrderBy(s => s.ExecutionOrder))
+                .ThenInclude(s => s.ProductionStage)
+            .Include(p => p.PlateReleaseStage)
+            .FirstOrDefaultAsync(p => p.Id == id);
+    }
+
+    public async Task<ManufacturingProcess> CreateAsync(ManufacturingProcess process)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+
+        var existingProcess = await _db.ManufacturingProcesses
+            .AnyAsync(p => p.PartId == process.PartId);
+        if (existingProcess)
+            throw new InvalidOperationException($"Part {process.PartId} already has a manufacturing process.");
+
+        _db.ManufacturingProcesses.Add(process);
+        await _db.SaveChangesAsync();
+        return process;
+    }
+
+    public async Task<ManufacturingProcess> UpdateAsync(ManufacturingProcess process)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+
+        process.LastModifiedDate = DateTime.UtcNow;
+        process.Version++;
+        _db.ManufacturingProcesses.Update(process);
+        await _db.SaveChangesAsync();
+        return process;
+    }
+
+    public async Task DeleteAsync(int id)
+    {
+        var process = await _db.ManufacturingProcesses.FindAsync(id);
+        if (process is null) throw new InvalidOperationException("Manufacturing process not found.");
+        process.IsActive = false;
+        process.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task<ProcessStage> AddStageAsync(ProcessStage stage)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+
+        // Auto-assign execution order if not set
+        if (stage.ExecutionOrder <= 0)
+        {
+            var maxOrder = await _db.ProcessStages
+                .Where(s => s.ManufacturingProcessId == stage.ManufacturingProcessId)
+                .MaxAsync(s => (int?)s.ExecutionOrder) ?? 0;
+            stage.ExecutionOrder = maxOrder + 1;
+        }
+
+        _db.ProcessStages.Add(stage);
+        await _db.SaveChangesAsync();
+        return stage;
+    }
+
+    public async Task<ProcessStage> UpdateStageAsync(ProcessStage stage)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+
+        stage.LastModifiedDate = DateTime.UtcNow;
+        _db.ProcessStages.Update(stage);
+        await _db.SaveChangesAsync();
+        return stage;
+    }
+
+    public async Task RemoveStageAsync(int stageId)
+    {
+        var stage = await _db.ProcessStages.FindAsync(stageId);
+        if (stage is null) throw new InvalidOperationException("Process stage not found.");
+
+        // Check if this stage is the plate release trigger
+        var process = await _db.ManufacturingProcesses
+            .FirstOrDefaultAsync(p => p.PlateReleaseStageId == stageId);
+        if (process is not null)
+        {
+            process.PlateReleaseStageId = null;
+        }
+
+        _db.ProcessStages.Remove(stage);
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task ReorderStagesAsync(int processId, List<int> stageIdsInOrder)
+    {
+        ArgumentNullException.ThrowIfNull(stageIdsInOrder);
+
+        var stages = await _db.ProcessStages
+            .Where(s => s.ManufacturingProcessId == processId)
+            .ToListAsync();
+
+        for (int i = 0; i < stageIdsInOrder.Count; i++)
+        {
+            var stage = stages.FirstOrDefault(s => s.Id == stageIdsInOrder[i]);
+            if (stage is not null)
+            {
+                stage.ExecutionOrder = i + 1;
+                stage.LastModifiedDate = DateTime.UtcNow;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task<List<string>> ValidateProcessAsync(int processId)
+    {
+        var errors = new List<string>();
+
+        var process = await _db.ManufacturingProcesses
+            .Include(p => p.Stages)
+            .FirstOrDefaultAsync(p => p.Id == processId);
+
+        if (process is null)
+        {
+            errors.Add("Manufacturing process not found.");
+            return errors;
+        }
+
+        if (!process.Stages.Any())
+        {
+            errors.Add("Process has no stages defined.");
+            return errors;
+        }
+
+        // Check for duplicate execution orders
+        var duplicateOrders = process.Stages
+            .GroupBy(s => s.ExecutionOrder)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key);
+        foreach (var order in duplicateOrders)
+        {
+            errors.Add($"Duplicate execution order: {order}.");
+        }
+
+        // If process has build-level stages, plate release should be defined
+        var hasBuildStages = process.Stages.Any(s => s.ProcessingLevel == ProcessingLevel.Build);
+        if (hasBuildStages && process.PlateReleaseStageId is null)
+        {
+            errors.Add("Process has build-level stages but no plate release trigger stage defined.");
+        }
+
+        // Validate plate release stage is part of this process
+        if (process.PlateReleaseStageId.HasValue)
+        {
+            var plateReleaseInProcess = process.Stages.Any(s => s.Id == process.PlateReleaseStageId.Value);
+            if (!plateReleaseInProcess)
+            {
+                errors.Add("Plate release stage is not part of this process.");
+            }
+        }
+
+        // Check stages with run duration but no time configured
+        foreach (var stage in process.Stages.Where(s => s.RunDurationMode != DurationMode.None && s.RunTimeMinutes is null && !s.DurationFromBuildConfig))
+        {
+            errors.Add($"Stage at order {stage.ExecutionOrder} has run duration mode set but no run time configured.");
+        }
+
+        return errors;
+    }
+
+    public DurationResult CalculateStageDuration(ProcessStage stage, int partCount, int batchCount, double? buildConfigHours)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+
+        if (stage.DurationFromBuildConfig && buildConfigHours.HasValue)
+        {
+            var totalFromConfig = buildConfigHours.Value * 60.0;
+            return new DurationResult(0, totalFromConfig, totalFromConfig, $"{buildConfigHours.Value:F1}h from build config");
+        }
+
+        // Prefer EMA-learned duration when available and auto-switched
+        if (stage.EstimateSource == "Auto" && stage.ActualAverageDurationMinutes.HasValue)
+        {
+            var ema = stage.ActualAverageDurationMinutes.Value;
+            return new DurationResult(0, ema, ema,
+                $"{ema:F0}min EMA ({stage.ActualSampleCount} samples)");
+        }
+
+        // Prefer linked MachineProgram durations when program is Active and has times configured
+        if (stage.MachineProgram is { Status: ProgramStatus.Active })
+        {
+            var prog = stage.MachineProgram;
+
+            // If the program has its own EMA data, prefer that
+            if (prog.EstimateSource == "Auto" && prog.ActualAverageDurationMinutes.HasValue)
+            {
+                var ema = prog.ActualAverageDurationMinutes.Value;
+                return new DurationResult(
+                    prog.SetupTimeMinutes ?? 0, ema, (prog.SetupTimeMinutes ?? 0) + ema,
+                    $"{ema:F0}min program EMA ({prog.ActualSampleCount} samples)");
+            }
+
+            // Fall back to program's configured durations (CycleTime > RunTime)
+            var progRun = prog.CycleTimeMinutes ?? prog.RunTimeMinutes;
+            if (progRun.HasValue)
+            {
+                double progSetup = prog.SetupTimeMinutes ?? 0;
+                double total = progSetup + progRun.Value;
+                return new DurationResult(progSetup, progRun.Value, total,
+                    $"Program {prog.ProgramNumber} v{prog.Version}: {progSetup:F0}m setup + {progRun.Value:F0}m run");
+            }
+        }
+
+        double setupMinutes = CalculateModeMinutes(stage.SetupDurationMode, stage.SetupTimeMinutes ?? 0, partCount, batchCount);
+        double runMinutes = CalculateModeMinutes(stage.RunDurationMode, stage.RunTimeMinutes ?? 0, partCount, batchCount);
+        double total2 = setupMinutes + runMinutes;
+
+        var breakdown = BuildBreakdownString(stage, setupMinutes, runMinutes, partCount, batchCount);
+        return new DurationResult(setupMinutes, runMinutes, total2, breakdown);
+    }
+
+    public async Task<DurationResult> CalculateStageDurationWithProgramAsync(
+        ProcessStage stage, int partCount, int batchCount, double? buildConfigHours, int? machineProgramId)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+
+        // If no program ID provided, use existing synchronous logic
+        if (!machineProgramId.HasValue)
+            return CalculateStageDuration(stage, partCount, batchCount, buildConfigHours);
+
+        // Query the program for duration data
+        var program = await _db.MachinePrograms.FindAsync(machineProgramId.Value);
+
+        // If program not found or inactive, fall back to stage defaults
+        if (program == null || program.Status != ProgramStatus.Active)
+            return CalculateStageDuration(stage, partCount, batchCount, buildConfigHours);
+
+        // BuildPlate programs use EstimatedPrintHours
+        if (program.ProgramType == ProgramType.BuildPlate)
+        {
+            if (program.EstimatedPrintHours.HasValue && program.EstimatedPrintHours > 0)
+            {
+                var totalFromSlicer = program.EstimatedPrintHours.Value * 60.0;
+                return new DurationResult(0, totalFromSlicer, totalFromSlicer,
+                    $"{program.EstimatedPrintHours.Value:F1}h from {program.ProgramNumber} slicer data");
+            }
+        }
+
+        // Prefer program's EMA-learned data
+        if (program.EstimateSource == "Auto" && program.ActualAverageDurationMinutes.HasValue)
+        {
+            var ema = program.ActualAverageDurationMinutes.Value;
+            var progSetup = program.SetupTimeMinutes ?? 0;
+            return new DurationResult(
+                progSetup, ema, progSetup + ema,
+                $"{ema:F0}min from {program.ProgramNumber} EMA ({program.ActualSampleCount} runs)");
+        }
+
+        // Fall back to program's configured durations
+        var runTime = program.CycleTimeMinutes ?? program.RunTimeMinutes;
+        if (runTime.HasValue)
+        {
+            // Scale by part count for standard programs
+            var setupMin = program.SetupTimeMinutes ?? 0;
+            var runTotal = runTime.Value * partCount;
+            var total = setupMin + runTotal;
+            return new DurationResult(setupMin, runTotal, total,
+                $"Program {program.ProgramNumber}: {setupMin:F0}m setup + {runTime.Value:F0}m/part × {partCount}");
+        }
+
+        // Program has no duration data — fall back to stage defaults
+        return CalculateStageDuration(stage, partCount, batchCount, buildConfigHours);
+    }
+
+    public async Task<ManufacturingProcess> CloneProcessAsync(int sourceProcessId, int targetPartId, string createdBy)
+    {
+        if (string.IsNullOrWhiteSpace(createdBy))
+            throw new ArgumentException("CreatedBy is required.", nameof(createdBy));
+
+        var source = await GetByIdAsync(sourceProcessId)
+            ?? throw new InvalidOperationException("Source process not found.");
+
+        var existingTarget = await _db.ManufacturingProcesses
+            .AnyAsync(p => p.PartId == targetPartId);
+        if (existingTarget)
+            throw new InvalidOperationException($"Part {targetPartId} already has a manufacturing process.");
+
+        var clone = new ManufacturingProcess
+        {
+            PartId = targetPartId,
+            ManufacturingApproachId = source.ManufacturingApproachId,
+            Name = $"{source.Name} (Copy)",
+            Description = source.Description,
+            DefaultBatchCapacity = source.DefaultBatchCapacity,
+            IsActive = true,
+            Version = 1,
+            CreatedBy = createdBy,
+            LastModifiedBy = createdBy
+        };
+
+        _db.ManufacturingProcesses.Add(clone);
+        await _db.SaveChangesAsync();
+
+        // Clone stages — track which cloned stage maps to the plate release trigger
+        ProcessStage? plateReleaseClone = null;
+        foreach (var sourceStage in source.Stages.OrderBy(s => s.ExecutionOrder))
+        {
+            var cloneStage = new ProcessStage
+            {
+                ManufacturingProcessId = clone.Id,
+                ProductionStageId = sourceStage.ProductionStageId,
+                ExecutionOrder = sourceStage.ExecutionOrder,
+                ProcessingLevel = sourceStage.ProcessingLevel,
+                SetupDurationMode = sourceStage.SetupDurationMode,
+                SetupTimeMinutes = sourceStage.SetupTimeMinutes,
+                RunDurationMode = sourceStage.RunDurationMode,
+                RunTimeMinutes = sourceStage.RunTimeMinutes,
+                DurationFromBuildConfig = sourceStage.DurationFromBuildConfig,
+                BatchCapacityOverride = sourceStage.BatchCapacityOverride,
+                AllowRebatching = sourceStage.AllowRebatching,
+                ConsolidateBatchesAtStage = sourceStage.ConsolidateBatchesAtStage,
+                AssignedMachineId = sourceStage.AssignedMachineId,
+                RequiresSpecificMachine = sourceStage.RequiresSpecificMachine,
+                PreferredMachineIds = sourceStage.PreferredMachineIds,
+                HourlyRateOverride = sourceStage.HourlyRateOverride,
+                MaterialCost = sourceStage.MaterialCost,
+                IsRequired = sourceStage.IsRequired,
+                IsBlocking = sourceStage.IsBlocking,
+                AllowParallelExecution = sourceStage.AllowParallelExecution,
+                AllowSkip = sourceStage.AllowSkip,
+                RequiresQualityCheck = sourceStage.RequiresQualityCheck,
+                RequiresSerialNumber = sourceStage.RequiresSerialNumber,
+                IsExternalOperation = sourceStage.IsExternalOperation,
+                ExternalTurnaroundDays = sourceStage.ExternalTurnaroundDays,
+                StageParameters = sourceStage.StageParameters,
+                RequiredMaterials = sourceStage.RequiredMaterials,
+                RequiredTooling = sourceStage.RequiredTooling,
+                QualityRequirements = sourceStage.QualityRequirements,
+                SpecialInstructions = sourceStage.SpecialInstructions,
+                CreatedBy = createdBy,
+                LastModifiedBy = createdBy
+            };
+            _db.ProcessStages.Add(cloneStage);
+
+            if (source.PlateReleaseStageId == sourceStage.Id)
+                plateReleaseClone = cloneStage;
+        }
+
+        // Single save generates all stage IDs, then set plate release FK
+        await _db.SaveChangesAsync();
+        if (plateReleaseClone != null)
+        {
+            clone.PlateReleaseStageId = plateReleaseClone.Id;
+            await _db.SaveChangesAsync();
+        }
+        return clone;
+    }
+
+    public async Task<ManufacturingProcess> CreateProcessFromApproachAsync(int partId, int approachId, string createdBy)
+    {
+        if (string.IsNullOrWhiteSpace(createdBy))
+            throw new ArgumentException("CreatedBy is required.", nameof(createdBy));
+
+        var existing = await _db.ManufacturingProcesses.AnyAsync(p => p.PartId == partId);
+        if (existing)
+            throw new InvalidOperationException($"Part {partId} already has a manufacturing process.");
+
+        var approach = await _db.ManufacturingApproaches.FindAsync(approachId)
+            ?? throw new InvalidOperationException($"Manufacturing approach {approachId} not found.");
+
+        var part = await _db.Parts.FindAsync(partId)
+            ?? throw new InvalidOperationException($"Part {partId} not found.");
+
+        // Look up all production stages by slug for template resolution
+        var allStages = await _db.ProductionStages.ToListAsync();
+        var stageBySlug = allStages.ToDictionary(s => s.StageSlug, s => s, StringComparer.OrdinalIgnoreCase);
+
+        var template = approach.ParsedRoutingTemplate;
+
+        var process = new ManufacturingProcess
+        {
+            PartId = partId,
+            ManufacturingApproachId = approachId,
+            Name = $"{part.PartNumber} — {approach.Name}",
+            Description = $"Auto-created from {approach.Name} template",
+            DefaultBatchCapacity = approach.DefaultBatchCapacity > 0 ? approach.DefaultBatchCapacity : 60,
+            IsActive = true,
+            Version = 1,
+            CreatedBy = createdBy,
+            LastModifiedBy = createdBy
+        };
+
+        _db.ManufacturingProcesses.Add(process);
+        await _db.SaveChangesAsync();
+
+        var order = 1;
+        ProcessStage? plateReleaseStage = null;
+
+        foreach (var entry in template)
+        {
+            if (!stageBySlug.TryGetValue(entry.Slug, out var catalogStage))
+                continue;
+
+            var processStage = new ProcessStage
+            {
+                ManufacturingProcessId = process.Id,
+                ProductionStageId = catalogStage.Id,
+                ExecutionOrder = order++,
+                ProcessingLevel = entry.Level,
+                DurationFromBuildConfig = entry.DurationFromBuildConfig,
+                SetupDurationMode = catalogStage.DefaultSetupMinutes > 0
+                    ? (entry.Level == ProcessingLevel.Build ? DurationMode.PerBuild : DurationMode.PerBatch)
+                    : DurationMode.None,
+                SetupTimeMinutes = catalogStage.DefaultSetupMinutes > 0 ? catalogStage.DefaultSetupMinutes : null,
+                RunDurationMode = entry.Level switch
+                {
+                    ProcessingLevel.Build => DurationMode.PerBuild,
+                    ProcessingLevel.Batch => DurationMode.PerBatch,
+                    ProcessingLevel.Part => DurationMode.PerPart,
+                    _ => DurationMode.PerPart
+                },
+                RunTimeMinutes = !entry.DurationFromBuildConfig ? catalogStage.DefaultDurationHours * 60 : null,
+                BatchCapacityOverride = entry.BatchCapacityOverride,
+                PreferredMachineIds = entry.MachineIds.Count > 0
+                    ? string.Join(",", entry.MachineIds)
+                    : null,
+                ProgramSetupRequired = entry.MachineIds.Count > 0,
+                IsRequired = true,
+                IsBlocking = true,
+                RequiresQualityCheck = catalogStage.StageSlug == "qc",
+                RequiresSerialNumber = catalogStage.RequiresSerialNumber,
+                CreatedBy = createdBy,
+                LastModifiedBy = createdBy
+            };
+
+            _db.ProcessStages.Add(processStage);
+            await _db.SaveChangesAsync();
+
+            if (entry.IsPlateReleaseTrigger)
+            {
+                plateReleaseStage = processStage;
+            }
+        }
+
+        // Set plate release trigger — use template marker, or default to last build-level stage
+        if (plateReleaseStage != null)
+        {
+            process.PlateReleaseStageId = plateReleaseStage.Id;
+        }
+        else
+        {
+            var lastBuildStage = await _db.ProcessStages
+                .Where(s => s.ManufacturingProcessId == process.Id && s.ProcessingLevel == ProcessingLevel.Build)
+                .OrderByDescending(s => s.ExecutionOrder)
+                .FirstOrDefaultAsync();
+            if (lastBuildStage != null)
+            {
+                process.PlateReleaseStageId = lastBuildStage.Id;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return process;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<ProcessStage>> GetStagesPendingProgramSetupAsync()
+    {
+        return await _db.ProcessStages
+            .Include(s => s.ProductionStage)
+            .Include(s => s.ManufacturingProcess)
+                .ThenInclude(p => p.Part)
+            .Where(s => s.ProgramSetupRequired)
+            .OrderBy(s => s.ManufacturingProcess.Part.PartNumber)
+            .ThenBy(s => s.ExecutionOrder)
+            .ToListAsync();
+    }
+
+    /// <inheritdoc />
+    public async Task LinkProgramToStageAsync(int processStageId, int machineProgramId)
+    {
+        var stage = await _db.ProcessStages.FindAsync(processStageId)
+            ?? throw new InvalidOperationException($"Process stage {processStageId} not found.");
+
+        stage.MachineProgramId = machineProgramId;
+        stage.ProgramSetupRequired = false;
+        stage.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
+    private static double CalculateModeMinutes(DurationMode mode, double timeMinutes, int partCount, int batchCount)
+    {
+        return mode switch
+        {
+            DurationMode.None => 0,
+            DurationMode.PerBuild => timeMinutes,
+            DurationMode.PerBatch => timeMinutes * batchCount,
+            DurationMode.PerPart => timeMinutes * partCount,
+            _ => 0
+        };
+    }
+
+    private static string BuildBreakdownString(ProcessStage stage, double setupMinutes, double runMinutes, int partCount, int batchCount)
+    {
+        var parts = new List<string>();
+
+        if (setupMinutes > 0)
+        {
+            var setupLabel = stage.SetupDurationMode switch
+            {
+                DurationMode.PerBuild => "setup (per build)",
+                DurationMode.PerBatch => $"setup ({stage.SetupTimeMinutes}min × {batchCount} batches)",
+                DurationMode.PerPart => $"setup ({stage.SetupTimeMinutes}min × {partCount} parts)",
+                _ => "setup"
+            };
+            parts.Add($"{setupMinutes:F0}min {setupLabel}");
+        }
+
+        if (runMinutes > 0)
+        {
+            var runLabel = stage.RunDurationMode switch
+            {
+                DurationMode.PerBuild => "run (per build)",
+                DurationMode.PerBatch => $"run ({stage.RunTimeMinutes}min × {batchCount} batches)",
+                DurationMode.PerPart => $"run ({stage.RunTimeMinutes}min × {partCount} parts)",
+                _ => "run"
+            };
+            parts.Add($"{runMinutes:F0}min {runLabel}");
+        }
+
+        if (parts.Count == 0) return "0min";
+
+        var total = setupMinutes + runMinutes;
+        return $"{string.Join(" + ", parts)} = {total:F0}min ({total / 60.0:F1}h)";
+    }
+}

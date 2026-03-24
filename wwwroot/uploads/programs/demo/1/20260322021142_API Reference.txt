@@ -1,0 +1,3296 @@
+
+
+# How to get API access
+
+Worklio Embedded Payroll API employs OpenID authentication. As a result, you need to register a Developer account with us first. Anyone can register this account with us, but you must provide basic information about yourself and agree to the confidentiality agreements.
+
+The user-generated through this registration is on the [System level](https://apidocs.worklio.com/docs/user-types), allowing you to create and fully access the new companies formed. You can access multiple companies with the newly created account as a system-level user.
+
+> 📘 Newly created admin user
+>
+> Please be aware that your newly created admin user is empty, and you must onboard the company and employees first. You can do the onboarding by calling our API or on our open-source components dummy site located **[here](https://apiweb.worklio.com/)**. Please use your credentials to log in.
+>
+> Duly note that this dummy site is just a playground API and that you can continue the process in your domain.
+
+Sandbox developer account registration is available on **[registration page.](https://apiweb.worklio.com/RegisterDeveloper)**
+
+## oAuth flows for API access
+
+> 📘
+>
+> Refer to [API Access Modes](https://apidocs.worklio.com/docs/api-access-modes) for more about WEP oAuth flows.
+
+Worklio Embedded Payroll supports two oAuth 2.0 flows by default:
+
+* Resource Owner for API-To-API scenario
+* Implicit for User-To-API scenario
+
+## Resource Owner flow
+
+Using this oAuth flow, you request your unique identifier from our API using an API-API integration. For Resource Owner flow, you need to use the following settings:
+
+```
+   {
+            {"grant_type", "password"},
+            {"username", username},
+            {"password", password},
+            {"scope", "api"},
+            {"client_id", "wep_resourceowner.public.api"},
+            {"client_secret", "EFFFC78854F64A17B6ADA7EA385D3C83"}
+            Access Token URL: **<https://api.worklio.com/connect/token>**
+        };
+```
+
+Successful integration between both server sides returns an access token that you can use to access our API endpoints.
+
+## Implicit flow
+
+This flow redirects you to our API for authentication with your login credentials before returning you to your Single Sign-On (SSO) server with an access token. This flow supports a User-API integration as users already have a frontend for these interactions.
+
+To obtain access tokens by Implicit flow, ensure to use the following settings:
+
+Grant Type: **Implicit**\
+Access Token URL: **[https://api.worklio.com/connect/authorize](https://api.worklio.com/connect/authorize)**\
+Client ID: **wep.public.api**\
+Redirect/Callback URL: Sandbox supports Postman URL and a couple of localhost versions suitable for testing purposes.\
+**[https://oauth.pstmn.io/v1/browser-callback](https://oauth.pstmn.io/v1/browser-callback)\
+     http://localhost:8080/auth/signinpop/main\
+     http://localhost:8080/auth/signinwin/main\
+     https://localhost:8080/auth/signinpop/main\
+     https://localhost:8080/auth/signinwin/main\
+     http://localhost:5001/auth\
+     https://localhost:5001/auth**\
+Scope : **api**
+
+## Authenticating and Consuming API with WEP components
+
+The WEP library provides the `WepAuthFlow` class, offering a streamlined way to manage authentication flows using OpenID Connect (OIDC). It handles login and logout processes and securely manages tokens. This class is designed to simplify the integration of authentication into your application.
+
+**Key Features:**
+
+* Resolves signin and signout callbacks.
+* Provides methods to fetch tokens and check login status.
+* Supports login and logout using redirect or popup mechanisms.
+
+**Example:**
+
+```javascript
+import { WepAuthFlow, WepOpenIDConnect } from '@worklio/wep';
+
+const wepAuth = new WepAuthFlow({
+  oidc: new WepOpenIDConnect({
+    authority: "<URL_TO_AUTHORITY_SERVER>",
+    client_id: "wep.public.api",
+    response_type: "id_token token",
+    scope: "openid api",
+    method: "redirect",
+    redirect_path: "/auth/signinwin/main",
+    post_logout_redirect_path: "/auth/signoutwin/main",
+    silent_redirect_uri_path: "/auth/signinsilent/main",
+  }),
+});
+```
+
+Alternatively, you can use [oidc-client-ts](https://github.com/authts/oidc-client-ts) directly for full control over the authentication process.
+
+***
+
+> 📘 API Swagger file
+>
+> Swagger file can be downloaded from **[here](https://api.worklio.com/swagger/v1/swagger.json).**
+
+# Testing API
+
+[POSTMAN](https://www.postman.com/) allows you to call [Worklio Embedded Payroll (WEP)](https://apidocs.worklio.com/docs/overview) API endpoints using different methods and parameters. You must have your [API access token](https://apidocs.worklio.com/docs/how-to-get-api-access) to test a WEP endpoint.
+
+You request POSTMAN to initiate a valid WEP API call via the endpoint Uniform Resource Identifier (URI) and the appropriate method. However, an important feature that POSTMAN offers is the ***Collections*** feature. This feature allows you to group and organize the different requests you make.
+
+<Image title="intro.png" alt={1288} align="center" src="https://files.readme.io/ed42221-intro.png">
+  1- Request call     2- Request body   3- Method   4- Request Header   5- Collections
+</Image>
+
+## Response codes
+
+Response codes are a hallmark of testing APIs with POSTMAN. During your API testing, you will obtain different response codes that indicate different meanings for the test you initiated. Some of the most common response codes include:
+
+* 100 series, which denotes temporal responses. For example, 102 Processing.
+* 200 series indicates responses where the client accepts the request and the server, processes it successfully. For example, 200 OK.
+* 300 series, which indicates responses related to URL redirection. For example, 301 moved permanently.
+* 400 series, which indicates client error responses. For example, 400 Bad requests.
+* 500 series, which indicates server error responses. For example, 500 internal server errors.
+
+![](https://files.readme.io/9f4b83b-002-StatusCode-Small.png "002-StatusCode-Small.png")
+
+## Importing WEP API with JSON link into POSTMAN
+
+> 📘 WEP JSON file
+>
+> If you are using POSTMAN for the first time, you can import our API into POSTMAN as a collection via [https://api.worklio.com/swagger/v1/swagger.json](https://api.worklio.com/swagger/v1/swagger.json). Be aware that our JSON files are split into different sections. This allows you to just import particular sections instead of the whole file or you can choose to import the whole JSON file into your POSTMAN workspace.
+>
+> The link above allows you to import the whole JSON file into your POSTMAN workspace.
+
+To import our API, please follow the following steps:
+
+1. On your workspace environment, click Import towards the top left-hand side of your screen.
+
+![](https://files.readme.io/80dd9b5-Import-Small.png "Import-Small.png")
+
+2. Clicking brings up a screen where you can select the option to import your APIs into POSTMAN. But for our API, you import via the JSON link from Swagger. Type in the JSON URI for our API in the field provided.
+
+<Image align="center" src="https://files.readme.io/448bc06-Postman_3.png" />
+
+An intermediate screen shows you the elements of the API you want to import. Select any of the elements, then Proceed by clicking on Import.
+
+<Image align="center" src="https://files.readme.io/1de3a47-postman_2.png" />
+
+3. After a successful import, the page below appears on your screen. Incomplete Import could be a result of broken links or other technical errors.
+
+![](https://files.readme.io/dcb2ab7-Import3-Small.png "Import3-Small.png")
+
+## Setting up authentication
+
+WEP API employs an OpenID authentication that supports two oAuth 2.0 flows. To call our endpoints on POSTMAN, you need a level of authorization as an access token.
+
+> 📘 API access
+>
+> Read more on how to get API access [here](https://apidocs.worklio.com/docs/how-to-get-api-access).
+
+To obtain this access code after importing the WEP API, follow the following steps:
+
+1. Click on the Authorization pane of the newly imported API collection. The next screen displays different parameters. Click on Type. A menu drop box appears, then select oAuth 2.0 as it is our API's flow.
+
+![](https://files.readme.io/abf356d-Auth-Small.png "Auth-Small.png")
+
+2. Fill in the required details (of any of the two oAuth flows), then click on Generate New Access Token.
+
+![](https://files.readme.io/56ef373-Auth1-Small.png "Auth1-Small.png")
+
+3. After the successful generation of the Access Token, the following screen pops up your newly generated token. Click Use Token to embed the token into your request header.
+
+![](https://files.readme.io/bc45798-Auth2-Small.png "Auth2-Small.png")
+
+## Calling endpoints directly from the imported collection
+
+After successfully importing our API and obtaining your access token, you can call endpoints and make requests now from the imported collection. To do this, you:
+
+1. Navigate to the imported API collection and find the endpoint you want to call. For example, you can call the endpoint that helps you retrieve the current user information using the endpoint URI, as seen [here](https://apidocs.worklio.com/reference/get_wep-companies).
+
+![](https://files.readme.io/5aad958-Request-Small.png "Request-Small.png")
+
+2. Select the endpoint you want to call and click on Send in the resulting window. A successful call returns the ***200 OK*** response code, as seen below.
+
+![](https://files.readme.io/b304159-Request1-Small.png "Request1-Small.png")
+
+You can also create and add a new employee for your company by calling the endpoint directly from the API collection you imported. Find and select the endpoint in the collection. Click the Body pane to fill in the employee's details in the resulting screen. Then, click Send to call the endpoint.
+
+> 📘 Create Employee
+>
+> Refer to [create employee](https://apidocs.worklio.com/docs/create-employee) to know the required employee details.
+
+![](https://files.readme.io/6f51afb-Request2-Small.png "Request2-Small.png")
+
+## Using POSTMAN for WEP testing
+
+WEP testing helps you perform assertions and validations for the response you receive from the requests you made. These tests help you verify successful or failed statuses, compare expected results, and ensure that changes to your APIs don't affect their functionality.\
+To test our API, you write test scripts with JavaScript for your requests. For example, you can write a test script to validate the status of a WEP endpoint by sending a request with appropriate parameters.
+
+You add code or snippets to your request that you can change to suit your test logic. Open your request, then enter your code or use the snippet code in the Tests tab of your workspace environment.
+
+The test code executes after you run your request; the output is in your response's Test Results tab. Remember, you can perform different tests on our APIs using the snippet codes or manually.
+
+**STEP 1**: Make an endpoint request.\
+Switch to the Tests tab. You will find Snippet codes on the right side, which will auto-populate the test pane, or you can input the test codes manually in the Tests pane.
+
+![](https://files.readme.io/522b7b4-003-t1-Small.png "003-t1-Small.png")
+
+**STEP 2**: Click Send to run your request. The Test Results tab then displays the test result. The tab header indicates the number of tests that passed or failed and how many you ran.
+
+![](https://files.readme.io/6e0a699-004-t2-Small.png "004-t2-Small.png")
+
+To carry out another test on your request, return to the Test tab to add another test. Repeat the steps from earlier depending on the test you want to perform on your requests.
+
+As stated earlier, you can write your test scripts manually in the tests tab instead of using the pre-configured code snippets. The following object-oriented JavaScript code helps you test WEP manually:
+
+* pm.test method defines your test by providing a name and function that returns a Boolean value. This method always begins a test in POSTMAN.
+* pm.expect examines your test's response detail by giving your result messages in a different format.
+* pm.response function validates the data returned by your request.
+
+You create this object by defining a Javascript variable, after which you initialize it using a POSTMAN method that holds the response. You then call the JSON function. The object you just created will receive the response in the JSON format., thus helping you get the data you want to test in the form you want.
+
+![](https://files.readme.io/32bdf57-cont.jpg "cont.jpg")
+
+Furthermore, you can add a test script to a collection. It will run after every request in the collection. You add a collection test script when you first create the collection and can edit it by:
+
+* opening the view more actions icon beside the collection name.
+* selecting Edit.
+* choosing the Tests tab to add or update the test script.
+
+## POSTMAN COLLECTION USAGE
+
+You can see a cover usage of the Postman collection here:
+
+<Embed url="https://documenter.getpostman.com/view/4218428/2s93JzJzDX" title="WEP Postman Collection" favicon="https://documenter-assets.pstmn.io/favicon.ico" image="https://res.cloudinary.com/postman/image/upload/t_team_logo_pubdoc/v1/team/e14ebfc37ca9e4a08f49dc93b873b3259d8bd85f950cf69d165c21d5da51c762" provider="documenter.getpostman.com" href="https://documenter.getpostman.com/view/4218428/2s93JzJzDX" iframe="false" />
+
+# Create Company
+
+The first entity for payroll calculation you must create is **company**.\
+You must send a **POST** request to the Create Company endpoint to create a company. A few fields are required to create a company and must not be empty.
+
+> 📘 Create company endpoint
+>
+> You can find more information about the endpoint in the [API Reference](https://apidocs.worklio.com/reference/post_wep-companies)
+
+You must correctly input your company's detailed information, which includes:
+
+* **Company Name** is the company's legal name, but if the company is doing business under a different name, you can use the **tradeName** property.
+* **Company Type** is your company's legal form, usually a number between 1-10. You can learn more about the company type each digit represents [here](https://apidocs.worklio.com/reference/post_wep-companies).
+* **FEIN** which is the nine-digit number that the IRS assigns to your company to identify the tax accounts of employers and others with no employees. It is usually in the following format: XX-XXXXXXX.
+* **BankAccountNumber / RoutingNumber** are numbers for bank identification and bank accounts in the US.
+* **Company Address**, which is an object that contains the company's business address, is one of the sources for the tax parameters. The system processes the address and must find correct tax information about it.
+
+Work location is essential to the payroll run, particularly in the company tax setup parameter. Should your company offer remote opportunities for your employees, the employee's submitted work location is also crucial in calculating payroll.
+
+Your company's default work location is the address you set up initially. However, each work location is validated by tax engines to ensure that correct tax parameters are assigned for each location.
+
+> 📘 Create Company
+>
+> Please find a comprehensive guide on creating a company [here](https://apidocs.worklio.com/docs/create-company-1). This section aims to give you a quick start to the whole process.
+>
+> You can read more about the params and the API in the [API Reference](https://apidocs.worklio.com/reference/post_wep-companies).
+
+# Create Employee
+
+Creating an employee is the next step in payroll processing. Due to tax setup implications, you should always create employees before you continue with Tax Setup. But as you can add employees later, Tax Setup can be called multiple times without issues too.
+
+Calling the create employee endpoint uses a more complex structure that needs to be filled out. The API requires you to set some of these pieces of information at the onset, while you can update some others later. The required information is essential for your Payroll calculation and must be appropriately filled in.
+
+## Personal Information
+
+We are expecting that in some cases data can be provided by other team members (employees, hr person, etc…) so you can update them later with an Update on existing employees' endpoint.
+
+In the US, payroll is possible to have two types of workers – employee (with SSN) and contractor (with FEIN). Identification of both (SSN or FEIN) goes into the SSN field (both are 9 characters numbers).
+
+You can also set up the access type your employee has into your payroll systems. An employee can have Admin access (could be full or custom admin access) or Employee access where their activities are confined to information surrounding them alone.
+
+A residential address is used for Tax setup and payroll calculations, and so must exist and be valid. For example, purpose we are recommending a Florida address like:
+
+Address Line 1: 46 N Orange Ave\
+Address Line 2: Basement. 2\
+City: Orlando\
+State: Florida\
+StateShort: FL\
+Zip: 32801
+
+## Contract
+
+The work schedule of your employee should be set to any options that our system affords. An employee could have any of the following work schedules: a full-time, part-time, temporary, or any other work schedule.
+
+The system also allows you the opportunity to select your employees' compensation type, which impacts their compensation hours and compensation amount depending on the compensation type.
+
+Setting an employee's compensation type to Hourly or Tipped will require you to determine their Hourly rate. Similarly, setting an employee's compensation type to Piecework will require you to set their Unit work rate for an effective payroll run.
+
+For a quick test on the Contract object, we are recommending using a Salaried employee with a full-time work schedule and reasonable compensation so you don’t need to bother with minimum wage limits. Hours and compensations are used **per pay period.**
+
+> 📘 Create Employee
+>
+> Please find a comprehensive guide on creating an employee [here](https://apidocs.worklio.com/docs/create-or-update-employee). This section only aims to give you a quick start to the whole process.
+>
+> You can read more about the parameters and the API in the [API Reference](https://apidocs.worklio.com/reference/post_wep-companies-companyid-employees).
+
+# Update Tax Setup
+
+Worklio Embedded Payroll supports more than 120 different tax parameters. Some of them are for companies, and some of them are for employees. Our API takes the company and employees' locations and information about the home office. and prepare the needed list of tax parameters that need to be filed by companies or employees.
+
+## Company Tax Setup
+
+For companies, there are three tax areas in the US: federal, state, and local taxes. Federal taxes are taxes from the federal government, state taxes are taxes from the states, and local are taxes issued by local authorities.
+
+The first call you need to call is the [Company Tax Setup](https://apidocs.worklio.com/reference/get_wep-companies-companyid-taxsetup-1) endpoint. This endpoint will return a list of tax values you must fill in. Values could be a number or percentage value, combo selection, account number, registration number, or even text code.
+
+The setup endpoint will return you enough information to render proper UI for this, along with captions, descriptions, and in many cases, even with a regular expression for client-side validation and information about item requirements.
+
+In setting up your company's tax entities, you need to provide your company's legal Federal Employer Identification Number (FEIN), which identifies your company.
+
+You can read more about the **Company tax setup** [here](https://apidocs.worklio.com/docs/company-tax-setup-1).
+
+## Employee Tax Setup
+
+A similar set of endpoints exists on the Employee level - [Get Current Tax Setup](https://apidocs.worklio.com/reference/get_wep-companies-companyid-employees-employeeid-taxsetup-1). The [Update Employee Tax Setup Values](https://apidocs.worklio.com/reference/post_wep-companies-companyid-employees-employeeid-taxsetup-1) endpoint updates relevant attributes of federal and state taxes peculiar to the employee.
+
+Our API uses the employee tax setup to calculate the federal and state taxes that will be withheld from the employee's wage on the payroll.
+
+You can read more about the Employee tax setup [here](https://apidocs.worklio.com/docs/employee-tax-setup-1).
+
+> 📘 Numeric format
+>
+> As there is plenty of different value types, our API expects string format for all of them. Numbers are US localization with a dot as a decimal separator.
+
+# Run Payroll
+
+Running payroll is the most crucial part of the system. At this stage, all previous settings are taken, validated, and (if they are ok) payroll is calculated.
+
+The following endpoints are used for going through payroll:
+
+* [Start default payroll](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll)
+* [Retrieve payroll status](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-1)
+* [Next payroll status](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-next-1)
+* [Previous payroll step](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-back-1)
+* [Discard payroll](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-discard-1)
+* [Payroll Overview](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-overview-1)
+
+First of all, you have to call Start Payroll. This returns the runId of the new payroll run. In case the payroll has already been running, return the status of the running payroll.
+
+> 🚧 Payrolls are scheduled in real time
+>
+> Payrolls are scheduled by their frequency and payroll period / pay date settings. Running payroll out of proper date window can lead to warnings. You can ignore them on sandbox and during testing but keep this in mind for production implementation.
+
+Payroll run is generally presented as a wizard leading you through the process and calculation. The payroll wizard has five steps in the UI, which are:
+
+* Inprogress- This is the default UI step if payroll run processing is somewhere between UI steps in the payroll run wizard.
+* Timesheet- This is the next UI step after making the endpoint call.
+* Overview - This is the next UI step that displays the information used for payroll processing.
+* Locked- This UI step is where the payroll is finalized, and payments are processed.
+* Finished -This is the final UI step switched to directly from Locked after payment has been correctly processed, and the payroll is finalized.
+
+For every particular internal processing state endpoint returns also description (**currentProcStepDesc**), progress (**currentProcStepProgress**), and status (**currentProcStepStatus**), which can be used to show progress in UI. With this differentiation, you can better view the calculation process.
+
+Payroll processing runs as a background operation and will continue to the next UI step without a browser. You can run the next step and close the browser without issues.
+
+You can Discard payroll entirely at any time and re-run it again.
+
+> For a fuller information on how payroll runs in our system, please see [here](https://apidocs.worklio.com/docs/payroll-run)
+
+# Front-End Library
+
+The Worklio Embedded Payroll Front-End (WEP FE) library is a versatile tool for Front-End developers. It streamlines interactions with the WEP API, enabling the effortless integration of a native U.S. Payroll solution into your codebase.
+
+## Getting Started
+
+This section walks you through access, setup, and a quick local run so you can verify everything works end to end.
+
+1. Contact Worklio support to request access to the private GitHub repository: [worklio.com/contact-us](https://www.worklio.com/contact-us/).
+2. Ensure prerequisites are installed (Node.js 22.x from [nodejs.org](https://nodejs.org/en)).
+3. Clone the repository locally.
+4. Install dependencies with `npm ci`.
+
+## Requirements
+
+These are the minimum versions and dependencies expected by the repo and component packages.
+
+* Node.js 22.x (download from [nodejs.org](https://nodejs.org/en))
+* Vue 3.5+ for `@worklio/wep-vue`
+* React 18.3+ for `@worklio/wep-react`
+* `@googlemaps/js-api-loader` when using address autocomplete features
+
+Your bundler must be able to resolve CSS imports from `node_modules`.
+
+## Packages
+
+Library packages are the production-ready libraries you integrate into your app.
+
+* `packages/wep`: Core types, enums, API utilities, and shared helpers.
+* `packages/wep-vue`: Vue components and forms.
+* `packages/wep-react`: React components and forms.
+
+Playground packages are example apps to explore components in a real flow.
+
+* `packages/playground`: Shared functionality for playgrounds.
+* `packages/playground-vue`: Vue app example.
+* `packages/playground-react`: React app example.
+
+## Repository Setup
+
+Use `npm ci` for a clean, repeatable install that matches the lockfile.
+
+```sh
+npm ci
+```
+
+### Build Library and Run Playgrounds
+
+#### Vue
+
+```sh
+npm run build -w @worklio/wep -w @worklio/wep-vue
+npm run dev -w playground-vue
+```
+
+#### React
+
+```sh
+npm run build -w @worklio/wep -w @worklio/wep-react
+npm run dev -w playground-react
+```
+
+## Usage
+
+Start with a simple field to verify rendering and bindings in your framework.
+
+### Vue
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue';
+import { WepFormField, WepTextBox } from '@worklio/wep-vue';
+
+const value = ref('');
+</script>
+
+<template>
+  <WepFormField label="Display name">
+    <WepTextBox v-model="value" />
+  </WepFormField>
+</template>
+```
+
+### React
+
+```tsx
+import { WepFormField, WepTextBox } from '@worklio/wep-react';
+
+export function Example() {
+  return (
+    <WepFormField label="Display name">
+      <WepTextBox value="" onValueUpdate={() => {}} />
+    </WepFormField>
+  );
+}
+```
+
+## Component Documentation
+
+Story-driven documentation lives next to the components and can be viewed through stories. You can run them locally or use the published sites:
+
+* Vue: [apidemo.worklio.com/wep/vue](https://apidemo.worklio.com/wep/vue/)
+* React: [apidemo.worklio.com/wep/react](https://apidemo.worklio.com/wep/react/)
+
+### Vue components and forms
+
+```sh
+npm run story -w @worklio/wep-vue
+```
+
+### React components and forms
+
+```sh
+npm run story -w @worklio/wep-react
+```
+
+## Recommended IDE Setup
+
+These tools provide the best editing and TypeScript experience for this repo.
+
+* [Visual Studio Code](https://code.visualstudio.com/) is the recommended IDE.
+* If you work on Vue components, install [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar).
+
+
+
+
+# JSON Merge Patch
+
+Usually, responses to endpoint calls made to our APIs are returned in JSON. JSON (JavaScript Object Notation) is a lightweight data-interchange format that makes it easy for you to read and write and for our systems to parse and generate responses to your API calls.
+
+As your solutions interact with our system via endpoint calls, the need to update and modify JSON objects returned becomes increasingly common. Patching information in our system usually comes with the need to update or fix information lapses or outdated pieces of information that have been onboarded into our system.
+
+Because of this, we have adopted an easy way of patching information in our system. The method we have adopted is the JSON Merge Patch.
+
+> 📘 Other Patching Methods
+>
+> There are other methods of information patching. However, our system uses the JSON Merge Patch for information patching.
+
+## What is JSON Merge Patch?
+
+JSON Merge Patch is a simple approach specification that provides a means to describe a series of modifications to a JSON document. This implies that there is an original JSON document to be modified. However, to be modified, a JSON Merge Patch document uses a syntax similar to the original JSON document describing the changes to be made. When the Merge Patch is added to the original document, it results in a modified version.\
+Unlike the more detailed JSON Patch, which provides a series of operations to apply (like add, remove, replace), JSON Merge Patch is a more straightforward approach that represents the changes directly.
+
+## How Does JSON Merge Patch Work?
+
+To apply a JSON Merge patch, you take a source JSON document and a merge patch document. The result is a new and modified JSON document. The JSON Merge Patch works as follows:
+
+### Overwriting Values
+
+Usually, JSON response documents express responses as an Object. These objects have members which contain different data fields. If the Merge Patch document includes a member with a non-null value, the member's value in the target JSON document is either added (if not already present) or replaced (if it exists). As a result, you can set or modify new values by defining them in the Merge Patch.
+
+### Removing Members
+
+If the Merge patch contains a member with a null value and that member exists in the original document, the member is removed from the original JSON document. Some items can be marked in documentation as **Required**; thus, in this case, they are required when added to JSON. If they are not added in JSON (with null), then they are not required because they will not be changed.
+
+### Recursion for Objects
+
+If the merge patch contains a nested object and the original JSON document has a member with the same name, the algorithm is applied recursively to both.
+
+### Array Handling
+
+If the merge patch has an array, the whole array in the target (if it exists) is replaced by the new array. However, JSON Merge Patch doesn't support array-specific operations (like append, insert, or remove a specific item). The entire array gets replaced with a new one.
+
+## JSON Merge Patch Use Cases in our System
+
+In our system, you can use JSON Merge Patch with any PATCH method that calls specific endpoints in our API. This combination provides an efficient way to modify existing information without requiring you to send the whole updated information.
+
+To use JSON Merge Patch with a PATCH request in our API, please note the following:
+
+### Request Method
+
+You can only use JSON Merge Patch with the PATCH method in our system. This signals our system that a partial update of the existing information is intended.
+
+### Content-Type Header
+
+When making your PATCH request, include the **Content-Type** header with the value *application/merge-patch+json.* This indicates to our system that the information you are sending contains a JSON Merge Patch document.
+
+### Request information
+
+The body of the PATCH request should contain the JSON Merge Patch document that describes the changes to be made to the original information.
+
+### Processing
+
+Our system's API will read the existing information, apply the merge patch, and then save the modified data. If the information does not exist in the system, it returns a *404 Not Found* error status. However, if the merge patch document is invalid or cannot be applied to the resource, our system responds with a *400 Bad request* error status.
+
+### Response
+
+After a successful merge patch, our system may respond with a *204 No Content* status to indicate that the information was successfully updated without returning any content. Alternatively, our system may return with a *200 OK* status and the modified resource in the response body.
+
+### For Example
+
+The image below is a company already onboarded into our system named "**Kayode's Holdings.**"
+
+![](https://files.readme.io/f5daab9-image.jpeg)
+
+You then set the *Content-Type* header to *application/merge-patch+json.*
+
+![](https://files.readme.io/552d589-image.jpeg)
+
+You then attach the JSON Merge Document to the request body and make the **PATCH** request to our API. The call returns the modified document and a **200 OK** status response code to indicate that the Patch has been done.
+
+![](https://files.readme.io/5100856-image.jpeg)
+
+## Best Practices
+
+To maintain a robust, efficient, and secure system when using the JSON Merge Patch in our system, it is necessary to adhere to some of the best practices, which include the following:
+
+### Content-Type Header
+
+Ensure you set the Content-Type Header to *application/merge-patch+json* to indicate that the request data contains a JSON Merge Patch document.
+
+### Validation
+
+Ensure you validate the merge patch document before applying it to the original document to ensure it adheres to the expected format and is devoid of malicious data.
+
+### Avoiding Array Manipulations
+
+JSON Merge Patch does not support certain array operations like removing or adding specific items. Thus, avoid making such patches in our system, although there is already minimal need for such operations.
+
+## Conclusion
+
+JSON Merge Patch is a straightforward and intuitive protocol for describing modifications to a JSON document. It offers an efficient means to represent changes, making it particularly valuable for systems and applications where partial updates are standard, such as our API using the PATCH method.
+
+By providing a simple way to overwrite values, remove members, or update nested objects, it streamlines the process of updating JSON data structures without the need to resend the entire document.
+
+
+
+
+# iFrames
+
+The Worklio Embedded Payroll iFrames allow you to integrate the white-label solution within your existing platform.
+
+## 1. Client Authorization Token
+
+First, you need to get a "client" JWT token to be able to call the user token endpoint. You can obtain this client token with Client credentials authorization flow at `/connect/token` endpoint using the `client_id` and `client_secret` assigned to your application and `user_token api` scopes, like this:
+
+<Image align="center" border={true} src="https://files.readme.io/b806b44-iFramFlow.png" className="border" />
+
+## 2. User Token endpoint
+
+The user token endpoint generates an output that is used to access the embedded payroll application on the client side. With the [Client JWT token](https://apidocs.worklio.com/docs/iframes#1-client-authorization-token) used as the Bearer token in the request header, you can make an API call to `/token/user/` endpoint to obtain `appUrl` and `userToken` result.
+
+The `appUrl` property contains the URL to the embedded payroll application and the `userToken` property is an authentication token in JWT format created on behalf of the user specified by the endpoint parameters.
+
+This endpoint is called by the POST method and its content is generated based on parameters in the request body as a JSON object with the following properties:
+
+* **email** \<string>: The user's email for whom the token is to be generated; this token will contain user identifications (such as loginId and role/roleId) according to other parameters.
+* **token** \<string>: Instead of the "email" parameter, a "token" parameter can be used with the value of the user's authenticated JWT token from another trusted authentication server.
+* **mode** \<int>: Mode of the application container in which the generated token will be used. This is an optional parameter, if specified the mode will be included as a claim in the user token.
+
+| Int | Mode    |
+| --- | ------- |
+| 1   | Browser |
+| 2   | Iframe  |
+
+* **page** \<int>: The type of page to be included as a claim in the user token:
+
+| Int   | Page Name                   | Accessible for Roles | Required Properties                                      |
+| :---- | :-------------------------- | :------------------- | :------------------------------------------------------- |
+| 1     | Multi-Admin Dashboard       | Multi-Admin          |                                                          |
+| 2     | Multi-Admin Companies       | Multi-Admin          |                                                          |
+| 3     | Multi-Admin Payrolls        | Multi-Admin          |                                                          |
+| 4     | Multi-Admin Payroll History | Multi-Admin          |                                                          |
+| 5     | Multi-Admin Reports         | Multi-Admin          |                                                          |
+| 6     | App Settings                | Multi-Admin          |                                                          |
+| 7     | Admins Settings             | Multi-Admin          |                                                          |
+| 8     | Notifications               | Multi-Admin          |                                                          |
+| 1001  | Company Dashboard           | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1002  | Company Info                | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1003  | Company Team                | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1004  | Company Team Member         | Admin, Multi-Admin   | `employee-id`, `company-id` - if accessed as Multi-Admin |
+| 1005  | Company Payroll             | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1006  | Company Payroll History     | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1007  | Company Benefits            | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1008  | Company Reports             | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1009  | Company Time Off            | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1010  | Company Integrations        | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1011  | Company Premium ATS         | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1012  | Pulse Surveys               | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 1013  | Time Attendance             | Admin, Multi-Admin   | `company-id` - if accessed as Multi-Admin                |
+| 10001 | Employee Dashboard          | Employee             |                                                          |
+| 10002 | Employee Personal Info      | Employee             |                                                          |
+| 10003 | Employee Contract           | Employee             |                                                          |
+| 10004 | Employee Tax Setup          | Employee             |                                                          |
+| 10005 | Employee Deductions         | Employee             |                                                          |
+| 10006 | Employee Pay Statements     | Employee             |                                                          |
+| 10007 | Company Info                | Employee             |                                                          |
+| 10008 | Documents                   | Employee             |                                                          |
+| 10009 | Time Off                    | Employee             |                                                          |
+| 10010 | Time Attendance             | Employee             |                                                          |
+| 10011 | Pulse Surveys               | Employee             |                                                          |
+
+* **roleAccess** \<int>: Specifies the type of access control, determining which login role of the user will be selected for the user token; its values have the following meanings:
+
+| Int  | Role                                                  |
+| ---- | ----------------------------------------------------- |
+| null | selects the highest role from all existing user roles |
+| 1    | System                                                |
+| 2    | Admin                                                 |
+| 3    | Employee                                              |
+
+* **company** \<int>: For the login roles that a user may have been assigned more than one for different companies, it is possible to explicitly select a role for a specific company with this parameter.
+  This is an optional parameter that applies to Client Admin and Employee roles.
+* **customAppClaims** array(type \<string>, value \<string>): An array of application properties that are required according to the requested page.
+
+**Example:**
+
+```curl
+curl --request POST
+     --url /token/user/ \
+     --header 'Authorization: Bearer ' \
+     --header 'content-type: application/*+json' \
+     --data '
+     {
+       "page": 4,
+       "email": "user@domain.com",
+       "roleAccess": 2,
+       "customAppClaims": [
+         {
+           "type": "employeeId",
+           "value": "123"
+         }
+       ]
+     }
+     '
+```
+
+**Endpoint output:**
+
+```json
+{
+    "email": "user@domain.com",
+    "appUrl": "https://your_app_domain",
+    "userToken": "eyJhbGciOiJSUzI..."
+}
+```
+
+## 3. Embed iFrame Into Your Page
+
+Finally, you can embed an iframe into your application using the `appUrl` and `userToken` properties, you received from the User token API call.
+
+```asp Razor
+<iframe src="@Url.Content(appUrl+userToken)"></iframe>
+```
+
+***
+
+## Mode-Specific Behavior
+
+**Iframe Mode (mode: 2, default)**
+
+* Navigation menu and user menu are hidden
+* User is locked to a specific flow or page
+* A link is available to return to the starting point if user navigates further
+* Ideal for embedding single-page features or custom flows in limited containers
+
+**Browser Mode (mode: 1)**
+
+* Full application interface is available including menus
+* User can move freely across the platform
+* Logout option is not presented (use browser close or the Close link in the user menu in the app to exit)
+* Suitable for opening the full application at defined entry point in a new browser window or tab
+
+<Callout icon="❗️" theme="error">
+  If you try to access an iframe-only URL directly in the browser, you may receive an **"Unallowed Flow Context"** error. This is a protection mechanism to prevent loading restricted content outside its intended container.
+</Callout>
+
+***
+
+### Show Menu in Iframe Mode
+
+The **menu** custom claim in iframe mode enables rendering of the primary navigation menu. When active, the navigation menu is displayed, but the logo and user profile controls are omitted from both the left navigation panel and the mobile header. This configuration is designed for embedded application scenarios where minimal UI footprint is required while preserving navigation capabilities.
+
+To enable this feature, include the following custom claim in your API request:
+
+```json
+{ "type": "menu",  "value": true }
+```
+
+**Example Request:**
+
+```bash
+curl --request POST \
+     --url /token/user/ \
+     --header 'Authorization: Bearer <token>' \
+     --header 'Content-Type: application/*+json' \
+     --data '{
+       "email": "user@domain.com",
+       "customAppClaims": [
+           {
+            "type": "menu",
+            "value": true
+          }
+        ]
+     }'
+```
+
+## Displaying Custom Flows in an iframe
+
+WEP iframes support displaying specific sections of a page, not just the entire page. To achieve this, you need to include the appropriate flow value in the `customAppClaims`.
+
+### Supported Flows and Required Properties
+
+| **Flow Name**                              | **Required Properties**       |
+| ------------------------------------------ | ----------------------------- |
+| `custom-fields-employee-view`              | `company-id`, `employee-id`   |
+| `custom-fields-employee-edit`              | `company-id`, `employee-id`   |
+| `custom-fields-company`                    | `company-id`                  |
+| `custom-fields-employee-onboarding-phase1` | `company-id`, `onboarding-id` |
+| `custom-fields-employee-onboarding-phase2` | `company-id`, `ercu`          |
+| `premium-ats`                              | `company-id`                  |
+| `premium-ats-settings`                     | `company-id`                  |
+| `company-verification`                     | `company-id`                  |
+
+### Example:
+
+```bash
+curl --request POST \
+     --url /token/user/ \
+     --header 'Authorization: Bearer <token>' \
+     --header 'Content-Type: application/*+json' \
+     --data '{
+       "email": "user@domain.com",
+       "customAppClaims": [
+            {
+              "type": "flow",
+              "value": "custom-fields-employee-view"
+            },
+            {
+              "type": "company-id",
+              "value": 1
+            },
+            {
+              "type": "employee-id",
+              "value": 1
+            }
+        ]
+     }'
+```
+
+## Configuration note
+
+To successfully call a User token endpoint, you need to get the external client configuration for your application, the `client_id` and `client_secret`mentioned in the first chapter.
+
+The URL for the application and API endpoints must also be properly configured for your instance environment.
+This configuration is provided by Worklio and please contact us in case of missing or incorrect configuration.
+
+
+
+
+# User Types
+
+## Introduction
+
+This guide allows you to manage administrative users of your company(ies) within our system. It provides a comprehensive walkthrough of the endpoints available for managing multi-admins and admin users, detailing their use cases, functionalities, and how to use them effectively.
+
+***
+
+## Prerequisites
+
+Before you begin, ensure you have the following:
+
+* **API Credentials**: An API key or OAuth token with the necessary permissions to manage admins.
+* **Company ID**: The unique identifier of the company whose logins you want to manage.
+* **HTTP Client**: Tools like `curl`, Postman, or any programming language with HTTP support.
+* **JSON Parser**: Ability to parse JSON responses.
+
+***
+
+## Overview of Admin Types and Permissions
+
+Worklio supports three user types but two administrative user types:
+
+1. System-level users or Multi-Admins
+2. Admin level users
+3. Employee-level users
+
+### System-level users
+
+These are system-wide admin users with super-user accounts with broader permissions, potentially including access to multiple companies or system configurations. Usually, the system generates only one of such accounts during developer registration. However, you can create more in the production environment by contacting our support.
+
+The system automatically adds all companies this user creates to his access list, and he has full admin rights over them. The system user is also suitable for machine-2-machine API usage.
+
+### Admin-level users
+
+These users have a standard admin account. An admin is an employee of the company who can perform administrative operations and tasks, such as hiring and terminating employees, running payrolls, and so on. Admins have full rights to the company where they are employed.
+
+Admin rights are not limited; you can set them for any number of employees. Just be aware that admin users see other users’ payrolls. So, handle it carefully and set this only for company admins.
+
+### Employee-level users
+
+The system gives this access type to all company employees. Employees can access only their data and payrolls. Due to regulatory reasons, some update operations are not allowed for employees, even on their own data.
+
+### Use Cases
+
+* **Admin-level users**:
+  * Manage company-specific settings and data.
+  * Access is limited to the company they are associated with.
+
+* **System-level users**:
+  * Manage multiple companies.
+  * Access to system-wide configurations and settings.
+  * Higher level of permissions and responsibilities.
+
+Understanding the distinction between these admin types is crucial for assigning appropriate permissions and maintaining security.
+
+***
+
+## Admin-level Users Management
+
+### 1. List Company Logins
+
+**Endpoint**: `GET /wep/companies/{companyId}/logins`
+
+**Description**: This endpoint retrieves a list of all logins (admins) associated with a specific company.
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/companies/123456/logins
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Example Response**:
+
+```json
+[
+  {
+    "loginId": "login123",
+    "username": "jdoe",
+    "email": "jdoe@company.com",
+    "status": "active",
+    "roles": ["manager", "editor"]
+  },
+  {
+    "loginId": "login124",
+    "username": "asmith",
+    "email": "asmith@company.com",
+    "status": "blocked",
+    "roles": ["viewer"]
+  }
+]
+```
+
+**Usage**:
+
+* Use this endpoint to get a list of all company logins.
+* Review the list to manage existing users or audit user access.
+
+***
+
+### 2. Create a Company Login
+
+**Endpoint**: `POST /wep/companies/{companyId}/logins`
+
+**Description**: Call this endpoint to create a new login (admin user) for a company.
+
+**Example Request**:
+
+```http
+POST https://apidocs.worklio.com/wep/companies/123456/logins
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "username": "mjones",
+  "email": "mjones@company.com",
+  "password": "SecurePassword123!",
+  "roles": ["editor"],
+  "firstName": "Mary",
+  "lastName": "Jones"
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "loginId": "login125",
+  "message": "Company login created successfully."
+}
+```
+
+**Usage**:
+
+* Use this endpoint to add new admin users to a company.
+* Assign appropriate roles to control permissions.
+* Ensure they follow password qualities for security.
+
+***
+
+### 3. Retrieve Company Login Details
+
+**Endpoint**: `GET /wep/companies/{companyId}/logins/{loginId}`
+
+**Description**: This endpoint successfully returns the details of a specific admin user.
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/companies/123456/logins/login125
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Example Response**:
+
+```json
+{
+  "loginId": "login125",
+  "username": "mjones",
+  "email": "mjones@company.com",
+  "status": "active",
+  "roles": ["editor"],
+  "firstName": "Mary",
+  "lastName": "Jones",
+}
+```
+
+**Usage**:
+
+* View detailed information about a specific login.
+* Check user status and roles.
+
+***
+
+### 4. Update a Company Login
+
+**Endpoint**: `PATCH /wep/companies/{companyId}/logins/{loginId}`
+
+**Description**: Updates information for a specific company login.
+
+**Example Request**:
+
+```http
+PATCH https://apidocs.worklio.com/wep/companies/123456/logins/login125
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "email": "mary.jones@company.com",
+  "roles": ["editor", "manager"]
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Company login updated successfully."
+}
+```
+
+**Usage**:
+
+* Update user information such as email or roles.
+* Modify permissions by updating roles.
+
+***
+
+### 5. Block Company Logins
+
+**Endpoint**: `PATCH /wep/companies/{companyId}/logins/block`
+
+**Description**: Blocks one or multiple company logins, preventing them from accessing the system.
+
+**Example Request**:
+
+```http
+PATCH https://apidocs.worklio.com/wep/companies/123456/logins/block
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "loginIds": ["login125", "login124"],
+  "reason": "Security policy violation."
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Company logins blocked successfully.",
+  "blockedLogins": ["login125", "login124"]
+}
+```
+
+**Usage**:
+
+* Use this endpoint to block users due to security issues or policy violations.
+* Provide a reason for auditing purposes.
+
+***
+
+## System-level Users Management
+
+### 1. List Admin Users
+
+**Endpoint**: `GET /wep/admins`
+
+**Description**: Retrieves a list of all system-level users.
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/admins
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Example Response**:
+
+```json
+[
+  {
+    "adminId": "admin001",
+    "username": "admin.jdoe",
+    "email": "jdoe@worklio.com",
+    "status": "active",
+    "roles": ["superadmin"]
+  },
+  {
+    "adminId": "admin002",
+    "username": "admin.asmith",
+    "email": "asmith@worklio.com",
+    "status": "active",
+    "roles": ["support"]
+  }
+]
+```
+
+**Usage**:
+
+* Use this endpoint to get a list of all multi-admin users.
+* Manage system-wide administrators and their access.
+
+***
+
+### 2. Create a Multi-admin User
+
+**Endpoint**: `POST /wep/admins`
+
+**Description**: Creates a new multi-admin user in the system.
+
+**Example Request**:
+
+```http
+POST https://apidocs.worklio.com/wep/admins
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "username": "admin.mjones",
+  "email": "mjones@worklio.com",
+  "password": "AnotherSecurePass123!",
+  "roles": ["support"],
+  "firstName": "Mary",
+  "lastName": "Jones"
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "adminId": "admin003",
+  "message": "Admin user created successfully."
+}
+```
+
+**Usage**:
+
+* Add new system administrators.
+* Assign appropriate roles to control access and permissions.
+
+***
+
+### 3. Retrieve Multi-admin User Details
+
+**Endpoint**: `GET /wep/admins/{id}`
+
+**Description**: Retrieves details of a specific multi-admin user.
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/admins/admin003
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Example Response**:
+
+```json
+{
+  "adminId": "admin003",
+  "username": "admin.mjones",
+  "email": "mjones@worklio.com",
+  "status": "active",
+  "roles": ["support"],
+  "firstName": "Mary",
+  "lastName": "Jones",
+  "lastLogin": "2023-09-16T08:22:10Z"
+}
+```
+
+**Usage**:
+
+* View detailed information about an admin user.
+* Monitor admin activity and status.
+
+***
+
+### 4. Update a Multi-admin User
+
+**Endpoint**: `PATCH /wep/admins/{id}`
+
+**Description**: Updates information for a specific multi-admin user.
+
+**Example Request**:
+
+```http
+PATCH https://apidocs.worklio.com/wep/admins/admin003
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "email": "mary.jones@worklio.com",
+  "roles": ["support", "manager"]
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Admin user updated successfully."
+}
+```
+
+**Usage**:
+
+* Modify multi-admin user details.
+* Update roles to change permissions.
+
+***
+
+### 5. Block a Multi-admin User
+
+**Endpoint**: `PATCH /wep/admins/{id}/block`
+
+**Description**: Blocks a multi-admin user, preventing them from accessing the system.
+
+**Example Request**:
+
+```http
+PATCH https://apidocs.worklio.com/wep/admins/admin003/block
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "reason": "Unauthorized access attempt."
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Admin user blocked successfully.",
+  "adminId": "admin003"
+}
+```
+
+**Usage**:
+
+* Block multi-admin users due to security concerns.
+* Provide a reason for record-keeping.
+
+***
+
+### 6. Activate a Multi-admin User
+
+**Endpoint**: `PATCH /wep/admins/{id}/activate`
+
+**Description**: Activates a blocked multi-admin user, restoring their access.
+
+**Example Request**:
+
+```http
+PATCH https://apidocs.worklio.com/wep/admins/admin003/activate
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "note": "Issue resolved; access restored."
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Admin user activated successfully.",
+  "adminId": "admin003"
+}
+```
+
+**Usage**:
+
+* Reactivate a multi-admin user after resolving issues.
+* Document the activation for auditing purposes.
+
+***
+
+## Conclusion
+
+Managing admin users and multi-admins is crucial for maintaining the security and integrity of your company. By utilizing the endpoints provided in the reference docs, developers can effectively create, update, and manage administrative users.
+
+For further assistance or inquiries, contact support.
+
+
+
+
+# How to get API access
+
+Worklio Embedded Payroll supports two API access models. Both using oAuth 2.0 authentication but with different flow.
+
+## Implicit mode (recommended)
+
+**Pros:**
+
+* You don’t need to implement proxy APIs
+* You don’t need to manage user access on payroll/client/employee level
+* Our API could be used directly from front end application
+* Much faster delivery
+
+**Cons:**
+
+* SSO authentication scheme needs to be setup
+
+## Direct mode (Resource Owner flow)
+
+**Pros:**
+
+* One system user does all operations regardless source of request
+* SSO authentication setup is not required
+* Employees can be created without access to API
+
+**Cons:**
+
+* Implementation of Proxy API in your product is required
+* Access rights needs to be implemented on your end
+* Implementation take much longer
+
+> 📘 API access configuration
+>
+> API access configuration settings, grant types, urls etc... are listed in **[How to get API access](https://apidocs.worklio.com/docs/how-to-get-api-access)** page
+
+## Implicit mode usage
+
+Greatest implicit mode advantage is speed to market. You don’t need to care about access rights so much as with Direct mode (you just need to set employee access type properly) and you don’t need implement or somehow solve API proxy.
+
+CORS is set in all origins allowed and you can use your System user or newly created Admin/Employee users directly. On live instance will be SSO and origins/redirect set properly per your URLs.
+
+Authentication is via standard Bearer jwt token.
+
+## Direct mode usage
+
+In case of direct mode, we are expecting that you are going to use only System user, but you can use admin/employees accounts also. Resource owner flow is used in this case and thus we expect this usage for internal use behind proxied APIs.
+
+CORS is set in all origins allowed and you can use your System user or newly created Admin/Employee users directly. On live instance will be SSO and origins/redirect set properly per your URLs.
+
+Authentication is via standard Bearer jwt token.
+
+
+
+
+# Create Company
+
+The first entity for payroll calculation you must create is **Company**. You must send a **POST** request to the ***Create Company*** endpoint to create a company. You can find more about the endpoint in the [API Reference](https://apidocs.worklio.com/reference/post_wep-companies).
+
+However, to call the create company endpoint, you must be a System level user. A successfully created company is automatically added to current System level user permissions.
+
+> 📘 User Types
+>
+> See more about a system-level user [here](https://apidocs.worklio.com/docs/user-types).
+
+In creating a company, you need to set the required fields. These fields must not be empty to ensure the successful creation of your company.
+
+## Company Information
+
+The system requires that you set some essential company information like:
+
+### **Company Name**
+
+The company name is a string parameter that should be the company's legal name. If the company is doing business under a different name, you can also use the **tradeName** property.
+
+The company name property is of the alphanumeric type and has a maximum character count of 100.
+
+### **Federal Employer Identification Number (FEIN)**
+
+Federal Employer Identification Number (or EIN) is a nine-digit number the IRS assigns in the following format: XX-XXXXXXX. The number helps identify the tax accounts of employers and others with no employees.
+
+Our API requires pure nine digits without any separators or whitespace. We do not validate your EIN against IRS records. Hence, you have the responsibility of using your IRS-issued EIN.
+
+### **Company Type**
+
+This is the parameter that defines the legal form of your company. This should be a number between 1 and 10. Each digit represents a specific type. The company type may be based on Liability, Members, or Control. As a result, your company may belong to any of the following categories:
+
+| Integer representation | Business Type      | Abbreviation         |
+| :--------------------- | :----------------- | :------------------- |
+| 1.                     | Corporation        | C-Corp.              |
+| 2.                     | Partnership        | Partnership.         |
+| 3.                     | LLCSCorp           | LLC S-Corp.          |
+| 4.                     | LLC                | LLC C-Corp.          |
+| 5.                     | LLCSoleProprietor  | LLC Sole Proprietor. |
+| 6.                     | SoleProprietorship | Sole Proprietor.     |
+| 7.                     | LLCPartnership     | LLC Partnership.     |
+| 8.                     | SCorp              | S-Corp.              |
+| 9.                     | NonProfit          | Non Profit.          |
+| 10.                    | GovernmentalEntity | Governmental Entity. |
+
+**NOTE:** You input this parameter as an integer.
+
+### **Company Address**
+
+The **companyAddress** is an object that contains information about the company’s business address. This address is one of the sources for the tax parameters, so you can’t use a fake or nonexistent address here. The system processes the address and must find proper tax information about it. An adequately set company address must contain the following:
+
+* Business Address Lines which are of the alphanumeric type.
+* City, which is of the alphanumeric type.
+* State or State short form, which is text only.
+* Correct Zip code, which is of the numeric type only.
+
+### **Bank Account Number and Routing Number**
+
+The bank account number and routing numbers are for identifying bank and bank accounts in the US. They are an essential aspect of your company information that you need to set. Since our API requires these numbers for validation purposes, you must input the correct numbers.
+
+Your Bank Account Number should have a maximum of 20 characters to avoid validation errors, while the Routing Number is usually a 9-digit numeric character.
+
+## Payroll Policy
+
+Configuring your Payroll policy is another section of your company's information that you need to set. You determine the following information when setting this section:
+
+### **Pay Frequency**
+
+You set your Pay frequency based on your company policy. It could be Weekly, Bi-weekly, Semi-monthly, and Monthly.
+
+> 📘 Second Pay Period End Date
+>
+> Configuring your pay frequency to this option includes the option of the Second Pay period end date. This second pay period end date usually has a default value of 15 days after the First pay period end date.
+>
+> However, the date usually takes value from a day after the First Pay Period End date to 31 calendar days after the First Pay Period end date.
+
+### **First Pay Period End Date**
+
+You set this date according to the Pay frequency. This date is the date when your employee's first pay period ends. The default value is usually set at the current company creation date. However, this parameter can only take value from the first day of the current year's first month to the previous month's last day of the following year.
+
+### **First Pay Date**
+
+This date is your company's predetermined date or day of employee payment. It is usually the day your payroll makes its first payment for the previous pay period. By default, this date is set as five calendar days after the First Pay Period End date, but it usually takes its value from 10 days before your First Pay Period End date to 31 days after the First Pay Period End date.
+
+### **Move Pay Day on Holidays and Weekends**
+
+If your Pay date falls on a weekend or holiday, you can preset when your company decides to pay its employees. You can always pay the last business day before or the first business day after the weekend or holidays.
+
+You must ensure the required information is spelled correctly and carefully before moving ahead with other entities to ensure a successful ***create company*** endpoint call.
+
+
+
+
+# Work with Work Locations
+
+Work locations are important part of company setup as they are creating link between employees and location where they really work. This connection needs to be correct so payroll and tax engine can calculate employee properly.\
+During company onboarding is default work location created. You can update it later via [work location endpoint]([https://apidocs.worklio.com/reference/post_wep-companies-companyid-employees-employeeid-taxsetup]\(\)) or you can use company update endpoint.
+
+## Address validation
+
+Address for work location is validated through tax engine. In case that address is not valid you can use geo coordinates (for example from google maps component). Then is payroll calculation driven by those coordinates and text version of address is only for info. But we strictly recommend keeping them in sync.\
+Work locations can’t be removed as they are tied to employees and payrolls data and so they must be kept in database for audit purposes.
+
+## Working from home
+
+As we mentioned on beginning – each employee needs to be linked with work location. In case that employee work from home, system will create link to his own residential address. So don’t worry, you don’t need to create one employee work locations records.
+
+
+
+# Company Tax Setup
+
+Tax setup is one of the most critical parts of company onboarding. The company tax setup is generated dynamically depending on the company's and employees' work locations and information about home offices. We then prepare a needed list of tax parameters that need to be filed by companies or employees.
+
+The system assigns Tax Reporting Entities from the Master level for the company tax setup.\
+Tax setup contains plenty of information which are known to Companies. For example, each company has individually set SUTA rates with the government, unlike the others.
+
+Firstly, you must call the [Tax Setup endpoint](https://apidocs.worklio.com/reference/post_wep-companies-companyid-taxsetup-1). This endpoint will return a list of tax values you must fill out. The values could be a number or percentage, combo selection, account number, registration number, or even text code.
+
+The setup endpoint will return you enough information to render proper UI for this, along with captions, descriptions, and in many cases, even with a regular expression for client-side validation and information about item requirements. The next call (or calls) should contain updates for items filled by the company or employee.
+
+> 📘 Numeric & value format
+>
+> As there is plenty of different value types, API expects string format for all of them. Numbers are US localization with a dot as a decimal separator.
+
+In the United States, the system requires each company to setup three necessary taxes:
+
+* Federal taxes
+* State taxes
+* Local taxes
+
+## Federal Taxes
+
+Federal taxes are taxes from the federal government. To set the federal taxes, you must provide your legal Federal Employer Identification Number (FEIN).
+
+## State Taxes
+
+State taxes are taxes from the states. You set the state-issued tax account number when setting up these tax entities.
+
+An essential tax entity you need to set up is the State Unemployment Tax Act (SUTA). The SUTA tax is a payroll tax required from employers by the government.
+
+Setting up this tax entity is state-based. Therefore, you can only use the state-issued Tax account number and the SUTA rate (issued in percentage). However, you can mark the checkbox if your company is exempt from the SUTA tax.
+
+## Local Taxes
+
+Local taxes are taxes from the local authorities, peculiar to local regions where your company is.
+
+
+
+
+#  Company Bank & Verification
+
+This guide explains how to integrate with the Bank & Verification onboarding
+flows using only the public WEP API functions provided by the
+[@worklio/wep](https://apidocs.worklio.com/docs/front-end-library) package.
+
+***
+
+## Overview
+
+Before payroll can be enabled, two onboarding tracks must be
+completed in sequence.
+
+1. **Bank Setup:** Operational banking, provider activation, and account
+   verification.
+2. **Company Verification (KYC):** Regulatory checks and documentation. This
+   step can be started at any time, including alongside the bank setup process.
+   However, if a bank provider is enabled (such as Kotapay or NatPay), the KYC cannot be
+   submitted for review until bank setup is verified and completed.
+
+Both tracks require a valid FEIN (Federal Employer Identification Number).
+Completion is determined by API data.
+
+***
+
+## Prerequisites
+
+| Requirement   | Description                                                |
+| ------------- | ---------------------------------------------------------- |
+| FEIN          | Must be valid and registered before onboarding begins.     |
+| Company ID    | Required for all API calls; obtain via your auth flow.     |
+| Authorization | Only permitted administrative roles can access these APIs. |
+
+If KYC is not enabled in your environment, you may skip the Company Verification
+flow.
+
+***
+
+## High-Level Overview
+
+### Bank Setup
+
+* Collect and display required bank account information.
+* Create or update bank accounts using the provided API endpoints.
+* If Plaid is available, complete Plaid verification for the account.
+* If a bank provider is enabled, present and require signing the provider
+  agreement; otherwise, skip this step.
+* Confirm that all account and provider statuses are completed before proceeding
+  to company verification.
+
+### Company Verification (KYC)
+
+* Gather and display required business and ownership information.
+* List and upload all required company and signatory documents.
+* Save or update company KYC information.
+* After all steps are complete, submit the KYC for review (only possible if bank
+  setup is completed when a provider is enabled).
+* Confirm that KYC status is completed before enabling payroll.
+
+***
+
+## Step-by-Step Flow Outline
+
+1. Ensure FEIN and companyId are available.
+2. Begin Bank Setup:
+   a. Fetch bank setup snapshot.
+   b. Create/update bank accounts.
+   c. If Plaid is available, request link token and complete Plaid flow.
+   d. Collect company details as required by the bank provider.
+   e. If a bank provider is enabled, present and sign the provider agreement document; otherwise, skip this step.
+   f. Verify bank setup completion.
+3. Begin Company Verification:
+   a. Fetch KYC summary.
+   b. List required documents.
+   c. Upload documents.
+   d. Save company KYC info.
+   e. Submit KYC for review.
+4. Once both tracks are completed, unlock payroll.
+
+***
+
+## Step-by-Step Onboarding Flow
+
+### Bank Setup
+
+**Step 1: Display bank setup status and account fields**
+
+* Fields: Account type, routing number, account number, provider status,
+  verification status
+* API: `wepGetBankSetup(companyId)`
+
+**Step 2: Create or update the primary bank account**
+
+* Fields: Account type, routing number, account number
+* API: `wepCreateBankAccount(companyId)` (for creation),
+  `wepUpdateBankAccount(companyId, accountId)` (for update)
+
+**Step 3: If Plaid is available, request a link token and launch Plaid**
+
+* Fields: Plaid link token, Plaid UI
+* API: `wepGetPlaidLinkToken(companyId, accountId)`
+
+**Step 4: Submit Plaid connection data**
+
+* Fields: publicToken, account metadata
+* API: `wepCreatePlaidConnection(companyId, accountId)`
+
+**Step 5: Display and collect company details as required by the bank provider**
+
+* Fields: Company name, address, other provider-required info
+* API: (provider-specific, e.g., `wepGetBankProvider`, `wepUpdateBankProvider`)
+
+**Step 6: If a bank provider is enabled, present the provider agreement document
+for review and signing; otherwise, skip this step**
+
+* Fields: Agreement document, signatory job title, full name, electronic consent
+  (checkbox)
+* API: `wepSignBankProvider(companyId, accountId)`
+
+**Step 7: Display completion status**
+
+* Fields: Account, verification, and provider statuses
+* API: `wepGetBankSetup(companyId)`
+
+***
+
+### Company Verification
+
+**Step 1: Display KYC summary and required fields**
+
+* Fields: Business name, FEIN, address, ownership info, KYC status
+* API: `wepGetCompanyKYC(companyId)`
+
+**Step 2: List and review company KYC documents**
+
+* Fields: Document list, document status
+* API: `wepGetCompanyKYCDocuments(companyId)`
+
+**Step 3: Retrieve signatories and their documents**
+
+* Fields: Signatory name, role, document status
+* API: `wepGetSignatories(companyId)`,
+  `wepGetSignatoryDocuments({ companyId, signatoryId })`
+
+**Step 4: Get required document types for company and signatories**
+
+* Fields: Required document types
+* API: `wepGetCompanyKYCDocumentTypes({ companyId, documentScope })`
+
+**Step 5: Upload required documents**
+
+* Fields: Document file upload, document type
+* API: `wepCreateCompanyKYCDocument(companyId)`
+
+**Step 6: Save or update company KYC information**
+
+* Fields: Business info, ownership info
+* API: `wepSaveCompanyKYC(companyId)`
+
+**Step 7: Submit company KYC for review**
+
+* Fields: Submission confirmation
+* API: `wepSaveCompanyKYC(companyId)` (with submission flag or status)
+
+**Step 8: Display completion status**
+
+* Fields: KYC status, document status
+* API: `wepGetCompanyKYC(companyId)`, `wepGetCompanyKYCDocuments(companyId)`
+
+***
+
+## API Reference
+
+All functions require a `companyId`. For request/response details, refer to the
+official API typings.
+
+### Calling API Functions
+
+API functions from `@worklio/wep` (such as `wepGetCompanyKYC`) do not make
+network requests directly. Instead, they return metadata describing how to
+construct the request, including:
+
+* `createRequestBody`: Function to build the request body (if needed)
+* `method`: HTTP method (e.g., 'GET', 'POST')
+* `url`: Relative endpoint URL (e.g., `companies/${companyId}/kyc`)
+* `useResponseBody`: Function to process the response body
+
+To call the API, use the returned metadata with a standard HTTP client such as
+`fetch()`:
+
+```js
+const { method, url, createRequestBody, useResponseBody } =
+  wepGetCompanyKYC(companyId);
+const response = await fetch(`https://api.worklio.com/${url}`, {
+  method,
+  headers: {
+    Authorization: "Bearer YOUR_TOKEN",
+    "Content-Type": "application/json"
+  },
+  // body: createRequestBody(data) if method is POST/PATCH
+});
+const result = useResponseBody(await response.json());
+
+// createRequestBody example
+const formData = new FormData();
+formData.append("file", fileInput.files[0]);
+const { createRequestBody } = wepCreateCompanyKYCDocument(companyId);
+const body = createRequestBody(formData);
+```
+
+Refer to the API documentation or the `@worklio/wep` package for endpoint URLs,
+required parameters, and response handling.
+
+| Domain        | Purpose                 | API Function                                                         | Method | Source                                                                                                                                                   |
+| ------------- | ----------------------- | -------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Company KYC   | Get KYC summary         | `wepGetCompanyKYC(companyId)`                                        | GET    | [wepGetCompanyKYC](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/getCompanyKYC.ts)                                             |
+| Company KYC   | Save/update KYC data    | `wepSaveCompanyKYC(companyId)`                                       | POST   | [wepSaveCompanyKYC](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/saveCompanyKYC.ts)                                           |
+| KYC Documents | List company docs       | `wepGetCompanyKYCDocuments(companyId)`                               | GET    | [wepGetCompanyKYCDocuments](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/getCompanyKYCDocuments.ts)                           |
+| KYC Documents | Get document detail     | `wepGetCompanyKYCDocumentDetail({ companyId, documentId })`          | GET    | [wepGetCompanyKYCDocumentDetail](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/getCompanyKYCDocumentDetail.ts)                 |
+| KYC Documents | Get required doc types  | `wepGetCompanyKYCDocumentTypes({ companyId, documentScope })`        | GET    | [wepGetCompanyKYCDocumentTypes](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/getCompanyKYCDocumentTypes.ts)                   |
+| KYC Documents | Get doc configuration   | `wepGetCompanyKYCDocumentConfigurations({ companyId, documentKey })` | GET    | [wepGetCompanyKYCDocumentConfigurations](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/getCompanyKYCDocumentConfigurations.ts) |
+| KYC Documents | Upload documents        | `wepCreateCompanyKYCDocument(companyId)`                             | POST   | [wepCreateCompanyKYCDocument](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/createCompanyKYCDocument.ts)                       |
+| Signatories   | List signatories        | `wepGetSignatories(companyId)`                                       | GET    | [wepGetSignatories](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/getSignatories.ts)                                           |
+| Signatories   | Get signatory detail    | `wepGetSignatory({ companyId, signatoryId })`                        | GET    | [wepGetSignatory](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/getSignatory.ts)                                               |
+| Signatories   | List signatory docs     | `wepGetSignatoryDocuments({ companyId, signatoryId })`               | GET    | [wepGetSignatoryDocuments](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/getSignatoryDocuments.ts)                             |
+| Signatories   | Update signatory        | `wepUpdateSignatory({ companyId, signatoryId })`                     | PATCH  | [wepUpdateSignatory](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/updateSignatory.ts)                                         |
+| Signatories   | Remove signatory        | `wepRemoveSignatory({ companyId, signatoryId })`                     | DELETE | [wepRemoveSignatory](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/kyc/removeSignatory.ts)                                         |
+| Bank Setup    | Get bank setup status   | `wepGetBankSetup(companyId)`                                         | GET    | [wepGetBankSetup](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/bank-setup/getBankSetup.ts)                                        |
+| Bank Setup    | Create bank account     | `wepCreateBankAccount(companyId)`                                    | POST   | [wepCreateBankAccount](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/bank-accounts/createBankAccount.ts)                           |
+| Bank Setup    | Update bank account     | `wepUpdateBankAccount(companyId, accountId)`                         | PATCH  | [wepUpdateBankAccount](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/bank-accounts/updateBankAccount.ts)                           |
+| Bank Setup    | Get Plaid link token    | `wepGetPlaidLinkToken(companyId, accountId)`                         | GET    | [wepGetPlaidLinkToken](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/plaid/getPlaidLinkToken.ts)                                           |
+| Bank Setup    | Submit Plaid connection | `wepCreatePlaidConnection(companyId, accountId)`                     | POST   | [wepCreatePlaidConnection](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/plaid/createPlaidConnection.ts)                                   |
+| Bank Setup    | Sign provider agreement | `wepSignBankProvider(companyId, accountId)`                          | POST   | [wepSignBankProvider](https://github.com/Worklio/wep/blob/v6/packages/wep/src/api/company/bank-provider/signBankProvider.ts)                             |
+
+***
+
+## Status & Enums
+
+| Enum                 | Description                          | Example Values                        |
+| -------------------- | ------------------------------------ | ------------------------------------- |
+| `KYCVerifyStatus`    | Company verification status          | `None`, `Pending`, `Completed`        |
+| `BankSetupStatus`    | Account/provider/verification status | `NotAvailable`, `Active`, `Completed` |
+| `BankAccountPurpose` | Account type                         | `DepositAccount`, `OperatingAccount`  |
+| `BankProviderType`   | Provider type                        | `NatPay`, `Kotapay`                   |
+
+***
+
+## Error Handling & Edge Cases
+
+* Plaid link tokens expire quickly; always request a fresh token before
+  launching the Plaid flow.
+* Only users with administrative privileges should attempt KYC or bank setup
+  actions.
+* Some providers may require additional fields or steps. Always check the
+  provider type before proceeding.
+* For partial failures in batched uploads, show per-file status and retry failed
+  uploads.
+
+***
+
+## Best Practices
+
+* Handle API errors gracefully and provide user feedback.
+* Use HTTPS for all API calls and never log or store sensitive tokens or
+  documents.
+* Batch document uploads to minimize network calls.
+* Record timestamps and user actions for compliance and troubleshooting.
+
+## Completion Signals
+
+Enable payroll only after:
+
+1. Company Verification is completed.
+2. Bank Setup reports completed status.
+
+Record timestamps for both transitions for audit and analytics.
+
+***
+
+## Quick Reference
+
+| Task                    | Minimal API Calls                                                       |
+| ----------------------- | ----------------------------------------------------------------------- |
+| Get verification status | `wepGetCompanyKYC`                                                      |
+| List missing documents  | `wepGetCompanyKYCDocumentTypes` + diff with `wepGetCompanyKYCDocuments` |
+| Upload documents        | `wepCreateCompanyKYCDocument`                                           |
+| Save KYC form           | `wepSaveCompanyKYC`                                                     |
+| Get bank setup status   | `wepGetBankSetup`                                                       |
+| Create/update account   | `wepCreateBankAccount` / `wepUpdateBankAccount`                         |
+| Plaid verification      | `wepGetPlaidLinkToken` → Plaid UI → `wepCreatePlaidConnection`          |
+
+***
+
+## Glossary
+
+| Term             | Definition                                                        |
+| ---------------- | ----------------------------------------------------------------- |
+| KYC              | Regulatory process verifying business legitimacy and ownership    |
+| Beneficial Owner | Individual with significant control or authority                  |
+| Plaid Link       | Third-party flow for bank account authentication and verification |
+| Provider         | External banking/payment processor (e.g., NatPay, Kotapay)        |
+
+***
+
+## Additional Recommendations
+
+* **Authentication:** Use secure tokens for all API requests.
+* **Obtaining `companyId`:** Retrieve from your authentication context or
+  company management flow.
+* **Document Upload Format:** Use `multipart/form-data` for file uploads.
+* **Audit Logging:** Track all onboarding actions and transitions for
+  compliance.
+* **Versioning:** Monitor API version changes and update integrations as needed.
+* **Checklist for Completion:** Maintain a checklist to confirm all onboarding
+  steps are complete.
+
+***
+
+## References
+
+* [Plaid Link Documentation](https://plaid.com/docs/link/)
+* [How to use WEP](https://apidocs.worklio.com/docs/front-end-library)
+
+
+
+
+
+
+# Manual Employee Onboarding
+
+When you want to onboard an employee manually, your company's admin or locker does the whole onboarding process, and the employee does not play any role in the onboarding other than providing their personal information. The company admin onboards the employee in the following five stages:
+
+1. Personal information
+2. Residential Address
+3. Contract
+4. Tax setup
+5. Deduction
+
+Once the information about the employee has been successfully filled and inputted, the employee's status becomes active in our system. However, the company's admin can still make necessary information updates about the employee by calling the [update employment info endpoint](https://apidocs.worklio.com/reference/put_wep-companies-companyid-onboarding-start-id-employmentbasic-1).
+
+The company's admin can update the employee's:
+
+* net pay allocations
+* pay information
+* tax setup
+* user access to the system
+* personal information
+* residential address details
+* deductions
+* documents
+* I9 forms
+
+
+
+
+
+# Create Employee
+
+After creating your company on our API, the next entity you must create is the **Create Employee** entity. However, calling this endpoint, as seen [here](https://apidocs.worklio.com/reference/post_wep-companies-companyid-employees), needs a complex information structure. The API requires you to set some of these pieces of information at the onset, while you can update others later. The required information is essential for your Payroll calculation and must be appropriately filled.
+
+> 📘 Updating employee information
+>
+> Sometimes, company admins don't have all the information about employees needed for payroll calculation. You can let the employees add their information via the [***Update***](https://apidocs.worklio.com/reference/patch_wep-companies-companyid-employees-employeeid) endpoint.
+
+## Personal Information
+
+This section requires that you set your employees' details for proper onboarding into the payroll system.
+
+### **First Name**
+
+You set this field to be your employees' legal first name. You can only input alphanumeric characters here with a minimum character count of 1 and a maximum character count of 35 for validation purposes.
+
+### **Last Name**
+
+This field also contains only alphanumeric characters and, similarly, has a minimum character count of 1 and a maximum character count of 35. You set your employees' legal last name here.
+
+### **Date of Birth**
+
+This field receives a minimum value of 120 years before the set date and a maximum value of the day before the set date. You set your employees' legal birth date here.
+
+### **Employee Identification**
+
+Here, you can determine if your employee is a Full Employee or a Contractor. You hire full-time employees without an end date in mind, and they have full access to the company's resources, while you hire a contractor to work for a shorter period on a particular project. Onboard your employees based on how and why you employed them.
+
+### **SSN/FEIN**
+
+The Social Security Number (SSN) or Federal Employer Identification Number (FEIN) is a 9-character number issued by the government for legal identification purposes. Employees' SSNs enter this field, while contractors fill their FEIN here.
+
+> 📘 W2 and 1099 tax forms
+>
+> In the tax setups of employees, please note that their SSN or FEIN is necessary. You set up employees' W-2 tax forms with their SSNs, while you use contractors' FEIN to file their 1099 tax forms.
+
+You cannot view the SSN or FEIN of an employee or contractor after creation or updating for privacy reasons. Changing SSN/FEIN is a nonstandard operation that our API does not support. As a result, you must contact our support to do so because a couple of validation rules need to be fulfilled.
+
+> 🚧 Valid SSN
+>
+> SSN cannot:
+>
+> * begin with "9" as the first digit
+> * have "666" as digits 1, 2 and 3
+> * have "000" as digits 1, 2 and 3
+> * have "00" as digits 4 and 5
+> * have "0000" as digits 6, 7, 8 and 9
+>
+> ***These are recommended but not required rules, as you can sometimes come across real SSNs which will not follow these rules.***
+
+### **Email**
+
+An alphanumeric field where you set your employee's work email address.
+
+### **Access Type**
+
+Depending on your employee's role, you can give your employee Admin access or Employee access. You can read more about [User Access Types](https://apidocs.worklio.com/docs/user-types).
+
+## **Residential Address**
+
+An employee's residential address is used for tax setup and payroll calculations. Our API requires you to set your employee's valid address, which includes the following:
+
+* Address Lines
+* City
+* State
+* Zip code
+
+Just as with your company or work location, your employee's residential address must be tax valid as it is essential for your payroll calculation. You can use geo-location to be sure about the employee's address.
+
+## Contract
+
+In the contract section, you set your employee's compensation terms.
+
+### **Start Date**
+
+You set the date when your employee starts working with your company in this section. The start date takes values from 50 years before the set date to 5 years after the set date for validation purposes.
+
+### **Work Schedule**
+
+Your employee's work schedule could be any of the following options depending on their contract.
+
+| Work Schedule | Description                                                                                                                                              |
+| :------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full Time     | You select this option if your employee works the minimum number of hours you have defined for their work.                                               |
+| Part-Time     | You select this option if an employee works less than your organization's standard work period. They usually work fewer hours than a full-time employee. |
+| Temporary     | You select this option if you are onboarding the employee for a limited period where they have a pre-determined termination date.                        |
+| Intern        | You select this option if the employee is on a professional learning experience with your company.                                                       |
+| Seasonal      | You select this option if the employee works for you at certain times of the year to meet your organizational needs.                                     |
+
+### **Compensation Type**
+
+The compensation type determines the compensation amount that your employee receives. You can set the following compensation types for your employees:
+
+| Compensation Type | Description                                                                                                                                                                                                   |
+| :---------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Salaried          | You select this option if your employees receive a fixed payment amount for the service they render at your company. Selecting this option requires setting a fixed compensable amount for the employee.      |
+| Hourly            | You select this option if you pay your employee based on the number of hours they work. When you choose this option, you need to set the Hourly rate for the employee.                                        |
+| Piecework         | You select this option if you pay your employees based on the number of units they perform. Selecting this option means you need to set the Unit Work rate for the employee.                                  |
+| Commissioned      | You select this option if you pay your employee based on the revenue they bring into your company. You set a fixed compensable amount if you choose this option.                                              |
+| Form 1099         | You select this option if you pay a non-employee like a freelancer, an independent contractor, or a professional who provides services. Selecting this option requires you to set a fixed compensable amount. |
+| Owner Draws 1099  | You select this option if the owner of your company takes money out of the company for personal use.                                                                                                          |
+| Tipped            | You select this option if you pay an employee a substantial portion of their compensation from tips. Selecting this option requires you to set a pay rate.                                                    |
+
+### **Compensation Hours**
+
+Employee hours per pay period also have a different meaning depending on the Compensation Type value.
+
+In a simple situation like the **Hourly** or **Tipped** compensation type where compensation hours mean standard work hours per pay period, you can change hours later based on actual worked hours. You can only set the minimum number of hours an employee can work to 0 and the maximum to 250 hours for validation purposes.
+
+Although it looks illogical, the system requires this information even if the Compensation Type field is not set to Hourly or Tipped because it is essential information for calculating data for ACA/Cobra reporting.
+
+If the company does not process these reports (the company has less than a certain number of employees), and if the **Compensation Type** field is not set to **Hourly** or **Tipped**, you can set this field to zero.
+
+However, suppose you initially set your company's compensation hours to zero but eventually grow over the ACA/Cobra reporting limits. In that case, you must update all employees' contracts and put their proper value.
+
+### **Compensation amount**
+
+Depending on the compensation type agreed upon with the employee, this field varies into different options.
+
+#### Hourly rate
+
+When you set the Compensation Type field to **Hourly** or **Tipped**, you should fill the Compensation Amount field with the Hourly Rate. This rate will be prefilled in the payroll run and will be used to calculate employee wages together with compensation hours. For validation processes, this field takes values from 0 and has a maximum value of 1000.
+
+#### Compensable amount
+
+When the Compensation Type field is set to **Salaried, Commissioned, Form 1099** or **Owner Draws 1099,** you should set the **Compensation Amount** field with the Compensable Amount. This amount will be prefilled in the Payroll Run as a wage for the employee. This field takes values from 0 and a maximum of 1000000 for validation purposes.
+
+#### Unit Work rate
+
+When you set the Compensation Type field to **Piecework**, you set the **Amount** field to **Unit Work Rate**. The system adds a field of **Compensation Number of Units**, which takes a value from 0 and a maximum value of 1000000.
+
+This rate will be prefilled in the Payroll Run and, together with the **Number of Units**, will be used to calculate employee wage. The field takes a value from 0 and has a maximum value of 1000000 for validation purposes.
+
+> ❗️ Contract Termination
+>
+> In case you want to terminate an employee's contract, you can call the terminate employee endpoint [here](https://apidocs.worklio.com/reference/post_wep-companies-companyid-employees-employeeid-terminate) to remove the employee's details from the payroll run.
+
+## Position Details
+
+### **Work Location**
+
+You can set an employee to Work from Home or your company's Work location. Creating your company's work location during the company onboarding is an essential aspect of your company setup as it links your employees and where they work.
+
+### **Statutory Employee**
+
+You check the statutory employee checkbox if you regard your independent contractor as an employee for tax withholding purposes. The independent contractor must have met specific criteria to be considered a Statutory Employee. You should send your statutory employee the W2 tax form instead of the 1099-MISC one.
+
+### **943 Agricultural Employee**
+
+You check this box if you report taxes withheld from your agricultural employees' salary if they meet specific criteria for the tax withholding. Do not check this box if your employees are not farmworkers or do not meet the wage criteria to file Form 943.
+
+## Pay Method
+
+Depending on the preferred choice of your employee, you can choose between the two options for the employee's payment method. You can pay your employees by check, direct deposit, or both.
+
+### **Direct Deposit**
+
+This payment method requires the employees to provide their bank details, including their:
+
+* Account number- For validation purposes, the field takes a minimum character count of 4 and a maximum of 20.
+* Account Holder Name- For validation purposes, the field takes alphanumeric characters with a minimum of 1 character and a maximum of 50.
+* Account Type- You can select **Savings** or **Checkings** depending on the employee's account type.
+* Routing Number- This field takes only nine numeric characters for validation purposes.
+
+### **Check**
+
+If your employee prefers this payment method, your company sends a check for their salary or wage to their residential address provided during onboarding.
+
+> 📘 Pay Allocation
+>
+> By default, our system pays the total percentage or amount of your employees' wages to their preferred payment method choice. However, you can update this choice by calling the [update employee endpoint](https://apidocs.worklio.com/reference/patch_wep-companies-companyid-employees-employeeid).
+>
+> You can allocate a fixed amount or percentage of the employee's wage to a payment method of their choice via the endpoint.
+
+
+
+
+
+# Employee Tax Setup
+
+Our API processes the employee tax setup the same way as the company tax setup, so you can reuse code for both setups. However, with a distinct difference - Employees don't have local taxes as companies solely use them. Very importantly, employees need to fill same data as they filled in on the W-4 form.
+
+The [Update Employee Tax Setup Values](https://apidocs.worklio.com/reference/post_wep-companies-companyid-employees-employeeid-taxsetup-1) endpoint updates relevant attributes of federal and state taxes peculiar to the employee. As stated during employee onboarding, employees,  if working from home, must provide accurate work locations, which forms the foundation of their state tax attributes.
+
+Employees' various state taxes will also influence the [company tax setup](https://apidocs.worklio.com/docs/company-tax-setup-1). More significantly, our API uses the **employee tax setup** to calculate the federal and state taxes that will be withheld from the employee's wage on the payroll.
+
+In the employees' tax setup, you need to set the following information:
+
+## Federal Taxes
+
+The system uses specific tax reporting entities based on the company's location, thus providing an array of federal taxes to which the government subjects an employee. You must set employees' Federal taxes as indicated on their W-4 forms. However, the system requires you to select the checkboxes for exempted taxes of each employee.
+
+## Multi-state calculation override
+
+If an employee has a multiple-state tax return, you can overwrite any automatic tax calculation that they may have. Setting this field appropriately determines the employee's multi-state withholding calculations. You can select from the options below the conditions for the multi-state calculation override:
+
+* None
+* Resident only
+* Non-resident only
+* Zero in both
+* Full
+* Difference
+* All
+
+## Filing Status
+
+You set this to determine which tax return form an employee will use and also determine the employee's taxable income. You can set an employee's filing status to any of the following:
+
+* Single or Married filing separately
+* Married filing jointly or Qualified widow(er)
+* Head of household
+* Non-resident alien
+
+> 📘 Filing Status
+>
+> The exact value for this field depends on the state where the employee works, as some employees may not have some of the above values or may have different options.
+
+## Claim dependents
+
+Depending on the number of dependents employees input on their W-4 form, they can claim allowances, which you use to calculate the tax withheld from their paycheck. The number of dependents the employee has, factors into their overall W-4 allowances.
+
+## Other incomes
+
+If an employee's other income does not come from your company's primary business, you can input the income in this field for proper tax setup consideration.
+
+## Deductions
+
+You set this field to the items deductible from the employees' taxable income, which lowers the amount of taxes they owe or their income subject to taxation.
+
+## Extra withholdings
+
+Setting this field to an amount will increase the employee's income tax withholding but reduce the amount on their paycheck and reduce the amount of tax they owe when filing their tax return will reduce. The employees must specify their filing status and the number of withholding allowances on their W-4 forms.
+
+## State Taxes
+
+Like the federal tax setup, you need to set employees filing status and withholdings from state taxes. The state taxes depend on the employee's work location and residential address. You also need to set taxes from which the employees are exempted.]
+
+
+
+
+# Employee Self-Onboarding
+
+Onboarding a new employee is a complex procedure of processing sensitive details, legally required documents, and personal information of the new employee. As a result, we have designed our system to allow for some process automation, provided templates, and designated that the new employees onboard certain information into the system.
+
+Employee onboarding will not proceed without the onboarding templates. These templates provide the framework for bringing your new employee into the system. Each template has onboarding steps whose fields may be custom-required and may vary in each template.
+
+You use this method of onboarding when you want the employee to participate in the onboarding process by filling in their data. Employee self-onboarding occurs in three phases:
+
+1. Onboarding starts with the Employer
+2. Employee's self-onboarding
+3. Finalizing onboarding by the Employer
+
+## Onboarding starts with the Employer
+
+This phase is the beginning of the employee self-onboarding managed and controlled by the company's admin, also known as the Locker. Please see the Start Onboarding section [here](https://apidocs.worklio.com/docs/employee-self-onboarding).
+
+## Employee's self-onboarding
+
+In this phase, the employee onboards sensitive details and personal information into the system after receiving the invitational URL from the company's admin. Find more information about this phase [here]().
+
+## Finalizing onboarding by the Employer
+
+This is the final phase of the onboarding, where the Locker verifies and finalize the employee's detail into the system for a successful payroll run. You can find more information about this phase [here](). 
+
+
+
+
+# Start Self-Onboarding
+
+Employee self-onboarding begins with the company's admin, who selects and modifies the template with which the company wants to onboard the new employee. The company's admin can call the required endpoints in this phase for successful employee onboarding.
+
+## Onboarding starts with the employer
+
+This phase is the beginning of the employee self-onboarding, managed and controlled by the Company's Admin. The Company's Admin calls the following endpoints in this phase:
+
+### [Start new employee onboarding endpoint](https://apidocs.worklio.com/reference/post_wep-companies-companyid-onboarding-start-1)
+
+This makes a POST request that returns an onboarding ID for the new employee onboarding and the current step that the Company's Admin is in during the phase 1 onboarding.
+
+### [List of template endpoint](https://apidocs.worklio.com/reference/get_wep-companies-companyid-onboarding-templates-1)
+
+This GET request returns a list of flexible onboarding templates containing the Company's Admin steps to onboard the new employee.
+
+After selecting a suitable template from the List of templates returned, the Company's Admin in this phase completes a series of steps, which are:
+
+1. Employee basic information is the first dialog in the wizard that opens after selecting or modifying a template. The newly-hired employee's personal information, like the first and last name, email address, etc., is usually filled in here. You can find more information about this step [here.](https://apidocs.worklio.com/docs/employee-basic-information)
+2. Employment basic information is where basic information about the employment of the newly-hired employee is found. This information may include the employee's start date, among others.
+3. Employment detail information is where you fill in the employment details of the newly-hired employee in the system. These details include the employee's work location, work schedule, and compensation types. Please find more information about this step [here](https://apidocs.worklio.com/docs/employment-detail-information).
+
+After completing these steps, the Company's Admin can now call the Generate URL endpoint.
+
+### [Generate URL for new employee endpoint](https://apidocs.worklio.com/reference/get_wep-companies-companyid-onboarding-id-geturl-1)
+
+This is a GET request that returns an invitational URL for the employee to continue their phase of the onboarding process by sending the URL to their email address in the system.
+
+Successfully onboarding the newly-hired employee returns a unique onboarding ID. This helps identify the employee's onboarding for making necessary updates and corrections and possibly terminating the employee's employment.
+
+
+
+
+# Self-Onboarding In-Progress
+
+Employee self-onboarding aims to onboard new employees to onboard and manage their personal information required for payroll running and calculation. This limits the exposure of employees' sensitive data and saves both the employer's and the employee's time.
+
+After the company's admin sends the onboarding invitational URL alongside onboarding instructions to the employee's email address, the employee begins the second phase of Employee Self-Onboarding.
+
+Usually, our system allows API calls for every functionality in the system. However, employee self-onboarding does not require any API call. We have a pre-built UI with which the new employee interacts with the system to upload and enter the details needed for successful onboarding.
+
+Once the employee clicks the URL sent to their email address, they should be directed to a sign-up page where all preliminary available information is filled in the fields. The initial information includes Email, First Name, and Last Name. With this pre-filled information, the new employee must create a new password to access the onboarding page.
+
+After signing up to the system, the UI displays a summary of all the steps involved in the self-onboarding providing high-level information about the overall process. The employee then clicks *Start Onboarding* , which launches the onboarding wizard to continue the onboarding process.
+
+The template the company's admin selects in the first onboarding phase determines the onboarding steps displayed when the onboarding wizard comes up. Some of the steps and documents the employee should onboard include the following:
+
+## Employee Summary Approval
+
+This should contain information the company's admin pre-filled in the first onboarding phase. The employee should be able to check for the correctness of the information and must validate the information by entering their SSN to approve their data before continuing with the next steps.
+
+## Miscellaneous, Personal, and Contact Information
+
+This step should be where the employee provides more personal information, contact information, and some optional miscellaneous information, including education, skills, and job history. To proceed, you must make the employee fill out mandatory fields such as Gender and Personal Email Address. All other required fields should be automatically filled in from the previous steps.
+
+## Tax Information
+
+You should dedicate this section to tax-related documentation, including tax withholding and forms like W4 and Form 8850(if the onboarding template you decided to use allows it). This section should provide your newly-hired employee with the necessary tools to set up appropriate tax documents, such as:
+
+* exemptions from withholding
+* multiple job or spouse works information
+* dependent claims
+* other income input
+* extra withholding
+* deductions, and more.
+
+To proceed, you should require the employee to fill in two fields: *Marital status* and *Single Filing status*, as they have previously not provided this information and cannot be filled in automatically.
+
+## Bank Information
+
+In this step, you should allow the new hire employees to set up direct deposit to receive paychecks. Employees can split their salaries between accounts, if they so wish, by providing their bank information.
+
+## Document Acknowledgement and Signing
+
+In this step of self-onboarding, you should make the new-hire employee review and acknowledge any documents that the company's admin has uploaded, such as the employee handbook or other policies and procedures.
+
+By acknowledging and signing the documents summary in this step, the employee indicates that they have read and understood the information contained within them and agree to abide by the policies and procedures outlined.
+
+When the employee completes all the required steps as specified by the template the company's admin chose in the first onboarding phase, all completed documents and attached ones from the employer are available to download. The employee should also receive an email stating the onboarding process was completed.
+
+
+
+
+# Finalizing the onboarding process
+
+This phase is the third and final phase of employee self-onboarding. In this phase, the employer, by the company's admin, shall finish up the onboarding process for the new employee.
+
+The company's admin shall verify every piece of information that the employee might have provided in the previous phase of the onboarding. The information that our system might require the company admin to verify is based on the onboarding template your company's admin used in the first phase of the onboarding.
+
+After the employee completes their onboarding phase, the company admin can find information about the onboarding status of the employee by making a **GET** request to call the Onboarding status [endpoint](https://apidocs.worklio.com/reference/get_wep-companies-companyid-onboarding-finalize-id-status-1). The endpoint returns the varying steps that the company's admin must take to finalize the onboarding process and the status of each step.
+
+As mentioned earlier, the steps in finalizing onboarding differ based on the onboarding template. However, in complete onboarding, there are about six step types that the company onboarding shall verify. The status of these steps is, however, any of the following three status types:
+
+* **Waiting**- The company admin can call the required API endpoints to finalize the step type in this status.
+* **Completed**- The step type takes this status after the company admin verifies the step.
+* **WaitingNotActive**- In this status, the step type is waiting to be finalized but cannot be completed because it depends on other steps.
+
+To verify these steps, the company admin shall make a couple of endpoint calls possible only when the step type and status are known. The information that the company admin might need to verify may include the following:
+
+## Net Pay Allocations
+
+The company admin can call about two endpoints to verify the employee's Pay Allocations. You can find more information about the endpoints [here.](https://apidocs.worklio.com/docs/net-pay-allocations)
+
+## Tax Setup
+
+Like the Net Pay Allocation, the company admin can call two endpoints to verify the new employee's tax setup if the step status is still Waiting. Please read more about verifying tax setup [here.](https://apidocs.worklio.com/docs/tax-setup)
+
+## Form I-9
+
+The company's admin can call about six endpoints to help verify the I-9 form of the employee if completed by the employee. Find more about verifying form I-9 [here. ](https://apidocs.worklio.com/docs/form-i-9)
+
+## Form 8850
+
+The company admin can call about four endpoints to verify Form 8850 if the employee completes it. You can find fuller information about the endpoints and their integration [here.](https://apidocs.worklio.com/docs/form-8850)
+
+## Review and Sign Documents
+
+Another critical step the company admin must complete in this phase is reviewing and signing essential company documents. The admin can call the two required endpoints if the step status is Waiting. You can read more [here.](https://apidocs.worklio.com/docs/reviewing-and-signing-documents)
+
+## Finalize Onboarding
+
+The company admin can then call the [finalize onboarding endpoint](https://apidocs.worklio.com/reference/put_wep-companies-companyid-onboarding-finalize-id-finish-1) when all the steps and status are completed. The system then sends welcome emails to the new employee if you have chosen to send them welcome emails in the onboarding template.
+
+
+
+
+# W-2 vs 1099
+
+Employees are also known as W-2 are company employees and W-2 is form which they will get on the end of the year. Their identification is SSN.\
+Contractors are also known as 1099 are contractors. Their identification is FEIN (same as companies) and they got form 1099 on the end of the year.
+
+Not all earnings can be used by 1099s.
+
+
+
+
+# Earning Types Validation
+
+Earnings types are valid based on W-2/1099 employee type. But there are also some recommendations based on employee compensation type and so we prepared following matrix for better understanding.\
+API validates those data on input, but it is heavily recommended to validate it also on frontend.
+
+<Image title="MicrosoftTeams-image.png" alt={800} src="https://files.readme.io/a89c669-MicrosoftTeams-image.png">
+  Earnings validation matrix
+</Image>
+
+
+
+
+# Payroll policy
+
+Payroll policy is main configuration item driving payroll.\
+Policy covering payroll frequency configurations, old and future period dates, pay dates and which employees belongs to it. With different policies you can achieve paying different set of employees in different dates or batches.\
+Each company have DEFAULT policy. This policy is automatically created, and all newly created employees (after their successful onboarding and tax setup) is added to this policy.\
+Running payroll without name will run **DEFAULT** policy.
+
+> 🚧 Current limitations
+>
+> **DEFAULT** policy can’t be edited – contact support if you need to change policy setup.
+
+
+
+
+# Payroll Run
+
+You can run a payroll successfully after completing the preliminary steps involved. You need to:
+
+* create a company
+* create and update the company's tax setups
+* create the company's employees
+* create and update the employees' tax setups
+
+To run your company's payroll, you can call the following endpoints:
+
+1. [Start default payroll](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll)
+2. [Retrieve payroll status](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-1)
+3. [Next payroll step](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-next-1)
+4. [Previous payroll step](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-back-1)
+5. [Discard payroll](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-discard-1)
+6. [Payroll overview](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-overview-1)
+
+# [Start default payroll](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll)
+
+> 📘 Errors and Warnings
+>
+> When calling the payroll endpoints and you get error messages, they block the payroll from running. Error messages may be as a result of wrong configurations or information setup. In such cases, you can [Discard Payroll](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-discard-1) or contact support.
+>
+> Moreover, getting warning messages when calling the payroll endpoints will not block the payroll from running. The payroll will continue running as the warning messages are informative only.
+
+When running your payroll, the start default payroll endpoint is the first one you call. When you call this endpoint, the payroll will run based on your already-defined payroll policy. Calling the endpoint returns a unique and essential ID, the **RunId**, with which you track and call other endpoints for the payroll.
+
+Payroll run is generally presented as a wizard leading you through the process and calculation. The payroll wizard has five steps in the UI, which are:
+
+* **Inprogress**- This is the default UI step if payroll run processing is somewhere between UI steps in the payroll run wizard.
+* **Timesheet**- This is the next UI step after making the endpoint call.
+* **Overview** - This is the next UI step that displays the information used for payroll processing.
+* **Locked**- This UI step is where the payroll is finalized and payments are processed.
+* **Finished** -This is the final UI step switched to directly from Locked after payment has been correctly processed and the payroll is finalized.
+
+A successful call of the payroll endpoints returns the following properties:
+
+| Property                | Description                                                                                                                                       | Data Type |
+| :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ | :-------- |
+| companyId               | The ID of the company during [Create company](https://apidocs.worklio.com/docs/create-company)                                                                                 | int32     |
+| runId                   | The ID of the payroll run                                                                                                                         | int32     |
+| payrollType             | The payroll type member denoted by integers from 0-4 (Regular, Bonus, OffCycle, Void, and Termination, respectively).                             | int32     |
+| startedOn               | Payroll start date                                                                                                                                | Date-Time |
+| payDay                  | Payroll payday                                                                                                                                    | Date-Time |
+| periodStart             | Payroll period start date                                                                                                                         | Date-Time |
+| periodEnd               | Payroll period end date                                                                                                                           | Date-Time |
+| daysToProcessPayments   | Days to process payments                                                                                                                          | int32     |
+| deadline                | Finish payroll by this date and time                                                                                                              | Date-Time |
+| currentUIStep           | The current UI step for the wizard denoted by integers from 0-4 (InProgress, Timesheet, Overview, Locked, and Finished, respectively).            | int32     |
+| currentProcStep         | The current internal processing state                                                                                                             | int32     |
+| currentProcStepDesc     | Current step description                                                                                                                          | string    |
+| currentProcStepProgress | Current step progress in percentage                                                                                                               | int32     |
+| currentProcStepStatus   | Current step status members, denoted by integers from 0-5 (Invalid, NotStarted, Started, CancelRequested, Cancelled, and Finished, respectively). | int32     |
+| direction               | Denoted by integers from 0-1 (Forward, Back respectively).                                                                                        | int32     |
+
+For every particular internal processing state endpoint returns also description (**currentProcStepDesc**), progress (**currentProcStepProgress**), and status (**currentProcStepStatus**), which can be used to show progress in UI. With this differentiation, you can better view the calculation process.
+
+Payroll processing runs as a background operation and will continue to the next UI step without a browser. You can run the next step and close the browser without issues.
+
+# [Retrieve payroll status](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-1)
+
+Calling this endpoint returns data about the payroll run for UI rendering. You use the **RunId** returned when you call the Start payroll run endpoint to obtain information about the payroll.
+
+After calling Start Payroll/Next Step/Previous Step, it is necessary periodically to call Retrieve Payroll Status. The payroll process runs in the background, so you must check the status/progress. You must call [Retrieve payroll status](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-1) until the currentUI differs from **Undefined**. Then, you know which UI step you are currently in.
+
+# [Next payroll step](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-next-1)
+
+When you call this endpoint, you task the system to move the payroll forward. Moving to the next step of the payroll run will process all needed calculations and operations between the current and next steps. The payroll processing is done in the background and continues even if the front-end application fails. The system returns status data about the payroll run for UI rendering.
+
+Payroll whose UI step is in **Locked** and has the payroll processing already finalized cannot be moved to the next step by calling this endpoint. It will be moved to the next step automatically by the system.
+
+# [Previous payroll step](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-back-1)
+
+Calling this endpoint tasks the system to move the payroll backward. Moving the payroll to the previous step will process all needed rollbacks, discards, and operations between the current and following steps. The payroll processing is done in the background and continues even if the front-end application fails. The system returns status data about the payroll run for UI rendering.
+
+Although, once the payroll has the UI step of **Locked**, it is impossible to move to the previous step.
+
+# [Discard payroll](https://apidocs.worklio.com/reference/post_wep-companies-companyid-payroll-runid-discard-1)
+
+When you call this endpoint, you task the system to discard the running payroll. After discarding the payroll, the **RunId** will no longer be valid for other calls regarding the payroll.
+
+Discarding payroll will process all needed rollbacks, removals, and operations. Payroll will be wholly removed along will all changes made in the timesheet. However, payrolls in the **Locked** UI step cannot be discarded after the deadline.
+
+# [Payroll overview](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-overview-1)
+
+This endpoint retrieves the payroll properties and reports. You can call this endpoint only on the finished payroll. Payrolls in progress will not return all data as they are available in non-finished stages.
+
+Reports are generated in downloadable PDFs and can be served directly to you.
+
+When you call this endpoint successfully, it returns the following list of properties:
+
+| Property              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Data Type        |
+| :-------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------- |
+| totalEarnings         | Total earnings paid to all employees in the payroll                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Double           |
+| totalAmount           | The total amount for the current payroll including all earnings, employer's taxes, SUTAs, and deductions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Double           |
+| totalEETaxes          | The total sum of all the taxes from pay statements in the payroll                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Double           |
+| totalERTaxes          | The total sum of all employer taxes from pay statements in the payroll                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Double           |
+| totalDeductions       | The total sum of all deductions from pay statements in the payroll                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Double           |
+| totalChecksAmount     | The total sum of all check amounts in the payroll                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Double           |
+| printedChecksCount    | Count of checks for printing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | int32            |
+| accountRequiredAmount | The amount required on the account to pay payroll                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Double           |
+| daysToProcessPayment  | Days to process payments                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | int32            |
+| deadline              | Deadline to finish payroll by this date and time                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Date-Time        |
+| accountNumber         | Account for payments                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | String           |
+| employees             | Detailed payroll overview for all employees in the payroll containing payStubId (Pay stub ID with *int32* type), name (Employee name with *string* type), id (Employee's ID with *int32* type), number (Employee's number with *int32* type), hours (Hours paid in the current payroll with *double* type), grossPay (Gross pay amount in the current payroll with *double* type), inputedIncome (Inputed income in the current payroll with *double* type), reimbursements (Amount of reimbursements income in the current payroll with *double* type), total (Total amount in the current payroll with *double* type), taxes (Total taxes in the current payroll with *double* type), deductions (Total deductions in the current payroll with *double* type), and netPay (Current payroll net pay with *double* type). | Array of objects |
+| employeesTaxes        | All taxes for employees in pay statements containing text (Tax description with *string* type), and amount (Tax amount with *double* type).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Array of objects |
+| employersTaxes        | All employer taxes from pay statements in payroll containing text (Tax description with *string* type), and amount (Tax amount with *double* type).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Array of objects |
+| deductions            | All deductions from pay statements in the payroll containing id (Deduction ID with *int32* type), description (Deduction description with *string* type), type (Deduction type with *int32* type), deduction (Employee deduction amount with *double* type), contribution (Employer deduction contribution with *double* type), and total(Total deduction amount with *double* type).                                                                                                                                                                                                                                                                                                                                                                                                                                     |                  |
+| reports               | All reports created as part of the payroll run containing caption (Report name with *string* type), description (Reprt Report description with *string* type), fileId (Report ID needed to download report through File download endpoint with *int64* type), fcu (Report file token required to download report via File download endpoint with *string* type), fileUrl (Direct file URL with *string* type), and fileToken (Report file token with *string* type).                                                                                                                                                                                                                                                                                                                                                      | Array of objects |
+
+
+
+
+# Time Entry
+
+This is the first step of the payroll wizard. Here you fulfill the time a particular employee has worked during a pay period. First, you have to call Get Earnings setup (readme.io) on this step, which returns information necessary for adequately rendering payroll statements.
+
+This call doesn’t return pay statement data, so as a next step, you need to call [Get list of Earnings](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-paystubs), which returns a list of pay statements with their data.
+
+For a change of any value, call Update Earnings (readme.io) with the new value.
+
+
+
+
+# Time Entry
+
+This is the first step of the payroll wizard. Here you fulfill the time a particular employee has worked during a pay period. First, you have to call Get Earnings setup (readme.io) on this step, which returns information necessary for adequately rendering payroll statements.
+
+This call doesn’t return pay statement data, so as a next step, you need to call [Get list of Earnings](https://apidocs.worklio.com/reference/get_wep-companies-companyid-payroll-runid-paystubs), which returns a list of pay statements with their data.
+
+For a change of any value, call Update Earnings (readme.io) with the new value.
+
+
+
+# Checks
+
+Checks are generated as part of payroll report. You can get list and URLs of those reports on Payroll Overview endpoint.\
+On sandbox are checks generated in safe version so they are not payable.\
+On live instances are checks generated in printable version. MICR font is used on check so please don’t forget that checks should be printed with metallic ink. Some check creditors now scan checks, and they don’t need metallic ink but some of them still leveraging older technology where is metallic ink required.\
+Printing checks without metallic ink can lead to marking check as invalid or require additional payment for creditor.
+
+> ❗️ Checks from Sandbox
+>
+> On sandbox are checks generated in safe version so they are not payable. But it is still heavily recommended to not use real account numbers and other private information on Sandbox.
+
+
+
+
+# Banking
+
+# Worklio Bank Onboarding API Guide
+
+## Introduction
+
+The Worklio Bank Onboarding API enables you to manage your company's bank onboarding process within the Worklio platform. This guide provides a step-by-step walkthrough of the onboarding process, detailing how to use each endpoint effectively.
+
+By following this guide, you will learn how to:
+
+* Check the onboarding status
+* Retrieve and submit company and bank account details
+* Upload and submit the required documents
+* Verify bank accounts
+* Complete the onboarding process
+
+***
+
+## Prerequisites
+
+Before you begin, ensure you have the following:
+
+* **API Credentials**: Your Worklio API key or OAuth token with the necessary permissions.
+* **Company ID**: The unique identifier of the company you want to onboard its bank.
+
+***
+
+## Overview of the Onboarding Process
+
+Onboarding your company's bank information involves several steps. These steps include:
+
+1. **Company Details**: Retrieve and submit company information.
+2. **Check Onboarding Status**: Before you decide to onboard banking information, you must determine your company's current status. Doing this will provide you with information regarding the next steps.
+3. **Bank Account Information**: Retrieve and submit bank account details.
+4. **Custody Account Information**: If applicable, retrieve and submit custody account details.
+5. **Documents Handling**: Recover required documents, upload, and submit them.
+6. **Account Verification**: Verify the bank account via micro-deposits.
+7. **Completion**: Finalize the onboarding process.
+
+Understanding this flow ensures that you interact with the API endpoints in the correct order.
+
+***
+
+## Step-by-Step Guide
+
+### 1. Submit Company Details
+
+**Endpoint**: `POST /wep/companies/{companyId}/bankOnboarding/details`
+
+**Description**: Submits or updates the company's details required for onboarding.
+
+**Example Request**:
+
+```http
+POST https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/details
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "companyName": "Acme Corporation",
+  "address": "123 Business Rd.",
+  "city": "Metropolis",
+  "state": "NY",
+  "zipCode": "10001",
+  "taxId": "12-3456789",
+  "contactPerson": {
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "jdoe@acmecorp.com",
+    "phone": "555-1234"
+  }
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Company details updated successfully."
+}
+```
+
+**Usage**:
+
+* Ensure you fill in all required fields.
+* Validate the data before submission to prevent errors.
+
+***
+
+### 2. Retrieve Company Details
+
+**Endpoint**: `GET /wep/companies/{companyId}/bankOnboarding/company`
+
+**Description**: Calling this endpoint retrieves your company's existing details on file. If your authorization allows you to make the endpoint call, it returns your company's information in the system, like
+
+* Company's name
+* Email
+* Phone number
+* Entity Type
+* Entity Scope
+* Full Address
+* Business State Date, and
+* FEIN
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/company
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+```curl
+curl --request GET \
+     --url https://api.worklio.com/wep/companies//bankonboarding/company \
+     --header 'accept: application/json' \
+     --header 'api-version: 1.0' \
+     --header 'x-api-version: 1.0'
+```
+
+**Example Response**:
+
+```json
+{
+  "companyName": "Acme Corporation",
+  "emailAddress": "acmecorp@gmail.com",
+  "address": "123 Business Rd.",
+  "city": "Metropolis",
+  "state": "NY",
+  "zipCode": "10001",
+  "taxId": "12-3456789"
+}
+```
+
+**Usage**:
+
+* Review the existing company details for accuracy.
+* Proceed to update or confirm these details as needed.
+
+***
+
+### 3. Check Onboarding Status
+
+**Endpoint**: `GET /wep/companies/{companyId}/bankOnboarding`
+
+**Description**: When you call this endpoint, you retrieve the current status of your company's bank onboarding process. You can call this endpoint at any stage of the onboarding process.
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/companies/123456/bankOnboarding
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Example Response**:
+
+```json
+{
+  "status": "pending",
+  "nextStep": "companyDetails"
+}
+```
+
+**Usage**:
+
+* Use this endpoint to determine the following required action.
+* The `status` field indicates the overall onboarding status (`pending`, `in_progress`, `completed`).
+
+***
+
+### 4. Retrieve Bank Account Information
+
+**Endpoint**: `GET /wep/companies/{companyId}/bankOnboarding/bankAccount`
+
+**Description**: If your company has already onboarded its bank information, this endpoint call retrieves the existing information and returns sensitive information about your company's bank.
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/bankAccount
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Example Response**:
+
+```json
+{
+  "bankName": "First National Bank",
+  "accountNumber": "****5678",
+  "routingNumber": "123456789",
+  "accountType": "checking"
+}
+```
+
+**Usage**:
+
+* Review the bank account details currently on file.
+* Proceed to submit new details if updates are necessary.
+
+***
+
+### 5. Submit Bank Account Information
+
+**Endpoint**: `POST /wep/companies/{companyId}/bankOnboarding/bankAccount`
+
+**Description**: This endpoint call submits new or updated bank account details.
+
+**Example Request**:
+
+```http
+POST https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/bankAccount
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "bankName": "First National Bank",
+  "accountNumber": "987654321",
+  "routingNumber": "123456789",
+  "accountType": "checking"
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Bank account information submitted successfully."
+}
+```
+
+**Usage**:
+
+* Securely handle sensitive information.
+* Verify the accuracy of account and routing numbers.
+
+***
+
+### 6. Verify Bank Account
+
+**Endpoint**: `POST /wep/companies/{companyId}/bankOnboarding/verifyAccount`
+
+**Description**: Verifies the bank account, typically through micro-deposits.
+
+**Example Request**:
+
+```http
+POST https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/verifyAccount
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "depositAmounts": [0.12, 0.18]
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Bank account verified successfully."
+}
+```
+
+**Usage**:
+
+* After receiving micro-deposits, input the exact amounts.
+* Ensure the amounts are accurate to avoid verification failure.
+
+***
+
+### 7. Retrieve Custody Account Information
+
+**Endpoint**: `GET /wep/companies/{companyId}/bankOnboarding/custodyAccount`
+
+**Description**: If your company has a custody account information, calling this endpoint retrieves this information.
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/custodyAccount
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Example Response**:
+
+```json
+{
+  "custodyAccountNumber": "CUST-001",
+  "status": "active"
+}
+```
+
+**Usage**:
+
+* Determine whether your company requires a custody account.
+* Review existing custody account details.
+
+***
+
+### 8. Submit Custody Account Information
+
+**Endpoint**: `POST /wep/companies/{companyId}/bankOnboarding/custodyAccount`
+
+**Description**: If you want to submit your company's custody account details for onboarding into our system, you can call this endpoint.
+
+**Example Request**:
+
+```http
+POST https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/custodyAccount
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "custodyAccountNumber": "CUST-002",
+  "beneficiaryName": "Acme Corporation"
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Custody account information submitted successfully."
+}
+```
+
+**Usage**:
+
+* Provide all required custody account details.
+* Ensure compliance with any legal requirements.
+
+***
+
+### 9. Upload and Submit Documents
+
+**Upload Document**
+
+**Endpoint**: `POST /wep/companies/{companyId}/bankOnboarding/documents/{docId}/upload`
+
+**Description**: Uploads a document file.
+
+**Example Request**:
+
+```curl
+ -X POST "https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/documents/doc1/upload" \
+     -H "Authorization: Bearer YOUR_API_TOKEN" \
+     -F "file=@/path/to/document.pdf"
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Document uploaded successfully."
+}
+```
+
+**Submit Document for Review**
+
+**Endpoint**: `POST /wep/companies/{companyId}/bankOnboarding/documents/{docId}/submit`
+
+**Description**: Submits the uploaded document for review.
+
+**Example Request**:
+
+```http
+POST https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/documents/doc1/submit
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "comment": "Please review the attached document."
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Document submitted for review."
+}
+```
+
+**Usage**:
+
+* Repeat the upload and submit steps for each required document.
+* Ensure documents are in accepted formats (e.g., PDF, JPEG).
+
+***
+
+### 10. Retrieve Required Documents
+
+**Endpoint**: `GET /wep/companies/{companyId}/bankOnboarding/documents`
+
+**Description**: Retrieves a list of documents required for onboarding.
+
+**Example Request**:
+
+```http
+GET https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/documents
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Example Response**:
+
+```json
+[
+  {
+    "docId": "doc1",
+    "type": "Articles of Incorporation",
+    "status": "pending"
+  },
+  {
+    "docId": "doc2",
+    "type": "Tax Identification Document",
+    "status": "pending"
+  }
+]
+```
+
+**Usage**:
+
+* Identify all required documents.
+* Note the `docId` for each document for your use in subsequent requests.
+
+***
+
+### 11. Complete Onboarding
+
+**Endpoint**: `POST /wep/companies/{companyId}/bankOnboarding/complete`
+
+**Description**: Finalizes the onboarding process.
+
+**Example Request**:
+
+```http
+POST https://apidocs.worklio.com/wep/companies/123456/bankOnboarding/complete
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "confirmation": true
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Onboarding process completed."
+}
+```
+
+**Usage**:
+
+* Ensure all prior steps are successfully completed before calling this endpoint.
+* Confirm that all data is accurate and up to date.
+
+***
+
+## Best Practices
+
+* **Secure Handling**: Always use HTTPS to protect data in transit.
+* **Data Validation**: Validate all inputs before sending API requests.
+
+***
+
+## Conclusion
+
+Integrating the Worklio Bank Onboarding API into your application streamlines your company's onboarding process. This guide will help you efficiently manage each step, from initial status checks to final completion.
+
+
+
+
+# Time Off Requests
+
+Time off requests allow employees to seek approval for their absence from work for a certain period. These requests are usually based on the Time off policies you created to guide your employees' requests. Managing Time Off requests ensures that employee absences are well documented and do not disrupt the company's workflow or productivity during their absence.
+
+## Endpoints Overview
+
+Before you can create and manage Time off requests, your company must have set up their Time off request types. The endpoints to set them up include the following:
+
+| Request Type | Endpoint Name                               | Endpoint                                                                                                                                                                               |
+| :----------- | :------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GET**      | Get list of Time off request types          | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types)                                   |
+| **POST**     | Create Time off request type                | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types)                                   |
+| **GET**      | Retrieves Time off request type information | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types/\{requestTypeId}](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types/\{requestTypeId}) |
+| **PATCH**    | Update Time off request type                | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types/\{requestTypeId}](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types/\{requestTypeId}) |
+| **DELETE**   | Remove Time off request type                | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types/\{requestTypeId}](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/types/\{requestTypeId}) |
+| **GET**      | Get Time off request setup                  | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup)                                   |
+| **POST**     | Create Time off request setup               | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup)                                   |
+| **PATCH**    | Update Time off request setup               | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup)                                   |
+
+Creating and managing Time off requests can be the responsibility of both employees and company admins. Thus, they call different endpoints, which we highlight below.
+
+You can call the following endpoints to create and manage your Time off requests as an employee:
+
+| Request Type | Endpoint name                             | Endpoint                                                                                                                                                                                                           |
+| :----------- | :---------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GET**      | Get list of Time off requests (Employees) | [https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests)                           |
+| **POST**     | Create Time off request                   | [https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests)                           |
+| **GET**      | Retrieves Time Off request information    | [https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests/\{requestId}](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests/\{requestId}) |
+| **PATCH**    | Update Time off requests                  | [https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests/\{requestId}](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests/\{requestId}) |
+| **DELETE**   | Remove Time off request                   | [https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests/\{requestId}](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests/\{requestId}) |
+
+You can call the following endpoints to create and manage your employees' Time off requests as an admin:
+
+| Request Type | Endpoint Name                          | Endpoint\*                                                                                                                                                                         |
+| :----------- | :------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GET**      | Get list of Time off requests          | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests)                                           |
+| **POST**     | Create Time off requests               | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests)                                           |
+| **GET**      | Retrieves Time off request information | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId})                 |
+| **PATCH**    | Update Time off requests               | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId})                 |
+| **DELETE**   | Remove Time off requests               | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId})                 |
+| **POST**     | Approve Time off request               | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}/approve](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}/approve) |
+| **POST**     | Deny Time off request                  | [https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}/deny](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}/deny)       |
+
+## Common Use Cases
+
+The common use cases for employees include the following:
+
+### Creating a Time off request
+
+An employee creates a time off request to get off work for a specified time. For each request, the employee calls the [create Time off request endpoint](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests) with their ID and company ID set in the path parameter. Also, you must set the start date and the request type ID in the body parameter. A successful call returns an item of object containing the request status and other request details.
+
+### Updating a Time off request
+
+You can only call this endpoint in two circumstances:
+
+* after creating a time off request
+* before the request is approved
+
+To update the Time off request, call the [update time off request endpoint](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests/\{requestId}).
+
+### Deleting a Time off request
+
+Calling [this endpoint](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoffrequests/\{requestId}) allows employees to cancel or delete their Time off request before their supervisor approves or denies it. You can only call this endpoint if the admin has not called the approve or deny endpoint on the request. Calling this endpoint deletes the request from the system.
+
+The common use cases for admins include the following:
+
+### Approving Time off request
+
+As an admin, when an employee requests Time off, you call [this endpoint](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}/approve)  to approve it. The system requires that you add a note in the body parameter.
+
+### Denying Time off request
+
+You call the [deny Time off request](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/\{requestId}/deny) if you do not want to approve the employee's request. You can only call this endpoint after the employee requests Time off.
+
+### Creating Time off request
+
+As an admin, you call [this endpoint](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests) to create a request for your employees when they are unable to do it themselves. When calling this endpoint, you must set the information regarding the employee's Time off.
+
+### Creating Time off request set up
+
+As an admin, you can [create a time off request setup](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup). You can only create one setup, as you cannot create multiple setups. If the setup already exists, it will only be updated by calling [the update endpoint.](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup)
+
+### Creating Time off request type
+
+When creating a time off request type, you set up the different Time off request types that your employees can access. You create as many request types as you need by calling [this endpoint. ](https://api.worklio.com/wep/companies/\{companyId}/timeoffrequests/setup)
+
+
+
+
+# Time Off Policies
+
+Create and manage your company's time off policies
+
+Time Off Policies provide detailed instructions and guidelines that outline the terms for which employees are entitled to take time away from work. You can set up multiple policies to guide your company's various time off. The policies also provide employees with a fair, structured approach to managing their time away from work.
+
+## Endpoints Overview
+
+In setting up and managing your company time off policies, you call the following endpoints for different actions. The endpoints are:
+
+| Request type | Endpoint Name                          | Endpoint                                                                                                                                                                                   |
+| :----------- | :------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **POST**     | Create Time Off Policy                 | [https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies)                                                 |
+| **GET**      | Get list of Time Off Policies          | [https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies)                                                 |
+| **GET**      | Get Time Off Policy information        | [https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies/\{policyId}](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies/\{policyId})                         |
+| **PUT**      | Deactivate Time Off Policy Information | [https://api.worklio.com/wep/companies/\{companyId}/timeoff-policy-deactivations/\{policyId}](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policy-deactivations/\{policyId}) |
+| **GET**      | List of Presets                        | [https://api.worklio.com/wep/timeoff-policy-presets](https://api.worklio.com/wep/timeoff-policy-presets)                                                                                   |
+
+## Common Use Cases
+
+The common use cases for calling the various time-off policies endpoints include the following:
+
+### Creating a Time Off Policy
+
+Use the [create time off policy](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies) to create your company's Time off policy. When calling the create policy endpoint, specify the preset ID from the Time Off policy presets list as a body parameter. Adding the presetID means the system sets all policy values according to the selected preset.
+
+To get the list of policy presets and their policy details, call the [list of preset endpoint](https://api.worklio.com/wep/timeoff-policy-presets). If you specify other information for a policy alongside a *PresetID*, the system ignores all the other details and will use only the policy details from the presetID.
+
+Other body parameters to define when creating a time off policy include the following:
+
+* Name - Specify the policy's name
+* Accrual Year Type: Choose from two options: Calendar Year or Employment Anniversary, and specify when the time off accruals should begin.
+* Accrual Year Start On Month - Select the month when the time off accruals should start.
+* Accrual Available On Delay - Define how long a new employee must wait before using their accrued time off.
+* Accrual Start On Delay - Specify when the accrual starts for a new employee.
+
+A successful call returns a **201** response code indicating you created your time off policy. The call returns the following essential items as an object:
+
+* PolicyID
+* Name - Name of the policy
+* Valid To - Expiration date of the policy.
+* PayCode Type - Define under which pay code the time off hours from the selected policy will be transferred to the payroll run.
+* Accrual Year Type - Definition for when the time off accruals should begin.
+
+Reference other **201** response objects in the [API reference docs](https://apidocs.worklio.com/reference/post_wep-companies-companyid-timeoff-policies).
+
+> 📘 NOTE
+>
+> Only a **System-wide** and **Admin** level user can call this endpoint, with an employee call returning a forbidden request.
+
+### Retrieving Time Off Policies
+
+To get the list of your company's time off policies, call the [get list of time off policies](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies). This call returns an array of objects with details that include:
+
+* Name - Name of the policy.
+* Valid To - Expiration date of the policy.
+* Pay Code Type - Define under which pay code the time Off hours from the selected policy will be transferred to the payroll run.
+
+You can also retrieve specific time off policy information for particular companies and policyID by calling [this endpoint](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies/\{policyId}). This means that it is paramount to specify both the companyID and policyID as path parameters.
+
+> 📘 NOTE
+>
+> Only a **System** and **Admin** level users can call these endpoints.
+
+### Deleting a Time Off Policy
+
+You can deactivate any of your company's time off policies by calling the [deactivate TimeOff policy](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policy-deactivations/\{policyId}). To deactivate a particular policy, you must specify the companyID and policyID in the path parameters of your request. A successful call returns an object containing information about the policy you want to deactivate.
+
+
+
+
+# Employees Time Off Balances
+
+Employees' time off balances change every time an employee requests time off based on your company's time off policy. This policy determines the balance returned for each employee. To call this endpoint, you must have completed the following steps:
+
+* As a system user or an admin user, you must have set up your company's time off policy using the [Create TimeOff Policy endpoint](https://api.worklio.com/wep/companies/\{companyId}/timeoff-policies).
+* As a system user or an admin user, you must also have set up information about an employee's initial time off policy by calling the [Initial Employee's TimeOff Policy Setup](https://api.worklio.com/wep/companies/\{companyId}/employees/\{employeeId}/timeoff-policy-setups/\{policyId}).
+
+To call this endpoint, you must have the following path parameters defined:
+
+* Company ID - The company's unique identifier.
+* Employee ID - Unique identifier for the employee.
+* Policy ID - Unique identifier for the Time Off Policy you are requesting balance for.
+
+A successful response returns the following information as an object:
+
+* BalanceDayOn - This tells for which day the Time Off balance applies. Usually, the system sets this date as the end date of the last regular payroll.
+* Balance - This response is the employee's current total time off balance.
+* AvailableBalance - This is the employee's current available time off balance.
+* TotalUsed - This response is the total amount of time the employee already used.
+
+## Common Error Codes
+
+* 400 'Bad Request' - The request was invalid.
+* 403 'Forbidden' - You do not have the authorization to call the endpoint.
+* 500 'Server Error' - This is not your fault. We are on it!
+
+
+
+# Document storage
+
+Worklio Embedded Payroll contains optional document storage. You can use this storage for uploading specified documents into the system, keep them in storage and have them “digitally signed”.\
+Files could be stored on [Company Documents](https://apidocs.worklio.com/reference/post_wep-companies-companyid-documents) or [Employee Documents](https://apidocs.worklio.com/reference/post_wep-companies-companyid-employees-employeeid-documents) level.
+
+Files are uploaded and kept as they are uploaded. For this reason, it is a digital signature, only a database record, and not a real digital signature written in the file.
+
+
+
+
+# Download & Printing Checks
+
+Checks are generated as part of payroll report. You can get list and URLs of those reports on Payroll Overview endpoint.\
+On sandbox are checks generated in safe version so they are not payable.\
+On live instances are checks generated in printable version. MICR font is used on check so please don’t forget that checks should be printed with metallic ink. Some check creditors now scan checks, and they don’t need metallic ink but some of them still leveraging older technology where is metallic ink required.\
+Printing checks without metallic ink can lead to marking check as invalid or require additional payment for creditor.
+
+> ❗️ Checks from Sandbox
+>
+> On sandbox are checks generated in safe version so they are not payable. But it is still heavily recommended to not use real account numbers and other private information on Sandbox
+
+
+
+
+# Employee Payroll API
+
+Employee Payroll API is part of API, available to Employee level users, which will give them chance to see their payroll history, payroll details and download pay statement in PDF form.\
+Primary usage of those endpoints is in some kind of “Employee portal” solution.\
+Be aware that in some US states is mandatory to hand pay statement to the employee and so if you don’t implement employee portal feature, your client companies will be pushed to print those pay statements and hand them to employees on paper.
+
+So, we are heavily recommended to integrate this feature – at least let’s reduce number of trees used for paper.\
+There are two endpoints for Payroll history. One for current year and one with year in route as parameter.\
+Payroll history list contains not just basic payroll data like payday but also Gross and Net Pay so you can display (for example) chart or some table and thus can employee see difference in pay immediately.
+
+After selecting of payroll is **PaystubId** payroll (along with **companyId** and employeeId) needed as parameter for more detailed data. With this data you can display more detailed info about payroll, including info about paid taxes, employee deductions but also employers’ contributions and details about earnings in general.\
+**FileId** and **FCU** can be supplied to File download endpoint and employee can download pdf with pay statement.
+
+
+
+
+# WEP WebHooks
+
+When building our payroll integrations, you may want your systems and applications to receive events regarding your payroll as they occur in our Embedded Payroll so that your backend systems can execute actions accordingly. WEP webhooks allow you to receive these real-time updates by listening to events you subscribe to.
+
+When using the WEP WebHooks, you make an HTTP request from our system triggered by the event you had already preset in our system. WEP WebHooks supports calling various webhook endpoints with multiple formats and different data. Our system then sends these updates as data payloads in a specific format determined by your request method.
+
+## Methods
+
+These are HTTP request methods that you can use when making WebHooks calls. WEP WebHooks allows you to use:
+
+* **GET** method
+* **POST** method
+
+The request method also determines the format of the real-time update that our system sends to your system and applications after the necessary event is triggered.
+
+## Formats
+
+These are the formats in which the real-time updates are sent to your system. WEP WebHooks allows for three formats but is determined by the method of their triggers. The formats are:
+
+* URL by **GET** method only
+* JSON by **POST** method only
+* Form by **POST** method only
+
+Also, you can limit the number of called webhooks by specifying the required data:
+
+* All - will call the webhook in all cases
+* Payroll - will call the webhook for Payroll operations
+* Employee - you will be notified about employee changes
+* Document - you will be notified about document changes in the system
+* Client - the webhook will be called in the case of Company changes
+
+## WEP WebHooks Registration
+
+However, you must first call the WebHooks registration endpoint(s) to enable WEP WebHooks events. Registration can be at the company level, where only company admins can call it, or at the global level, where only System admins can register them.
+
+[Company registration](https://apidocs.worklio.com/reference/post_wep-companies-companyid-webhooks-1) can only be called [Admin-level](https://apidocs.worklio.com/docs/user-types) and [System-level](https://apidocs.worklio.com/docs/user-types) users for specific companies identified with their Company ID. In contrast, [global-level registration](https://apidocs.worklio.com/reference/post_wep-webhooks-1) can only be called by System-level users.
+
+While registration gives access to our resource, where our WebHooks are created and listen for events, you must also provide and specify a URL where you want to receive the WebHook event payload.
+
+A successful registration for webhook will return a data structure with two essential values:
+
+* Id- This is the webhook ID, which can be used for testing and deleting the webhook.
+* Key- This is the digital signature key used for signing data from the webhook and can be used to validate webhook calls.
+
+After registration for the WebHooks event you want, our system can then push real-time data to your application WebHook URL (that you provided during registration) when events happen in our system.
+
+
+
+
+# White-label API Guide
+
+This guide covers how to use the White-label API to customize branding on either:
+
+* The **whole instance** (group of companies), or
+* A **specific company**
+
+***
+
+## Instance-wide Branding (or for Group of Companies)
+
+These endpoints apply branding changes across the entire instance or a group of managed companies, based on the logged-in user's scope of rights.
+
+### 1. Upload Light Logo
+
+Company logo displayed in the menu while in light mode.
+
+**Endpoint:**  `POST /wep/brand/logo`  [View Docs](https://apidocs.worklio.com/reference/post_wep-brand-logo)
+
+**Payload:**
+
+```multipart/form-data
+logo: (file)
+```
+
+***
+
+### 2. Upload Dark Logo
+
+Company logo displayed in the menu while in dark mode.
+
+**Endpoint:**  `POST /wep/brand/logo-dark`  [View Docs](https://apidocs.worklio.com/reference/post_wep-brand-logo-dark)
+
+**Payload:**
+
+```multipart/form-data
+logo: (file)
+```
+
+***
+
+### 3. Set App Name
+
+**Endpoint:**  `POST /wep/brand/app-name`  [View Docs](https://apidocs.worklio.com/reference/post_wep-brand-app-name)
+
+**Payload:**
+
+```json
+{
+  "data": "Your Custom App Name"
+}
+```
+
+***
+
+### 4. Set Support Email
+
+**Endpoint:**  `POST /wep/brand/supportemail`  [View Docs](https://apidocs.worklio.com/reference/post_wep-brand-supportemail)
+
+**Payload:**
+
+```json
+{
+  "data": "support@example.com"
+}
+```
+
+***
+
+### 5. Set Support Phone
+
+**Endpoint:**  `POST /wep/brand/supportphone`  [View Docs](https://apidocs.worklio.com/reference/post_wep-brand-supportphone)
+
+**Payload:**
+
+```json
+{
+  "data": "+18005551234"
+}
+```
+
+***
+
+### 6. Set Custom Colors
+
+Colors customize the application's appearance. For detailed structure and examples, see the [Custom Colors Data Structure](custom-colors).
+
+***
+
+## Company-specific Branding
+
+Use these endpoints to customize branding for a **specific company** by `companyId`.
+
+***
+
+### 1. Upload Light Logo
+
+**Endpoint:**  `POST /wep/companies/{companyId}/brand/logo`  [View Docs](https://apidocs.worklio.com/reference/post_wep-companies-companyid-brand-logo)
+
+***
+
+### 2. Upload Dark Logo
+
+**Endpoint:**  `POST /wep/companies/{companyId}/brand/logo-dark`  [View Docs](https://apidocs.worklio.com/reference/post_wep-companies-companyid-brand-logo-dark)
+
+***
+
+### 3. Set App Name
+
+**Endpoint:**  `POST /wep/companies/{companyId}/brand/app-name`  [View Docs](https://apidocs.worklio.com/reference/post_wep-companies-companyid-brand-app-name)
+
+***
+
+### 4. Set Custom Colors
+
+**Endpoint:**  `POST /wep/companies/{companyId}/brand/custom-colors` [View Docs](https://apidocs.worklio.com/reference/post_wep-companies-companyid-brand-custom-colors)
+
+For detailed structure and examples, see the [Custom Colors Data Structure](custom-colors).
+
+***
+
+> 📘 Notes
+>
+> * All logo endpoints use `multipart/form-data` and expect a file upload.
+> * Instance-wide settings may be overridden at the company level.

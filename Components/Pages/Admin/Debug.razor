@@ -1,0 +1,487 @@
+@page "/admin/debug"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Components.Authorization
+@using Opcentrix_V3.Data
+@inject IUserSettingsService SettingsService
+@inject ISchedulingService SchedulingService
+@inject IDataSeedingService SeedingService
+@inject TenantDbContext Db
+@inject IJSRuntime JS
+@inject ToastService Toast
+
+<PageTitle>Debug Tools - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">🛠️ Debug Tools</h1>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">📊 Database Overview</div>
+    @if (_stats is not null)
+    {
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px 16px; font-size:0.85rem;">
+            <div><span style="color:var(--text-secondary);">Machines:</span> <strong>@_stats.Machines</strong></div>
+            <div><span style="color:var(--text-secondary);">Stages:</span> <strong>@_stats.ProductionStages</strong></div>
+            <div><span style="color:var(--text-secondary);">Processes:</span> <strong>@_stats.ManufacturingProcesses</strong></div>
+            <div><span style="color:var(--text-secondary);">Parts:</span> <strong>@_stats.Parts</strong></div>
+            <div><span style="color:var(--text-secondary);">Jobs:</span> <strong>@_stats.Jobs</strong></div>
+            <div><span style="color:var(--text-secondary);">Executions:</span> <strong>@_stats.StageExecutions</strong></div>
+            <div><span style="color:var(--text-secondary);">Programs:</span> <strong>@_stats.MachinePrograms</strong></div>
+            <div><span style="color:var(--text-secondary);">Batches:</span> <strong>@_stats.ProductionBatches</strong></div>
+            <div><span style="color:var(--text-secondary);">Work Orders:</span> <strong>@_stats.WorkOrders</strong></div>
+        </div>
+    }
+    else
+    {
+        <p style="color:var(--text-secondary); font-size:0.85rem;">Loading…</p>
+    }
+    <div style="display:flex; justify-content:flex-end; padding-top:12px;">
+        <button class="btn btn-secondary" @onclick="RefreshStats" disabled="@_loadingStats" style="font-size:0.8rem;">
+            @(_loadingStats ? "Refreshing…" : "🔄 Refresh")
+        </button>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">🌱 Re-seed Foundation Data</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        Adds any missing machines and production stages to the database, and updates
+        Priority values on existing machines. Safe to run multiple times — only missing
+        data is created.
+    </p>
+
+    @if (_seedResult is not null)
+    {
+        <div style="background: var(--surface-alt, #f0f0f0); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem;">
+            <strong>Last seed:</strong>
+            @_seedResult.MachinesAdded machines added,
+            @_seedResult.MachinesUpdated machines updated,
+            @_seedResult.StagesAdded stages added,
+            @_seedResult.StagesUpdated stages updated
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-primary" @onclick="RunReseed" disabled="@_seeding">
+            @(_seeding ? "Seeding…" : "🌱 Run Re-seed")
+        </button>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">Feedback Button</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">
+        The debug feedback button appears as a floating 🛠️ icon in the bottom-right corner of every page.
+        Each user can enable or disable it from <a href="/settings/display" style="color:var(--accent);">Display Settings</a>.
+    </p>
+
+    <div class="form-group">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.875rem;">
+            <input type="checkbox" @bind="_debugFabEnabled" style="width:18px; height:18px;" />
+            Enable for my account
+        </label>
+    </div>
+    <div style="display:flex; justify-content:flex-end; padding-top:8px;">
+        <button class="btn btn-primary" @onclick="ToggleDebugFab" disabled="@_saving">
+            @(_saving ? "Saving…" : "Save")
+        </button>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">How It Works</div>
+    <div style="color: var(--text-secondary); font-size: 0.875rem; line-height: 1.7;">
+        <p>Click the floating <strong>🛠️</strong> button to open the feedback menu with three options:</p>
+        <table class="data-table" style="margin: 12px 0;">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>When to Use</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>🐛 <strong>Report Bug</strong></td>
+                    <td>Something is broken, crashes, or behaves unexpectedly</td>
+                </tr>
+                <tr>
+                    <td>💡 <strong>Request Change</strong></td>
+                    <td>A feature should work differently or something is missing</td>
+                </tr>
+                <tr>
+                    <td>🎨 <strong>Styling Issue</strong></td>
+                    <td>Layout, colors, spacing, or responsiveness looks wrong</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>Each report automatically captures:</p>
+        <ul style="margin: 8px 0; padding-left: 20px;">
+            <li><strong>Page URL</strong> — which page the issue is on</li>
+            <li><strong>Viewport</strong> — screen size for responsive debugging</li>
+            <li><strong>Theme</strong> — dark or light mode</li>
+            <li><strong>Timestamp</strong> — when the issue was observed</li>
+            <li><strong>User Agent</strong> — browser and OS info</li>
+        </ul>
+        <p style="margin-top:12px;">
+            Hit <strong>📋 Copy to Clipboard</strong> to get a formatted markdown block you can paste directly into a conversation with the AI agent.
+            On iOS, you'll be shown a text area to select and copy manually.
+        </p>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">Quick Test</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        Capture this page's context and copy it to verify the system works:
+    </p>
+    <button class="btn btn-primary" @onclick="CaptureTest" disabled="@_capturing">
+        @(_capturing ? "Capturing…" : "📋 Capture & Copy Test Context")
+    </button>
+
+    @if (_testCopied)
+    {
+        <div style="color: var(--success); font-weight: 600; margin-top: 8px; font-size: 0.85rem;">
+            ✅ Copied! Paste it anywhere to verify.
+        </div>
+    }
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">Clear Schedule Data</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        Reset all scheduling data so you can re-run the scheduler from scratch.
+        This clears schedule times and machine assignments on unfinished stage executions,
+        resets draft/scheduled jobs, and unlocks scheduled build packages.
+        <strong>Completed and in-progress work is preserved.</strong>
+    </p>
+
+    @if (_clearResult is not null)
+    {
+        <div style="background: var(--surface-alt, #f0f0f0); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem;">
+            <strong>Last clear:</strong>
+            @_clearResult.ExecutionsCleared executions cleared,
+            @_clearResult.JobsReset jobs reset,
+            @_clearResult.BuildsUnlocked builds unlocked
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-danger" @onclick="ClearSchedule" disabled="@_clearing">
+            @(_clearing ? "Clearing…" : "🗑️ Clear All Schedule Data")
+        </button>
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">⚠️ Delete All Scheduling Data</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        <strong style="color: var(--danger);">Destructive:</strong> Hard-deletes all stage executions, jobs,
+        build packages (parts, revisions, file info), part instances, and batches.
+        Part definitions, machines, work orders, and manufacturing processes are preserved.
+        <strong>This cannot be undone.</strong>
+    </p>
+
+    @if (_deleteResult is not null)
+    {
+        <div style="background: var(--surface-alt, #f0f0f0); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem;">
+            <strong>Last delete:</strong>
+            @_deleteResult.StageExecutionsDeleted executions,
+            @_deleteResult.JobsDeleted jobs,
+            @_deleteResult.BuildsDeleted builds,
+            @_deleteResult.PartInstancesDeleted part instances,
+            @_deleteResult.BatchesDeleted batches
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; align-items:center;">
+        @if (!_deleteConfirmShown)
+        {
+            <button class="btn btn-danger" @onclick="() => _deleteConfirmShown = true" disabled="@_deleting">
+                🗑️ Delete All Builds, Jobs & Executions
+            </button>
+        }
+        else
+        {
+            <span style="color: var(--danger); font-weight: 600; font-size: 0.85rem;">Are you sure?</span>
+            <button class="btn btn-danger" @onclick="DeleteAllSchedulingData" disabled="@_deleting">
+                @(_deleting ? "Deleting…" : "Yes, Delete Everything")
+            </button>
+            <button class="btn btn-secondary" @onclick="() => _deleteConfirmShown = false" disabled="@_deleting">
+                Cancel
+            </button>
+        }
+    </div>
+</div>
+
+<div class="card" style="max-width: 700px;">
+    <div class="card-header">☢️ Nuclear Reset — Delete Everything</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 12px;">
+        <strong style="color: var(--danger);">Destructive:</strong> Hard-deletes all stage executions, jobs,
+        build packages, part instances, batches, <strong>AND all work orders</strong>.
+        Part definitions, machines, and manufacturing processes are preserved.
+        <strong>This cannot be undone.</strong>
+    </p>
+
+    @if (_nukeResult is not null)
+    {
+        <div style="background: var(--surface-alt, #f0f0f0); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem;">
+            <strong>Last nuke:</strong>
+            @_nukeResult.StageExecutionsDeleted executions,
+            @_nukeResult.JobsDeleted jobs,
+            @_nukeResult.BuildsDeleted builds,
+            @_nukeResult.PartInstancesDeleted part instances,
+            @_nukeResult.BatchesDeleted batches,
+            @_nukeResult.WorkOrdersDeleted work orders
+        </div>
+    }
+
+    <div style="display:flex; gap:8px; align-items:center;">
+        @if (!_nukeConfirmShown)
+        {
+            <button class="btn btn-danger" @onclick="() => _nukeConfirmShown = true" disabled="@_nuking">
+                ☢️ Delete All Data (Including Work Orders)
+            </button>
+        }
+        else
+        {
+            <span style="color: var(--danger); font-weight: 600; font-size: 0.85rem;">Are you absolutely sure?</span>
+            <button class="btn btn-danger" @onclick="NukeEverything" disabled="@_nuking">
+                @(_nuking ? "Deleting…" : "Yes, Nuke Everything")
+            </button>
+            <button class="btn btn-secondary" @onclick="() => _nukeConfirmShown = false" disabled="@_nuking">
+                Cancel
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private int _userId;
+    private bool _debugFabEnabled;
+    private bool _saving;
+    private bool _capturing;
+    private bool _testCopied;
+    private string _testText = "";
+    private bool _clearing;
+    private ScheduleClearResult? _clearResult;
+    private bool _deleting;
+    private bool _deleteConfirmShown;
+    private DataDeleteResult? _deleteResult;
+    private DatabaseStats? _stats;
+    private bool _loadingStats;
+    private bool _seeding;
+    private SeedResult? _seedResult;
+    private bool _nuking;
+    private bool _nukeConfirmShown;
+    private DataDeleteResult? _nukeResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var userIdClaim = state.User.FindFirst("UserId")?.Value;
+            if (int.TryParse(userIdClaim, out var uid))
+                _userId = uid;
+        }
+
+        if (_userId > 0)
+        {
+            var settings = await SettingsService.GetSettingsAsync(_userId);
+            _debugFabEnabled = settings.DebugFabEnabled;
+        }
+
+        await RefreshStats();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", _debugFabEnabled);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ToggleDebugFab()
+    {
+        if (_userId == 0) return;
+        _saving = true;
+
+        try
+        {
+            await SettingsService.SaveDebugFabAsync(_userId, _debugFabEnabled);
+            await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", _debugFabEnabled);
+            Toast.ShowSuccess(_debugFabEnabled
+                ? "Debug button enabled — navigate to any page to see it"
+                : "Debug button disabled");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CaptureTest()
+    {
+        _capturing = true;
+        _testCopied = false;
+
+        try
+        {
+            var ctx = await JS.InvokeAsync<Dictionary<string, string>>("opcentrix.debugFab.getContext");
+            _testText = $"""
+## 🛠️ DEBUG TEST
+
+**Description:**
+This is a test capture from the Debug Tools admin page.
+
+**Context:**
+- Page: /admin/debug
+- Viewport: {ctx.GetValueOrDefault("viewport", "unknown")}
+- Theme: {ctx.GetValueOrDefault("theme", "unknown")}
+- Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+- User Agent: {ctx.GetValueOrDefault("userAgent", "unknown")}
+""";
+
+            await JS.InvokeVoidAsync("opcentrix.debugFab.copyText", _testText);
+            _testCopied = true;
+        }
+        catch
+        {
+            Toast.ShowError("Failed to capture context");
+        }
+        finally
+        {
+            _capturing = false;
+        }
+    }
+
+    private async Task ClearSchedule()
+    {
+        _clearing = true;
+        _clearResult = null;
+
+        try
+        {
+            _clearResult = await SchedulingService.ClearAllScheduleDataAsync();
+            Toast.ShowSuccess($"Schedule cleared: {_clearResult.ExecutionsCleared} executions, {_clearResult.JobsReset} jobs, {_clearResult.BuildsUnlocked} builds");
+            await RefreshStats();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to clear schedule: {ex.Message}");
+        }
+        finally
+        {
+            _clearing = false;
+        }
+    }
+
+    private async Task DeleteAllSchedulingData()
+    {
+        _deleting = true;
+        _deleteResult = null;
+
+        try
+        {
+            _deleteResult = await SchedulingService.DeleteAllSchedulingDataAsync();
+            _deleteConfirmShown = false;
+            Toast.ShowSuccess(
+                $"Deleted: {_deleteResult.StageExecutionsDeleted} executions, " +
+                $"{_deleteResult.JobsDeleted} jobs, {_deleteResult.BuildsDeleted} builds, " +
+                $"{_deleteResult.PartInstancesDeleted} instances, {_deleteResult.BatchesDeleted} batches");
+            await RefreshStats();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to delete: {ex.Message}");
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
+    private async Task RefreshStats()
+    {
+        _loadingStats = true;
+        try
+        {
+            _stats = await SchedulingService.GetDatabaseStatsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load stats: {ex.Message}");
+        }
+        finally
+        {
+            _loadingStats = false;
+        }
+    }
+
+    private async Task RunReseed()
+    {
+        _seeding = true;
+        _seedResult = null;
+
+        try
+        {
+            _seedResult = await SeedingService.EnsureSeedDataAsync(Db);
+            var total = _seedResult.MachinesAdded + _seedResult.MachinesUpdated
+                      + _seedResult.StagesAdded + _seedResult.StagesUpdated;
+            if (total == 0)
+                Toast.ShowSuccess("Everything is up to date — no changes needed");
+            else
+                Toast.ShowSuccess(
+                    $"Re-seed complete: {_seedResult.MachinesAdded} machines added, " +
+                    $"{_seedResult.MachinesUpdated} updated, " +
+                    $"{_seedResult.StagesAdded} stages added, " +
+                    $"{_seedResult.StagesUpdated} updated");
+            await RefreshStats();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Re-seed failed: {ex.Message}");
+        }
+        finally
+        {
+            _seeding = false;
+        }
+    }
+
+    private async Task NukeEverything()
+    {
+        _nuking = true;
+        _nukeResult = null;
+
+        try
+        {
+            _nukeResult = await SchedulingService.DeleteAllSchedulingAndWorkOrderDataAsync();
+            _nukeConfirmShown = false;
+            Toast.ShowSuccess(
+                $"Nuked: {_nukeResult.StageExecutionsDeleted} executions, " +
+                $"{_nukeResult.JobsDeleted} jobs, {_nukeResult.BuildsDeleted} builds, " +
+                $"{_nukeResult.PartInstancesDeleted} instances, {_nukeResult.BatchesDeleted} batches, " +
+                $"{_nukeResult.WorkOrdersDeleted} work orders");
+            await RefreshStats();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to nuke: {ex.Message}");
+        }
+        finally
+        {
+            _nuking = false;
+        }
+    }
+}

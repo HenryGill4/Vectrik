@@ -1,8 +1,16 @@
-@* Quality Control - Inspection checklist *@
+@* Quality Control - Inspection checklist bound to execution data *@
 @using Opcentrix_V3.Models
+
+<WorkInstructionBanner PartId="Execution?.Job?.Part?.Id" StageId="Stage?.Id" />
 
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">✅ Quality Control Inspection</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+        <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
+        <div><span class="form-label">Job</span><div>#@(Execution?.JobId) — Qty @(Execution?.Job?.Quantity)</div></div>
+        <div><span class="form-label">QC Required</span><div>@(Execution?.QualityCheckRequired == true ? "Yes" : "No")</div></div>
+    </div>
+    <hr style="margin: 12px 0; border-color: var(--border);" />
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
         <div class="form-group"><label class="form-label">Serial Number</label><input class="form-control" placeholder="Scan serial..." inputmode="text" /></div>
         <div class="form-group"><label class="form-label">Visual Inspection</label>
@@ -13,9 +21,20 @@
         </div>
         <div class="form-group"><label class="form-label">Surface Finish (Ra µm)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" /></div>
     </div>
-    <div class="form-group"><label class="form-label">Inspector Notes</label><textarea class="form-control" rows="3"></textarea></div>
+    <div class="form-group"><label class="form-label">Inspector Notes</label><textarea class="form-control" rows="3" @bind="_qualityNotes"></textarea></div>
 </div>
+
+<LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
 
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public ProductionStage? Stage { get; set; }
+
+    private string _qualityNotes = "";
+    private string _operatorName => Execution?.OperatorName ?? "Inspector";
+
+    protected override void OnParametersSet()
+    {
+        _qualityNotes = Execution?.QualityNotes ?? "";
+    }
 }

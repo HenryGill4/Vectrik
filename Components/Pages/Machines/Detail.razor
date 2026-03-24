@@ -1,0 +1,926 @@
+@page "/machines/{Id:int}"
+@page "/machines/new"
+@inject IMachineService MachineService
+@inject IMaintenanceService MaintenanceService
+@inject IOeeService OeeService
+@inject IMachineProgramService MachineProgramService
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using Opcentrix_V3.Models.Maintenance
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>@(IsNew ? "New Machine" : _machine?.Name ?? "Machine") - OpCentrix</PageTitle>
+
+@if (!IsNew && _machine == null)
+{
+    @if (_notFound) { <div class="empty-state"><div class="empty-state-icon">🖥️</div><div class="empty-state-text">Machine not found. <a href="machines">Back to Machines</a></div></div> }
+    else { <div class="loading"><span class="spinner"></span></div> }
+}
+else
+{
+    @* ── Header ── *@
+    <div class="page-header">
+        <div>
+            @if (IsNew)
+            {
+                <h1 class="page-title">New Machine</h1>
+            }
+            else
+            {
+                <h1 class="page-title">@_machine!.Name</h1>
+                <div style="font-size: 0.85rem; color: var(--text-muted);">@_machine.MachineId · @_machine.MachineType@(_machine.Department != null ? $" · {_machine.Department}" : "")@(_machine.Location != null ? $" · 📍 {_machine.Location}" : "")</div>
+            }
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            @if (!IsNew)
+            {
+                <span class="badge badge-@_machine!.Status.ToString().ToLower()" style="font-size: 0.9rem; padding: 6px 12px;">@_machine.Status</span>
+                @if (!_machine.IsActive) { <span class="badge badge-secondary">Inactive</span> }
+            }
+            @if (_editing)
+            {
+                <button class="btn btn-primary btn-sm" @onclick="SaveMachine" disabled="@_saving">@(_saving ? "Saving…" : "💾 Save")</button>
+                <button class="btn btn-secondary btn-sm" @onclick="CancelEditing" disabled="@_saving">Cancel</button>
+            }
+            else
+            {
+                @if (_canEdit)
+                {
+                    <button class="btn btn-primary btn-sm" @onclick="StartEditing">✏️ Edit</button>
+                }
+                <a href="machines" class="btn btn-secondary btn-sm">← Back</a>
+            }
+        </div>
+    </div>
+
+    @if (!IsNew)
+    {
+    @* ── KPIs ── *@
+    <div class="kpi-grid" style="margin-bottom: 16px;">
+        <div class="kpi-card">
+            <div class="kpi-label">Operating Hours</div>
+            <div class="kpi-value">@_machine!.TotalOperatingHours.ToString("N0")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Hourly Rate</div>
+            <div class="kpi-value">$@_machine.HourlyRate</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Since Maintenance</div>
+            <div class="kpi-value" style="@(MaintenancePct >= 0.9 ? "color: var(--danger);" : MaintenancePct >= 0.7 ? "color: var(--warning);" : "")">
+                @_machine.HoursSinceLastMaintenance.ToString("F0")h
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">OEE (30d)</div>
+            <div class="kpi-value" style="color: @OeeColor(_oeeData?.Oee ?? 0)">@((_oeeData?.Oee ?? 0) * 100).ToString("F1")%</div>
+        </div>
+    </div>
+
+    @* ── Tabs ── *@
+    <div class="tab-bar" style="margin-bottom: 16px;">
+        <button class="tab @(_tab == "overview" ? "active" : "")" @onclick='() => _tab = "overview"'>Overview</button>
+        <button class="tab @(_tab == "components" ? "active" : "")" @onclick='() => _tab = "components"'>Components (@(_machine.Components?.Count(c => c.IsActive) ?? 0))</button>
+        <button class="tab @(_tab == "maintenance" ? "active" : "")" @onclick="SelectMaintenanceTab">Maintenance@(_alertCount > 0 ? $" ({_alertCount})" : "")</button>
+        <button class="tab @(_tab == "programs" ? "active" : "")" @onclick="SelectProgramsTab">Programs (@(_machinePrograms?.Count ?? 0))</button>
+        <button class="tab @(_tab == "schedule" ? "active" : "")" @onclick="SelectScheduleTab">Schedule (@(_schedule?.Count ?? 0))</button>
+    </div>
+    }
+
+    @* ══════ EDIT FORM ══════ *@
+    @if (_editing && (IsNew || _tab == "overview"))
+    {
+        @if (_validationErrors.Any())
+        {
+            <div class="alert alert-danger" style="margin-bottom: 16px;">Please fix the highlighted errors below.</div>
+        }
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            @* Basic Information *@
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-header">Basic Information</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Machine ID <span style="color:var(--danger);">*</span></label>
+                        <input class="form-control @(_validationErrors.ContainsKey("MachineId") ? "is-invalid" : "")" @bind="_editModel.MachineId" disabled="@(!IsNew)" />
+                        @if (_validationErrors.ContainsKey("MachineId")) { <small style="color:var(--danger);">@_validationErrors["MachineId"]</small> }
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Name <span style="color:var(--danger);">*</span></label>
+                        <input class="form-control @(_validationErrors.ContainsKey("Name") ? "is-invalid" : "")" @bind="_editModel.Name" />
+                        @if (_validationErrors.ContainsKey("Name")) { <small style="color:var(--danger);">@_validationErrors["Name"]</small> }
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Type <span style="color:var(--danger);">*</span></label>
+                        <input class="form-control @(_validationErrors.ContainsKey("MachineType") ? "is-invalid" : "")" list="editMachineTypes" @bind="_editModel.MachineType" placeholder="e.g. SLS, EDM, CNC…" />
+                        <datalist id="editMachineTypes">
+                            @foreach (var t in _machineTypes) { <option value="@t" /> }
+                        </datalist>
+                        @if (_validationErrors.ContainsKey("MachineType")) { <small style="color:var(--danger);">@_validationErrors["MachineType"]</small> }
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Model</label>
+                        <input class="form-control" @bind="_editModel.MachineModel" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Serial Number</label>
+                        <input class="form-control" @bind="_editModel.SerialNumber" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Status</label>
+                        <select class="form-control" @bind="_editModel.Status">
+                            @foreach (var s in Enum.GetValues<MachineStatus>()) { <option value="@s">@s</option> }
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            @* Location & Operations *@
+            <div class="card">
+                <div class="card-header">Location & Operations</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Location</label>
+                        <input class="form-control" @bind="_editModel.Location" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Department</label>
+                        <input class="form-control" list="editDepartments" @bind="_editModel.Department" placeholder="e.g. Production, R&D…" />
+                        <datalist id="editDepartments">
+                            @foreach (var d in _departments) { <option value="@d" /> }
+                        </datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Hourly Rate ($)</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_editModel.HourlyRate" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Priority (1-10)</label>
+                        <input class="form-control" type="number" min="1" max="10" @bind="_editModel.Priority" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label"><input type="checkbox" @bind="_editModel.IsAvailableForScheduling" style="margin-right: 6px;" />Available for Scheduling</label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label"><input type="checkbox" @bind="_editModel.IsActive" style="margin-right: 6px;" />Active</label>
+                    </div>
+                </div>
+            </div>
+
+            @* Build Volume *@
+            <div class="card">
+                <div class="card-header">Build Volume</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Build Length (mm)</label>
+                        <input class="form-control" type="number" min="0" @bind="_editModel.BuildLengthMm" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Build Width (mm)</label>
+                        <input class="form-control" type="number" min="0" @bind="_editModel.BuildWidthMm" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Build Height (mm)</label>
+                        <input class="form-control" type="number" min="0" @bind="_editModel.BuildHeightMm" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Max Laser Power (W)</label>
+                        <input class="form-control" type="number" min="0" @bind="_editModel.MaxLaserPowerWatts" />
+                    </div>
+                </div>
+            </div>
+
+            @* Scheduling & Changeover *@
+            <div class="card">
+                <div class="card-header">Scheduling & Changeover</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label"><input type="checkbox" @bind="_editModel.IsAdditiveMachine" style="margin-right: 6px;" />Additive Machine (uses build plates)</label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label"><input type="checkbox" @bind="_editModel.AutoChangeoverEnabled" style="margin-right: 6px;" />Auto Changeover</label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Changeover Minutes</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_editModel.ChangeoverMinutes" disabled="@(!_editModel.AutoChangeoverEnabled)" />
+                    </div>
+                </div>
+            </div>
+
+            @* Maintenance & Materials *@
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-header">Maintenance & Materials</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Maintenance Interval (hrs)</label>
+                        <input class="form-control" type="number" min="0" @bind="_editModel.MaintenanceIntervalHours" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Current Material</label>
+                        <input class="form-control" @bind="_editModel.CurrentMaterial" />
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label class="form-label">Supported Materials</label>
+                        <input class="form-control" @bind="_editModel.SupportedMaterials" placeholder="Comma-separated list" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ══════ OVERVIEW TAB ══════ *@
+    @if (!IsNew && _tab == "overview" && !_editing)
+    {
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            @* Machine Info *@
+            <div class="card">
+                <div class="card-header">Machine Information</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9rem;">
+                    <div><span class="form-label">Model</span><div>@(_machine.MachineModel ?? "—")</div></div>
+                    <div><span class="form-label">Serial Number</span><div>@(_machine.SerialNumber ?? "—")</div></div>
+                    <div><span class="form-label">Location</span><div>@(_machine.Location ?? "—")</div></div>
+                    <div><span class="form-label">Department</span><div>@(_machine.Department ?? "—")</div></div>
+                    <div><span class="form-label">Priority</span><div>@_machine.Priority / 10</div></div>
+                    <div><span class="form-label">Scheduling</span><div>@(_machine.IsAvailableForScheduling ? "✅ Available" : "❌ Not available")</div></div>
+                    <div><span class="form-label">Auto Changeover</span><div>@(_machine.AutoChangeoverEnabled ? $"✅ {_machine.ChangeoverMinutes:F0} min" : "❌ Off")</div></div>
+                    <div><span class="form-label">Current Material</span><div>@(_machine.CurrentMaterial ?? "—")</div></div>
+                    <div><span class="form-label">Supported Materials</span><div>@(_machine.SupportedMaterials ?? "—")</div></div>
+                </div>
+            </div>
+
+            @* Maintenance Health — always shown *@
+            <div class="card">
+                <div class="card-header">Maintenance Health</div>
+                @if (_machine.MaintenanceIntervalHours > 0)
+                {
+                    var pct = MaintenancePct;
+                    var barColor = pct >= 0.9 ? "var(--danger)" : pct >= 0.7 ? "var(--warning)" : "var(--success)";
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px;">
+                            <span>Hours since last PM</span>
+                            <span>@_machine.HoursSinceLastMaintenance.ToString("F0") / @_machine.MaintenanceIntervalHours.ToString("F0")</span>
+                        </div>
+                        <div style="height: 10px; background: var(--bg-tertiary); border-radius: 5px; overflow: hidden;">
+                            <div style="width: @(pct * 100)%; height: 100%; background: @barColor; border-radius: 5px;"></div>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted);">
+                        <div>Last maintenance: @(_machine.LastMaintenanceDate?.ToString("yyyy-MM-dd") ?? "Never")</div>
+                        @if (_machine.NextMaintenanceDate.HasValue)
+                        {
+                            <div>Next scheduled: @_machine.NextMaintenanceDate.Value.ToString("yyyy-MM-dd")</div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div style="color: var(--text-muted); font-size: 0.85rem;">No maintenance interval configured.</div>
+                }
+            </div>
+
+            @* Build Volume — only for machines with build dimensions *@
+            @if (_machine.BuildLengthMm > 0 || _machine.BuildWidthMm > 0 || _machine.BuildHeightMm > 0)
+            {
+                <div class="card">
+                    <div class="card-header">Build Volume & Specs</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9rem;">
+                        <div><span class="form-label">Length</span><div>@_machine.BuildLengthMm mm</div></div>
+                        <div><span class="form-label">Width</span><div>@_machine.BuildWidthMm mm</div></div>
+                        <div><span class="form-label">Height</span><div>@_machine.BuildHeightMm mm</div></div>
+                        @if (_machine.MaxLaserPowerWatts > 0)
+                        {
+                            <div><span class="form-label">Max Laser Power</span><div>@_machine.MaxLaserPowerWatts W</div></div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @* OEE Breakdown *@
+            @if (_oeeData != null)
+            {
+                <div class="card">
+                    <div class="card-header">OEE Breakdown (30 days)</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; text-align: center; font-size: 0.9rem;">
+                        <div>
+                            <div class="form-label">Availability</div>
+                            <div style="font-size: 1.3rem; font-weight: 600;">@(_oeeData.Availability * 100).ToString("F1")%</div>
+                        </div>
+                        <div>
+                            <div class="form-label">Performance</div>
+                            <div style="font-size: 1.3rem; font-weight: 600;">@(_oeeData.Performance * 100).ToString("F1")%</div>
+                        </div>
+                        <div>
+                            <div class="form-label">Quality</div>
+                            <div style="font-size: 1.3rem; font-weight: 600;">@(_oeeData.Quality * 100).ToString("F1")%</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* ══════ COMPONENTS TAB ══════ *@
+    @if (!IsNew && _tab == "components")
+    {
+        <div class="card" style="margin-bottom: 16px; padding: 12px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input class="form-control" style="flex: 1; max-width: 350px;" placeholder="New component name (e.g. Recoater Arm)" @bind="_newComponentName" />
+                <button class="btn btn-primary btn-sm" @onclick="AddComponent" disabled="@(string.IsNullOrWhiteSpace(_newComponentName) || _saving)">+ Add Component</button>
+            </div>
+        </div>
+
+        @if (!_machine.Components.Any(c => c.IsActive))
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon">🔩</div>
+                <div class="empty-state-text">No components defined. Add components to track maintenance for individual machine parts.</div>
+            </div>
+        }
+        else
+        {
+            @foreach (var comp in _machine.Components.Where(c => c.IsActive).OrderBy(c => c.Name))
+            {
+                <div class="card" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div>
+                            <span style="font-weight: 600;">@comp.Name</span>
+                            @if (!string.IsNullOrEmpty(comp.Description)) { <span style="color: var(--text-muted); margin-left: 8px; font-size: 0.85rem;">@comp.Description</span> }
+                            @if (!string.IsNullOrEmpty(comp.PartNumber)) { <span class="badge badge-secondary" style="margin-left: 6px; font-size: 0.7rem;">@comp.PartNumber</span> }
+                        </div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            @if (comp.CurrentHours.HasValue)
+                            {
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">@comp.CurrentHours.Value.ToString("F0") hrs</span>
+                            }
+                            @if (comp.CurrentBuilds.HasValue)
+                            {
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">@comp.CurrentBuilds.Value builds</span>
+                            }
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteComponent(comp)" disabled="@_saving">🗑️</button>
+                        </div>
+                    </div>
+
+                    @* Maintenance rules for this component *@
+                    @if (comp.MaintenanceRules.Any(r => r.IsActive))
+                    {
+                        <table class="data-table" style="font-size: 0.85rem;">
+                            <thead><tr><th>Rule</th><th>Trigger</th><th>Threshold</th><th>Severity</th><th>Warning At</th><th>Status</th></tr></thead>
+                            <tbody>
+                                @foreach (var rule in comp.MaintenanceRules.Where(r => r.IsActive))
+                                {
+                                    var currentVal = rule.TriggerType switch
+                                    {
+                                        MaintenanceTriggerType.HoursRun => comp.CurrentHours ?? 0,
+                                        MaintenanceTriggerType.BuildsCompleted => comp.CurrentBuilds ?? 0,
+                                        _ => 0
+                                    };
+                                    var pctUsed = rule.ThresholdValue > 0 ? (currentVal / rule.ThresholdValue) * 100 : 0;
+                                    <tr style="@(pctUsed >= 100 ? "background: rgba(var(--danger-rgb, 239,68,68), 0.08);" : pctUsed >= rule.EarlyWarningPercent ? "background: rgba(var(--warning-rgb, 245,158,11), 0.08);" : "")">
+                                        <td>@rule.Name</td>
+                                        <td>@rule.TriggerType</td>
+                                        <td>@currentVal.ToString("F0") / @rule.ThresholdValue.ToString("F0")</td>
+                                        <td><span class="badge badge-@rule.Severity.ToString().ToLower()">@rule.Severity</span></td>
+                                        <td>@(rule.EarlyWarningPercent)%</td>
+                                        <td>
+                                            @if (pctUsed >= 100)
+                                            {
+                                                <span class="badge badge-danger">OVERDUE</span>
+                                            }
+                                            else if (pctUsed >= rule.EarlyWarningPercent)
+                                            {
+                                                <span class="badge badge-warning">Due Soon</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge badge-success">OK</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <div style="font-size: 0.82rem; color: var(--text-muted);">No maintenance rules. <a href="maintenance/rules">Configure rules</a></div>
+                    }
+
+                    @* Install & replacement info *@
+                    <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 0.8rem; color: var(--text-muted);">
+                        @if (comp.InstallDate.HasValue) { <span>Installed: @comp.InstallDate.Value.ToString("yyyy-MM-dd")</span> }
+                        @if (comp.LastReplacedDate.HasValue) { <span>Last replaced: @comp.LastReplacedDate.Value.ToString("yyyy-MM-dd")</span> }
+                    </div>
+                </div>
+            }
+        }
+    }
+
+    @* ══════ MAINTENANCE TAB ══════ *@
+    @if (!IsNew && _tab == "maintenance")
+    {
+        @if (_machineAlerts == null)
+        {
+            <div class="loading"><span class="spinner"></span></div>
+        }
+        else
+        {
+            @* Active Alerts *@
+            @if (_machineAlerts.Any())
+            {
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">Active Alerts</div>
+                    <table class="data-table">
+                        <thead><tr><th>Component</th><th>Rule</th><th>Severity</th><th>Usage</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var alert in _machineAlerts)
+                            {
+                                <tr style="@(alert.IsOverdue ? "background: rgba(var(--danger-rgb, 239,68,68), 0.08);" : "")">
+                                    <td>@alert.ComponentName</td>
+                                    <td>@alert.RuleName</td>
+                                    <td><span class="badge badge-@alert.Severity.ToString().ToLower()">@alert.Severity</span></td>
+                                    <td>@alert.PercentUsed.ToString("F0")%</td>
+                                    <td><span class="badge @(alert.IsOverdue ? "badge-danger" : "badge-warning")">@(alert.IsOverdue ? "OVERDUE" : "Due Soon")</span></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" @onclick="() => CreateWorkOrderFromAlert(alert)" disabled="@_saving">🔧 Create WO</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="card" style="margin-bottom: 16px; padding: 16px; text-align: center; color: var(--text-muted);">
+                    ✅ No active maintenance alerts for this machine.
+                </div>
+            }
+
+            @* Work Orders *@
+            <div class="card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>Maintenance Work Orders</span>
+                    <button class="btn btn-sm btn-primary" @onclick="CreateNewWorkOrder" disabled="@_saving">+ New Work Order</button>
+                </div>
+                @if (_workOrders == null || !_workOrders.Any())
+                {
+                    <div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">No maintenance work orders for this machine.</div>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Status</th><th>Priority</th><th>Created</th></tr></thead>
+                        <tbody>
+                            @foreach (var wo in _workOrders)
+                            {
+                                <tr>
+                                    <td>@wo.Id</td>
+                                    <td>@wo.Title</td>
+                                    <td>@wo.Type</td>
+                                    <td><span class="badge badge-@wo.Status.ToString().ToLower()">@wo.Status</span></td>
+                                    <td><span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span></td>
+                                    <td>@wo.CreatedDate.ToString("yyyy-MM-dd")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div style="padding: 8px; text-align: right;">
+                        <a href="maintenance/workorders" class="btn btn-sm btn-secondary">View All Work Orders →</a>
+                    </div>
+                }
+            </div>
+        }
+    }
+
+    @* ══════ PROGRAMS TAB ══════ *@
+    @if (!IsNew && _tab == "programs")
+    {
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 class="card-title" style="margin: 0;">Machine Programs</h3>
+                <a href="/programs" class="btn btn-sm btn-primary">+ Manage All Programs</a>
+            </div>
+
+            @if (_machinePrograms == null || !_machinePrograms.Any())
+            {
+                <div class="empty-state" style="padding: 24px;">
+                    <div class="empty-state-text">No machine programs linked to this machine yet.</div>
+                    <a href="/programs" class="btn btn-sm btn-secondary" style="margin-top: 8px;">Go to Machine Programs →</a>
+                </div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Program #</th>
+                            <th>Name</th>
+                            <th>Part</th>
+                            <th>Status</th>
+                            <th>Preferred</th>
+                            <th style="text-align: right;">Setup</th>
+                            <th style="text-align: right;">Run/Part</th>
+                            <th style="text-align: right;">Cycle</th>
+                            <th style="text-align: right;">Files</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var prog in _machinePrograms)
+                        {
+                            var assignment = prog.MachineAssignments?.FirstOrDefault(a => a.MachineId == _machine!.Id);
+                            <tr>
+                                <td><a href="/programs" style="font-weight: 600; text-decoration: none; color: var(--primary);">@prog.ProgramNumber</a></td>
+                                <td>@prog.Name</td>
+                                <td>
+                                    @if (prog.Part != null)
+                                    {
+                                        <a href="/parts/@prog.Part.Id" style="text-decoration: none; color: var(--primary);">@prog.Part.PartNumber</a>
+                                    }
+                                    else
+                                    {
+                                        <span style="color: var(--text-muted);">Multi-part</span>
+                                    }
+                                </td>
+                                <td><span class="badge badge-@prog.Status.ToString().ToLower()">@prog.Status</span></td>
+                                <td>
+                                    @if (assignment?.IsPreferred == true)
+                                    {
+                                        <span class="badge badge-success">★ Preferred</span>
+                                    }
+                                    else if (assignment != null)
+                                    {
+                                        <span style="color: var(--text-muted);">—</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-secondary" title="Legacy single-machine FK">Legacy</span>
+                                    }
+                                </td>
+                                <td style="text-align: right;">@(prog.SetupTimeMinutes?.ToString("F0") ?? "—") min</td>
+                                <td style="text-align: right;">@(prog.RunTimeMinutes?.ToString("F1") ?? "—") min</td>
+                                <td style="text-align: right;">@(prog.CycleTimeMinutes?.ToString("F1") ?? "—") min</td>
+                                <td style="text-align: right;">@(prog.Files?.Count ?? 0)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    @* ══════ SCHEDULE TAB ══════ *@
+    @if (!IsNew && _tab == "schedule")
+    {
+        @if (_schedule == null)
+        {
+            <div class="loading"><span class="spinner"></span></div>
+        }
+        else if (!_schedule.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon">📅</div>
+                <div class="empty-state-text">No scheduled or in-progress work for this machine. <a href="scheduler">Open Scheduler</a></div>
+            </div>
+        }
+        else
+        {
+            <div class="card">
+                <div class="card-header">Upcoming & Active Work</div>
+                <table class="data-table">
+                    <thead><tr><th>Job</th><th>Stage</th><th>Status</th><th>Scheduled Start</th><th>Scheduled End</th><th>Est. Hours</th></tr></thead>
+                    <tbody>
+                        @foreach (var exec in _schedule)
+                        {
+                            <tr>
+                                <td>@(exec.Job?.Id.ToString() ?? "—")</td>
+                                <td>@(exec.ProductionStage?.Name ?? "—")</td>
+                                <td><span class="badge badge-@exec.Status.ToString().ToLower()">@exec.Status</span></td>
+                                <td>@(exec.ScheduledStartAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                                <td>@(exec.ScheduledEndAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                                <td>@(exec.EstimatedHours?.ToString("F1") ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top: 8px; text-align: right;">
+                <a href="scheduler" class="btn btn-sm btn-secondary">Open Full Scheduler →</a>
+            </div>
+        }
+    }
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter] public int Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private Machine? _machine;
+    private bool _notFound;
+    private bool _saving;
+    private bool _canEdit;
+    private bool _editing;
+    private string _tab = "overview";
+    private string _newComponentName = "";
+    private ConfirmDialog _confirm = null!;
+
+    // Edit state
+    private Machine _editModel = new();
+    private List<string> _machineTypes = new();
+    private List<string> _departments = new();
+    private Dictionary<string, string> _validationErrors = new();
+
+    // Lazy-loaded tab data
+    private OeeData? _oeeData;
+    private List<MaintenanceAlert>? _machineAlerts;
+    private List<MaintenanceWorkOrder>? _workOrders;
+    private List<StageExecution>? _schedule;
+    private List<MachineProgram>? _machinePrograms;
+    private int _alertCount;
+
+    private bool IsNew => Id == 0;
+
+    private double MaintenancePct => _machine?.MaintenanceIntervalHours > 0
+        ? Math.Min(_machine.HoursSinceLastMaintenance / _machine.MaintenanceIntervalHours, 1.0) : 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _canEdit = state.User.IsInRole("Admin") || state.User.IsInRole("Manager");
+        }
+
+        if (IsNew)
+        {
+            if (!_canEdit) { Nav.NavigateTo("machines"); return; }
+            _editModel = new Machine { Priority = 5, IsActive = true, IsAvailableForScheduling = true, MaintenanceIntervalHours = 500, HourlyRate = 150.00m, CreatedBy = "System", LastModifiedBy = "System" };
+            _editing = true;
+            try
+            {
+                _machineTypes = await MachineService.GetDistinctMachineTypesAsync();
+                _departments = await MachineService.GetDistinctDepartmentsAsync();
+            }
+            catch { }
+            return;
+        }
+
+        try
+        {
+            _machine = await MachineService.GetMachineWithComponentsAsync(Id);
+            if (_machine == null) { _notFound = true; return; }
+
+            try
+            {
+                var to = DateTime.UtcNow;
+                var from = to.AddDays(-30);
+                _oeeData = await OeeService.GetMachineOeeAsync(_machine.Id, from, to);
+            }
+            catch { }
+
+            try
+            {
+                var allAlerts = await MaintenanceService.EvaluateMaintenanceRulesAsync();
+                _alertCount = allAlerts.Count(a => a.MachineId == _machine.MachineId);
+            }
+            catch { _alertCount = 0; }
+
+            try { _schedule = await MachineService.GetMachineScheduleAsync(_machine.Id); }
+            catch { _schedule = new(); }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading machine: {ex.Message}");
+            _notFound = true;
+        }
+    }
+
+    private async Task SelectMaintenanceTab()
+    {
+        _tab = "maintenance";
+        try
+        {
+            var allAlerts = await MaintenanceService.EvaluateMaintenanceRulesAsync();
+            _machineAlerts = allAlerts.Where(a => a.MachineId == _machine!.MachineId).ToList();
+            _alertCount = _machineAlerts.Count;
+            var allWOs = await MaintenanceService.GetWorkOrdersAsync();
+            _workOrders = allWOs.Where(w => w.MachineId == _machine!.MachineId).ToList();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading maintenance data: {ex.Message}");
+            _machineAlerts ??= new();
+            _workOrders ??= new();
+        }
+    }
+
+    private async Task SelectProgramsTab()
+    {
+        _tab = "programs";
+        try { _machinePrograms = await MachineProgramService.GetProgramsForMachineAsync(_machine!.Id); }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading programs: {ex.Message}");
+            _machinePrograms ??= new();
+        }
+    }
+
+    private async Task SelectScheduleTab()
+    {
+        _tab = "schedule";
+        try { _schedule = await MachineService.GetMachineScheduleAsync(_machine!.Id); }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading schedule: {ex.Message}");
+            _schedule ??= new();
+        }
+    }
+
+    private async Task AddComponent()
+    {
+        if (string.IsNullOrWhiteSpace(_newComponentName) || _machine == null) return;
+        _saving = true;
+        try
+        {
+            await MaintenanceService.CreateComponentAsync(new MachineComponent
+            {
+                MachineId = _machine.MachineId,
+                Name = _newComponentName.Trim(),
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            });
+            _newComponentName = "";
+            _machine = await MachineService.GetMachineWithComponentsAsync(Id);
+            Toast.ShowSuccess("Component added.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to add component: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteComponent(MachineComponent comp)
+    {
+        if (!await _confirm.ShowAsync($"Delete component '{comp.Name}'? This will also deactivate its maintenance rules.", "Delete Component"))
+            return;
+        _saving = true;
+        try
+        {
+            await MaintenanceService.DeleteComponentAsync(comp.Id);
+            _machine = await MachineService.GetMachineWithComponentsAsync(Id);
+            Toast.ShowSuccess("Component removed.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to delete: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task CreateWorkOrderFromAlert(MaintenanceAlert alert)
+    {
+        _saving = true;
+        try
+        {
+            await MaintenanceService.CreateWorkOrderAsync(new MaintenanceWorkOrder
+            {
+                MachineId = alert.MachineId,
+                MaintenanceRuleId = alert.RuleId,
+                Type = MaintenanceWorkOrderType.Preventive,
+                Title = $"{alert.RuleName} — {alert.ComponentName}",
+                Description = $"Auto-created from maintenance alert. Usage at {alert.PercentUsed:F0}%.",
+                Priority = alert.Severity == MaintenanceSeverity.Critical
+                    ? MaintenanceWorkOrderPriority.Critical
+                    : MaintenanceWorkOrderPriority.Normal,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            });
+            Toast.ShowSuccess("Work order created.");
+            await SelectMaintenanceTab();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private void CreateNewWorkOrder()
+    {
+        Nav.NavigateTo("maintenance/workorders");
+    }
+
+    private static string OeeColor(decimal oee) => oee switch
+    {
+        >= 0.85m => "var(--success)",
+        >= 0.65m => "var(--warning)",
+        _ => "var(--danger)"
+    };
+
+    private async Task StartEditing()
+    {
+        _editModel = new Machine
+        {
+            Id = _machine!.Id,
+            MachineId = _machine.MachineId,
+            Name = _machine.Name,
+            MachineType = _machine.MachineType,
+            MachineModel = _machine.MachineModel,
+            SerialNumber = _machine.SerialNumber,
+            Location = _machine.Location,
+            Department = _machine.Department,
+            Status = _machine.Status,
+            IsActive = _machine.IsActive,
+            IsAvailableForScheduling = _machine.IsAvailableForScheduling,
+            Priority = _machine.Priority,
+            SupportedMaterials = _machine.SupportedMaterials,
+            CurrentMaterial = _machine.CurrentMaterial,
+            MaintenanceIntervalHours = _machine.MaintenanceIntervalHours,
+            BuildLengthMm = _machine.BuildLengthMm,
+            BuildWidthMm = _machine.BuildWidthMm,
+            BuildHeightMm = _machine.BuildHeightMm,
+            MaxLaserPowerWatts = _machine.MaxLaserPowerWatts,
+            HourlyRate = _machine.HourlyRate,
+            AutoChangeoverEnabled = _machine.AutoChangeoverEnabled,
+            ChangeoverMinutes = _machine.ChangeoverMinutes,
+            IsAdditiveMachine = _machine.IsAdditiveMachine,
+            CreatedBy = _machine.CreatedBy,
+            LastModifiedBy = "System"
+        };
+        _validationErrors.Clear();
+        _tab = "overview";
+        _editing = true;
+        try
+        {
+            _machineTypes = await MachineService.GetDistinctMachineTypesAsync();
+            _departments = await MachineService.GetDistinctDepartmentsAsync();
+        }
+        catch { }
+    }
+
+    private void CancelEditing()
+    {
+        _editing = false;
+        _validationErrors.Clear();
+        if (IsNew) Nav.NavigateTo("machines");
+    }
+
+    private async Task SaveMachine()
+    {
+        if (!ValidateEdit()) return;
+        _saving = true;
+        try
+        {
+            if (IsNew)
+            {
+                if (await MachineService.MachineIdExistsAsync(_editModel.MachineId))
+                {
+                    _validationErrors["MachineId"] = "This Machine ID already exists.";
+                    return;
+                }
+                var created = await MachineService.CreateMachineAsync(_editModel);
+                Toast.ShowSuccess($"Machine '{_editModel.Name}' created.");
+                Nav.NavigateTo($"machines/{created.Id}");
+            }
+            else
+            {
+                _machine!.Name = _editModel.Name;
+                _machine.MachineType = _editModel.MachineType;
+                _machine.MachineModel = _editModel.MachineModel;
+                _machine.SerialNumber = _editModel.SerialNumber;
+                _machine.Location = _editModel.Location;
+                _machine.Department = _editModel.Department;
+                _machine.Status = _editModel.Status;
+                _machine.IsActive = _editModel.IsActive;
+                _machine.IsAvailableForScheduling = _editModel.IsAvailableForScheduling;
+                _machine.Priority = _editModel.Priority;
+                _machine.SupportedMaterials = _editModel.SupportedMaterials;
+                _machine.CurrentMaterial = _editModel.CurrentMaterial;
+                _machine.MaintenanceIntervalHours = _editModel.MaintenanceIntervalHours;
+                _machine.BuildLengthMm = _editModel.BuildLengthMm;
+                _machine.BuildWidthMm = _editModel.BuildWidthMm;
+                _machine.BuildHeightMm = _editModel.BuildHeightMm;
+                _machine.MaxLaserPowerWatts = _editModel.MaxLaserPowerWatts;
+                _machine.HourlyRate = _editModel.HourlyRate;
+                _machine.AutoChangeoverEnabled = _editModel.AutoChangeoverEnabled;
+                _machine.ChangeoverMinutes = _editModel.ChangeoverMinutes;
+                _machine.IsAdditiveMachine = _editModel.IsAdditiveMachine;
+                _machine.LastModifiedBy = "System";
+                _machine.LastModifiedDate = DateTime.UtcNow;
+                await MachineService.UpdateMachineAsync(_machine);
+                _machine = await MachineService.GetMachineWithComponentsAsync(Id);
+                _editing = false;
+                Toast.ShowSuccess($"Machine '{_machine!.Name}' updated.");
+            }
+        }
+        catch (Exception ex) { Toast.ShowError($"Error saving: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private bool ValidateEdit()
+    {
+        _validationErrors.Clear();
+        if (string.IsNullOrWhiteSpace(_editModel.MachineId))
+            _validationErrors["MachineId"] = "Machine ID is required.";
+        if (string.IsNullOrWhiteSpace(_editModel.Name))
+            _validationErrors["Name"] = "Name is required.";
+        if (string.IsNullOrWhiteSpace(_editModel.MachineType))
+            _validationErrors["MachineType"] = "Machine type is required.";
+        if (_editModel.Priority < 1 || _editModel.Priority > 10)
+            _validationErrors["Priority"] = "Priority must be 1–10.";
+        return _validationErrors.Count == 0;
+    }
+}

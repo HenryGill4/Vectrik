@@ -1,6 +1,7 @@
 @page "/tracking"
 @inject IPartTrackerService TrackerService
-@rendermode InteractiveServer
+@inject ToastService Toast
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>Part Tracker - OpCentrix</PageTitle>
 
@@ -9,18 +10,43 @@
 </div>
 
 <div class="card" style="margin-bottom: 20px;">
-    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: end;">
         <select class="form-control" style="width: auto;" @bind="_searchType">
             <option value="wo">Work Order #</option>
             <option value="part">Part Number</option>
             <option value="serial">Serial Number</option>
         </select>
-        <input class="form-control" style="flex: 1; min-width: 200px;" placeholder="Search..." @bind="_searchTerm" @onkeypress="HandleKey" />
-        <button class="btn btn-primary" @onclick="Search">Search</button>
+        <div style="flex:1;min-width:200px;position:relative">
+            @if (_scanMode)
+            {
+                <label class="form-label" style="font-size:0.75rem;color:var(--accent)">🔫 Barcode Scan Mode — scan or type and press Enter</label>
+            }
+            <input id="trackingSearch" class="form-control" style="width:100%" placeholder="@(_scanMode ? "Scan barcode..." : "Search...")"
+                   @bind="_searchTerm" @onkeypress="HandleKey" @ref="_searchInput" />
+        </div>
+        <button class="btn btn-primary" @onclick="Search" disabled="@_searching">
+            @if (_searching) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+            Search
+        </button>
+        @if (_searched)
+        {
+            <button class="btn btn-sm btn-secondary" @onclick="ClearResults">Clear</button>
+        }
+        <button class="btn btn-sm @(_scanMode ? "btn-accent" : "btn-secondary")" @onclick="ToggleScanMode" title="Toggle barcode scan mode">🔫</button>
     </div>
 </div>
 
-@if (_result != null && _result.Lines.Any())
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger" style="margin-bottom: 16px;">@_error</div>
+}
+
+@if (_searching)
+{
+    <div class="loading"><span class="spinner"></span> Searching...</div>
+}
+
+@if (!_searching && _result != null && _result.Lines.Any())
 {
     @foreach (var line in _result.Lines)
     {
@@ -34,12 +60,18 @@
             @if (line.SerializedParts.Any())
             {
                 <table class="data-table">
-                    <thead><tr><th>Serial #</th><th>Stage</th><th>Status</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Stage</th><th>Status</th></tr></thead>
                     <tbody>
                         @foreach (var pi in line.SerializedParts)
                         {
                             <tr>
-                                <td>@pi.SerialNumber</td>
+                                <td>
+                                    @pi.SerialNumber
+                                    @if (pi.SerialNumber.StartsWith("TMP-"))
+                                    {
+                                        <span class="badge" style="background:var(--warning);color:var(--btn-warning-text);font-size:0.65rem;margin-left:4px;">Temp</span>
+                                    }
+                                </td>
                                 <td>@pi.CurrentStageName</td>
                                 <td><span class="badge badge-@pi.Status.ToLower()">@pi.Status</span></td>
                             </tr>
@@ -51,10 +83,16 @@
     }
 }
 
-@if (_serialResult != null)
+@if (!_searching && _serialResult != null)
 {
     <div class="card">
-        <div class="card-header">@_serialResult.SerialNumber — @_serialResult.PartNumber</div>
+        <div class="card-header">
+            @_serialResult.SerialNumber — @_serialResult.PartNumber
+            @if (_serialResult.SerialNumber.StartsWith("TMP-"))
+            {
+                <span class="badge" style="background:var(--warning);color:var(--btn-warning-text);font-size:0.7rem;margin-left:6px;">Temp ID</span>
+            }
+        </div>
         <div style="margin-bottom: 12px;">
             <span class="badge badge-@_serialResult.Status.ToLower()">@_serialResult.Status</span>
             Current Stage: @_serialResult.CurrentStageName
@@ -80,7 +118,7 @@
     </div>
 }
 
-@if (_searched && _result?.Lines.Count == 0 && _serialResult == null)
+@if (!_searching && _searched && _result?.Lines.Count == 0 && _serialResult == null)
 {
     <div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">No results found</div></div>
 }
@@ -90,18 +128,51 @@
     private PartTrackerResult? _result;
     private PartInstanceTrack? _serialResult;
     private bool _searched;
+    private bool _searching;
+    private string? _error;
+    private bool _scanMode;
+    private ElementReference _searchInput;
 
     private async Task HandleKey(KeyboardEventArgs e) { if (e.Key == "Enter") await Search(); }
 
     private async Task Search()
     {
-        _result = null; _serialResult = null; _searched = true;
-        if (string.IsNullOrWhiteSpace(_searchTerm)) return;
-        switch (_searchType)
+        _result = null; _serialResult = null; _searched = true; _error = null;
+        if (string.IsNullOrWhiteSpace(_searchTerm)) { _error = "Please enter a search term."; return; }
+        _searching = true;
+        try
         {
-            case "wo": _result = await TrackerService.TrackByWorkOrderAsync(_searchTerm.Trim()); break;
-            case "part": _result = await TrackerService.TrackByPartNumberAsync(_searchTerm.Trim()); break;
-            case "serial": _serialResult = await TrackerService.TrackBySerialNumberAsync(_searchTerm.Trim()); break;
+            switch (_searchType)
+            {
+                case "wo": _result = await TrackerService.TrackByWorkOrderAsync(_searchTerm.Trim()); break;
+                case "part": _result = await TrackerService.TrackByPartNumberAsync(_searchTerm.Trim()); break;
+                case "serial": _serialResult = await TrackerService.TrackBySerialNumberAsync(_searchTerm.Trim()); break;
+            }
+            if (_scanMode) { _searchTerm = ""; }
         }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Search failed: {ex.Message}");
+            _error = $"Search failed: {ex.Message}";
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private void ClearResults()
+    {
+        _result = null;
+        _serialResult = null;
+        _searched = false;
+        _error = null;
+        _searchTerm = "";
+    }
+
+    private void ToggleScanMode()
+    {
+        _scanMode = !_scanMode;
+        if (_scanMode) { _searchType = "serial"; }
     }
 }

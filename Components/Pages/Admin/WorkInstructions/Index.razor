@@ -1,0 +1,253 @@
+@page "/admin/work-instructions"
+@inject IWorkInstructionService InstructionService
+@inject IPartService PartService
+@inject IStageService StageService
+@inject ToastService Toast
+@inject NavigationManager Nav
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
+
+<PageTitle>Work Instructions - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">📋 Work Instructions</h1>
+    <div style="display: flex; gap: 8px;">
+        <a href="admin/work-instructions/feedback" class="btn btn-secondary">🚩 Feedback Review</a>
+        <button class="btn btn-primary" @onclick="ShowCreateForm">+ New Instruction</button>
+    </div>
+</div>
+
+@* ── Filters ── *@
+<div class="card" style="margin-bottom: 16px;">
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
+        <div class="form-group" style="margin-bottom: 0; min-width: 180px;">
+            <label class="form-label">Part</label>
+            <select class="form-control" @bind="_filterPartId">
+                <option value="0">All Parts</option>
+                @foreach (var p in _parts)
+                {
+                    <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                }
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0; min-width: 180px;">
+            <label class="form-label">Stage</label>
+            <select class="form-control" @bind="_filterStageId">
+                <option value="0">All Stages</option>
+                @foreach (var s in _stages)
+                {
+                    <option value="@s.Id">@s.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!FilteredInstructions.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-text">No work instructions yet</div>
+        <button class="btn btn-primary" @onclick="ShowCreateForm">Create First Instruction</button>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Part</th>
+                    <th>Stage</th>
+                    <th>Title</th>
+                    <th>Rev</th>
+                    <th>Steps</th>
+                    <th>Active</th>
+                    <th>Updated</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var wi in FilteredInstructions)
+                {
+                    <tr style="cursor: pointer;" @onclick="() => GoToEdit(wi.Id)">
+                        <td style="font-weight: 600;">@(wi.Part?.PartNumber ?? "—")</td>
+                        <td>
+                            <span style="display:inline-flex;align-items:center;gap:4px;">
+                                <span style="width:8px;height:8px;border-radius:50%;background:@(wi.ProductionStage?.StageColor ?? "gray");display:inline-block;"></span>
+                                @(wi.ProductionStage?.Name ?? "—")
+                            </span>
+                        </td>
+                        <td>@wi.Title</td>
+                        <td><span class="badge badge-active">Rev @wi.RevisionNumber</span></td>
+                        <td>@wi.Steps.Count</td>
+                        <td><span class="badge @(wi.IsActive ? "badge-active" : "badge-cancelled")">@(wi.IsActive ? "Yes" : "No")</span></td>
+                        <td>@wi.UpdatedAt.ToString("MM/dd/yy HH:mm")</td>
+                        <td @onclick:stopPropagation>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(wi)">🗑</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@* ── Create Modal ── *@
+@if (_showCreate)
+{
+    <div class="modal-overlay" @onclick="() => _showCreate = false">
+        <div class="modal-content" style="max-width: 500px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">New Work Instruction</span>
+                <button class="modal-close" @onclick="() => _showCreate = false">&times;</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+
+            <div class="form-group">
+                <label class="form-label">Part *</label>
+                <select class="form-control" @bind="_newPartId">
+                    <option value="0">Select Part...</option>
+                    @foreach (var p in _parts)
+                    {
+                        <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Production Stage *</label>
+                <select class="form-control" @bind="_newStageId">
+                    <option value="0">Select Stage...</option>
+                    @foreach (var s in _stages)
+                    {
+                        <option value="@s.Id">@s.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Title *</label>
+                <input class="form-control" @bind="_newTitle" placeholder="e.g. SLS Printing Setup for Widget A" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" @bind="_newDescription" rows="3"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="() => _showCreate = false">Cancel</button>
+                <button class="btn btn-primary" @onclick="CreateInstruction" disabled="@_saving">
+                    @(_saving ? "Creating..." : "Create")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirmDialog" />
+
+@code {
+    private bool _loading = true;
+    private bool _showCreate;
+    private bool _saving;
+    private string? _error;
+    private List<WorkInstruction> _instructions = new();
+    private List<Part> _parts = new();
+    private List<ProductionStage> _stages = new();
+    private ConfirmDialog _confirmDialog = null!;
+
+    // Filters
+    private int _filterPartId;
+    private int _filterStageId;
+
+    // Create form
+    private int _newPartId;
+    private int _newStageId;
+    private string _newTitle = "";
+    private string? _newDescription;
+
+    private IEnumerable<WorkInstruction> FilteredInstructions => _instructions
+        .Where(wi => _filterPartId == 0 || wi.PartId == _filterPartId)
+        .Where(wi => _filterStageId == 0 || wi.ProductionStageId == _filterStageId);
+
+    private void GoToEdit(int id) => Nav.NavigateTo($"admin/work-instructions/{id}/edit");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _instructions = await InstructionService.GetAllAsync();
+            _parts = await PartService.GetAllPartsAsync();
+            _stages = await StageService.GetAllStagesAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    private void ShowCreateForm()
+    {
+        _newPartId = 0;
+        _newStageId = 0;
+        _newTitle = "";
+        _newDescription = null;
+        _error = null;
+        _showCreate = true;
+    }
+
+    private async Task CreateInstruction()
+    {
+        _error = null;
+        if (_newPartId == 0) { _error = "Please select a part."; return; }
+        if (_newStageId == 0) { _error = "Please select a stage."; return; }
+        if (string.IsNullOrWhiteSpace(_newTitle)) { _error = "Title is required."; return; }
+
+        _saving = true;
+        try
+        {
+            var instruction = new WorkInstruction
+            {
+                PartId = _newPartId,
+                ProductionStageId = _newStageId,
+                Title = _newTitle.Trim(),
+                Description = _newDescription?.Trim()
+            };
+
+            var created = await InstructionService.CreateAsync(instruction);
+            _showCreate = false;
+            Toast.ShowSuccess("Work instruction created.");
+            Nav.NavigateTo($"admin/work-instructions/{created.Id}/edit");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        _saving = false;
+    }
+
+    private async Task ConfirmDelete(WorkInstruction wi)
+    {
+        var confirmed = await _confirmDialog.ShowAsync(
+            "Delete Work Instruction",
+            $"Delete \"{wi.Title}\" for {wi.Part?.PartNumber}? This will remove all steps, media, and revision history."
+        );
+
+        if (confirmed)
+        {
+            try
+            {
+                await InstructionService.DeleteAsync(wi.Id);
+                _instructions.Remove(wi);
+                Toast.ShowSuccess("Work instruction deleted.");
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Error: {ex.Message}");
+            }
+        }
+    }
+}

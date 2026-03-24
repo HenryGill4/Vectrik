@@ -1,0 +1,147 @@
+@* Part Separation Dialog — Shown after Wire EDM build-level stage completes *@
+@using Opcentrix_V3.Models
+@using Opcentrix_V3.Models.Enums
+@using Opcentrix_V3.Services
+
+@if (_visible && _program != null)
+{
+    <div class="modal-overlay" style="z-index: 300;">
+        <div class="modal-content" style="max-width: 800px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">✂️ Part Separation — @_program.Name</span>
+                <button class="modal-close" @onclick="Cancel">&times;</button>
+            </div>
+
+            <div style="margin-bottom: 12px; font-size: 0.9rem; color: var(--text-secondary);">
+                The Wire EDM stage is complete. Confirm the status of each separated part below.
+            </div>
+
+            <table class="data-table" style="font-size: 0.9rem; margin-bottom: 16px;">
+                <thead>
+                    <tr><th>Part #</th><th>Name</th><th>Qty</th><th>Status</th><th>Serial #</th><th>Damage Reason</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in _entries)
+                    {
+                        <tr style="@(entry.IsDamaged ? "background: var(--bg-danger-subtle, #fff3f3);" : "")">
+                            <td>@entry.PartNumber</td>
+                            <td>@entry.PartName</td>
+                            <td>@entry.Quantity</td>
+                            <td>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="checkbox" @bind="entry.IsDamaged" style="width: 18px; height: 18px;" />
+                                    <span style="font-size: 0.85rem;">Damaged / Scrap</span>
+                                </label>
+                            </td>
+                            <td>
+                                @if (!entry.IsDamaged)
+                                {
+                                    <input class="form-control" style="font-size: 0.85rem;" @bind="entry.SerialNumber" placeholder="Auto-generate" />
+                                }
+                                else
+                                {
+                                    <span style="color: var(--text-secondary);">N/A</span>
+                                }
+                            </td>
+                            <td>
+                                @if (entry.IsDamaged)
+                                {
+                                    <input class="form-control" style="font-size: 0.85rem;" @bind="entry.DamageReason" placeholder="Describe damage..." />
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+                <button class="btn btn-primary" @onclick="ConfirmSeparation" disabled="@_processing">
+                    @if (_processing) { <span class="spinner" style="width:16px;height:16px;margin-right:6px;"></span> }
+                    ✂️ Confirm Separation
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public EventCallback<PartSeparationResult> OnConfirmed { get; set; }
+
+    private bool _visible;
+    private bool _processing;
+    private MachineProgram? _program;
+    private List<SeparationEntry> _entries = new();
+    private TaskCompletionSource<bool>? _tcs;
+
+    public Task<bool> ShowAsync(MachineProgram program)
+    {
+        _program = program;
+        _processing = false;
+        _entries = (program.ProgramParts ?? new()).Select(pp => new SeparationEntry
+        {
+            ProgramPartId = pp.Id,
+            PartId = pp.PartId,
+            PartNumber = pp.Part?.PartNumber ?? $"Part #{pp.PartId}",
+            PartName = pp.Part?.Name ?? "",
+            Quantity = pp.Quantity,
+            WorkOrderLineId = pp.WorkOrderLineId
+        }).ToList();
+
+        _tcs = new TaskCompletionSource<bool>();
+        _visible = true;
+        StateHasChanged();
+        return _tcs.Task;
+    }
+
+    private async Task ConfirmSeparation()
+    {
+        _processing = true;
+        StateHasChanged();
+
+        var result = new PartSeparationResult
+        {
+            MachineProgramId = _program!.Id,
+            OkParts = _entries.Where(e => !e.IsDamaged).Select(e => new SeparatedPart
+            {
+                PartId = e.PartId,
+                Quantity = e.Quantity,
+                SerialNumber = e.SerialNumber,
+                WorkOrderLineId = e.WorkOrderLineId
+            }).ToList(),
+            DamagedParts = _entries.Where(e => e.IsDamaged).Select(e => new DamagedPart
+            {
+                PartId = e.PartId,
+                Quantity = e.Quantity,
+                Reason = e.DamageReason ?? "Damaged during EDM separation",
+                WorkOrderLineId = e.WorkOrderLineId
+            }).ToList()
+        };
+
+        await OnConfirmed.InvokeAsync(result);
+
+        _visible = false;
+        _processing = false;
+        _tcs?.TrySetResult(true);
+        StateHasChanged();
+    }
+
+    private void Cancel()
+    {
+        _visible = false;
+        _tcs?.TrySetResult(false);
+    }
+
+    private class SeparationEntry
+    {
+        public int ProgramPartId { get; set; }
+        public int PartId { get; set; }
+        public string PartNumber { get; set; } = "";
+        public string PartName { get; set; } = "";
+        public int Quantity { get; set; }
+        public int? WorkOrderLineId { get; set; }
+        public bool IsDamaged { get; set; }
+        public string? SerialNumber { get; set; }
+        public string? DamageReason { get; set; }
+    }
+}

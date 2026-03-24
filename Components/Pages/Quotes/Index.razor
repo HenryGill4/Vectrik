@@ -1,68 +1,199 @@
 @page "/quotes"
 @inject IQuoteService QuoteService
+@inject ITenantFeatureService Features
 @inject NavigationManager Nav
-@rendermode InteractiveServer
+@inject ToastService Toast
 
 <PageTitle>Quotes - OpCentrix</PageTitle>
 
 <div class="page-header">
     <h1 class="page-title">Quotes</h1>
-    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Quote</button>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        @if (_selectedIds.Count > 0)
+        {
+            <button class="btn btn-sm btn-warning" @onclick="ArchiveSelected">📦 Archive @_selectedIds.Count Selected</button>
+        }
+        @{
+            var expiredCount = _allQuotes.Count(q => q.Status == QuoteStatus.Expired);
+        }
+        @if (expiredCount > 0)
+        {
+            <button class="btn btn-sm btn-secondary" @onclick="ArchiveAllExpired">Archive @expiredCount Expired</button>
+        }
+        <button class="btn btn-primary" @onclick="GoToNewQuote">+ New Quote</button>
+    </div>
 </div>
 
-@if (_quotes == null) { <div class="loading"><span class="spinner"></span></div> }
+<!-- Status Filter Tabs -->
+<div class="tab-bar" style="margin-bottom: 16px;">
+    <button class="tab @(_statusFilter == null ? "active" : "")" @onclick="() => FilterByStatus(null)">All (@_allQuotes.Count)</button>
+    @foreach (var status in Enum.GetValues<QuoteStatus>())
+    {
+        var count = _allQuotes.Count(q => q.Status == status);
+        if (count > 0 || status == QuoteStatus.Draft)
+        {
+            <button class="tab @(_statusFilter == status ? "active" : "")" @onclick="() => FilterByStatus(status)">
+                @status (@count)
+            </button>
+        }
+    }
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading quotes...</div>
+}
+else if (!_filteredQuotes.Any())
+{
+    <div class="card" style="text-align: center; padding: 40px;">
+        <p style="color: var(--text-muted); font-size: 1.1rem;">No quotes found.</p>
+        <button class="btn btn-primary" @onclick="GoToNewQuote">Create Your First Quote</button>
+    </div>
+}
 else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>Quote #</th><th>Customer</th><th>Total</th><th>Quoted</th><th>Status</th><th></th></tr></thead>
+            <thead>
+                <tr>
+                    <th style="width:36px;"><input type="checkbox" @onchange="ToggleSelectAll" /></th>
+                    <th>Quote #</th>
+                    <th>Customer</th>
+                    <th>Rev</th>
+                    <th>Lines</th>
+                    <th>Est. Cost</th>
+                    <th>Quoted Price</th>
+                    <th>Margin</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
             <tbody>
-                @foreach (var q in _quotes)
+                @foreach (var q in _pagedQuotes)
                 {
-                    <tr>
-                        <td>@q.QuoteNumber</td>
+                    <tr class="clickable-row" @onclick="() => ViewQuote(q.Id)">
+                        <td @onclick:stopPropagation><input type="checkbox" checked="@_selectedIds.Contains(q.Id)" @onchange="() => ToggleSelect(q.Id)" /></td>
+                        <td><strong>@q.QuoteNumber</strong></td>
                         <td>@q.CustomerName</td>
-                        <td>$@q.TotalEstimatedCost.ToString("N2")</td>
-                        <td>@(q.QuotedPrice.HasValue ? $"${q.QuotedPrice:N2}" : "—")</td>
-                        <td><span class="badge badge-@q.Status.ToString().ToLower()">@q.Status</span></td>
-                        <td><a href="/quotes/@q.Id" class="btn btn-sm btn-secondary">View</a></td>
+                        <td>R@q.RevisionNumber</td>
+                        <td>@q.Lines.Count</td>
+                        <td>@q.TotalEstimatedCost.ToString("C")</td>
+                        <td>@(q.QuotedPrice?.ToString("C") ?? "—")</td>
+                        <td>
+                            @if (q.QuotedPrice > 0 && q.TotalEstimatedCost > 0)
+                            {
+                                var margin = (q.QuotedPrice.Value - q.TotalEstimatedCost) / q.QuotedPrice.Value * 100;
+                                <span style="color: @(margin >= 0 ? "var(--success)" : "var(--danger)")">@margin.ToString("F1")%</span>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                        <td><span class="badge @GetStatusBadge(q.Status)">@q.Status</span></td>
+                        <td>@q.CreatedDate.ToString("yyyy-MM-dd")</td>
                     </tr>
                 }
             </tbody>
         </table>
     </div>
-}
 
-@if (_showCreate)
-{
-    <div class="modal-overlay" @onclick="() => _showCreate = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">New Quote</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
-            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
-            <div class="form-group"><label class="form-label">Customer Name</label><input class="form-control" @bind="_customerName" /></div>
-            <div class="form-group"><label class="form-label">Customer Email</label><input class="form-control" @bind="_customerEmail" /></div>
-            <button class="btn btn-primary" @onclick="Create">Create</button>
-        </div>
-    </div>
+    @if (_filteredQuotes.Count > _pageSize)
+    {
+        <Pagination CurrentPage="_currentPage" TotalItems="_filteredQuotes.Count" PageSize="_pageSize" OnPageChanged="p => _currentPage = p" />
+    }
 }
 
 @code {
-    private List<Quote>? _quotes;
-    private bool _showCreate;
-    private string _customerName = "", _customerEmail = "";
-    private string? _error;
+    private bool _loading = true;
+    private List<Quote> _allQuotes = new();
+    private List<Quote> _filteredQuotes = new();
+    private QuoteStatus? _statusFilter;
+    private int _currentPage = 1;
+    private int _pageSize = 25;
 
-    protected override async Task OnInitializedAsync() => _quotes = await QuoteService.GetAllQuotesAsync();
+    private List<Quote> _pagedQuotes => _filteredQuotes
+        .Skip((_currentPage - 1) * _pageSize)
+        .Take(_pageSize)
+        .ToList();
 
-    private async Task Create()
+    protected override async Task OnInitializedAsync()
     {
-        _error = null;
         try
         {
-            var q = await QuoteService.CreateQuoteAsync(new Quote { CustomerName = _customerName, CustomerEmail = _customerEmail });
-            _showCreate = false;
-            Nav.NavigateTo($"/quotes/{q.Id}");
+            _allQuotes = await QuoteService.GetAllQuotesAsync();
+            _filteredQuotes = _allQuotes;
         }
-        catch (Exception ex) { _error = ex.Message; }
+        catch
+        {
+            _allQuotes = new();
+            _filteredQuotes = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
+
+    private void FilterByStatus(QuoteStatus? status)
+    {
+        _statusFilter = status;
+        _filteredQuotes = status.HasValue
+            ? _allQuotes.Where(q => q.Status == status.Value).ToList()
+            : _allQuotes;
+        _currentPage = 1;
+    }
+
+    private void ViewQuote(int id) => Nav.NavigateTo($"/quotes/{id}");
+    private void GoToNewQuote() => Nav.NavigateTo("/quotes/new");
+
+    private HashSet<int> _selectedIds = new();
+
+    private void ToggleSelect(int id)
+    {
+        if (!_selectedIds.Remove(id))
+            _selectedIds.Add(id);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        if ((bool)(e.Value ?? false))
+            _selectedIds = _pagedQuotes.Select(q => q.Id).ToHashSet();
+        else
+            _selectedIds.Clear();
+    }
+
+    private async Task ArchiveSelected()
+    {
+        foreach (var id in _selectedIds.ToList())
+        {
+            try { await QuoteService.UpdateStatusAsync(id, QuoteStatus.Expired); } catch { }
+        }
+        _selectedIds.Clear();
+        _allQuotes = await QuoteService.GetAllQuotesAsync();
+        FilterByStatus(_statusFilter);
+        Toast.ShowSuccess("Selected quotes archived");
+    }
+
+    private async Task ArchiveAllExpired()
+    {
+        var expired = _allQuotes.Where(q => q.Status == QuoteStatus.Expired && q.ExpirationDate < DateTime.UtcNow).ToList();
+        foreach (var q in expired)
+        {
+            try { await QuoteService.UpdateStatusAsync(q.Id, QuoteStatus.Expired); } catch { }
+        }
+        _allQuotes = await QuoteService.GetAllQuotesAsync();
+        FilterByStatus(_statusFilter);
+        Toast.ShowSuccess($"{expired.Count} expired quotes archived");
+    }
+
+    private static string GetStatusBadge(QuoteStatus status) => status switch
+    {
+        QuoteStatus.Draft => "badge-info",
+        QuoteStatus.Sent => "badge-warning",
+        QuoteStatus.Accepted => "badge-active",
+        QuoteStatus.Rejected => "badge-cancelled",
+        QuoteStatus.Expired => "badge-cancelled",
+        _ => ""
+    };
 }

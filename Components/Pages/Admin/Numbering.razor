@@ -1,0 +1,178 @@
+@page "/admin/numbering"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@inject ITenantFeatureService FeatureService
+@inject ToastService Toast
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Number Sequences - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Number Sequences</h1>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <p style="color: var(--text-muted); margin-bottom: 16px;">
+        Configure the prefix, digit count, and separator for auto-generated numbers.
+        Example: prefix <strong>WO</strong>, digits <strong>5</strong>, separator <strong>-</strong> → <strong>WO-00001</strong>
+    </p>
+
+    <div class="card">
+        <div class="card-header">Separator</div>
+        <div style="padding: 16px;">
+            <div class="form-group">
+                <label class="form-label">Number Separator</label>
+                <input class="form-control" style="max-width:100px;" @bind="_separator" />
+                <small style="color: var(--text-muted);">Character between prefix and number (e.g. "-", "/", or empty)</small>
+            </div>
+        </div>
+    </div>
+
+    @foreach (var seq in _sequences)
+    {
+        <div class="card" style="margin-top: 12px;">
+            <div class="card-header">@seq.EntityLabel</div>
+            <div style="padding: 16px; display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
+                <div class="form-group" style="flex:0 0 120px;">
+                    <label class="form-label">Prefix</label>
+                    <input class="form-control" @bind="seq.Prefix" />
+                </div>
+                <div class="form-group" style="flex:0 0 100px;">
+                    <label class="form-label">Digits</label>
+                    <input type="number" class="form-control" min="3" max="10" @bind="seq.Digits" />
+                </div>
+                <div class="form-group" style="flex:0 0 120px;">
+                    <label class="form-label">Current Counter</label>
+                    <input type="number" class="form-control" min="0" @bind="seq.Counter" />
+                </div>
+                <div style="padding-bottom: 4px; color: var(--text-muted);">
+                    Preview: <strong>@seq.Preview(_separator)</strong>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div style="margin-top: 16px;">
+        <button class="btn btn-primary" @onclick="SaveAll" disabled="@_saving">@(_saving ? "Saving..." : "Save All")</button>
+    </div>
+}
+
+@code {
+    private bool _loading = true, _saving;
+    private string _separator = "-";
+    private List<SequenceConfig> _sequences = new();
+
+    private static readonly (string Entity, string Label, string PrefixKey, string DigitsKey, string CounterKey, string DefaultPrefix, int DefaultDigits, string? FeatureFlag)[] _entityDefs =
+    [
+        ("WorkOrder", "Work Orders", "numbering.wo_prefix", "numbering.wo_digits", "numbering.wo_counter", "WO", 5, "module.workorders"),
+        ("Quote", "Quotes", "numbering.quote_prefix", "numbering.quote_digits", "numbering.quote_counter", "QT", 5, "module.quoting"),
+        ("NCR", "Non-Conformance Reports", "numbering.ncr_prefix", "numbering.ncr_digits", "numbering.ncr_counter", "NCR", 5, "module.quality"),
+        ("Part", "Parts", "numbering.part_prefix", "numbering.part_digits", "numbering.part_counter", "PT", 5, "module.pdm"),
+        ("Shipment", "Shipments", "numbering.shipment_prefix", "numbering.shipment_digits", "numbering.shipment_counter", "SHP", 5, "module.shipping"),
+        ("PO", "Purchase Orders", "numbering.po_prefix", "numbering.po_digits", "numbering.po_counter", "PO", 5, "module.purchasing"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await Db.SystemSettings.Where(s => s.Category == "Numbering").ToListAsync();
+            _separator = settings.FirstOrDefault(s => s.Key == "numbering.separator")?.Value ?? "-";
+
+            var enabledFeatures = await FeatureService.GetAllFeaturesAsync();
+            var enabledKeys = enabledFeatures.Where(f => f.Enabled).Select(f => f.Key).ToHashSet();
+
+            _sequences = _entityDefs
+                .Where(def => def.FeatureFlag == null || enabledKeys.Contains(def.FeatureFlag))
+                .Select(def => new SequenceConfig
+                {
+                    EntityLabel = def.Label,
+                    PrefixKey = def.PrefixKey,
+                    DigitsKey = def.DigitsKey,
+                    CounterKey = def.CounterKey,
+                    Prefix = settings.FirstOrDefault(s => s.Key == def.PrefixKey)?.Value ?? def.DefaultPrefix,
+                    Digits = int.TryParse(settings.FirstOrDefault(s => s.Key == def.DigitsKey)?.Value, out var d) ? d : def.DefaultDigits,
+                    Counter = int.TryParse(settings.FirstOrDefault(s => s.Key == def.CounterKey)?.Value, out var c) ? c : 0
+                }).ToList();
+        }
+        catch
+        {
+            _sequences = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAll()
+    {
+        _saving = true;
+        try
+        {
+            await UpsertSetting("numbering.separator", _separator, "Numbering", "Separator between prefix and number");
+
+            foreach (var seq in _sequences)
+            {
+                if (seq.Digits < 3) seq.Digits = 3;
+                if (seq.Digits > 10) seq.Digits = 10;
+
+                var maxCounter = (int)Math.Pow(10, seq.Digits) - 1;
+                if (seq.Counter > maxCounter)
+                {
+                    Toast.ShowError($"{seq.EntityLabel}: Counter {seq.Counter} exceeds max for {seq.Digits} digits ({maxCounter}).");
+                    return;
+                }
+
+                await UpsertSetting(seq.PrefixKey, seq.Prefix, "Numbering", $"Prefix for {seq.EntityLabel}");
+                await UpsertSetting(seq.DigitsKey, seq.Digits.ToString(), "Numbering", $"Digit count for {seq.EntityLabel}");
+                await UpsertSetting(seq.CounterKey, seq.Counter.ToString(), "Numbering", $"Last used counter for {seq.EntityLabel}");
+            }
+
+            await Db.SaveChangesAsync();
+            Toast.ShowSuccess("Number sequences saved.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Save failed: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task UpsertSetting(string key, string value, string category, string description)
+    {
+        var setting = await Db.SystemSettings.FirstOrDefaultAsync(s => s.Key == key);
+        if (setting == null)
+        {
+            Db.SystemSettings.Add(new SystemSetting
+            {
+                Key = key,
+                Value = value,
+                Category = category,
+                Description = description,
+                LastModifiedBy = "Admin"
+            });
+        }
+        else
+        {
+            setting.Value = value;
+            setting.LastModifiedDate = DateTime.UtcNow;
+            setting.LastModifiedBy = "Admin";
+        }
+    }
+
+    private class SequenceConfig
+    {
+        public string EntityLabel { get; set; } = "";
+        public string PrefixKey { get; set; } = "";
+        public string DigitsKey { get; set; } = "";
+        public string CounterKey { get; set; } = "";
+        public string Prefix { get; set; } = "";
+        public int Digits { get; set; } = 5;
+        public int Counter { get; set; }
+
+        public string Preview(string sep) => $"{Prefix}{sep}{(Counter + 1).ToString().PadLeft(Digits, '0')}";
+    }
+}

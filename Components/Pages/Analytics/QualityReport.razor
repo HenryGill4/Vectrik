@@ -1,0 +1,176 @@
+@page "/analytics/quality"
+@inject IAnalyticsService AnalyticsService
+@inject ISpcService SpcService
+@inject NavigationManager Nav
+
+<PageTitle>Quality Metrics - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Quality Metrics Report</h1>
+    <div class="page-actions">
+        <select class="form-control" style="width:160px;display:inline-block" @onchange="OnRangeChanged">
+            <option value="30" selected>Last 30 Days</option>
+            <option value="60">Last 60 Days</option>
+            <option value="90">Last 90 Days</option>
+        </select>
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
+    </div>
+</div>
+
+@if (_loading) { <div class="loading"><span class="spinner"></span> Loading...</div> }
+else
+{
+    <div class="kpi-grid" style="margin-bottom:1rem">
+        <div class="kpi-card">
+            <div class="kpi-label">First Pass Yield</div>
+            <div class="kpi-value" style="color: @(_fpYield >= 95 ? "var(--success)" : _fpYield >= 85 ? "var(--warning)" : "var(--danger)")">
+                @_fpYield.ToString("F1")%
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Scrap Rate</div>
+            <div class="kpi-value" style="color: @(_scrapRate <= 2 ? "var(--success)" : _scrapRate <= 5 ? "var(--warning)" : "var(--danger)")">
+                @_scrapRate.ToString("F1")%
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Open NCRs</div>
+            <div class="kpi-value">@_openNcrs</div>
+        </div>
+    </div>
+
+    <!-- NCR by Category -->
+    @if (_ncrCategories.Count > 0)
+    {
+        <div class="card" style="margin-top:1rem">
+            <div class="card-header">NCRs by Category</div>
+            <div style="padding:1rem;display:flex;flex-wrap:wrap;gap:1rem">
+                @{ var colors = new[] { "var(--accent)", "var(--warning)", "var(--danger)", "var(--success)", "#9333ea" }; }
+                @for (int i = 0; i < _ncrCategories.Count; i++)
+                {
+                    var cat = _ncrCategories[i];
+                    var color = colors[i % colors.Length];
+                    <div class="kpi-card" style="flex:1;min-width:120px;border-left:4px solid @color">
+                        <div class="kpi-label">@cat.Category</div>
+                        <div class="kpi-value">@cat.Count</div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Scrap by Part -->
+    @if (_scrapByPart.Count > 0)
+    {
+        <div class="card" style="margin-top:1rem">
+            <div class="card-header">Scrap Rate by Part</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Part Number</th>
+                        <th>Part Name</th>
+                        <th>Total Produced</th>
+                        <th>Scrapped</th>
+                        <th>Scrap Rate %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _scrapByPart)
+                    {
+                        <tr>
+                            <td>@row.PartNumber</td>
+                            <td>@row.PartName</td>
+                            <td>@row.TotalProduced</td>
+                            <td style="color:var(--danger)">@row.Scrapped</td>
+                            <td>
+                                <div style="background: var(--bg-tertiary); border-radius: 4px; height: 16px; width: 120px; overflow: hidden; display: inline-block; vertical-align: middle;">
+                                    <div style="background: var(--danger); height: 100%; width: @(Math.Min(row.ScrapRatePct, 100))%"></div>
+                                </div>
+                                @row.ScrapRatePct.ToString("F1")%
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- Daily Scrap Trend -->
+    @if (_dailyScrap.Count > 0)
+    {
+        <div class="card" style="margin-top:1rem">
+            <div class="card-header">Daily Scrap Rate Trend</div>
+            <div style="padding:1rem;overflow-x:auto">
+                @{ var maxScrap = _dailyScrap.Max(d => d.Value); if (maxScrap == 0) maxScrap = 10; }
+                <svg viewBox="0 0 @(_dailyScrap.Count * 30 + 40) 200" style="width:100%;min-width:400px;height:200px">
+                    @for (int i = 0; i < _dailyScrap.Count; i++)
+                    {
+                        var dp = _dailyScrap[i];
+                        var barH = dp.Value / maxScrap * 160;
+                        var x = i * 30 + 20;
+                        var y = 170 - barH;
+                        <rect x="@x" y="@y" width="24" height="@barH" fill="var(--danger)" rx="2" opacity="0.7" />
+                        <foreignObject x="@x" y="180" width="24" height="16"><span style="font-size:8px;color:var(--text-muted);display:block;text-align:center">@dp.Date.ToString("dd")</span></foreignObject>
+                    }
+                </svg>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private int _rangeDays = 30;
+    private double _fpYield;
+    private double _scrapRate;
+    private int _openNcrs;
+    private List<NcrCategoryCount> _ncrCategories = new();
+    private List<ScrapByPartRow> _scrapByPart = new();
+    private List<DailyDataPoint> _dailyScrap = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var from = now.AddDays(-_rangeDays);
+            _fpYield = await AnalyticsService.GetFirstPassYieldPctAsync(from, now);
+            _scrapRate = await AnalyticsService.GetScrapRateAsync(_rangeDays);
+            var kpis = await AnalyticsService.GetDashboardKpisAsync();
+            _openNcrs = kpis.OpenNcrs;
+            _ncrCategories = await AnalyticsService.GetNcrByCategoryAsync(from, now);
+            _scrapByPart = await AnalyticsService.GetScrapByPartAsync(from, now);
+            _dailyScrap = await AnalyticsService.GetDailyScrapRateAsync(from, now);
+        }
+        catch
+        {
+            _ncrCategories = new();
+            _scrapByPart = new();
+            _dailyScrap = new();
+        }
+        _loading = false;
+    }
+
+    private async Task OnRangeChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var d))
+        {
+            _rangeDays = d;
+            await LoadDataAsync();
+        }
+    }
+
+    private void ExportCsv()
+    {
+        if (!_scrapByPart.Any()) return;
+        var csv = "PartNumber,PartName,TotalProduced,Scrapped,ScrapRate%\n" +
+            string.Join("\n", _scrapByPart.Select(r => $"{r.PartNumber},{r.PartName},{r.TotalProduced},{r.Scrapped},{r.ScrapRatePct:F1}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+    }
+}

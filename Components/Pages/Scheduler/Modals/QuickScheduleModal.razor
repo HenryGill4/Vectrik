@@ -1,0 +1,167 @@
+@inject IBuildTemplateService BuildTemplateService
+@inject IProgramSchedulingService ProgramScheduling
+@inject ToastService Toast
+
+@if (IsVisible && Template != null && WorkOrderLine != null)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 550px;">
+            <div class="modal-header">
+                <span class="modal-title">📅 Quick Schedule from Template</span>
+                <button class="modal-close" @onclick="Close">&times;</button>
+            </div>
+            <div style="padding: 4px 0 12px; color: var(--text-muted); font-size: 0.85rem;">
+                WO: @(WorkOrder?.OrderNumber ?? "?") · @(WorkOrder?.CustomerName ?? "")
+            </div>
+
+            @* Template Details *@
+            <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                    <span class="badge badge-success">✅ Certified</span>
+                    <strong>@Template.Name</strong>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;font-size:0.85rem;color:var(--text-secondary);">
+                    <div>📦 @Template.TotalPartCount parts (@Template.UniquePartCount unique)</div>
+                    <div>⏱ @Template.EstimatedDurationHours.ToString("F1") hours</div>
+                    <div>🔄 Used @Template.UseCount times</div>
+                    @if (Template.Material != null)
+                    {
+                        <div>🧪 @Template.Material.Name</div>
+                    }
+                </div>
+                @if (Template.Parts.Any())
+                {
+                    <div style="margin-top:8px;font-size:0.8rem;color:var(--text-secondary);">
+                        Parts: @string.Join(", ", Template.Parts.Select(p => $"{p.Part?.PartNumber ?? "?"} ×{p.Quantity}"))
+                    </div>
+                }
+            </div>
+
+            @* For part *@
+            <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="wo-line-type-badge wo-line-type--sls">🖨️ SLS</span>
+                    <strong>@(WorkOrderLine.Part?.PartNumber ?? "?")</strong>
+                    <span style="color:var(--text-muted);">@(WorkOrderLine.Part?.Name ?? "")</span>
+                </div>
+                <div style="margin-top:6px;color:var(--text-secondary);">
+                    Outstanding: @Outstanding
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">SLS Machine <span style="color:var(--danger);">*</span></label>
+                    <select class="form-control" @bind="_machineId">
+                        <option value="">Select machine...</option>
+                        @foreach (var m in SlsMachines)
+                        {
+                            <option value="@m.Id">@m.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Start After (optional)</label>
+                    <input class="form-control" type="datetime-local" @bind="_startAfter" />
+                </div>
+            </div>
+
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">
+                A build package will be created from this certified template and scheduled on the selected machine.
+                The WO line will be automatically linked.
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-primary" @onclick="QuickScheduleAsync" disabled="@_creating">
+                    @if (_creating) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    📅 Schedule Build
+                </button>
+                <button class="btn btn-secondary" @onclick="Close">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public bool IsVisible { get; set; }
+    [Parameter] public BuildTemplate? Template { get; set; }
+    [Parameter] public WorkOrder? WorkOrder { get; set; }
+    [Parameter] public WorkOrderLine? WorkOrderLine { get; set; }
+    [Parameter, EditorRequired] public List<Machine> SlsMachines { get; set; } = [];
+    [Parameter, EditorRequired] public List<Machine> AllMachines { get; set; } = [];
+    [Parameter, EditorRequired] public string UserName { get; set; } = "System";
+    [Parameter] public string InitialMachineId { get; set; } = "";
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnScheduled { get; set; }
+
+    private string _machineId = "";
+    private DateTime? _startAfter;
+    private bool _creating;
+
+    private int Outstanding => WorkOrderLine != null ? GetOutstanding(WorkOrderLine) : 0;
+
+    protected override void OnParametersSet()
+    {
+        if (IsVisible)
+        {
+            _machineId = InitialMachineId;
+            _startAfter = null;
+        }
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task QuickScheduleAsync()
+    {
+        if (Template == null || WorkOrderLine == null) return;
+        if (!int.TryParse(_machineId, out var machineIntId))
+        {
+            Toast.ShowError("Select a valid SLS machine.");
+            return;
+        }
+
+        _creating = true;
+        StateHasChanged();
+        try
+        {
+            var machine = AllMachines.FirstOrDefault(m => m.Id == machineIntId);
+            if (machine == null) { Toast.ShowError("Machine not found."); return; }
+
+            var package = await BuildTemplateService.InstantiateAsync(
+                Template.Id,
+                machine.Id,
+                UserName,
+                WorkOrderLine.Id);
+
+            await ProgramScheduling.ScheduleBuildPlateAsync(
+                package.Id,
+                machineIntId,
+                _startAfter);
+
+            Toast.ShowSuccess($"Build '{package.Name}' scheduled on {machine.Name}");
+            await OnScheduled.InvokeAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _creating = false; }
+    }
+
+    private static int GetOutstanding(WorkOrderLine line)
+    {
+        var produced = line.ProducedQuantity;
+        var inBuilds = GetInBuildQty(line);
+        var ordered = line.Quantity;
+        return Math.Max(0, ordered - produced - inBuilds);
+    }
+
+    private static int GetInBuildQty(WorkOrderLine line)
+    {
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
+            .Sum(pp => pp.Quantity);
+    }
+}

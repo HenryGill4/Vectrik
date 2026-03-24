@@ -1,0 +1,148 @@
+@page "/admin/work-instructions/feedback"
+@inject IWorkInstructionService InstructionService
+@inject ToastService Toast
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
+
+<PageTitle>Feedback Review - Work Instructions - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">🚩 Instruction Feedback Review</h1>
+    <a href="admin/work-instructions" class="btn btn-secondary">← Work Instructions</a>
+</div>
+
+@* ── Filter ── *@
+<div class="card" style="margin-bottom: 16px;">
+    <div style="display: flex; gap: 12px; align-items: end;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">Status</label>
+            <select class="form-control" @bind="_filterStatus">
+                <option value="">All Pending</option>
+                <option value="New">New</option>
+                <option value="Acknowledged">Acknowledged</option>
+                <option value="Resolved">Resolved</option>
+                <option value="WontFix">Won't Fix</option>
+            </select>
+        </div>
+        <button class="btn btn-sm btn-primary" @onclick="LoadFeedback" style="height: 38px;">🔄 Refresh</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading feedback...</div>
+}
+else if (!FilteredFeedback.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">✅</div>
+        <div class="empty-state-text">No pending feedback</div>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Instruction</th>
+                    <th>Step</th>
+                    <th>Type</th>
+                    <th>Operator</th>
+                    <th>Comment</th>
+                    <th>Submitted</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var fb in FilteredFeedback)
+                {
+                    <tr>
+                        <td>
+                            <a href="admin/work-instructions/@(fb.Step?.WorkInstruction?.Id ?? 0)/edit" style="color: var(--accent); text-decoration: underline;">
+                                @(fb.Step?.WorkInstruction?.Part?.PartNumber ?? "—") / @(fb.Step?.WorkInstruction?.ProductionStage?.Name ?? "—")
+                            </a>
+                        </td>
+                        <td>Step @(fb.Step?.StepOrder ?? 0): @(fb.Step?.Title ?? "—")</td>
+                        <td>
+                            @{
+                                var typeBadge = fb.FeedbackType switch
+                                {
+                                    FeedbackType.SafetyConcern => "badge-danger",
+                                    FeedbackType.IncorrectInfo => "badge-warning",
+                                    _ => "badge-active"
+                                };
+                            }
+                            <span class="badge @typeBadge">@fb.FeedbackType</span>
+                        </td>
+                        <td>@fb.OperatorUserId</td>
+                        <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@fb.Comment">
+                            @(fb.Comment ?? "—")
+                        </td>
+                        <td>@fb.SubmittedAt.ToString("MM/dd HH:mm")</td>
+                        <td><span class="badge badge-@fb.Status.ToString().ToLower()">@fb.Status</span></td>
+                        <td>
+                            <div style="display: flex; gap: 4px;">
+                                @if (fb.Status == FeedbackStatus.New)
+                                {
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => UpdateStatus(fb, FeedbackStatus.Acknowledged)">Ack</button>
+                                }
+                                @if (fb.Status != FeedbackStatus.Resolved)
+                                {
+                                    <button class="btn btn-sm btn-primary" @onclick="() => UpdateStatus(fb, FeedbackStatus.Resolved)">Resolve</button>
+                                }
+                                @if (fb.Status != FeedbackStatus.WontFix)
+                                {
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => UpdateStatus(fb, FeedbackStatus.WontFix)">Won't Fix</button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private List<OperatorFeedback> _feedback = new();
+    private string _filterStatus = "";
+
+    private IEnumerable<OperatorFeedback> FilteredFeedback => string.IsNullOrEmpty(_filterStatus)
+        ? _feedback
+        : _feedback.Where(f => f.Status.ToString() == _filterStatus);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFeedback();
+    }
+
+    private async Task LoadFeedback()
+    {
+        _loading = true;
+        try
+        {
+            _feedback = await InstructionService.GetPendingFeedbackAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading feedback: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    private async Task UpdateStatus(OperatorFeedback fb, FeedbackStatus status)
+    {
+        try
+        {
+            await InstructionService.UpdateFeedbackStatusAsync(fb.Id, status);
+            fb.Status = status;
+            Toast.ShowSuccess($"Feedback marked as {status}.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error: {ex.Message}");
+        }
+    }
+}

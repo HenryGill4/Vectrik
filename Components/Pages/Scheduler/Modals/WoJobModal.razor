@@ -1,0 +1,109 @@
+@inject IWorkOrderService WorkOrderService
+@inject IProgramSchedulingService ProgramScheduling
+@inject ToastService Toast
+
+@if (IsVisible && WorkOrderLine != null)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal-content" @onclick:stopPropagation style="max-width: 500px;">
+            <div class="modal-header">
+                <span class="modal-title">⚙️ Schedule Job from Work Order</span>
+                <button class="modal-close" @onclick="Close">&times;</button>
+            </div>
+            <div style="padding: 4px 0 12px; color: var(--text-muted); font-size: 0.85rem;">
+                WO: @(WorkOrder?.OrderNumber ?? "?") · @(WorkOrder?.CustomerName ?? "")
+            </div>
+            <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="wo-line-type-badge wo-line-type--cnc">⚙️ CNC</span>
+                    <strong>@(WorkOrderLine.Part?.PartNumber ?? "?")</strong>
+                    <span style="color:var(--text-muted);">@(WorkOrderLine.Part?.Name ?? "")</span>
+                </div>
+                <div style="margin-top:6px;color:var(--text-secondary);">
+                    Ordered: @WorkOrderLine.Quantity · Produced: @WorkOrderLine.ProducedQuantity · Outstanding: @Outstanding
+                </div>
+            </div>
+            <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">
+                A job will be created from the part's manufacturing process and <strong>auto-scheduled</strong> to the earliest available machine slots.
+                Program durations will be used when available for accurate scheduling.
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-accent" @onclick="ScheduleJobAsync" disabled="@_creating">
+                    @if (_creating) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    ⚡ Create & Auto-Schedule
+                </button>
+                <button class="btn btn-secondary" @onclick="Close">Cancel</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div style="margin-top: 10px; padding: 8px; background: rgba(var(--danger-rgb),0.1); border: 1px solid var(--danger); border-radius: 6px; font-size: 0.85rem; color: var(--danger);">
+                    @_errorMessage
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public bool IsVisible { get; set; }
+    [Parameter] public WorkOrder? WorkOrder { get; set; }
+    [Parameter] public WorkOrderLine? WorkOrderLine { get; set; }
+    [Parameter, EditorRequired] public string UserName { get; set; } = "System";
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnScheduled { get; set; }
+
+    private bool _creating;
+    private string? _errorMessage;
+
+    private int Outstanding => WorkOrderLine != null ? GetOutstanding(WorkOrderLine) : 0;
+
+    private async Task Close()
+    {
+        _errorMessage = null;
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task ScheduleJobAsync()
+    {
+        if (WorkOrderLine == null) return;
+        _creating = true;
+        _errorMessage = null;
+        StateHasChanged();
+        try
+        {
+            // Use the program-aware scheduling method
+            var result = await ProgramScheduling.ScheduleFromWorkOrderLineAsync(WorkOrderLine.Id);
+
+            var msg = $"Job {result.JobNumber} created and scheduled ({result.StageExecutions.Count} stages)";
+            if (result.Warnings.Count > 0)
+                msg += $". Notes: {string.Join("; ", result.Warnings)}";
+
+            Toast.ShowSuccess(msg);
+            await OnScheduled.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            Toast.ShowError(ex.Message);
+        }
+        finally { _creating = false; }
+    }
+
+    private static int GetOutstanding(WorkOrderLine line)
+    {
+        var produced = line.ProducedQuantity;
+        var inBuilds = GetInBuildQty(line);
+        var ordered = line.Quantity;
+        return Math.Max(0, ordered - produced - inBuilds);
+    }
+
+    private static int GetInBuildQty(WorkOrderLine line)
+    {
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
+            .Sum(pp => pp.Quantity);
+    }
+}

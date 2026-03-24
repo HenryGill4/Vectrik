@@ -1,0 +1,155 @@
+@page "/analytics/oee"
+@inject IOeeService OeeService
+@inject IAnalyticsService AnalyticsService
+@inject NavigationManager Nav
+
+<PageTitle>OEE Dashboard - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Machine OEE Dashboard</h1>
+    <div class="page-actions">
+        <select class="form-control" style="width:160px;display:inline-block" @onchange="OnRangeChanged">
+            <option value="7">Last 7 Days</option>
+            <option value="30" selected>Last 30 Days</option>
+            <option value="90">Last 90 Days</option>
+        </select>
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
+    </div>
+</div>
+
+@if (_loading) { <div class="loading"><span class="spinner"></span> Loading...</div> }
+else
+{
+    <!-- Overall OEE -->
+    @if (_overallOee != null)
+    {
+        <div class="kpi-grid" style="margin-bottom:1rem">
+            <div class="kpi-card">
+                <div class="kpi-label">Overall OEE</div>
+                <div class="kpi-value" style="color: @OeeColor(_overallOee.Oee)">@_overallOee.Oee.ToString("F1")%</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Availability</div>
+                <div class="kpi-value">@_overallOee.Availability.ToString("F1")%</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Performance</div>
+                <div class="kpi-value">@_overallOee.Performance.ToString("F1")%</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Quality</div>
+                <div class="kpi-value">@_overallOee.Quality.ToString("F1")%</div>
+            </div>
+        </div>
+    }
+
+    <!-- Per-Machine OEE Table -->
+    @if (_machineOees.Count > 0)
+    {
+        <div class="card" style="margin-top:1rem">
+            <div class="card-header">OEE by Machine</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Machine</th>
+                        <th>Availability %</th>
+                        <th>Performance %</th>
+                        <th>Quality %</th>
+                        <th>OEE %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in _machineOees)
+                    {
+                        <tr>
+                            <td>@m.MachineName</td>
+                            <td>@m.Availability.ToString("F1")%</td>
+                            <td>@m.Performance.ToString("F1")%</td>
+                            <td>@m.Quality.ToString("F1")%</td>
+                            <td>
+                                <div style="background: var(--bg-tertiary); border-radius: 4px; height: 20px; width: 150px; overflow: hidden; display: inline-block; vertical-align: middle;">
+                                    <div style="background: @OeeColor(m.Oee); height: 100%; width: @((double)m.Oee)%"></div>
+                                </div>
+                                <strong style="color: @OeeColor(m.Oee)">@m.Oee.ToString("F1")%</strong>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- OEE Gauge Visualization -->
+    @if (_machineOees.Count > 0)
+    {
+        <div class="card" style="margin-top:1rem">
+            <div class="card-header">OEE Gauges</div>
+            <div style="padding:1rem;display:flex;flex-wrap:wrap;gap:2rem;justify-content:center">
+                @foreach (var m in _machineOees)
+                {
+                    var pct = (double)m.Oee;
+                    var angle = pct / 100 * 180;
+                    <div style="text-align:center;width:160px">
+                        <svg viewBox="0 0 120 70" style="width:160px;height:90px">
+                            <path d="M 10 60 A 50 50 0 0 1 110 60" fill="none" stroke="var(--bg-tertiary)" stroke-width="10" stroke-linecap="round" />
+                            <path d="M 10 60 A 50 50 0 0 1 110 60" fill="none" stroke="@OeeColor(m.Oee)" stroke-width="10" stroke-linecap="round"
+                                  stroke-dasharray="@(angle / 180 * 157) 157" />
+                            <foreignObject x="20" y="42" width="80" height="24"><span style="font-size:16px;font-weight:700;color:var(--text-primary);display:block;text-align:center">@m.Oee.ToString("F0")%</span></foreignObject>
+                        </svg>
+                        <div style="font-size:0.85rem;color:var(--text-secondary)">@m.MachineName</div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private int _rangeDays = 30;
+    private OeeData? _overallOee;
+    private List<OeeData> _machineOees = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var from = now.AddDays(-_rangeDays);
+            _overallOee = await OeeService.GetOverallOeeAsync(from, now);
+            _machineOees = await OeeService.GetAllMachineOeeAsync(from, now);
+        }
+        catch
+        {
+            _overallOee = null;
+            _machineOees = new();
+        }
+        _loading = false;
+    }
+
+    private async Task OnRangeChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var d))
+        {
+            _rangeDays = d;
+            await LoadDataAsync();
+        }
+    }
+
+    private static string OeeColor(decimal oee) =>
+        oee >= 85 ? "var(--success)" : oee >= 60 ? "var(--warning)" : "var(--danger)";
+
+    private void ExportCsv()
+    {
+        if (!_machineOees.Any()) return;
+        var csv = "Machine,Availability%,Performance%,Quality%,OEE%\n" +
+            string.Join("\n", _machineOees.Select(m => $"{m.MachineName},{m.Availability:F1},{m.Performance:F1},{m.Quality:F1},{m.Oee:F1}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+    }
+}

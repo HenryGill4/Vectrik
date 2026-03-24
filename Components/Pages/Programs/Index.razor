@@ -1,0 +1,3321 @@
+@page "/programs"
+@inject IMachineProgramService ProgramService
+@inject IPartService PartService
+@inject IMachineService MachineService
+@inject IManufacturingProcessService ProcessService
+@inject IMaintenanceService MaintenanceService
+@inject IMaterialService MaterialService
+@inject IProgramPlanningService ProgramPlanningService
+@inject IProgramSchedulingService ProgramScheduling
+@inject ToastService Toast
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ITenantFeatureService Features
+@inject IWorkInstructionService WorkInstructionService
+@using System.Security.Claims
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Opcentrix_V3.Models.Enums
+@using Opcentrix_V3.Models.Maintenance
+
+<PageTitle>Machine Programs - OpCentrix</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }
+    </Authorized>
+</AuthorizeView>
+
+@* ═══════════════════════════════════════════════════════════════
+   PAGE HEADER
+   ═══════════════════════════════════════════════════════════════ *@
+<div class="page-header">
+    <h1 class="page-title">Machine Programs</h1>
+    <div class="page-actions">
+        <div style="display:inline-flex; gap: 2px; margin-right: 12px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden;">
+            <button class="btn btn-sm @(_pageView == "programs" ? "btn-primary" : "btn-secondary")" style="border-radius: 0;" @onclick='() => SwitchView("programs")'>📄 Programs</button>
+            <button class="btn btn-sm @(_pageView == "machines" ? "btn-primary" : "btn-secondary")" style="border-radius: 0;" @onclick='() => SwitchView("machines")'>🖥️ Machine Setup</button>
+        </div>
+        @if (_pageView == "programs")
+        {
+            <select class="form-control" style="width:140px;display:inline-block" @bind="_filterStatus" @bind:after="ApplyFilters">
+                <option value="">All Statuses</option>
+                @foreach (var s in Enum.GetValues<ProgramStatus>()) { <option value="@s">@s</option> }
+            </select>
+            <select class="form-control" style="width:140px;display:inline-block" @bind="_filterMachineType" @bind:after="ApplyFilters">
+                <option value="">All Types</option>
+                @if (_machineTypes != null) { @foreach (var t in _machineTypes) { <option value="@t">@t</option> } }
+            </select>
+            <input class="form-control" style="width:200px;display:inline-block" placeholder="Search programs…" @bind="_searchTerm" @bind:after="ApplyFilters" />
+            <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="ShowCreate">+ New Program</button>
+        }
+    </div>
+</div>
+
+@if (_showEditor)
+{
+    @* ═══════════════════════════════════════════════════════════════
+       CREATE / EDIT — Full-Page Form
+       ═══════════════════════════════════════════════════════════════ *@
+    var isBuildPlateEditor = _editingProgram.ProgramType == ProgramType.BuildPlate;
+    var isNewProgram = _editingProgram.Id == 0;
+
+    <div class="page-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <button class="btn btn-secondary" @onclick="CloseEditor" style="display:flex;align-items:center;gap:4px;">
+                ← Back
+            </button>
+            <h1 class="page-title" style="margin:0;">@(isNewProgram ? "New Program" : $"Edit {_editingProgram.ProgramNumber}")</h1>
+            @if (isBuildPlateEditor)
+            {
+                <span class="badge badge-info" style="font-size:0.85em;">🏗️ Build Plate</span>
+            }
+            else if (!string.IsNullOrEmpty(_editingProgram.MachineType))
+            {
+                <span class="badge badge-secondary" style="font-size:0.85em;">@_editingProgram.MachineType</span>
+            }
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-secondary" @onclick="CloseEditor">Cancel</button>
+            <button class="btn btn-primary" @onclick="SaveProgram" disabled="@_saving">
+                @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                @if (isNewProgram)
+                {
+                    @(isBuildPlateEditor ? "Create Build Plate" : "Create Program")
+                }
+                else
+                {
+                    @("Save Changes")
+                }
+            </button>
+        </div>
+    </div>
+
+    @* ── Auto-detection Banner (new programs only) ── *@
+    @if (isNewProgram && isBuildPlateEditor)
+    {
+        <div style="background:rgba(var(--accent-rgb),0.08);border:1px solid rgba(var(--accent-rgb),0.25);border-radius:6px;padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.2em;">🖨️</span>
+            <div>
+                <strong style="font-size:0.9em;">SLS Build Plate Mode</strong>
+                <div style="font-size:0.8em;color:var(--text-muted);">Auto-detected from machine selection. Add parts to the plate and optionally enter slicer data.</div>
+            </div>
+        </div>
+    }
+
+    @if (isBuildPlateEditor && isNewProgram && !_createBuildPlateParts.Any())
+    {
+        <div style="padding:8px 12px;background:rgba(var(--warning-rgb),0.1);border:1px solid rgba(var(--warning-rgb),0.3);border-radius:6px;margin-bottom:16px;font-size:0.85em;color:var(--warning);">
+            ⚠ Add at least one part before creating
+        </div>
+    }
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+        @* ═══ LEFT COLUMN: Identity & Settings ═══ *@
+        <div>
+            <div class="card" style="margin-bottom:16px;">
+                <h4 style="margin:0 0 16px 0;">📋 Program Details</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    @if (!isBuildPlateEditor)
+                    {
+                        <div class="form-group">
+                            <label class="form-label">Program Number <span style="color:var(--danger)">*</span></label>
+                            <input class="form-control" @bind="_editingProgram.ProgramNumber" placeholder="e.g. CNC-001" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="form-group">
+                            <label class="form-label">Build Plate ID</label>
+                            <input class="form-control" @bind="_editingProgram.ProgramNumber" placeholder="Auto-generated if blank" />
+                            <span style="font-size:0.75rem;color:var(--text-muted);">Leave blank to auto-generate</span>
+                        </div>
+                    }
+                    <div class="form-group">
+                        <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                        <input class="form-control" @bind="_editingProgram.Name" placeholder="@(isBuildPlateEditor ? "e.g. PA12 Tube Plate 76pc" : "Program name")" />
+                    </div>
+
+                    @if (!isBuildPlateEditor)
+                    {
+                        <div class="form-group">
+                            <label class="form-label">Machine Type</label>
+                            <select class="form-control" @bind="_editingProgram.MachineType">
+                                <option value="">— Select Machine Type —</option>
+                                @if (_machineTypes != null) { @foreach (var t in _machineTypes) { <option value="@t">@t</option> } }
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="form-group">
+                            <label class="form-label">Material</label>
+                            <select class="form-control" @bind="_editMaterialId">
+                                <option value="">— Auto-detect from parts —</option>
+                                @if (_materials != null)
+                                {
+                                    @foreach (var m in _materials)
+                                    {
+                                        <option value="@m.Id">@m.Name (@m.Category)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    }
+
+                    <div class="form-group">
+                        <label class="form-label">Status</label>
+                        <select class="form-control" @bind="_editingProgram.Status">
+                            @foreach (var s in Enum.GetValues<ProgramStatus>()) { <option value="@s">@s</option> }
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top:4px;">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" rows="2" @bind="_editingProgram.Description"></textarea>
+                </div>
+            </div>
+
+            @* ═══ Machine-Type-Specific Settings ═══ *@
+            @{
+                var editMachineTypeNorm = (_editingProgram.MachineType ?? "").ToUpperInvariant().Replace("-", "").Replace(" ", "");
+                var isCncType = editMachineTypeNorm is "CNC" or "CNCMILL" or "CNCTURNING" or "TURNING";
+                var isEdmType = editMachineTypeNorm is "EDM" or "WIREEDM";
+                var isLaserType = editMachineTypeNorm is "LASER" or "LASERENGRAVING" or "LASERCUTTING" or "ENGRAVING";
+                var isSlsType = editMachineTypeNorm is "SLS" or "ADDITIVE" or "3DPRINTING" or "DMLS" or "SLM" or "MJF" or "EBM";
+                var isHeatTreat = editMachineTypeNorm is "HEATTREAT";
+                var isQcType = editMachineTypeNorm is "QC";
+                var isFinishing = editMachineTypeNorm is "FINISHING";
+            }
+
+            @if (!isBuildPlateEditor)
+            {
+                @* ═══ Duration Estimates — per machine type ═══ *@
+                var isAssembly = editMachineTypeNorm is "ASSEMBLY";
+                var isDepowder = editMachineTypeNorm is "DEPOWDER";
+                var isShipping = editMachineTypeNorm is "SHIPPING";
+                var isExternal = editMachineTypeNorm is "EXTERNAL";
+                var hasKnownType = isCncType || isEdmType || isLaserType || isSlsType || isHeatTreat
+                    || isQcType || isFinishing || isAssembly || isDepowder || isShipping || isExternal;
+
+                @if (isCncType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ CNC Duration Estimates</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Times per single part cycle including tool changes and rapids.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Setup / Workholding (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 15" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Cycle Time / Part (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.CycleTimeMinutes" placeholder="e.g. 4.5" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Run Time / Part (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 3.2" />
+                                <span style="font-size:0.72em;color:var(--text-muted);">Spindle cut time only</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isEdmType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ EDM Duration Estimates</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Includes electrode/wire threading, flush, and spark erosion time.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Setup / Threading (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 20" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Cut / Burn Time (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 45" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Flush / Finish Pass (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.CycleTimeMinutes" placeholder="e.g. 12" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isLaserType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ Laser Duration Estimates</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Mark/cut time per part including focus and alignment.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Setup / Alignment (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 5" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Mark / Cut Time (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 1.5" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Cycle Time / Part (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.CycleTimeMinutes" placeholder="e.g. 2.0" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isHeatTreat)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ Heat Treatment Duration</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Full thermal cycle: load → ramp → soak → cool.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Load / Prep (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 10" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Soak / Hold (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 120" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Cooling Time (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.CycleTimeMinutes" placeholder="e.g. 60" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isQcType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ Inspection Duration</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Includes calibration, fixture setup, and measurement time.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Setup / Calibration (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 10" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Inspection Time / Part (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 8" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isFinishing)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ Finishing Duration</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Blast, tumble, polish, or coating process times.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Setup / Masking (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 5" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Process Time / Part (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 3" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Cycle Time (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.CycleTimeMinutes" placeholder="e.g. 6" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isAssembly)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ Assembly Duration</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Workstation prep and hands-on assembly time.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Workstation Setup (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 5" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Assembly Time / Unit (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 12" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isDepowder)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ Depowder Duration</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Powder removal and initial clean time per build.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Setup / Cool-down (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 30" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Depowder Time (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 45" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isShipping)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ Shipping Duration</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Packing, labelling, and dispatch preparation.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Prep / Packing (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 10" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Processing Time (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 15" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isExternal)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ External Process Duration</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Outsourced operation — track dispatch prep and expected turnaround.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Dispatch Prep (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 15" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Expected Turnaround (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" placeholder="e.g. 2880 (2 days)" />
+                                <span style="font-size:0.72em;color:var(--text-muted);">Tip: 1 day = 1440 min</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (isSlsType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">🖨️ Additive Build Estimates</h4>
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Slicer output and material estimates — from Magics, Materialise, Netfabb, etc.</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Print Duration (hrs)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.EstimatedPrintHours" placeholder="e.g. 18.5" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Layer Count</label>
+                                <input class="form-control" type="number" min="0" @bind="_editingProgram.LayerCount" placeholder="e.g. 3200" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Build Height (mm)</label>
+                                <input class="form-control" type="number" step="0.01" min="0" @bind="_editingProgram.BuildHeightMm" placeholder="e.g. 320.0" />
+                            </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Est. Powder / Material (kg)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.EstimatedPowderKg" placeholder="e.g. 6.2" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Slicer Software</label>
+                                <input class="form-control" @bind="_editingProgram.SlicerSoftware" placeholder="e.g. Magics, Netfabb" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Slicer Version</label>
+                                <input class="form-control" @bind="_editingProgram.SlicerVersion" placeholder="e.g. 27.03" />
+                            </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Machine Prep / Setup (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" placeholder="e.g. 45" />
+                                <span style="font-size:0.72em;color:var(--text-muted);">Warm-up, powder load, levelling</span>
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Cool-down / Depowder (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.CycleTimeMinutes" placeholder="e.g. 120" />
+                                <span style="font-size:0.72em;color:var(--text-muted);">Post-build before removal</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (!hasKnownType)
+                {
+                    @* Fallback: show generic fields when no machine type selected yet *@
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 4px 0;">⏱️ Duration Estimates</h4>
+                        @if (string.IsNullOrEmpty(_editingProgram.MachineType))
+                        {
+                            <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Select a machine type above for tailored duration fields.</div>
+                        }
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Setup Time (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.SetupTimeMinutes" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Run Time / Part (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.RunTimeMinutes" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Cycle Time (min)</label>
+                                <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.CycleTimeMinutes" />
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* ═══ CNC / Turning ═══ *@
+                @if (isCncType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 12px 0;">🔧 CNC Settings</h4>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Tooling Required</label>
+                                <input class="form-control" @bind="_editingProgram.ToolingRequired" placeholder="T1: 6mm End Mill, T2: M6 Tap…" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Fixture Required</label>
+                                <input class="form-control" @bind="_editingProgram.FixtureRequired" placeholder="Fixture-A-07" />
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* ═══ EDM / Wire EDM ═══ *@
+                @if (isEdmType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 12px 0;">⚡ EDM Settings</h4>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Tooling Required</label>
+                                <input class="form-control" @bind="_editingProgram.ToolingRequired" placeholder="Electrode type, wire type…" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Fixture Required</label>
+                                <input class="form-control" @bind="_editingProgram.FixtureRequired" placeholder="EDM fixture ID" />
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* ═══ Laser / Engraving ═══ *@
+                @if (isLaserType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 12px 0;">🔦 Laser Settings</h4>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Tooling / Lens</label>
+                                <input class="form-control" @bind="_editingProgram.ToolingRequired" placeholder="Lens type, focal length…" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Fixture Required</label>
+                                <input class="form-control" @bind="_editingProgram.FixtureRequired" placeholder="Jig, nest fixture…" />
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* ═══ Heat Treat ═══ *@
+                @if (isHeatTreat)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 12px 0;">🌡️ Heat Treatment Settings</h4>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Tooling / Fixtures</label>
+                                <input class="form-control" @bind="_editingProgram.ToolingRequired" placeholder="Basket, rack, thermocouple…" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Fixture</label>
+                                <input class="form-control" @bind="_editingProgram.FixtureRequired" placeholder="Furnace tray ID" />
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* ═══ QC / Inspection ═══ *@
+                @if (isQcType)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 12px 0;">📏 QC / Inspection Settings</h4>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Inspection Fixtures / Gauges</label>
+                            <input class="form-control" @bind="_editingProgram.FixtureRequired" placeholder="CMM fixture, go/no-go gauge…" />
+                        </div>
+                    </div>
+                }
+
+                @* ═══ Finishing ═══ *@
+                @if (isFinishing)
+                {
+                    <div class="card" style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 12px 0;">✨ Finishing Settings</h4>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Tooling / Media</label>
+                                <input class="form-control" @bind="_editingProgram.ToolingRequired" placeholder="Blast media, grit, compound…" />
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label">Fixture</label>
+                                <input class="form-control" @bind="_editingProgram.FixtureRequired" placeholder="Masking jig, tumble basket…" />
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* ═══ Parameters (JSON — all standard types) ═══ *@
+                <div class="card" style="margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                        <h4 style="margin:0;">⚙️ Parameters (JSON)</h4>
+                        <div style="display:flex;gap:6px;">
+                            @if (!string.IsNullOrEmpty(_editingProgram.MachineType))
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="LoadDefaultParameters">📋 Load Template</button>
+                            }
+                            <button class="btn btn-sm btn-accent" @onclick="CopyParametersToClipboard">🤖 Copy for AI</button>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_editingProgram.MachineType))
+                    {
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:8px;">
+                            Template available for <strong>@_editingProgram.MachineType</strong> — click "Load Template" to populate defaults.
+                        </div>
+                    }
+                    <textarea class="form-control" rows="5" style="font-family:monospace;font-size:0.85em;" @bind="_editingProgram.Parameters" placeholder='{ "param1": "value" }'></textarea>
+                </div>
+            }
+
+            @* ═══ Slicer Data (Build Plate only) ═══ *@
+            @if (isBuildPlateEditor)
+            {
+                <div class="card" style="margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                        <h4 style="margin:0;">📐 Slicer Data</h4>
+                        <span style="font-size:0.75em;color:var(--text-muted);">Required before activation — can be added later</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Print Duration (hrs)</label>
+                            <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.EstimatedPrintHours" />
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Layer Count</label>
+                            <input class="form-control" type="number" min="0" @bind="_editingProgram.LayerCount" />
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Build Height (mm)</label>
+                            <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.BuildHeightMm" />
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Est. Powder (kg)</label>
+                            <input class="form-control" type="number" step="0.1" min="0" @bind="_editingProgram.EstimatedPowderKg" />
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Slicer Software</label>
+                            <input class="form-control" @bind="_editingProgram.SlicerSoftware" placeholder="e.g. Magics" />
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Slicer Version</label>
+                            <input class="form-control" @bind="_editingProgram.SlicerVersion" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @* ═══ Post-Processing Programs (Build Plate only) ═══ *@
+            @if (isBuildPlateEditor)
+            {
+                <div class="card" style="margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                        <h4 style="margin:0;">🔗 Post-Processing Programs</h4>
+                        <span style="font-size:0.75em;color:var(--text-muted);">Link depowder &amp; EDM programs to this build</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Depowder Program</label>
+                            <select class="form-control" @bind="_editDepowderProgramId">
+                                <option value="">— None —</option>
+                                @if (_depowderCandidates != null)
+                                {
+                                    @foreach (var dp in _depowderCandidates)
+                                    {
+                                        <option value="@dp.Id">@dp.ProgramNumber — @dp.Name</option>
+                                    }
+                                }
+                            </select>
+                            <span style="font-size:0.72em;color:var(--text-muted);">Powder removal after build</span>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">EDM / Wire-Cut Program</label>
+                            <select class="form-control" @bind="_editEdmProgramId">
+                                <option value="">— None —</option>
+                                @if (_edmCandidates != null)
+                                {
+                                    @foreach (var ep in _edmCandidates)
+                                    {
+                                        <option value="@ep.Id">@ep.ProgramNumber — @ep.Name</option>
+                                    }
+                                }
+                            </select>
+                            <span style="font-size:0.72em;color:var(--text-muted);">Support removal / plate separation</span>
+                        </div>
+                    </div>
+                    @if (string.IsNullOrEmpty(_editDepowderProgramId) && string.IsNullOrEmpty(_editEdmProgramId))
+                    {
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-top:8px;">
+                            💡 No post-processing programs linked yet. Create Depowder or EDM programs first, then link them here.
+                        </div>
+                    }
+                </div>
+            }
+
+            @* ═══ Operator Notes ═══ *@
+            <div class="card">
+                <h4 style="margin:0 0 12px 0;">📝 Operator Notes</h4>
+                <textarea class="form-control" rows="3" @bind="_editingProgram.Notes"
+                          placeholder="@(isBuildPlateEditor ? "Build plate notes, orientation guidance…" : "Special instructions for the operator…")"></textarea>
+            </div>
+        </div>
+
+        @* ═══ RIGHT COLUMN: Machines & Build Plate Parts ═══ *@
+        <div>
+            @* ═══ Machine Assignment ═══ *@
+            @{
+                var editorMachines = _machines != null
+                    ? _machines.Where(m => m.IsActive).ToList()
+                    : new List<Machine>();
+                var filteredEditorMachines = string.IsNullOrWhiteSpace(_editorMachineFilter)
+                    ? editorMachines
+                    : editorMachines.Where(m =>
+                        m.Name.Contains(_editorMachineFilter, StringComparison.OrdinalIgnoreCase)
+                        || m.MachineType.Contains(_editorMachineFilter, StringComparison.OrdinalIgnoreCase)
+                        || (m.MachineId?.Contains(_editorMachineFilter, StringComparison.OrdinalIgnoreCase) ?? false))
+                    .ToList();
+                var editorMachineGroups = filteredEditorMachines
+                    .OrderBy(m => m.MachineType).ThenBy(m => m.Name)
+                    .GroupBy(m => m.MachineType);
+                var selectedMachineCount = _editSelectedMachineIds.Count;
+            }
+            <div class="card" style="margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <h4 style="margin:0;">🖥️ Assigned Machines</h4>
+                        @if (selectedMachineCount > 0)
+                        {
+                            <span class="badge badge-success" style="font-size:0.75em;">@selectedMachineCount selected</span>
+                        }
+                    </div>
+                    <input class="form-control" style="width:200px;height:34px;font-size:0.85em;" placeholder="Filter machines…"
+                           @bind="_editorMachineFilter" @bind:event="oninput" />
+                </div>
+                <div style="max-height:350px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;padding:10px 14px;">
+                    @if (!filteredEditorMachines.Any())
+                    {
+                        <div style="color:var(--text-muted);padding:8px;font-style:italic;font-size:0.85em;">
+                            @(editorMachines.Any() ? "No machines match filter." : "No active machines available.")
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var typeGroup in editorMachineGroups)
+                        {
+                            var groupSelectedCount = typeGroup.Count(m => _editSelectedMachineIds.Contains(m.Id));
+                            <div style="display:flex;align-items:center;gap:6px;margin:8px 0 4px 0;">
+                                <span style="font-weight:600;font-size:0.8em;color:var(--text-muted);">@typeGroup.Key</span>
+                                @if (groupSelectedCount > 0)
+                                {
+                                    <span class="badge badge-info" style="font-size:0.65em;">@groupSelectedCount</span>
+                                }
+                            </div>
+                            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:2px 12px;">
+                                @foreach (var machine in typeGroup)
+                                {
+                                    var isChecked = _editSelectedMachineIds.Contains(machine.Id);
+                                    <label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer;font-size:0.88em;">
+                                        <input type="checkbox" checked="@isChecked" @onchange="() => ToggleEditMachine(machine.Id)" />
+                                        <span>
+                                            <strong>@machine.Name</strong>
+                                            @if (!string.IsNullOrEmpty(machine.Location))
+                                            {
+                                                <span style="font-size:0.8em;color:var(--text-muted);"> · @machine.Location</span>
+                                            }
+                                        </span>
+                                    </label>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
+            @* ═══ Work Instructions ═══ *@
+            @{
+                // Get primary part from unified parts list for filtering work instructions
+                var primaryPart = _createBuildPlateParts.FirstOrDefault(p => p.IsPrimary);
+                var selectedPartId = primaryPart?.PartId;
+                var wiMachineType = (_editingProgram.MachineType ?? "").ToUpperInvariant().Replace("-", "").Replace(" ", "");
+                var allActiveInstructions = _workInstructions?
+                    .Where(wi => wi.IsActive)
+                    .Where(wi => selectedPartId == null || wi.PartId == selectedPartId)
+                    .ToList() ?? [];
+                // Sort: instructions whose stage name contains the machine type keyword come first
+                var filteredInstructions = allActiveInstructions
+                    .OrderByDescending(wi =>
+                    {
+                        if (string.IsNullOrEmpty(wiMachineType)) return 0;
+                        var stageNorm = (wi.ProductionStage?.Name ?? "").ToUpperInvariant().Replace("-", "").Replace(" ", "");
+                        var slugNorm = (wi.ProductionStage?.StageSlug ?? "").ToUpperInvariant().Replace("-", "").Replace(" ", "");
+                        return stageNorm.Contains(wiMachineType) || slugNorm.Contains(wiMachineType)
+                            || wiMachineType.Contains(stageNorm) || wiMachineType.Contains(slugNorm) ? 1 : 0;
+                    })
+                    .ThenBy(wi => wi.Title)
+                    .ToList();
+                bool IsStageMatch(WorkInstruction wi) =>
+                    !string.IsNullOrEmpty(wiMachineType) &&
+                    ((wi.ProductionStage?.Name ?? "").ToUpperInvariant().Replace("-", "").Replace(" ", "") is var sn
+                        && (sn.Contains(wiMachineType) || wiMachineType.Contains(sn)))
+                    || ((wi.ProductionStage?.StageSlug ?? "").ToUpperInvariant().Replace("-", "").Replace(" ", "") is var ss
+                        && (ss.Contains(wiMachineType) || wiMachineType.Contains(ss)));
+            }
+            <div class="card" style="margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <h4 style="margin:0;">📖 Work Instruction</h4>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        @if (!string.IsNullOrEmpty(_editingProgram.MachineType))
+                        {
+                            <span class="badge badge-secondary" style="font-size:0.7em;">@_editingProgram.MachineType</span>
+                        }
+                        @if (!string.IsNullOrEmpty(_editWorkInstructionId))
+                        {
+                            <button class="btn btn-sm btn-secondary" @onclick='() => _editWorkInstructionId = ""'>✕ Clear</button>
+                        }
+                    </div>
+                </div>
+                <select class="form-control" @bind="_editWorkInstructionId">
+                    <option value="">— No instruction linked —</option>
+                    @foreach (var wi in filteredInstructions)
+                    {
+                        var partLabel = wi.Part != null ? $"{wi.Part.PartNumber}" : "";
+                        var stageLabel = wi.ProductionStage?.Name ?? "";
+                        var stepCount = wi.Steps?.Count ?? 0;
+                        var isMatch = IsStageMatch(wi);
+                        var subtitle = new[] { partLabel, stageLabel }.Where(s => !string.IsNullOrEmpty(s));
+                        <option value="@wi.Id">@(isMatch ? "★ " : "")@wi.Title @(subtitle.Any() ? $"({string.Join(" · ", subtitle)})" : "") — Rev @wi.RevisionNumber @(stepCount > 0 ? $"· {stepCount} steps" : "")</option>
+                    }
+                </select>
+                @{
+                    var matchCount = filteredInstructions.Count(IsStageMatch);
+                }
+                @if (!string.IsNullOrEmpty(wiMachineType) && matchCount > 0)
+                {
+                    <div style="font-size:0.78em;color:var(--text-muted);margin-top:6px;">
+                        ★ @matchCount instruction(s) match the <strong>@_editingProgram.MachineType</strong> stage — shown first.
+                    </div>
+                }
+                else if (selectedPartId == null && _workInstructions?.Count > filteredInstructions.Count)
+                {
+                    <div style="font-size:0.78em;color:var(--text-muted);margin-top:6px;">
+                        Showing all active instructions. Select a part above to filter.
+                    </div>
+                }
+                else if (selectedPartId != null && filteredInstructions.Count == 0)
+                {
+                    <div style="font-size:0.78em;color:var(--text-muted);margin-top:6px;">
+                        No instructions found for this part. Select a different part or create instructions first.
+                    </div>
+                }
+                else if (filteredInstructions.Count == 0)
+                {
+                    <div style="font-size:0.78em;color:var(--text-muted);margin-top:6px;">
+                        No work instructions available. Create instructions in the Work Instructions page first.
+                    </div>
+                }
+                @if (int.TryParse(_editWorkInstructionId, out var selectedWiId))
+                {
+                    var selectedWi = _workInstructions?.FirstOrDefault(wi => wi.Id == selectedWiId);
+                    @if (selectedWi != null)
+                    {
+                        <div style="margin-top:10px;padding:10px 12px;background:rgba(var(--accent-rgb),0.06);border:1px solid rgba(var(--accent-rgb),0.15);border-radius:6px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <strong style="font-size:0.9em;">@selectedWi.Title</strong>
+                                <span class="badge badge-secondary" style="font-size:0.7em;">Rev @selectedWi.RevisionNumber</span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(selectedWi.Description))
+                            {
+                                <div style="font-size:0.8em;color:var(--text-muted);margin-top:4px;">@selectedWi.Description</div>
+                            }
+                            @if (selectedWi.Steps?.Count > 0)
+                            {
+                                <div style="font-size:0.78em;margin-top:6px;color:var(--text-secondary);">
+                                    📋 @selectedWi.Steps.Count step(s)
+                                    @if (selectedWi.Steps.Any(s => s.RequiresOperatorSignoff))
+                                    {
+                                        <span> · ✍️ @selectedWi.Steps.Count(s => s.RequiresOperatorSignoff) require sign-off</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            @* ═══ Parts (Unified for all program types) ═══ *@
+            @{
+                var partsCardTitle = isBuildPlateEditor ? "🔩 Parts on Plate" : "🔩 Program Parts";
+                var partsCardHint = isBuildPlateEditor
+                    ? "Search and add parts that will be nested on this build plate."
+                    : "Add parts to this program. Click ★ to set the primary part.";
+                var partsSearchPlaceholder = "Search parts…";
+                var hasPrimaryPart = _createBuildPlateParts.Any(p => p.IsPrimary);
+            }
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <h4 style="margin:0;">@partsCardTitle</h4>
+                        @if (_createBuildPlateParts.Any())
+                        {
+                            <span class="badge badge-success" style="font-size:0.75em;">@_createBuildPlateParts.Sum(p => p.Quantity) parts (@_createBuildPlateParts.Count unique)</span>
+                        }
+                        @if (!isBuildPlateEditor && hasPrimaryPart)
+                        {
+                            var primary = _createBuildPlateParts.First(p => p.IsPrimary);
+                            <span class="badge badge-info" style="font-size:0.75em;">★ @primary.PartNumber</span>
+                        }
+                    </div>
+                    @if (!isBuildPlateEditor && !hasPrimaryPart && _createBuildPlateParts.Any())
+                    {
+                        <span style="font-size:0.75em;color:var(--warning);">⚠ No primary part selected</span>
+                    }
+                </div>
+                <div style="display:flex;gap:0.5rem;align-items:end;flex-wrap:wrap;">
+                    <div style="flex:2;min-width:160px;">
+                        <label class="form-label" style="font-size:0.75em;">Search</label>
+                        <input class="form-control" placeholder="@partsSearchPlaceholder" @bind="_createBuildPartSearch" @bind:event="oninput" />
+                    </div>
+                    <div style="flex:3;min-width:180px;">
+                        <label class="form-label" style="font-size:0.75em;">Part</label>
+                        <select class="form-control" @bind="_createBuildAddPartId">
+                            <option value="0">Select part…</option>
+                            @if (_parts != null)
+                            {
+                                @foreach (var p in FilteredCreateParts)
+                                {
+                                    <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div style="width:70px;">
+                        <label class="form-label" style="font-size:0.75em;">Qty</label>
+                        <input class="form-control" type="number" min="1" max="500" @bind="_createBuildAddPartQty" />
+                    </div>
+                    <button class="btn btn-primary" style="height:36px;white-space:nowrap;margin-bottom:0;" @onclick="AddPartToCreateBuildPlate" disabled="@(_createBuildAddPartId <= 0)">+ Add</button>
+                </div>
+                @if (_createBuildPlateParts.Any())
+                {
+                    <table class="data-table" style="font-size:0.88rem;margin-top:10px;">
+                        <thead>
+                            <tr>
+                                @if (!isBuildPlateEditor)
+                                {
+                                    <th style="width:50px;text-align:center" title="Primary Part">★</th>
+                                }
+                                <th>Part</th>
+                                <th style="width:70px;text-align:center">Qty</th>
+                                <th style="width:40px"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var cp in _createBuildPlateParts)
+                            {
+                                <tr>
+                                    @if (!isBuildPlateEditor)
+                                    {
+                                        <td style="text-align:center">
+                                            <button class="btn btn-sm @(cp.IsPrimary ? "btn-warning" : "btn-outline-secondary")"
+                                                    style="padding:2px 6px;font-size:0.85em;"
+                                                    @onclick="() => SetPrimaryPart(cp.PartId)"
+                                                    title="@(cp.IsPrimary ? "Primary Part" : "Set as Primary")">
+                                                ★
+                                            </button>
+                                        </td>
+                                    }
+                                    <td><strong>@cp.PartNumber</strong> <span style="color:var(--text-secondary)">— @cp.PartName</span></td>
+                                    <td style="text-align:center">@cp.Quantity</td>
+                                    <td><button class="btn btn-sm btn-danger" @onclick="() => RemovePartFromList(cp.PartId)" title="Remove">✕</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <div style="color:var(--text-muted);font-size:0.85em;margin-top:10px;text-align:center;padding:16px 0;font-style:italic;">
+                        @partsCardHint
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+else if (_programs == null)
+{
+    <div class="loading"><span class="spinner"></span></div>
+}
+else
+{
+    @* ═══ PENDING PROGRAM SETUP BANNER ═══ *@
+    @if (_pendingSetupStages.Count > 0)
+    {
+        <div class="program-pending-banner">
+            <span class="pending-icon">⚠️</span>
+            <div>
+                <strong><span class="program-pending-count">@_pendingSetupStages.Count</span> stage(s) need program setup</strong>
+                <span style="color:var(--text-muted);font-size:0.85em;margin-left:8px;">
+                    Parts with machine-based stages require a program to set real durations and feed the learning system.
+                </span>
+            </div>
+            <button class="btn btn-sm @(_showPendingSetup ? "btn-secondary" : "btn-warning")" style="margin-left:auto;"
+                    @onclick="() => _showPendingSetup = !_showPendingSetup">
+                @(_showPendingSetup ? "Hide" : "Review")
+            </button>
+        </div>
+
+        @if (_showPendingSetup)
+        {
+            <div class="card" style="margin-bottom:16px;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Part</th>
+                            <th>Stage</th>
+                            <th>Processing Level</th>
+                            <th>Assigned Machines</th>
+                            <th style="width:140px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var stage in _pendingSetupStages)
+                        {
+                            var partNumber = stage.ManufacturingProcess?.Part?.PartNumber ?? "—";
+                            var partName = stage.ManufacturingProcess?.Part?.Name ?? "";
+                            var stageName = stage.ProductionStage?.Name ?? $"Stage #{stage.ProductionStageId}";
+                            var stageIcon = stage.ProductionStage?.StageIcon ?? "❓";
+                            var stageColor = stage.ProductionStage?.StageColor ?? "#666";
+                            var machineNames = GetMachineNamesForStage(stage);
+                            <tr>
+                                <td><strong>@partNumber</strong> <span style="color:var(--text-muted);font-size:0.85em;">@partName</span></td>
+                                <td>
+                                    <span style="color:@stageColor;">@stageIcon</span> @stageName
+                                </td>
+                                <td><span class="badge badge-secondary">@stage.ProcessingLevel</span></td>
+                                <td>
+                                    @if (machineNames.Count > 0)
+                                    {
+                                        @foreach (var mn in machineNames)
+                                        {
+                                            <span class="badge badge-info" style="margin-right:4px;">🖥️ @mn</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span style="color:var(--text-muted);font-style:italic;">None</span>
+                                    }
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary" @onclick="() => CreateProgramForStage(stage)">
+                                        + Create Program
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    @if (_pageView == "machines")
+{
+    @* ═══════════════════════════════════════════════════════════════
+       MACHINE SETUP VIEW — shows machines and their assigned programs
+       ═══════════════════════════════════════════════════════════════ *@
+
+    <div class="kpi-grid" style="margin-bottom: 16px;">
+        <div class="kpi-card"><div class="kpi-label">Active Machines</div><div class="kpi-value">@(_machines?.Count(m => m.IsActive) ?? 0)</div></div>
+        <div class="kpi-card"><div class="kpi-label">With Programs</div><div class="kpi-value" style="color:var(--success)">@(_machines?.Count(m => m.IsActive && _programs.Any(p => p.MachineAssignments?.Any(a => a.MachineId == m.Id) == true || p.MachineId == m.Id)) ?? 0)</div></div>
+        <div class="kpi-card"><div class="kpi-label">No Programs</div><div class="kpi-value" style="color:var(--warning)">@(_machines?.Count(m => m.IsActive && !_programs.Any(p => p.MachineAssignments?.Any(a => a.MachineId == m.Id) == true || p.MachineId == m.Id)) ?? 0)</div></div>
+        <div class="kpi-card"><div class="kpi-label">Active Programs</div><div class="kpi-value">@_programs.Count(p => p.Status == ProgramStatus.Active)</div></div>
+    </div>
+
+    @if (_machines != null)
+    {
+        @foreach (var typeGroup in _machines.Where(m => m.IsActive).GroupBy(m => m.MachineType).OrderBy(g => g.Key))
+        {
+            <div style="margin-bottom: 20px;">
+                <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                    <span class="badge badge-info">@typeGroup.Key</span>
+                    <span style="font-size: 0.7em; color: var(--text-muted);">@typeGroup.Count() machines</span>
+                </h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px;">
+                    @foreach (var machine in typeGroup.OrderBy(m => m.Name))
+                    {
+                        var machinePrograms = _programs.Where(p =>
+                            p.MachineAssignments?.Any(a => a.MachineId == machine.Id) == true
+                            || p.MachineId == machine.Id).ToList();
+                        var activePrograms = machinePrograms.Where(p => p.Status == ProgramStatus.Active).ToList();
+
+                        <div class="card" style="margin: 0;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                                <div>
+                                    <strong>@machine.Name</strong>
+                                    <span class="badge badge-@machine.Status.ToString().ToLower()" style="margin-left: 4px;">@machine.Status</span>
+                                    <div style="font-size: 0.8em; color: var(--text-muted);">@machine.MachineId @(!string.IsNullOrEmpty(machine.Location) ? $"• {machine.Location}" : "")</div>
+                                </div>
+                                <div style="text-align: right; font-size: 0.85em;">
+                                    <div><strong>@activePrograms.Count</strong> <span style="color: var(--text-muted);">active</span></div>
+                                    @if (machinePrograms.Count > activePrograms.Count)
+                                    {
+                                        <div style="color: var(--text-muted); font-size: 0.85em;">@machinePrograms.Count total</div>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (machinePrograms.Count == 0)
+                            {
+                                <div style="padding: 8px; color: var(--text-muted); font-size: 0.85em; font-style: italic;">No programs assigned</div>
+                            }
+                            else
+                            {
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                    @foreach (var prog in machinePrograms.OrderBy(p => p.Status).ThenBy(p => p.ProgramNumber))
+                                    {
+                                        var isPreferred = prog.MachineAssignments?.FirstOrDefault(a => a.MachineId == machine.Id)?.IsPreferred == true;
+                                        <span class="badge @(prog.Status == ProgramStatus.Active ? "badge-success" : "badge-secondary")"
+                                              style="cursor: pointer; @(isPreferred ? "border: 2px solid var(--success);" : "")"
+                                              title="@prog.Name — v@(prog.Version) @(prog.Status) @(isPreferred ? "(Preferred)" : "")"
+                                              @onclick="() => NavigateToProgram(prog)">
+                                            @prog.ProgramNumber
+                                            @if (isPreferred) { <span>★</span> }
+                                        </span>
+                                    }
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(machine.CurrentMaterial))
+                            {
+                                <div style="margin-top: 6px; font-size: 0.8em; color: var(--text-muted);">Material: @machine.CurrentMaterial</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+}
+else
+{
+    @* ── KPI Summary ── *@
+    <div class="kpi-grid" style="margin-bottom: 16px;">
+        <div class="kpi-card"><div class="kpi-label">Total Programs</div><div class="kpi-value">@_programs.Count</div></div>
+        <div class="kpi-card"><div class="kpi-label">Active</div><div class="kpi-value" style="color:var(--success)">@_programs.Count(p => p.Status == ProgramStatus.Active)</div></div>
+        <div class="kpi-card">
+            <div class="kpi-label">Needing Review</div>
+            <div class="kpi-value" style="color:@(_totalUnresolvedFeedback > 0 ? "var(--warning)" : "var(--text-muted)")">@_totalUnresolvedFeedback</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Tooling Alerts</div>
+            <div class="kpi-value" style="color:@(_maintenanceAlerts.Count > 0 ? "var(--danger)" : "var(--text-muted)")">@_maintenanceAlerts.Count</div>
+        </div>
+        <div class="kpi-card"><div class="kpi-label">Auto-Learned</div><div class="kpi-value">@_programs.Count(p => p.EstimateSource == "Auto")</div></div>
+        <div class="kpi-card"><div class="kpi-label">Total Runs</div><div class="kpi-value">@_programs.Sum(p => p.TotalRunCount)</div></div>
+    </div>
+
+    @if (!_filteredPrograms.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon">📄</div>
+            <div class="empty-state-text">No machine programs match your filters. Adjust filters or create a new program.</div>
+        </div>
+    }
+    else
+    {
+        @* ── Two-Panel Layout: Program List + Detail ── *@
+        <div style="display: grid; grid-template-columns: @(_selectedProgram != null ? "380px 1fr" : "1fr"); gap: 16px;">
+
+            @* ── LEFT: Program List ── *@
+            <div>
+                @foreach (var program in _filteredPrograms)
+                {
+                    var isSelected = _selectedProgram?.Id == program.Id;
+                    var feedbackCount = _feedbackCounts.GetValueOrDefault(program.Id, 0);
+
+                    <div class="card @(isSelected ? "card-selected" : "")" style="margin-bottom: 8px; cursor: pointer; border-left: 3px solid @GetStatusColor(program.Status);"
+                         @onclick="() => SelectProgram(program)">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="min-width: 0;">
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <strong>@program.ProgramNumber</strong>
+                                    <span class="badge badge-@program.Status.ToString().ToLower()">@program.Status</span>
+                                    <span class="badge badge-secondary">v@program.Version</span>
+                                    @if (program.IsBuildPlate)
+                                    {
+                                        <span class="badge badge-info">🏗️ Build Plate</span>
+                                    }
+                                    else if (!string.IsNullOrEmpty(program.MachineType))
+                                    {
+                                        <span class="badge badge-info">@program.MachineType</span>
+                                    }
+                                </div>
+                                <div style="color: var(--text-muted); font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@program.Name</div>
+                                @if (program.IsBuildPlate)
+                                {
+                                    <div style="font-size: 0.8em; margin-top: 2px;">🔩 @program.TotalPartCount part@(program.TotalPartCount != 1 ? "s" : "") (@program.UniquePartCount unique)</div>
+                                }
+                                else if (program.Part != null)
+                                {
+                                    <div style="font-size: 0.8em; margin-top: 2px;">
+                                        🔩 @program.Part.PartNumber
+                                        @if (program.ProgramParts?.Any() == true)
+                                        {
+                                            <span style="color:var(--text-muted);"> + @program.ProgramParts.Count additional</span>
+                                        }
+                                    </div>
+                                }
+                                else if (program.ProgramParts?.Any() == true)
+                                {
+                                    <div style="font-size: 0.8em; margin-top: 2px;">🔩 @program.TotalPartCount part@(program.TotalPartCount != 1 ? "s" : "") (@program.UniquePartCount unique)</div>
+                                }
+                                @{ var assignedCount = program.MachineAssignments?.Count ?? 0; }
+                                @if (assignedCount > 0)
+                                {
+                                    <div style="font-size: 0.8em; margin-top: 2px; color: var(--text-muted);">🖥️ @assignedCount machine@(assignedCount != 1 ? "s" : "")</div>
+                                }
+                            </div>
+                            <div style="display: flex; gap: 4px; align-items: center; flex-shrink: 0;">
+                                @if (feedbackCount > 0)
+                                {
+                                    <span class="badge badge-warning" title="@feedbackCount unresolved feedback">💬 @feedbackCount</span>
+                                }
+                                @if (program.IsBuildPlate && program.HasSlicerData)
+                                {
+                                    <span class="badge badge-info" title="Slicer data available">📐</span>
+                                }
+                                @if (program.IsBuildPlate && program.HasPostProcessingPrograms)
+                                {
+                                    <span class="badge badge-success" title="Post-processing programs linked">🔗</span>
+                                }
+                                else if (program.IsBuildPlate && (program.DepowderProgramId.HasValue || program.EdmProgramId.HasValue))
+                                {
+                                    <span class="badge badge-warning" title="Partial post-processing — missing depowder or EDM">🔗</span>
+                                }
+                                @if (program.EstimateSource == "Auto")
+                                {
+                                    <span class="badge badge-success" title="Duration auto-learned from @program.ActualSampleCount runs">🧠</span>
+                                }
+                            </div>
+                        </div>
+
+                        @* Compact stats row *@
+                        <div style="display: flex; gap: 12px; margin-top: 6px; font-size: 0.78em; color: var(--text-muted);">
+                            @if (program.IsBuildPlate && program.EstimatedPrintHours.HasValue)
+                            {
+                                <span title="Estimated print duration">🖨️ @program.EstimatedPrintHours.Value.ToString("F1")h</span>
+                            }
+                            else if (program.ActualAverageDurationMinutes.HasValue)
+                            {
+                                <span title="Learned average duration">⏱️ @program.ActualAverageDurationMinutes.Value.ToString("F1")m (EMA)</span>
+                            }
+                            else if (program.CycleTimeMinutes.HasValue)
+                            {
+                                <span title="Configured cycle time">⏱️ @program.CycleTimeMinutes.Value.ToString("F1")m</span>
+                            }
+                            @if (program.TotalRunCount > 0)
+                            {
+                                <span title="Total completed runs">🔄 @program.TotalRunCount runs</span>
+                            }
+                            <span>📁 @(program.Files?.Count ?? 0)</span>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* ── RIGHT: Detail Panel ── *@
+            @if (_selectedProgram != null)
+            {
+                <div>
+                    @* Detail Header *@
+                    <div class="card" style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div>
+                                <h3 style="margin: 0 0 4px 0;">@_selectedProgram.ProgramNumber — @_selectedProgram.Name</h3>
+                                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                    <span class="badge badge-@_selectedProgram.Status.ToString().ToLower()">@_selectedProgram.Status</span>
+                                    <span class="badge badge-secondary">v@_selectedProgram.Version</span>
+                                    @if (_selectedProgram.IsBuildPlate)
+                                    {
+                                        <span class="badge badge-info">🏗️ Build Plate</span>
+                                    }
+                                    else if (!string.IsNullOrEmpty(_selectedProgram.MachineType))
+                                    {
+                                        <span class="badge badge-info">@_selectedProgram.MachineType</span>
+                                    }
+                                    @if (_selectedProgram.HasSlicerData)
+                                    {
+                                        <span class="badge badge-info">📐 Sliced</span>
+                                    }
+                                    @if (_selectedProgram.EstimateSource == "Auto")
+                                    {
+                                        <span class="badge badge-success">🧠 Auto-Learned</span>
+                                    }
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 6px;">
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShowEdit(_selectedProgram)">✏️ Edit</button>
+                                <button class="btn btn-sm btn-secondary" @onclick="CreateNewVersion">📝 New Version</button>
+                                <button class="btn btn-sm btn-secondary" @onclick="CloneProgramFromDetail">📋 Clone</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteProgram(_selectedProgram)">🗑</button>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_selectedProgram.Description))
+                        {
+                            <div style="margin-top: 8px; color: var(--text-muted); font-size: 0.9em;">@_selectedProgram.Description</div>
+                        }
+
+                        @* Overview Grid *@
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 12px;">
+                            @if (_selectedProgram.IsBuildPlate)
+                            {
+                                <div><span class="form-label">Parts on Plate</span><div>@_selectedProgram.TotalPartCount total (@_selectedProgram.UniquePartCount unique)</div></div>
+                                <div><span class="form-label">Material</span><div>@(_selectedProgram.Material?.Name ?? "—")</div></div>
+                                <div><span class="form-label">Est. Print</span><div>@(_selectedProgram.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div></div>
+                            }
+                            else
+                            {
+                                <div><span class="form-label">Part</span><div>@(_selectedProgram.Part != null ? $"{_selectedProgram.Part.PartNumber} — {_selectedProgram.Part.Name}" : "Multi-part")</div></div>
+                                <div><span class="form-label">Setup</span><div>@(_selectedProgram.SetupTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+                                <div><span class="form-label">Run / Part</span><div>@(_selectedProgram.RunTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+                                <div><span class="form-label">Cycle</span><div>@(_selectedProgram.CycleTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+                            }
+                            <div>
+                                <span class="form-label">Machines</span>
+                                <div>
+                                    @if (_selectedProgram.MachineAssignments?.Any() == true)
+                                    {
+                                        @foreach (var a in _selectedProgram.MachineAssignments.OrderByDescending(x => x.IsPreferred))
+                                        {
+                                            <span class="badge @(a.IsPreferred ? "badge-success" : "badge-secondary")" style="margin-right: 4px;" title="@(a.IsPreferred ? "Preferred" : "Assigned")">
+                                                @a.Machine.Name
+                                                @if (a.IsPreferred) { <span>★</span> }
+                                            </span>
+                                        }
+                                    }
+                                    else if (_selectedProgram.Machine != null)
+                                    {
+                                        <span class="badge badge-secondary">@_selectedProgram.Machine.Name (legacy)</span>
+                                    }
+                                    else
+                                    {
+                                        <span style="color: var(--text-muted);">Any</span>
+                                    }
+                                </div>
+                            </div>
+                            <div><span class="form-label">Total Runs</span><div>@_selectedProgram.TotalRunCount</div></div>
+                        </div>
+                    </div>
+
+                    @* ── Detail Tabs ── *@
+                    <div style="display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 2px solid var(--border-color);">
+                        @if (_selectedProgram.IsBuildPlate)
+                        {
+                            <button class="btn btn-sm @(_activeTab == "buildplate" ? "btn-primary" : "btn-secondary")"
+                                    style="border-radius: 6px 6px 0 0;"
+                                    @onclick="@(() => _activeTab = "buildplate")">
+                                🏗️ Build Plate
+                            </button>
+                        }
+                        else if (_selectedProgram.ProgramParts?.Any() == true)
+                        {
+                            <button class="btn btn-sm @(_activeTab == "parts" ? "btn-primary" : "btn-secondary")"
+                                    style="border-radius: 6px 6px 0 0;"
+                                    @onclick="@(() => _activeTab = "parts")">
+                                🔩 Parts (@_selectedProgram.ProgramParts.Count)
+                            </button>
+                        }
+                        @foreach (var tab in _detailTabs)
+                        {
+                            <button class="btn btn-sm @(_activeTab == tab.Key ? "btn-primary" : "btn-secondary")"
+                                    style="border-radius: 6px 6px 0 0;"
+                                    @onclick="() => _activeTab = tab.Key">
+                                @tab.Value
+                            </button>
+                        }
+                    </div>
+
+                    @* ── TAB: Machines ── *@
+                    @if (_activeTab == "machines")
+                    {
+                        <div class="card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h4 style="margin: 0;">🖥️ Assigned Machines</h4>
+                                <button class="btn btn-sm btn-primary" @onclick="ShowAssignMachines">+ Assign Machines</button>
+                            </div>
+
+                            @if (_selectedProgram!.MachineAssignments?.Any() != true)
+                            {
+                                <div class="empty-state" style="padding: 16px;">
+                                    <div class="empty-state-text">No machines assigned. Assign machines to define where this program can run.</div>
+                                </div>
+                            }
+                            else
+                            {
+                                <table class="data-table" style="font-size: 0.85rem;">
+                                    <thead>
+                                        <tr>
+                                            <th>Machine</th>
+                                            <th>Type</th>
+                                            <th>Status</th>
+                                            <th>Preferred</th>
+                                            <th>Notes</th>
+                                            <th>Assigned</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var assign in _selectedProgram.MachineAssignments.OrderByDescending(a => a.IsPreferred).ThenBy(a => a.Machine.Name))
+                                        {
+                                            <tr>
+                                                <td><strong>@assign.Machine.Name</strong><div style="font-size:0.8em;color:var(--text-muted);">@assign.Machine.MachineId</div></td>
+                                                <td><span class="badge badge-info">@assign.Machine.MachineType</span></td>
+                                                <td><span class="badge badge-@assign.Machine.Status.ToString().ToLower()">@assign.Machine.Status</span></td>
+                                                <td>
+                                                    @if (assign.IsPreferred)
+                                                    {
+                                                        <span class="badge badge-success">★ Preferred</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button class="btn btn-sm btn-secondary" @onclick="() => SetPreferred(assign)">Set Preferred</button>
+                                                    }
+                                                </td>
+                                                <td style="font-size: 0.85em; color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis;">@(assign.Notes ?? "—")</td>
+                                                <td style="font-size: 0.82em; color: var(--text-muted);">@assign.AssignedDate.ToString("MMM dd, yyyy")</td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-danger" @onclick="() => UnassignMachine(assign)">✕</button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+
+                            @* Legacy single machine reference *@
+                            @if (_selectedProgram.MachineId.HasValue && _selectedProgram.Machine != null
+                                && (_selectedProgram.MachineAssignments?.Any(a => a.MachineId == _selectedProgram.MachineId.Value) != true))
+                            {
+                                <div style="margin-top: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.85em;">
+                                    <span class="form-label">Legacy Machine (single FK)</span>
+                                    <div>@_selectedProgram.Machine.Name — <button class="btn btn-sm btn-secondary" @onclick="MigrateLegacyMachine">Migrate to Assignment</button></div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── TAB: Tooling & Components ── *@
+                    @if (_activeTab == "tooling")
+                    {
+                        <div class="card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h4 style="margin: 0;">🔧 Tooling & Components</h4>
+                                <button class="btn btn-sm btn-primary" @onclick="AddToolingItem">+ Add Tooling</button>
+                            </div>
+
+                            @if (_toolingAlerts.Count > 0)
+                            {
+                                <div style="background: var(--danger-bg, #ffeaea); border: 1px solid var(--danger); border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                                    <strong style="color: var(--danger);">⚠️ Tooling Alerts — Operators will be blocked from starting jobs</strong>
+                                    @foreach (var alert in _toolingAlerts)
+                                    {
+                                        <div style="font-size: 0.85em; margin-top: 4px; color: @(alert.IsBlocking ? "var(--danger)" : "var(--warning)");">
+                                            @(alert.IsBlocking ? "🛑" : "⚠️") @alert.Message
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            @if (_toolingItems.Count == 0)
+                            {
+                                <div class="empty-state" style="padding: 16px;">
+                                    <div class="empty-state-text">No tooling items defined. Add tools and fixtures to track wear life and connect to maintenance.</div>
+                                </div>
+                            }
+                            else
+                            {
+                                <table class="data-table" style="font-size: 0.85rem;">
+                                    <thead>
+                                        <tr>
+                                            <th>Position</th>
+                                            <th>Name</th>
+                                            <th>Type</th>
+                                            <th>Component</th>
+                                            <th>Wear %</th>
+                                            <th>Wear Life</th>
+                                            <th>Spare P/N</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in _toolingItems)
+                                        {
+                                            var wearPct = item.WearPercent;
+                                            <tr>
+                                                <td><strong>@item.ToolPosition</strong></td>
+                                                <td>@item.Name</td>
+                                                <td><span class="badge badge-secondary">@(item.IsFixture ? "Fixture" : "Tool")</span></td>
+                                                <td>
+                                                    @if (item.MachineComponent != null)
+                                                    {
+                                                        <span>@item.MachineComponent.Name</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span style="color: var(--text-muted);">Not linked</span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (wearPct.HasValue)
+                                                    {
+                                                        <div style="display: flex; align-items: center; gap: 4px;">
+                                                            <div style="width: 50px; height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                                                                <div style="width: @Math.Min(wearPct.Value, 100)%; height: 100%; background: @GetWearColor(wearPct.Value); border-radius: 3px;"></div>
+                                                            </div>
+                                                            <span style="font-size: 0.8em; color: @GetWearColor(wearPct.Value);">@wearPct.Value.ToString("F0")%</span>
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span style="color: var(--text-muted);">—</span>
+                                                    }
+                                                </td>
+                                                <td style="font-size: 0.85em;">
+                                                    @if (item.WearLifeHours.HasValue) { <span>@item.WearLifeHours.Value.ToString("F0")h</span> }
+                                                    @if (item.WearLifeBuilds.HasValue) { <span>@item.WearLifeBuilds.Value builds</span> }
+                                                    @if (!item.WearLifeHours.HasValue && !item.WearLifeBuilds.HasValue) { <span style="color: var(--text-muted);">—</span> }
+                                                </td>
+                                                <td style="font-size: 0.85em; color: var(--text-muted);">@(item.SparePartNumber ?? "—")</td>
+                                                <td>
+                                                    <div style="display: flex; gap: 4px;">
+                                                        <button class="btn btn-sm btn-secondary" @onclick="() => EditToolingItem(item)">✏️</button>
+                                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteToolingItem(item)">🗑</button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+
+                            @* Legacy text fields *@
+                            @if (!string.IsNullOrEmpty(_selectedProgram.ToolingRequired) || !string.IsNullOrEmpty(_selectedProgram.FixtureRequired))
+                            {
+                                <div style="margin-top: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.85em;">
+                                    <span class="form-label">Legacy Tooling Notes</span>
+                                    @if (!string.IsNullOrEmpty(_selectedProgram.ToolingRequired)) { <div>Tools: @_selectedProgram.ToolingRequired</div> }
+                                    @if (!string.IsNullOrEmpty(_selectedProgram.FixtureRequired)) { <div>Fixture: @_selectedProgram.FixtureRequired</div> }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── TAB: Learning & Performance ── *@
+                    @if (_activeTab == "learning")
+                    {
+                        <div class="card">
+                            <h4 style="margin: 0 0 12px 0;">🧠 Learning & Performance</h4>
+
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px;">
+                                <div class="kpi-card">
+                                    <div class="kpi-label">Estimate Source</div>
+                                    <div class="kpi-value" style="font-size: 1em;">
+                                        @if (_selectedProgram.EstimateSource == "Auto")
+                                        {
+                                            <span style="color: var(--success);">🧠 Auto-Learned</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--text-muted);">📝 Manual</span>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="kpi-card">
+                                    <div class="kpi-label">EMA Duration</div>
+                                    <div class="kpi-value">
+                                        @(_selectedProgram.ActualAverageDurationMinutes?.ToString("F1") ?? "—") <span style="font-size:0.6em;color:var(--text-muted)">min</span>
+                                    </div>
+                                </div>
+                                <div class="kpi-card">
+                                    <div class="kpi-label">Samples</div>
+                                    <div class="kpi-value">@(_selectedProgram.ActualSampleCount ?? 0)</div>
+                                </div>
+                                <div class="kpi-card">
+                                    <div class="kpi-label">Total Runs</div>
+                                    <div class="kpi-value">@_selectedProgram.TotalRunCount</div>
+                                </div>
+                                <div class="kpi-card">
+                                    <div class="kpi-label">Configured Cycle</div>
+                                    <div class="kpi-value">@(_selectedProgram.CycleTimeMinutes?.ToString("F1") ?? "—") <span style="font-size:0.6em;color:var(--text-muted)">min</span></div>
+                                </div>
+                                @if (_selectedProgram.CycleTimeMinutes.HasValue && _selectedProgram.ActualAverageDurationMinutes.HasValue)
+                                {
+                                    var variance = ((_selectedProgram.ActualAverageDurationMinutes.Value - _selectedProgram.CycleTimeMinutes.Value) / _selectedProgram.CycleTimeMinutes.Value) * 100;
+                                    <div class="kpi-card">
+                                        <div class="kpi-label">Variance</div>
+                                        <div class="kpi-value" style="color: @(Math.Abs(variance) > 10 ? "var(--warning)" : "var(--success)")">
+                                            @(variance > 0 ? "+" : "")@variance.ToString("F1")%
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+
+                            <span class="form-label" style="margin:0;">Recent Executions</span>
+
+                            @if (_executionHistory.Count == 0)
+                            {
+                                <div class="empty-state" style="padding: 12px;"><div class="empty-state-text">No execution history yet. Run this program to start learning.</div></div>
+                            }
+                            else
+                            {
+                                <table class="data-table" style="font-size: 0.82rem; margin-top: 8px;">
+                                    <thead>
+                                        <tr><th>Date</th><th>Part</th><th>Machine</th><th>Duration</th><th>Status</th><th>Operator</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var exec in _executionHistory)
+                                        {
+                                            <tr>
+                                                <td>@(exec.CompletedAt?.ToString("MMM dd HH:mm") ?? "—")</td>
+                                                <td>@(exec.Job?.Part?.PartNumber ?? "—")</td>
+                                                <td>@(exec.Machine?.Name ?? "—")</td>
+                                                <td>
+                                                    @if (exec.ActualHours.HasValue)
+                                                    {
+                                                        <span>@((exec.ActualHours.Value * 60).ToString("F1")) min</span>
+                                                    }
+                                                    else { <span>—</span> }
+                                                </td>
+                                                <td><span class="badge badge-@exec.Status.ToString().ToLower()">@exec.Status</span></td>
+                                                <td style="font-size: 0.85em; color: var(--text-muted);">@(exec.OperatorName ?? "—")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        </div>
+                    }
+
+                    @* ── TAB: Operator Feedback ── *@
+                    @if (_activeTab == "feedback")
+                    {
+                        <div class="card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h4 style="margin: 0;">💬 Operator Feedback</h4>
+                                <select class="form-control" style="width: 150px;" @bind="_feedbackFilter" @bind:after="LoadFeedback">
+                                    <option value="">All</option>
+                                    <option value="New">New</option>
+                                    <option value="Acknowledged">Acknowledged</option>
+                                    <option value="InReview">In Review</option>
+                                    <option value="Resolved">Resolved</option>
+                                </select>
+                            </div>
+
+                            @if (_feedbackList.Count == 0)
+                            {
+                                <div class="empty-state" style="padding: 12px;"><div class="empty-state-text">No feedback submitted for this program.</div></div>
+                            }
+                            else
+                            {
+                                @foreach (var fb in _feedbackList)
+                                {
+                                    <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; margin-bottom: 8px; border-left: 3px solid @GetFeedbackSeverityColor(fb.Severity);">
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                            <div>
+                                                <div style="display: flex; gap: 6px; align-items: center;">
+                                                    <span class="badge badge-secondary">@fb.Category</span>
+                                                    <span class="badge" style="background: @GetFeedbackSeverityColor(fb.Severity); color: white;">@fb.Severity</span>
+                                                    <span class="badge badge-@fb.Status.ToString().ToLower()">@fb.Status</span>
+                                                </div>
+                                                <div style="margin-top: 6px;">@fb.Comment</div>
+                                                <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                                                    By @fb.OperatorName • @fb.SubmittedAt.ToString("MMM dd, yyyy HH:mm")
+                                                </div>
+                                            </div>
+                                            @if (fb.Status != ProgramFeedbackStatus.Resolved && fb.Status != ProgramFeedbackStatus.WontFix)
+                                            {
+                                                <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                                                    @if (fb.Status == ProgramFeedbackStatus.New)
+                                                    {
+                                                        <button class="btn btn-sm btn-secondary" @onclick="() => ReviewFeedback(fb, ProgramFeedbackStatus.Acknowledged)">👁 Ack</button>
+                                                    }
+                                                    <button class="btn btn-sm btn-primary" @onclick="() => ShowResolveFeedback(fb)">✅ Resolve</button>
+                                                    <button class="btn btn-sm btn-secondary" @onclick="() => ReviewFeedback(fb, ProgramFeedbackStatus.WontFix)">✕</button>
+                                                </div>
+                                            }
+                                        </div>
+
+                                        @if (!string.IsNullOrEmpty(fb.Resolution))
+                                        {
+                                            <div style="margin-top: 8px; padding: 6px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.85em;">
+                                                <strong>Resolution:</strong> @fb.Resolution
+                                                <div style="color: var(--text-muted); font-size: 0.85em;">By @fb.ReviewedBy • @fb.ReviewedAt?.ToString("MMM dd HH:mm")</div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+
+                    @* ── TAB: Parameters ── *@
+                    @if (_activeTab == "parameters")
+                    {
+                        <div class="card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h4 style="margin: 0;">⚙️ Parameters</h4>
+                                <button class="btn btn-sm btn-accent" @onclick="CopyDetailParametersToClipboard">🤖 Copy for AI</button>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_selectedProgram.Parameters))
+                            {
+                                <pre style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; font-size: 0.85em; overflow-x: auto; margin: 0;">@_selectedProgram.Parameters</pre>
+                            }
+                            else
+                            {
+                                <div class="empty-state" style="padding: 12px;"><div class="empty-state-text">No parameters configured.</div></div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(_selectedProgram.Notes))
+                            {
+                                <div style="margin-top: 12px;">
+                                    <span class="form-label">Operator Notes</span>
+                                    <div style="white-space: pre-wrap; padding: 8px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.9em;">@_selectedProgram.Notes</div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── TAB: Files ── *@
+                    @if (_activeTab == "files")
+                    {
+                        <div class="card">
+                            <h4 style="margin: 0 0 12px 0;">📁 Files (@(_selectedProgram.Files?.Count ?? 0))</h4>
+
+                            @if (_selectedProgram.Files?.Any() == true)
+                            {
+                                <table class="data-table" style="font-size: 0.85rem; margin-bottom: 12px;">
+                                    <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Primary</th><th>Uploaded</th><th></th></tr></thead>
+                                    <tbody>
+                                        @foreach (var file in _selectedProgram.Files.OrderByDescending(f => f.IsPrimary).ThenByDescending(f => f.UploadedDate))
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <a href="@file.FilePath" target="_blank">@file.FileName</a>
+                                                    @if (!string.IsNullOrEmpty(file.Description)) { <div style="font-size:0.8em;color:var(--text-muted);">@file.Description</div> }
+                                                </td>
+                                                <td><span class="badge badge-secondary">@file.FileType</span></td>
+                                                <td>@FormatFileSize(file.FileSizeBytes)</td>
+                                                <td>
+                                                    @if (file.IsPrimary) { <span class="badge badge-success">Primary</span> }
+                                                    else { <button class="btn btn-sm btn-secondary" @onclick="() => SetPrimaryFile(file)">Set Primary</button> }
+                                                </td>
+                                                <td>@file.UploadedDate.ToString("MMM dd, yyyy")</td>
+                                                <td><button class="btn btn-sm btn-danger" @onclick="() => DeleteFile(file)">🗑</button></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            else
+                            {
+                                <div class="empty-state" style="padding: 16px;"><div class="empty-state-text">No files attached yet.</div></div>
+                            }
+
+                            <div style="display: flex; gap: 8px; align-items: end;">
+                                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                    <label class="form-label">Upload File</label>
+                                    <InputFile OnChange="HandleFileUpload" accept=".nc,.tap,.mpf,.dxf,.pdf,.step,.stp,.txt,.csv,.gcode,.ngc" style="display:block;" />
+                                </div>
+                                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                    <label class="form-label">Description (optional)</label>
+                                    <input class="form-control" @bind="_uploadDescription" placeholder="Setup sheet, G-code…" />
+                                </div>
+                            </div>
+                            @if (_uploading)
+                            {
+                                <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 4px;"><span class="spinner" style="width:12px;height:12px;margin-right:4px;"></span> Uploading…</div>
+                            }
+                        </div>
+                    }
+
+                    @* ── TAB: Parts (non-BuildPlate programs with additional parts) ── *@
+                    @if (_activeTab == "parts" && !_selectedProgram!.IsBuildPlate)
+                    {
+                        <div class="card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h4 style="margin: 0;">🔩 Additional Parts</h4>
+                                <button class="btn btn-sm btn-primary" @onclick="() => ShowEdit(_selectedProgram)">✏️ Edit Parts</button>
+                            </div>
+
+                            @if (_selectedProgram.ProgramParts?.Any() == true)
+                            {
+                                <table class="data-table" style="font-size: 0.85rem;">
+                                    <thead>
+                                        <tr>
+                                            <th>Part</th>
+                                            <th style="width:90px;text-align:center">Qty</th>
+                                            <th>Notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var pp in _selectedProgram.ProgramParts)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <strong>@(pp.Part?.PartNumber ?? $"#{pp.PartId}")</strong>
+                                                    @if (!string.IsNullOrEmpty(pp.Part?.Name))
+                                                    {
+                                                        <span style="color:var(--text-secondary)"> — @pp.Part.Name</span>
+                                                    }
+                                                    @if (!string.IsNullOrEmpty(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material))
+                                                    {
+                                                        <div style="font-size:0.75rem;color:var(--text-secondary);">🧪 @(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material)</div>
+                                                    }
+                                                </td>
+                                                <td style="text-align:center">@pp.Quantity</td>
+                                                <td style="font-size:0.85rem;color:var(--text-secondary);">@(pp.PositionNotes ?? "—")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            else
+                            {
+                                <div class="empty-state" style="padding: 16px;">
+                                    <div class="empty-state-text">No additional parts assigned. Edit the program to add parts.</div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── TAB: Build Plate (nested parts, slicer, scheduling) ── *@
+                    @if (_activeTab == "buildplate" && _selectedProgram!.IsBuildPlate)
+                    {
+                        <div class="card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h4 style="margin: 0;">🏗️ Build Plate Details</h4>
+                                <div style="display: flex; gap: 6px;">
+                                    <button class="btn btn-sm btn-info" @onclick="() => ShowBuildSlicerEntry(_selectedProgram)" disabled="@_buildProcessing">
+                                        📐 @(_selectedProgram.HasSlicerData ? "Edit Slicer" : "Add Slicer Data")
+                                    </button>
+                                    @if (_selectedProgram.Status == ProgramStatus.Draft && _selectedProgram.HasSlicerData && _selectedProgram.ProgramParts.Any())
+                                    {
+                                        <button class="btn btn-sm btn-success" @onclick="() => ActivateBuildPlate(_selectedProgram)" disabled="@_buildProcessing">✓ Activate</button>
+                                    }
+                                    @if (_selectedProgram.Status == ProgramStatus.Active)
+                                    {
+                                        <button class="btn btn-sm btn-primary" @onclick="() => ScheduleBuildPlate(_selectedProgram)" disabled="@_buildProcessing">📅 Schedule</button>
+                                    }
+                                    @if (_selectedProgram.Status is ProgramStatus.Draft or ProgramStatus.Active)
+                                    {
+                                        <button class="btn btn-sm btn-danger" @onclick="() => ArchiveBuildPlate(_selectedProgram)" disabled="@_buildProcessing">🗑️ Archive</button>
+                                    }
+                                </div>
+                            </div>
+
+                            @* ── Slicer Data Summary ── *@
+                            @if (_selectedProgram.HasSlicerData)
+                            {
+                                <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;margin-bottom:12px;">
+                                    <div class="form-label">Build File Info</div>
+                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;font-size:0.85rem;">
+                                        @if (_selectedProgram.LayerCount.HasValue) { <div>Layers: @_selectedProgram.LayerCount</div> }
+                                        @if (_selectedProgram.BuildHeightMm.HasValue) { <div>Height: @_selectedProgram.BuildHeightMm.Value.ToString("F1") mm</div> }
+                                        @if (_selectedProgram.EstimatedPrintHours.HasValue) { <div>Print Time: @_selectedProgram.EstimatedPrintHours.Value.ToString("F1") hrs</div> }
+                                        @if (_selectedProgram.EstimatedPowderKg.HasValue) { <div>Powder: @_selectedProgram.EstimatedPowderKg.Value.ToString("F1") kg</div> }
+                                        @if (!string.IsNullOrEmpty(_selectedProgram.SlicerSoftware)) { <div>Slicer: @_selectedProgram.SlicerSoftware @_selectedProgram.SlicerVersion</div> }
+                                    </div>
+                                </div>
+                            }
+
+                            @* ── Nested Parts Table ── *@
+                            @if (_selectedProgram.ProgramParts.Any())
+                            {
+                                <div style="margin-bottom:12px">
+                                    <div class="form-label" style="margin-bottom:6px">Nested Parts</div>
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Part</th>
+                                                <th style="width:90px">Qty</th>
+                                                <th style="width:90px">Stack</th>
+                                                <th>Notes</th>
+                                                @if (_selectedProgram.Status == ProgramStatus.Draft)
+                                                {
+                                                    <th style="width:100px"></th>
+                                                }
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var pp in _selectedProgram.ProgramParts)
+                                            {
+                                                var isEditing = _buildEditingPartId == pp.Id;
+                                                <tr>
+                                                    <td>
+                                                        <div>
+                                                            <strong>@(pp.Part?.PartNumber ?? $"#{pp.PartId}")</strong>
+                                                            @if (!string.IsNullOrEmpty(pp.Part?.Name)) { <span style="color:var(--text-secondary)"> — @pp.Part.Name</span> }
+                                                        </div>
+                                                        <div style="font-size:0.75rem;color:var(--text-secondary);display:flex;gap:8px;flex-wrap:wrap;">
+                                                            @if (!string.IsNullOrEmpty(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material))
+                                                            {
+                                                                <span>🧪 @(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material)</span>
+                                                            }
+                                                        </div>
+                                                    </td>
+                                                    @if (isEditing && _selectedProgram.Status == ProgramStatus.Draft)
+                                                    {
+                                                        <td><input class="form-control form-control-sm" type="number" min="1" max="500" @bind="_buildEditQty" style="width:70px" /></td>
+                                                        <td>
+                                                            <select class="form-control form-control-sm" @bind="_buildEditStackLevel" style="width:70px">
+                                                                <option value="1">1x</option>
+                                                                <option value="2">2x</option>
+                                                                <option value="3">3x</option>
+                                                            </select>
+                                                        </td>
+                                                        <td><input class="form-control form-control-sm" @bind="_buildEditNotes" placeholder="Position / orientation" /></td>
+                                                        <td>
+                                                            <div style="display:flex;gap:4px">
+                                                                <button class="btn btn-sm btn-success" @onclick="() => SaveBuildPartEdit(pp.Id)" title="Save">✓</button>
+                                                                <button class="btn btn-sm btn-secondary" @onclick="CancelBuildPartEdit" title="Cancel">✕</button>
+                                                            </div>
+                                                        </td>
+                                                    }
+                                                    else
+                                                    {
+                                                        <td>@pp.Quantity</td>
+                                                        <td>@(pp.StackLevel)x</td>
+                                                        <td style="font-size:0.85rem;color:var(--text-secondary);">@(pp.PositionNotes ?? "—")</td>
+                                                        @if (_selectedProgram.Status == ProgramStatus.Draft)
+                                                        {
+                                                            <td>
+                                                                <div style="display:flex;gap:4px">
+                                                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => StartBuildPartEdit(pp)" title="Edit">✏️</button>
+                                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveBuildPartFromDetail(pp.Id)" title="Remove">🗑️</button>
+                                                                </div>
+                                                            </td>
+                                                        }
+                                                    }
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="empty-state" style="padding: 12px;"><div class="empty-state-text">No parts nested on this plate yet. Add parts below.</div></div>
+                            }
+
+                            @* ── Add Part (Draft only) ── *@
+                            @if (_selectedProgram.Status == ProgramStatus.Draft)
+                            {
+                                <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;">
+                                    <div class="form-label" style="margin-bottom:6px">Add Part to Plate</div>
+                                    <div style="display:flex;gap:0.5rem;align-items:end;flex-wrap:wrap;">
+                                        <div style="flex:2;min-width:200px;">
+                                            <input class="form-control" placeholder="Search parts..." @bind="_buildPartSearch" @bind:event="oninput" />
+                                        </div>
+                                        <div style="flex:3;min-width:220px;">
+                                             <select class="form-control" @bind="_buildAddPartId">
+                                                <option value="0">Select part...</option>
+                                                @if (_additiveParts != null)
+                                                {
+                                                    @foreach (var p in FilteredBuildAdditiveParts)
+                                                    {
+                                                        <option value="@p.Id">@(p.ManufacturingApproach?.RequiresBuildPlate == true ? "★ " : "")@p.PartNumber — @p.Name</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </div>
+                                        <div style="width:80px;">
+                                            <input class="form-control" type="number" min="1" max="500" @bind="_buildAddPartQty" placeholder="Qty" />
+                                        </div>
+                                        <button class="btn btn-primary" style="height:36px;white-space:nowrap" @onclick="AddPartToDetailBuildPlate" disabled="@(_buildAddPartId <= 0)">+ Add</button>
+                                    </div>
+                                </div>
+                            }
+
+                            @* ── Post-Processing Programs ── *@
+                            <div style="margin-top:12px;">
+                                <div class="form-label" style="margin-bottom:6px">🔗 Post-Processing Programs</div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                                    <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;">
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                            <strong style="font-size:0.85em;">🧹 Depowder</strong>
+                                            @if (_selectedProgram.DepowderProgram != null)
+                                            {
+                                                <span class="badge badge-@_selectedProgram.DepowderProgram.Status.ToString().ToLower()">@_selectedProgram.DepowderProgram.Status</span>
+                                            }
+                                        </div>
+                                        @if (_selectedProgram.DepowderProgram != null)
+                                        {
+                                            <div style="font-size:0.88em;">
+                                                <a href="javascript:void(0)" @onclick="() => NavigateToProgram(_selectedProgram.DepowderProgram)" style="font-weight:600;">
+                                                    @_selectedProgram.DepowderProgram.ProgramNumber
+                                                </a>
+                                                <span style="color:var(--text-muted);"> — @_selectedProgram.DepowderProgram.Name</span>
+                                            </div>
+                                            @if (_selectedProgram.DepowderProgram.SetupTimeMinutes.HasValue || _selectedProgram.DepowderProgram.RunTimeMinutes.HasValue)
+                                            {
+                                                <div style="font-size:0.78em;color:var(--text-muted);margin-top:4px;">
+                                                    @if (_selectedProgram.DepowderProgram.SetupTimeMinutes.HasValue) { <span>Setup: @_selectedProgram.DepowderProgram.SetupTimeMinutes.Value.ToString("F0")m</span> }
+                                                    @if (_selectedProgram.DepowderProgram.RunTimeMinutes.HasValue) { <span> · Run: @_selectedProgram.DepowderProgram.RunTimeMinutes.Value.ToString("F0")m</span> }
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div style="font-size:0.85em;color:var(--text-muted);font-style:italic;">Not linked</div>
+                                        }
+                                    </div>
+                                    <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;">
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                            <strong style="font-size:0.85em;">⚡ EDM / Wire-Cut</strong>
+                                            @if (_selectedProgram.EdmProgram != null)
+                                            {
+                                                <span class="badge badge-@_selectedProgram.EdmProgram.Status.ToString().ToLower()">@_selectedProgram.EdmProgram.Status</span>
+                                            }
+                                        </div>
+                                        @if (_selectedProgram.EdmProgram != null)
+                                        {
+                                            <div style="font-size:0.88em;">
+                                                <a href="javascript:void(0)" @onclick="() => NavigateToProgram(_selectedProgram.EdmProgram)" style="font-weight:600;">
+                                                    @_selectedProgram.EdmProgram.ProgramNumber
+                                                </a>
+                                                <span style="color:var(--text-muted);"> — @_selectedProgram.EdmProgram.Name</span>
+                                            </div>
+                                            @if (_selectedProgram.EdmProgram.SetupTimeMinutes.HasValue || _selectedProgram.EdmProgram.RunTimeMinutes.HasValue)
+                                            {
+                                                <div style="font-size:0.78em;color:var(--text-muted);margin-top:4px;">
+                                                    @if (_selectedProgram.EdmProgram.SetupTimeMinutes.HasValue) { <span>Setup: @_selectedProgram.EdmProgram.SetupTimeMinutes.Value.ToString("F0")m</span> }
+                                                    @if (_selectedProgram.EdmProgram.RunTimeMinutes.HasValue) { <span> · Run: @_selectedProgram.EdmProgram.RunTimeMinutes.Value.ToString("F0")m</span> }
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div style="font-size:0.85em;color:var(--text-muted);font-style:italic;">Not linked</div>
+                                        }
+                                    </div>
+                                </div>
+                                @if (!_selectedProgram.DepowderProgramId.HasValue && !_selectedProgram.EdmProgramId.HasValue)
+                                {
+                                    <div style="font-size:0.78em;color:var(--text-muted);margin-top:6px;">
+                                        💡 Edit this build plate to link post-processing programs (depowder, EDM).
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+} @* end: else (_programs != null) *@
+
+@* ═══════════════════════════════════════════════════════════════
+   TOOLING ITEM EDITOR MODAL
+   ═══════════════════════════════════════════════════════════════ *@
+@if (_showToolingEditor)
+{
+    <div class="modal-overlay" @onclick="CloseToolingEditor">
+        <div class="modal-content" style="max-width: 600px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@(_editingToolingItem.Id == 0 ? "Add Tooling Item" : "Edit Tooling Item")</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="CloseToolingEditor">✕</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Position <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="_editingToolingItem.ToolPosition" placeholder="T1, T2, FIX-01…" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="_editingToolingItem.Name" placeholder="6mm End Mill" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type</label>
+                    <select class="form-control" @bind="_editingToolingItem.IsFixture">
+                        <option value="false">Cutting Tool</option>
+                        <option value="true">Fixture</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Linked Component</label>
+                    <select class="form-control" @bind="_editToolingComponentId">
+                        <option value="">— Not tracked —</option>
+                        @if (_availableComponents != null)
+                        {
+                            @foreach (var c in _availableComponents)
+                            {
+                                <option value="@c.Id">@c.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="card-header" style="margin-top: 12px; margin-bottom: 8px;">📊 Wear Life Configuration</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Wear Life (hours)</label>
+                    <input class="form-control" type="number" step="0.5" min="0" @bind="_editingToolingItem.WearLifeHours" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Wear Life (builds)</label>
+                    <input class="form-control" type="number" min="0" @bind="_editingToolingItem.WearLifeBuilds" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Warning at %</label>
+                    <input class="form-control" type="number" min="0" max="100" @bind="_editingToolingItem.WarningThresholdPercent" />
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Spare Part Number</label>
+                    <input class="form-control" @bind="_editingToolingItem.SparePartNumber" placeholder="SP-12345" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Sort Order</label>
+                    <input class="form-control" type="number" @bind="_editingToolingItem.SortOrder" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" rows="2" @bind="_editingToolingItem.Notes" placeholder="Special handling instructions…"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="CloseToolingEditor">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveToolingItem" disabled="@_savingTooling">
+                    @if (_savingTooling) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                    @(_editingToolingItem.Id == 0 ? "Add Item" : "Save Changes")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ═══════════════════════════════════════════════════════════════
+   FEEDBACK RESOLUTION MODAL
+   ═══════════════════════════════════════════════════════════════ *@
+@if (_showResolveModal && _resolvingFeedback != null)
+{
+    <div class="modal-overlay" @onclick="CloseResolveModal">
+        <div class="modal-content" style="max-width: 500px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Resolve Feedback</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="CloseResolveModal">✕</button>
+            </div>
+
+            <div style="margin-bottom: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 6px;">
+                <div style="display: flex; gap: 6px; margin-bottom: 4px;">
+                    <span class="badge badge-secondary">@_resolvingFeedback.Category</span>
+                    <span class="badge" style="background: @GetFeedbackSeverityColor(_resolvingFeedback.Severity); color: white;">@_resolvingFeedback.Severity</span>
+                </div>
+                <div>@_resolvingFeedback.Comment</div>
+                <div style="font-size: 0.8em; color: var(--text-muted);">By @_resolvingFeedback.OperatorName</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Resolution Notes <span style="color:var(--danger)">*</span></label>
+                <textarea class="form-control" rows="3" @bind="_resolutionText" placeholder="Describe what was changed or why no action is needed…"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="CloseResolveModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="SubmitResolution" disabled="@string.IsNullOrWhiteSpace(_resolutionText)">✅ Resolve</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ═══════════════════════════════════════════════════════════════
+   MACHINE ASSIGNMENT MODAL
+   ═══════════════════════════════════════════════════════════════ *@
+@if (_showAssignModal)
+{
+    <div class="modal-overlay" @onclick="() => _showAssignModal = false">
+        <div class="modal-content" style="max-width: 550px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Assign Machines to @(_selectedProgram?.ProgramNumber)</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="() => _showAssignModal = false">✕</button>
+            </div>
+
+            <div style="margin-bottom: 8px; color: var(--text-muted); font-size: 0.85em;">
+                Select the machines this program can run on. At least one should be assigned.
+            </div>
+
+            <div style="max-height: 350px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px;">
+                @if (_machines != null)
+                {
+                    @foreach (var typeGroup in _machines.Where(m => m.IsActive).GroupBy(m => m.MachineType).OrderBy(g => g.Key))
+                    {
+                        <div style="font-weight: 600; font-size: 0.85em; color: var(--text-muted); margin-top: 8px; margin-bottom: 4px;">@typeGroup.Key</div>
+                        @foreach (var machine in typeGroup.OrderBy(m => m.Name))
+                        {
+                            var isChecked = _assignSelectedMachineIds.Contains(machine.Id);
+                            <label style="display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; cursor: pointer; border-radius: 4px; @(isChecked ? "background: var(--bg-tertiary);" : "")">
+                                <input type="checkbox" checked="@isChecked" @onchange="() => ToggleAssignMachine(machine.Id)" />
+                                <span style="flex: 1;">@machine.Name</span>
+                                <span class="badge badge-@machine.Status.ToString().ToLower()" style="font-size:0.75em;">@machine.Status</span>
+                            </label>
+                        }
+                    }
+                }
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="() => _showAssignModal = false">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveAssignMachines">Save Assignments (@_assignSelectedMachineIds.Count)</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ═══════════════════════════════════════════════════════════════
+   SLS BUILD PLATE MODALS
+   ═══════════════════════════════════════════════════════════════ *@
+
+@* ── Slicer Data Entry Modal (Build Plates) ── *@
+@if (_showBuildSlicerEntry && _slicerBuildPlate != null)
+{
+    <div class="modal-overlay" @onclick="() => _showBuildSlicerEntry = false">
+        <div class="modal-content" style="max-width:700px" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">Build Planning — @(_slicerBuildPlate.Name ?? _slicerBuildPlate.ProgramNumber)</span><button class="modal-close" @onclick="() => _showBuildSlicerEntry = false">&times;</button></div>
+
+            <div class="form-group">
+                <label class="form-label">🖨️ Print Duration (hours) *</label>
+                <input class="form-control" type="number" step="0.1" min="0.1" @bind="_buildSlicerDuration" />
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Layer Count</label>
+                    <input class="form-control" type="number" @bind="_buildSlicerLayers" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Build Height (mm)</label>
+                    <input class="form-control" type="number" step="0.1" @bind="_buildSlicerHeight" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Est. Powder (kg)</label>
+                    <input class="form-control" type="number" step="0.1" @bind="_buildSlicerPowder" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Slicer Software</label>
+                    <input class="form-control" @bind="_buildSlicerSoftware" placeholder="e.g. Magics" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Slicer Version</label>
+                    <input class="form-control" @bind="_buildSlicerVersion" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Slicer File Name</label>
+                    <input class="form-control" @bind="_buildSlicerFileName" />
+                </div>
+            </div>
+
+            <button class="btn btn-primary" @onclick="SaveBuildSlicerData" disabled="@(_buildSlicerDuration is null or <= 0)">
+                Save Slicer Data
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private string _currentUser = "System";
+    private string _pageView = "programs";
+
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? InitialView { get; set; }
+
+    // Data
+    private List<MachineProgram>? _programs;
+    private List<MachineProgram> _filteredPrograms = new();
+    private List<Part>? _parts;
+    private List<Machine>? _machines;
+    private List<string>? _machineTypes;
+    private List<Material>? _materials;
+    private Dictionary<int, int> _feedbackCounts = new();
+    private List<MaintenanceAlert> _maintenanceAlerts = new();
+    private int _totalUnresolvedFeedback;
+
+    // Pending program setup
+    private List<ProcessStage> _pendingSetupStages = new();
+    private bool _showPendingSetup;
+
+    // Filters
+    private string _filterStatus = "";
+    private string _filterMachineType = "";
+    private string _searchTerm = "";
+
+    // Editor
+    private bool _showEditor;
+    private bool _saving;
+    private MachineProgram _editingProgram = new();
+    private string _editMaterialId = "";
+    private HashSet<int> _editSelectedMachineIds = new();
+    private string _editorMachineFilter = "";
+    private string _editWorkInstructionId = "";
+    private List<WorkInstruction>? _workInstructions;
+
+    // Post-processing program links (Build Plate editor)
+    private string _editDepowderProgramId = "";
+    private string _editEdmProgramId = "";
+    private List<MachineProgram>? _depowderCandidates;
+    private List<MachineProgram>? _edmCandidates;
+
+    // Machine assignment modal
+    private bool _showAssignModal;
+    private HashSet<int> _assignSelectedMachineIds = new();
+
+    // Detail panel
+    private MachineProgram? _selectedProgram;
+    private string _activeTab = "machines";
+    private readonly Dictionary<string, string> _detailTabs = new()
+    {
+        ["machines"] = "🖥️ Machines",
+        ["tooling"] = "🔧 Tooling",
+        ["learning"] = "🧠 Learning",
+        ["feedback"] = "💬 Feedback",
+        ["parameters"] = "⚙️ Parameters",
+        ["files"] = "📁 Files"
+    };
+
+    // Tooling
+    private List<ProgramToolingItem> _toolingItems = new();
+    private List<ToolingReadinessAlert> _toolingAlerts = new();
+    private bool _showToolingEditor;
+    private bool _savingTooling;
+    private ProgramToolingItem _editingToolingItem = new();
+    private string _editToolingComponentId = "";
+    private List<MachineComponent>? _availableComponents;
+
+    // Feedback
+    private List<ProgramFeedback> _feedbackList = new();
+    private string _feedbackFilter = "";
+    private bool _showResolveModal;
+    private ProgramFeedback? _resolvingFeedback;
+    private string _resolutionText = "";
+
+    // Learning
+    private List<StageExecution> _executionHistory = new();
+
+    // Files
+    private string? _uploadDescription;
+    private bool _uploading;
+
+    // ── SLS Build Plate State ────────────────────────────────
+    private List<Part>? _additiveParts;
+    private bool _buildProcessing;
+
+    // Build plate inline editing
+    private int? _buildEditingPartId;
+    private int _buildEditQty;
+    private int _buildEditStackLevel;
+    private string? _buildEditNotes;
+
+    // Build plate part search
+    private string _buildPartSearch = "";
+    private int _buildAddPartId;
+    private int _buildAddPartQty = 1;
+
+    // Unified parts list (used for all program types)
+    private string _createBuildPartSearch = "";
+    private int _createBuildAddPartId;
+    private int _createBuildAddPartQty = 1;
+    private List<CreateBuildPartEntry> _createBuildPlateParts = new();
+    private record CreateBuildPartEntry(int PartId, string PartNumber, string PartName, int Quantity, bool IsPrimary = false);
+
+    // Slicer data modal
+    private bool _showBuildSlicerEntry;
+    private MachineProgram? _slicerBuildPlate;
+    private double? _buildSlicerDuration;
+    private int? _buildSlicerLayers;
+    private double? _buildSlicerHeight;
+    private double? _buildSlicerPowder;
+    private string? _buildSlicerSoftware;
+    private string? _buildSlicerVersion;
+    private string? _buildSlicerFileName;
+
+    private IEnumerable<Part> FilteredBuildAdditiveParts
+    {
+        get
+        {
+            if (_additiveParts == null) return [];
+            // Exclude parts already on the plate
+            var alreadyOnPlate = _selectedProgram?.ProgramParts.Select(pp => pp.PartId).ToHashSet() ?? [];
+            var parts = _additiveParts.Where(p => !alreadyOnPlate.Contains(p.Id));
+            if (!string.IsNullOrWhiteSpace(_buildPartSearch))
+            {
+                var search = _buildPartSearch.Trim();
+                parts = parts.Where(p =>
+                    p.PartNumber.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || p.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+            // Additive-approach parts sort first
+            return parts.OrderByDescending(p => p.ManufacturingApproach?.RequiresBuildPlate == true)
+                        .ThenBy(p => p.PartNumber);
+        }
+    }
+
+    private IEnumerable<Part> FilteredCreateBuildParts
+    {
+        get
+        {
+            if (_additiveParts == null) return [];
+            var alreadyAdded = _createBuildPlateParts.Select(cp => cp.PartId).ToHashSet();
+            var parts = _additiveParts.Where(p => !alreadyAdded.Contains(p.Id));
+            if (!string.IsNullOrWhiteSpace(_createBuildPartSearch))
+            {
+                var search = _createBuildPartSearch.Trim();
+                parts = parts.Where(p =>
+                    p.PartNumber.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || p.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+            // Additive-approach parts sort first
+            return parts.OrderByDescending(p => p.ManufacturingApproach?.RequiresBuildPlate == true)
+                        .ThenBy(p => p.PartNumber);
+        }
+    }
+
+    private IEnumerable<Part> FilteredCreateParts
+    {
+        get
+        {
+            if (_parts == null) return [];
+            // Exclude parts already in the unified list
+            var alreadyAdded = _createBuildPlateParts.Select(cp => cp.PartId).ToHashSet();
+            var parts = _parts.Where(p => !alreadyAdded.Contains(p.Id));
+            if (!string.IsNullOrWhiteSpace(_createBuildPartSearch))
+            {
+                var search = _createBuildPartSearch.Trim();
+                parts = parts.Where(p =>
+                    p.PartNumber.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || p.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+            return parts.OrderBy(p => p.PartNumber);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+
+        if (!string.IsNullOrEmpty(InitialView))
+            SwitchView(InitialView);
+    }
+
+    private async Task LoadData()
+    {
+        _programs = await ProgramService.GetAllAsync();
+        _parts = await PartService.GetAllPartsAsync();
+        _machines = await MachineService.GetAllMachinesAsync();
+        _machineTypes = _machines?.Select(m => m.MachineType).Distinct().OrderBy(t => t).ToList() ?? new();
+        _materials = await MaterialService.GetAllMaterialsAsync();
+        _workInstructions = await WorkInstructionService.GetAllAsync();
+
+        // Load parts for build plate selection — all active parts are eligible
+        // (any part can be nested on an SLS build for adaptive production)
+        var allParts = _parts ?? await PartService.GetAllPartsAsync(activeOnly: true);
+        _additiveParts = allParts.ToList();
+
+        if (_programs.Count > 0)
+        {
+            var programIds = _programs.Select(p => p.Id).ToList();
+            _feedbackCounts = await ProgramService.GetUnresolvedFeedbackCountsAsync(programIds);
+            _totalUnresolvedFeedback = _feedbackCounts.Values.Sum();
+        }
+
+        try { _maintenanceAlerts = await MaintenanceService.EvaluateMaintenanceRulesAsync(); }
+        catch { _maintenanceAlerts = new(); }
+
+        try { _pendingSetupStages = await ProcessService.GetStagesPendingProgramSetupAsync(); }
+        catch { _pendingSetupStages = new(); }
+
+        // Load post-processing candidate programs for build plate linking
+        try { _depowderCandidates = await ProgramService.GetPostProcessingCandidatesAsync("Depowder"); }
+        catch { _depowderCandidates = new(); }
+        try { _edmCandidates = await ProgramService.GetPostProcessingCandidatesAsync("EDM"); }
+        catch { _edmCandidates = new(); }
+
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        if (_programs == null) { _filteredPrograms = new(); return; }
+        var q = _programs.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(_filterStatus) && Enum.TryParse<ProgramStatus>(_filterStatus, out var status))
+            q = q.Where(p => p.Status == status);
+        if (!string.IsNullOrEmpty(_filterMachineType))
+            q = q.Where(p => string.Equals(p.MachineType, _filterMachineType, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(p.Machine?.MachineType, _filterMachineType, StringComparison.OrdinalIgnoreCase)
+                            || (p.MachineAssignments?.Any(a => string.Equals(a.Machine?.MachineType, _filterMachineType, StringComparison.OrdinalIgnoreCase)) == true));
+        if (!string.IsNullOrEmpty(_searchTerm))
+            q = q.Where(p => (p.ProgramNumber?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+                            || (p.Name?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+                            || (p.Part?.PartNumber?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+                            || (p.Machine?.Name?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
+
+        _filteredPrograms = q.ToList();
+    }
+
+    private void SwitchView(string view)
+    {
+        _pageView = view;
+    }
+
+    // ── Selection / Detail ───────────────────────────────────
+
+    private async Task SelectProgram(MachineProgram program)
+    {
+        _selectedProgram = await ProgramService.GetByIdAsync(program.Id);
+        _activeTab = _selectedProgram?.IsBuildPlate == true ? "buildplate" : "machines";
+        await LoadDetailData();
+    }
+
+    private async Task LoadDetailData()
+    {
+        if (_selectedProgram == null) return;
+
+        _toolingItems = await ProgramService.GetToolingItemsAsync(_selectedProgram.Id);
+        _toolingAlerts = await ProgramService.CheckToolingReadinessAsync(_selectedProgram.Id);
+        _executionHistory = await ProgramService.GetExecutionHistoryAsync(_selectedProgram.Id);
+        await LoadFeedback();
+    }
+
+    // ── Create / Edit ────────────────────────────────────────
+
+    private void ShowCreate()
+    {
+        _editingProgram = new MachineProgram { ProgramType = ProgramType.Standard };
+        _editMaterialId = "";
+        _editWorkInstructionId = "";
+        _editDepowderProgramId = "";
+        _editEdmProgramId = "";
+        _editSelectedMachineIds = new();
+        _editorMachineFilter = "";
+        _createBuildPlateParts.Clear();
+        _createBuildPartSearch = "";
+        _createBuildAddPartId = 0;
+        _createBuildAddPartQty = 1;
+        _showEditor = true;
+    }
+
+    private void ShowEdit(MachineProgram program)
+    {
+        _editingProgram = program;
+        _editMaterialId = program.MaterialId?.ToString() ?? "";
+        _editWorkInstructionId = program.WorkInstructionId?.ToString() ?? "";
+        _editDepowderProgramId = program.DepowderProgramId?.ToString() ?? "";
+        _editEdmProgramId = program.EdmProgramId?.ToString() ?? "";
+        _editSelectedMachineIds = program.MachineAssignments?.Select(a => a.MachineId).ToHashSet() ?? new();
+        _editorMachineFilter = "";
+        _createBuildPlateParts.Clear();
+        _createBuildPartSearch = "";
+        _createBuildAddPartId = 0;
+        _createBuildAddPartQty = 1;
+
+        // Populate unified parts list
+        if (program.IsBuildPlate)
+        {
+            // Build plates: all parts from ProgramParts
+            if (program.ProgramParts?.Any() == true)
+            {
+                foreach (var pp in program.ProgramParts)
+                {
+                    _createBuildPlateParts.Add(new CreateBuildPartEntry(
+                        pp.PartId,
+                        pp.Part?.PartNumber ?? $"#{pp.PartId}",
+                        pp.Part?.Name ?? "",
+                        pp.Quantity,
+                        IsPrimary: false));
+                }
+            }
+        }
+        else
+        {
+            // Standard programs: include primary part (from PartId) and additional parts
+            if (program.PartId.HasValue && program.Part != null)
+            {
+                _createBuildPlateParts.Add(new CreateBuildPartEntry(
+                    program.Part.Id,
+                    program.Part.PartNumber,
+                    program.Part.Name,
+                    Quantity: 1,
+                    IsPrimary: true));
+            }
+
+            // Add additional parts from ProgramParts
+            if (program.ProgramParts?.Any() == true)
+            {
+                foreach (var pp in program.ProgramParts)
+                {
+                    _createBuildPlateParts.Add(new CreateBuildPartEntry(
+                        pp.PartId,
+                        pp.Part?.PartNumber ?? $"#{pp.PartId}",
+                        pp.Part?.Name ?? "",
+                        pp.Quantity,
+                        IsPrimary: false));
+                }
+            }
+        }
+
+        _showEditor = true;
+    }
+
+    private void CloseEditor()
+    {
+        _showEditor = false;
+        _createBuildPlateParts.Clear();
+    }
+
+    private void ToggleEditMachine(int machineId)
+    {
+        if (!_editSelectedMachineIds.Add(machineId))
+            _editSelectedMachineIds.Remove(machineId);
+
+        // Auto-fill MachineType from the first selected machine if blank
+        if (string.IsNullOrEmpty(_editingProgram.MachineType) && _editSelectedMachineIds.Count > 0)
+        {
+            var machine = _machines?.FirstOrDefault(m => _editSelectedMachineIds.Contains(m.Id));
+            if (machine != null)
+                _editingProgram.MachineType = machine.MachineType;
+        }
+
+        // Auto-detect ProgramType: if ALL selected machines are SLS → BuildPlate, otherwise Standard
+        // Only auto-detect for new programs (don't change type on existing ones)
+        if (_editingProgram.Id == 0 && _machines != null)
+        {
+            var selectedMachines = _machines.Where(m => _editSelectedMachineIds.Contains(m.Id)).ToList();
+            var allSls = selectedMachines.Count > 0
+                && selectedMachines.All(m => string.Equals(m.MachineType, "SLS", StringComparison.OrdinalIgnoreCase));
+
+            if (allSls && _editingProgram.ProgramType != ProgramType.BuildPlate)
+            {
+                _editingProgram.ProgramType = ProgramType.BuildPlate;
+                _editingProgram.MachineType = "SLS";
+                // Clear primary flags when switching to build plate
+                _createBuildPlateParts = _createBuildPlateParts.Select(p => p with { IsPrimary = false }).ToList();
+            }
+            else if (!allSls && _editingProgram.ProgramType == ProgramType.BuildPlate)
+            {
+                _editingProgram.ProgramType = ProgramType.Standard;
+                _editMaterialId = "";
+                // When switching to standard, make first part primary if exists
+                if (_createBuildPlateParts.Any())
+                {
+                    var first = _createBuildPlateParts[0];
+                    _createBuildPlateParts[0] = first with { IsPrimary = true };
+                }
+            }
+        }
+    }
+
+    private void LoadDefaultParameters()
+    {
+        if (!string.IsNullOrEmpty(_editingProgram.MachineType))
+            _editingProgram.Parameters = ProgramService.GetDefaultParametersForMachineType(_editingProgram.MachineType);
+    }
+
+    private async Task CopyParametersToClipboard()
+    {
+        var text = _editingProgram.Parameters;
+        if (string.IsNullOrWhiteSpace(text)) { Toast.ShowWarning("No parameters to copy."); return; }
+        var aiText = $"Machine Program: {_editingProgram.ProgramNumber}\nMachine Type: {_editingProgram.MachineType ?? "Unknown"}\nParameters:\n{text}";
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", aiText);
+        Toast.ShowSuccess("Parameters copied to clipboard.");
+    }
+
+    private async Task CopyDetailParametersToClipboard()
+    {
+        if (_selectedProgram == null || string.IsNullOrWhiteSpace(_selectedProgram.Parameters)) return;
+        var aiText = $"Machine Program: {_selectedProgram.ProgramNumber}\nMachine Type: {_selectedProgram.MachineType ?? "Unknown"}\nParameters:\n{_selectedProgram.Parameters}";
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", aiText);
+        Toast.ShowSuccess("Parameters copied to clipboard.");
+    }
+
+    private async Task SaveProgram()
+    {
+        var isBuildPlate = _editingProgram.ProgramType == ProgramType.BuildPlate;
+        var isNew = _editingProgram.Id == 0;
+
+        if (string.IsNullOrWhiteSpace(_editingProgram.Name))
+        {
+            Toast.ShowError("Name is required.");
+            return;
+        }
+
+        // Standard programs require a program number; build plates auto-generate if blank
+        if (!isBuildPlate && string.IsNullOrWhiteSpace(_editingProgram.ProgramNumber))
+        {
+            Toast.ShowError("Program number is required.");
+            return;
+        }
+
+        if (isBuildPlate && string.IsNullOrWhiteSpace(_editingProgram.ProgramNumber))
+        {
+            _editingProgram.ProgramNumber = $"BP-{DateTime.UtcNow:yyMMdd-HHmmss}";
+        }
+
+        _saving = true;
+        try
+        {
+            // Extract primary part from unified parts list (for standard programs)
+            var primaryPart = _createBuildPlateParts.FirstOrDefault(p => p.IsPrimary);
+
+            // Bind FK fields from editor state
+            _editingProgram.PartId = isBuildPlate ? null : primaryPart?.PartId;
+            _editingProgram.MaterialId = isBuildPlate && int.TryParse(_editMaterialId, out var mid) ? mid : null;
+            _editingProgram.WorkInstructionId = int.TryParse(_editWorkInstructionId, out var wid) ? wid : null;
+            _editingProgram.DepowderProgramId = isBuildPlate && int.TryParse(_editDepowderProgramId, out var dpid) ? dpid : null;
+            _editingProgram.EdmProgramId = isBuildPlate && int.TryParse(_editEdmProgramId, out var epid2) ? epid2 : null;
+
+            if (isNew)
+            {
+                _editingProgram.CreatedBy = _currentUser;
+                await ProgramService.CreateAsync(_editingProgram, _currentUser);
+            }
+            else
+            {
+                await ProgramService.UpdateAsync(_editingProgram, _currentUser);
+            }
+
+            // Sync machine assignments
+            await ProgramService.SyncMachineAssignmentsAsync(
+                _editingProgram.Id, _editSelectedMachineIds.ToList(), _currentUser);
+
+            // Get non-primary parts for ProgramParts table (primary is stored via PartId FK)
+            var additionalParts = isBuildPlate 
+                ? _createBuildPlateParts  // Build plates: all parts go to ProgramParts
+                : _createBuildPlateParts.Where(p => !p.IsPrimary).ToList();  // Standard: only non-primary
+
+            // Save parts to ProgramParts table
+            if (additionalParts.Any())
+            {
+                if (isNew)
+                {
+                    // New program: add all parts
+                    foreach (var cp in additionalParts)
+                        await ProgramService.AddProgramPartAsync(_editingProgram.Id, cp.PartId, cp.Quantity);
+                }
+                else
+                {
+                    // Existing program: sync parts (remove old, add current)
+                    var existingParts = await ProgramService.GetProgramPartsAsync(_editingProgram.Id);
+                    foreach (var ep in existingParts)
+                        await ProgramService.RemoveProgramPartAsync(ep.Id);
+                    foreach (var cp in additionalParts)
+                        await ProgramService.AddProgramPartAsync(_editingProgram.Id, cp.PartId, cp.Quantity);
+                }
+            }
+            else if (!isNew)
+            {
+                // Editing a program with no additional parts: clear any existing ProgramParts
+                var existingParts = await ProgramService.GetProgramPartsAsync(_editingProgram.Id);
+                foreach (var ep in existingParts)
+                    await ProgramService.RemoveProgramPartAsync(ep.Id);
+            }
+
+            // If created for a pending stage, link the program and clear the setup flag
+            if (_editingProgram.ProcessStageId.HasValue)
+            {
+                await ProcessService.LinkProgramToStageAsync(
+                    _editingProgram.ProcessStageId.Value, _editingProgram.Id);
+            }
+
+            var partCount = _createBuildPlateParts.Count;
+            _showEditor = false;
+            _createBuildPlateParts.Clear();
+
+            var label = isBuildPlate ? "Build plate" : "Program";
+            Toast.ShowSuccess(isNew
+                ? $"{label} {_editingProgram.ProgramNumber} created{(partCount > 0 ? $" with {partCount} part(s)" : "")}."
+                : $"{label} {_editingProgram.ProgramNumber} saved.");
+
+            await LoadData();
+
+            if (_selectedProgram?.Id == _editingProgram.Id)
+                await SelectProgram(_editingProgram);
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteProgram(MachineProgram program)
+    {
+        await ProgramService.DeleteAsync(program.Id);
+        Toast.ShowSuccess($"Program {program.ProgramNumber} deleted.");
+        if (_selectedProgram?.Id == program.Id) _selectedProgram = null;
+        await LoadData();
+    }
+
+    // ── Versioning & Cloning ─────────────────────────────────
+
+    private async Task CreateNewVersion()
+    {
+        if (_selectedProgram == null) return;
+        var newVersion = await ProgramService.CreateNewVersionAsync(_selectedProgram.Id, _currentUser);
+        Toast.ShowSuccess($"Version {newVersion.Version} created. Old version marked as Superseded.");
+        await LoadData();
+        await SelectProgram(newVersion);
+    }
+
+    private async Task CloneProgramFromDetail()
+    {
+        if (_selectedProgram == null) return;
+        var clone = await ProgramService.CloneProgramAsync(_selectedProgram.Id, _selectedProgram.PartId, _selectedProgram.MachineId, _currentUser);
+        Toast.ShowSuccess($"Cloned as {clone.ProgramNumber}.");
+        await LoadData();
+    }
+
+    // ── Machine Assignment Management ────────────────────────
+
+    private async Task NavigateToProgram(MachineProgram prog)
+    {
+        _pageView = "programs";
+        await SelectProgram(prog);
+    }
+
+    private void ShowAssignMachines()
+    {
+        if (_selectedProgram == null) return;
+        _assignSelectedMachineIds = _selectedProgram.MachineAssignments?
+            .Select(a => a.MachineId).ToHashSet() ?? new();
+        _showAssignModal = true;
+    }
+
+    private void ToggleAssignMachine(int machineId)
+    {
+        if (!_assignSelectedMachineIds.Add(machineId))
+            _assignSelectedMachineIds.Remove(machineId);
+    }
+
+    private async Task SaveAssignMachines()
+    {
+        if (_selectedProgram == null) return;
+        try
+        {
+            await ProgramService.SyncMachineAssignmentsAsync(
+                _selectedProgram.Id, _assignSelectedMachineIds.ToList(), _currentUser);
+            Toast.ShowSuccess("Machine assignments updated.");
+            _showAssignModal = false;
+            await SelectProgram(_selectedProgram);
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+    }
+
+    private async Task SetPreferred(MachineProgramAssignment assignment)
+    {
+        try
+        {
+            await ProgramService.SetPreferredMachineAsync(assignment.MachineProgramId, assignment.MachineId);
+            Toast.ShowSuccess($"{assignment.Machine.Name} set as preferred.");
+            await SelectProgram(_selectedProgram!);
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+    }
+
+    private async Task UnassignMachine(MachineProgramAssignment assignment)
+    {
+        try
+        {
+            await ProgramService.UnassignMachineAsync(assignment.MachineProgramId, assignment.MachineId);
+            Toast.ShowSuccess($"{assignment.Machine.Name} unassigned.");
+            await SelectProgram(_selectedProgram!);
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+    }
+
+    private async Task MigrateLegacyMachine()
+    {
+        if (_selectedProgram?.MachineId == null) return;
+        try
+        {
+            await ProgramService.AssignMachineAsync(
+                _selectedProgram.Id, _selectedProgram.MachineId.Value, _currentUser, isPreferred: true);
+            Toast.ShowSuccess("Legacy machine migrated to assignment.");
+            await SelectProgram(_selectedProgram);
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+    }
+
+    // ── Tooling Management ───────────────────────────────────
+
+    private async Task AddToolingItem()
+    {
+        _editingToolingItem = new ProgramToolingItem
+        {
+            MachineProgramId = _selectedProgram!.Id,
+            SortOrder = _toolingItems.Count + 1
+        };
+        _editToolingComponentId = "";
+        await LoadAvailableComponents();
+        _showToolingEditor = true;
+    }
+
+    private async Task EditToolingItem(ProgramToolingItem item)
+    {
+        _editingToolingItem = item;
+        _editToolingComponentId = item.MachineComponentId?.ToString() ?? "";
+        await LoadAvailableComponents();
+        _showToolingEditor = true;
+    }
+
+    private void CloseToolingEditor() => _showToolingEditor = false;
+
+    private async Task LoadAvailableComponents()
+    {
+        _availableComponents = new();
+
+        // Get components from machines assigned to this program
+        var assignedMachineIds = _selectedProgram?.MachineAssignments?
+            .Select(a => a.MachineId).ToList() ?? new();
+
+        // Also include legacy single FK
+        if (_selectedProgram?.MachineId.HasValue == true && !assignedMachineIds.Contains(_selectedProgram.MachineId.Value))
+            assignedMachineIds.Add(_selectedProgram.MachineId.Value);
+
+        if (assignedMachineIds.Count > 0)
+        {
+            foreach (var mid in assignedMachineIds)
+            {
+                var machine = _machines?.FirstOrDefault(m => m.Id == mid);
+                if (machine != null)
+                {
+                    var components = await MaintenanceService.GetComponentsByMachineAsync(machine.MachineId);
+                    _availableComponents.AddRange(components);
+                }
+            }
+        }
+        else if (_machines != null)
+        {
+            foreach (var machine in _machines.Take(10))
+            {
+                var components = await MaintenanceService.GetComponentsByMachineAsync(machine.MachineId);
+                _availableComponents.AddRange(components);
+            }
+        }
+    }
+
+    private async Task SaveToolingItem()
+    {
+        if (string.IsNullOrWhiteSpace(_editingToolingItem.ToolPosition) || string.IsNullOrWhiteSpace(_editingToolingItem.Name))
+        {
+            Toast.ShowError("Position and name are required.");
+            return;
+        }
+
+        _savingTooling = true;
+        try
+        {
+            _editingToolingItem.MachineComponentId = int.TryParse(_editToolingComponentId, out var cid) ? cid : null;
+            await ProgramService.SaveToolingItemAsync(_editingToolingItem, _currentUser);
+            Toast.ShowSuccess("Tooling item saved.");
+            _showToolingEditor = false;
+            await LoadDetailData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+        finally { _savingTooling = false; }
+    }
+
+    private async Task DeleteToolingItem(ProgramToolingItem item)
+    {
+        await ProgramService.DeleteToolingItemAsync(item.Id);
+        Toast.ShowSuccess($"Tooling item {item.ToolPosition} removed.");
+        await LoadDetailData();
+    }
+
+    // ── Feedback ─────────────────────────────────────────────
+
+    private async Task LoadFeedback()
+    {
+        if (_selectedProgram == null) return;
+        ProgramFeedbackStatus? filter = null;
+        if (!string.IsNullOrEmpty(_feedbackFilter) && Enum.TryParse<ProgramFeedbackStatus>(_feedbackFilter, out var fs))
+            filter = fs;
+        _feedbackList = await ProgramService.GetFeedbackAsync(_selectedProgram.Id, filter);
+    }
+
+    private async Task ReviewFeedback(ProgramFeedback feedback, ProgramFeedbackStatus newStatus)
+    {
+        try
+        {
+            await ProgramService.ReviewFeedbackAsync(feedback.Id, newStatus, _currentUser);
+            Toast.ShowSuccess($"Feedback marked as {newStatus}.");
+            await LoadFeedback();
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+    }
+
+    private void ShowResolveFeedback(ProgramFeedback feedback)
+    {
+        _resolvingFeedback = feedback;
+        _resolutionText = "";
+        _showResolveModal = true;
+    }
+
+    private void CloseResolveModal()
+    {
+        _showResolveModal = false;
+        _resolvingFeedback = null;
+    }
+
+    private async Task SubmitResolution()
+    {
+        if (_resolvingFeedback == null || string.IsNullOrWhiteSpace(_resolutionText)) return;
+        try
+        {
+            await ProgramService.ReviewFeedbackAsync(_resolvingFeedback.Id, ProgramFeedbackStatus.Resolved, _currentUser, _resolutionText);
+            Toast.ShowSuccess("Feedback resolved.");
+            CloseResolveModal();
+            await LoadFeedback();
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+    }
+
+    // ── File Management ──────────────────────────────────────
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        if (_selectedProgram == null) return;
+        _uploading = true;
+        StateHasChanged();
+
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+            await ProgramService.UploadFileAsync(_selectedProgram.Id, file.Name, stream, file.Size, _currentUser, _uploadDescription);
+            Toast.ShowSuccess($"File {file.Name} uploaded.");
+            _uploadDescription = null;
+            _selectedProgram = await ProgramService.GetByIdAsync(_selectedProgram.Id);
+        }
+        catch (Exception ex) { Toast.ShowError($"Upload failed: {ex.Message}"); }
+        finally { _uploading = false; }
+    }
+
+    private async Task DeleteFile(MachineProgramFile file)
+    {
+        await ProgramService.DeleteFileAsync(file.Id);
+        Toast.ShowSuccess($"File {file.FileName} deleted.");
+        if (_selectedProgram != null)
+            _selectedProgram = await ProgramService.GetByIdAsync(_selectedProgram.Id);
+    }
+
+    private async Task SetPrimaryFile(MachineProgramFile file)
+    {
+        if (_selectedProgram == null) return;
+        await ProgramService.SetPrimaryFileAsync(_selectedProgram.Id, file.Id);
+        _selectedProgram = await ProgramService.GetByIdAsync(_selectedProgram.Id);
+        Toast.ShowSuccess($"{file.FileName} set as primary.");
+    }
+
+    // ── Helpers ──────────────────────────────────────────────
+
+    private List<string> GetMachineNamesForStage(ProcessStage stage)
+    {
+        if (string.IsNullOrWhiteSpace(stage.PreferredMachineIds) || _machines == null)
+            return [];
+
+        return stage.PreferredMachineIds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(id => int.TryParse(id.Trim(), out var mid) ? _machines.FirstOrDefault(m => m.Id == mid)?.Name : null)
+            .Where(n => n != null)
+            .Cast<string>()
+            .ToList();
+    }
+
+    private void CreateProgramForStage(ProcessStage stage)
+    {
+        var part = stage.ManufacturingProcess?.Part;
+        var machineIds = stage.PreferredMachineIds?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(id => int.TryParse(id.Trim(), out var mid) ? mid : 0)
+            .Where(id => id > 0)
+            .ToHashSet() ?? [];
+
+        var stageName = stage.ProductionStage?.Name ?? $"Stage-{stage.ExecutionOrder}";
+
+        _editingProgram = new MachineProgram
+        {
+            ProgramNumber = $"{part?.PartNumber ?? "NEW"}-{stageName.Replace(" ", "-").ToUpperInvariant()}-{stage.ExecutionOrder:D2}",
+            Name = $"{part?.Name ?? "Part"} — {stageName}",
+            PartId = part?.Id,
+            ProcessStageId = stage.Id,
+            MachineType = _machines?.FirstOrDefault(m => machineIds.Contains(m.Id))?.MachineType,
+            Status = ProgramStatus.Draft,
+            CreatedBy = _currentUser
+        };
+
+        // Add the part to the unified parts list as primary
+        _createBuildPlateParts.Clear();
+        if (part != null)
+        {
+            _createBuildPlateParts.Add(new CreateBuildPartEntry(
+                part.Id, part.PartNumber, part.Name, Quantity: 1, IsPrimary: true));
+        }
+
+        _editSelectedMachineIds = machineIds;
+        _showEditor = true;
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F1} MB";
+    }
+
+    private static string GetStatusColor(ProgramStatus status) => status switch
+    {
+        ProgramStatus.Active => "var(--success)",
+        ProgramStatus.Draft => "var(--warning)",
+        ProgramStatus.Superseded => "var(--text-muted)",
+        ProgramStatus.Archived => "var(--text-muted)",
+        _ => "var(--border-color)"
+    };
+
+    private static string GetWearColor(double percent) => percent switch
+    {
+        >= 100 => "var(--danger)",
+        >= 80 => "var(--warning)",
+        _ => "var(--success)"
+    };
+
+    private static string GetFeedbackSeverityColor(ProgramFeedbackSeverity severity) => severity switch
+    {
+        ProgramFeedbackSeverity.Critical => "var(--danger)",
+        ProgramFeedbackSeverity.High => "#e67700",
+        ProgramFeedbackSeverity.Medium => "var(--warning)",
+        _ => "var(--text-muted)"
+    };
+
+    // ══ UNIFIED PARTS MANAGEMENT (editor) ═════════════════════
+
+    private void AddPartToCreateBuildPlate()
+    {
+        if (_createBuildAddPartId <= 0) return;
+        var part = _parts?.FirstOrDefault(p => p.Id == _createBuildAddPartId)
+                   ?? _additiveParts?.FirstOrDefault(p => p.Id == _createBuildAddPartId);
+        if (part == null) return;
+
+        // For standard programs, if this is the first part, make it primary
+        var isBuildPlate = _editingProgram.ProgramType == ProgramType.BuildPlate;
+        var makePrimary = !isBuildPlate && !_createBuildPlateParts.Any();
+
+        _createBuildPlateParts.Add(new CreateBuildPartEntry(part.Id, part.PartNumber, part.Name, _createBuildAddPartQty, makePrimary));
+        _createBuildAddPartId = 0;
+        _createBuildAddPartQty = 1;
+        _createBuildPartSearch = "";
+    }
+
+    private void SetPrimaryPart(int partId)
+    {
+        // Update all parts: only the selected one is primary
+        _createBuildPlateParts = _createBuildPlateParts
+            .Select(p => p with { IsPrimary = p.PartId == partId })
+            .ToList();
+    }
+
+    private void RemovePartFromList(int partId)
+    {
+        var wasPrimary = _createBuildPlateParts.FirstOrDefault(p => p.PartId == partId)?.IsPrimary ?? false;
+        _createBuildPlateParts.RemoveAll(x => x.PartId == partId);
+
+        // If we removed the primary part, make the first remaining part primary (for standard programs)
+        if (wasPrimary && _createBuildPlateParts.Any() && _editingProgram.ProgramType != ProgramType.BuildPlate)
+        {
+            var first = _createBuildPlateParts[0];
+            _createBuildPlateParts[0] = first with { IsPrimary = true };
+        }
+    }
+
+    // ── Build Plate Part Management (detail panel) ───────────
+
+    private async Task AddPartToDetailBuildPlate()
+    {
+        if (_selectedProgram == null || _buildAddPartId <= 0) { Toast.ShowError("Select a part to add."); return; }
+        if (_buildAddPartQty < 1) { Toast.ShowError("Quantity must be at least 1."); return; }
+        try
+        {
+            await ProgramService.AddProgramPartAsync(_selectedProgram.Id, _buildAddPartId, _buildAddPartQty);
+            _buildAddPartId = 0; _buildAddPartQty = 1; _buildPartSearch = "";
+            Toast.ShowSuccess("Part added to build plate.");
+            await SelectProgram(_selectedProgram);
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task RemoveBuildPartFromDetail(int programPartId)
+    {
+        try
+        {
+            await ProgramService.RemoveProgramPartAsync(programPartId);
+            Toast.ShowSuccess("Part removed.");
+            if (_selectedProgram != null) await SelectProgram(_selectedProgram);
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private void StartBuildPartEdit(ProgramPart pp)
+    {
+        _buildEditingPartId = pp.Id;
+        _buildEditQty = pp.Quantity;
+        _buildEditStackLevel = pp.StackLevel;
+        _buildEditNotes = pp.PositionNotes;
+    }
+
+    private void CancelBuildPartEdit() => _buildEditingPartId = null;
+
+    private async Task SaveBuildPartEdit(int programPartId)
+    {
+        if (_buildEditQty < 1) { Toast.ShowError("Quantity must be at least 1."); return; }
+        try
+        {
+            await ProgramService.UpdateProgramPartAsync(programPartId, _buildEditQty, _buildEditStackLevel, _buildEditNotes);
+            _buildEditingPartId = null;
+            Toast.ShowSuccess("Part updated.");
+            if (_selectedProgram != null) await SelectProgram(_selectedProgram);
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    // ── Build Plate Status ───────────────────────────────────
+
+    private async Task ActivateBuildPlate(MachineProgram plate)
+    {
+        _buildProcessing = true;
+        try
+        {
+            plate.Status = ProgramStatus.Active;
+            plate.LastModifiedBy = _currentUser;
+            plate.LastModifiedDate = DateTime.UtcNow;
+            await ProgramService.UpdateAsync(plate, _currentUser);
+            Toast.ShowSuccess($"Build plate activated: {plate.Name}");
+            await LoadData();
+            if (_selectedProgram?.Id == plate.Id) await SelectProgram(plate);
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _buildProcessing = false; }
+    }
+
+    private async Task ArchiveBuildPlate(MachineProgram plate)
+    {
+        _buildProcessing = true;
+        try
+        {
+            plate.Status = ProgramStatus.Archived;
+            plate.LastModifiedBy = _currentUser;
+            plate.LastModifiedDate = DateTime.UtcNow;
+            await ProgramService.UpdateAsync(plate, _currentUser);
+            Toast.ShowSuccess("Build plate archived.");
+            await LoadData();
+            if (_selectedProgram?.Id == plate.Id) await SelectProgram(plate);
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        finally { _buildProcessing = false; }
+    }
+
+    // ── Build Plate Slicer Data ──────────────────────────────
+
+    private void ShowBuildSlicerEntry(MachineProgram plate)
+    {
+        _slicerBuildPlate = plate;
+        _buildSlicerDuration = plate.EstimatedPrintHours;
+        _buildSlicerLayers = plate.LayerCount;
+        _buildSlicerHeight = plate.BuildHeightMm;
+        _buildSlicerPowder = plate.EstimatedPowderKg;
+        _buildSlicerSoftware = plate.SlicerSoftware;
+        _buildSlicerVersion = plate.SlicerVersion;
+        _buildSlicerFileName = plate.SlicerFileName;
+        _showBuildSlicerEntry = true;
+    }
+
+    private async Task SaveBuildSlicerData()
+    {
+        if (_slicerBuildPlate == null || _buildSlicerDuration is null or <= 0) return;
+        try
+        {
+            await ProgramService.UpdateSlicerDataAsync(
+                _slicerBuildPlate.Id,
+                _buildSlicerDuration,
+                _buildSlicerLayers,
+                _buildSlicerHeight,
+                _buildSlicerPowder,
+                _buildSlicerFileName,
+                _buildSlicerSoftware,
+                _buildSlicerVersion);
+
+            Toast.ShowSuccess("Slicer data saved.");
+            _showBuildSlicerEntry = false;
+            await LoadData();
+            if (_selectedProgram?.Id == _slicerBuildPlate.Id) await SelectProgram(_slicerBuildPlate);
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    // ── Build Plate Scheduling ───────────────────────────────
+
+    private async Task ScheduleBuildPlate(MachineProgram plate)
+    {
+        var preferredMachine = plate.MachineAssignments?.FirstOrDefault(a => a.IsPreferred)
+            ?? plate.MachineAssignments?.FirstOrDefault();
+        if (preferredMachine == null)
+        {
+            Toast.ShowError("Assign at least one machine before scheduling.");
+            return;
+        }
+
+        _buildProcessing = true;
+        try
+        {
+            var result = await ProgramScheduling.ScheduleBuildPlateAsync(plate.Id, preferredMachine.MachineId);
+            var stageCount = result.BuildStageExecutions.Count;
+            var msg = $"Scheduled: {result.Slot.PrintStart:g} → {result.Slot.PrintEnd:g} — {stageCount} stage(s)";
+            if (result.Diagnostics?.Warnings.Count > 0)
+                msg += $" ({string.Join("; ", result.Diagnostics.Warnings)})";
+            Toast.ShowSuccess(msg);
+            Nav.NavigateTo("/scheduler?view=builds");
+        }
+        catch (Exception ex) { Toast.ShowError($"Scheduling failed: {ex.Message}"); }
+        finally { _buildProcessing = false; }
+    }
+}

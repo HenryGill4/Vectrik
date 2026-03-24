@@ -1,0 +1,273 @@
+@* ── Floor View (Stage Queues + My Work) ── *@
+@inject IStageService StageService
+@inject ToastService Toast
+
+@if (!string.IsNullOrEmpty(UserName) && _myWork.Any())
+{
+    <div class="card" style="margin-bottom: 12px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>👤 My Work — @UserName</span>
+            <span class="badge badge-accent">@_myWork.Count task(s)</span>
+        </div>
+        <div style="padding: 4px 0;">
+            @foreach (var exec in _myWork.OrderByDescending(e => e.Status == StageExecutionStatus.InProgress).ThenBy(e => e.ScheduledStartAt))
+            {
+                <div class="stage-queue-item @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item--active" : "")" style="padding: 6px 12px;">
+                    <span class="stage-queue-item-dot @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item-dot--active" : "")"></span>
+                    <span class="stage-queue-item-part">@(exec.ProductionStage?.Name ?? "—")</span>
+                    <span style="opacity: 0.7;">@(exec.Job?.Part?.PartNumber ?? (exec.MachineProgram?.Name ?? "—"))</span>
+                    <span class="badge badge-@(exec.Status.ToString().ToLower())">@exec.Status</span>
+                    <span class="stage-queue-item-hours">@(exec.EstimatedHours?.ToString("F1") ?? "—")h</span>
+                    @if (exec.ScheduledStartAt != null)
+                    {
+                        <span class="stage-queue-item-time">@exec.ScheduledStartAt.Value.ToString("MM/dd HH:mm")</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<div class="stage-queue-grid">
+    @foreach (var stage in Stages.OrderBy(s => s.DisplayOrder))
+    {
+        var stageId = stage.Id;
+        var allForStage = Executions.Concat(Unscheduled)
+            .Where(e => e.ProductionStageId == stageId)
+            .ToList();
+        var waiting = allForStage.Where(e => e.Status == StageExecutionStatus.NotStarted).ToList();
+        var active = allForStage.Where(e => e.Status == StageExecutionStatus.InProgress).ToList();
+        var completed = allForStage.Where(e => e.Status == StageExecutionStatus.Completed).ToList();
+        var failed = allForStage.Where(e => e.Status == StageExecutionStatus.Failed).ToList();
+        var queuedHours = waiting.Sum(e => e.EstimatedHours ?? 0) + active.Sum(e => e.EstimatedHours ?? 0);
+        var hasWork = allForStage.Any();
+        var isExpanded = _expandedStages.Contains(stageId);
+        var barPercent = Math.Min(100, queuedHours / 40.0 * 100);
+        var barColor = queuedHours > 40 ? "var(--danger)" : (queuedHours > 24 ? "var(--warning)" : (stage.StageColor ?? "var(--accent)"));
+
+        <div class="stage-queue-card @(!hasWork ? "stage-queue-card--empty" : "")">
+            <div class="stage-queue-header" @onclick="() => ToggleStageExpand(stageId)">
+                <div class="stage-queue-title">
+                    <span class="stage-queue-swatch" style="background:@(stage.StageColor ?? "var(--accent)")"></span>
+                    <span class="stage-queue-icon">@ResolveStageIcon(stage.StageIcon)</span>
+                    <span class="stage-queue-name">@stage.Name</span>
+                    @if (!string.IsNullOrEmpty(stage.Department))
+                    {
+                        <span class="badge badge-secondary stage-queue-dept">@stage.Department</span>
+                    }
+                </div>
+                <span class="stage-queue-chevron @(isExpanded ? "stage-queue-chevron--open" : "")">▸</span>
+            </div>
+
+            <div class="stage-queue-metrics">
+                <div class="stage-metric stage-metric--waiting">
+                    <span class="stage-metric-count">@waiting.Count</span>
+                    <span class="stage-metric-label">Queued</span>
+                </div>
+                <div class="stage-metric stage-metric--active">
+                    <span class="stage-metric-count">@active.Count</span>
+                    <span class="stage-metric-label">Active</span>
+                </div>
+                <div class="stage-metric stage-metric--done">
+                    <span class="stage-metric-count">@completed.Count</span>
+                    <span class="stage-metric-label">Done</span>
+                </div>
+                @if (failed.Any())
+                {
+                    <div class="stage-metric stage-metric--failed">
+                        <span class="stage-metric-count">@failed.Count</span>
+                        <span class="stage-metric-label">Failed</span>
+                    </div>
+                }
+                <div class="stage-metric stage-metric--hours">
+                    <span class="stage-metric-count">@queuedHours.ToString("F1")</span>
+                    <span class="stage-metric-label">Hrs Queued</span>
+                </div>
+                @{
+                    var batchExecs = allForStage.Where(e => e.ProductionBatchId != null).ToList();
+                    var distinctBatches = batchExecs.Select(e => e.ProductionBatchId).Distinct().Count();
+                }
+                @if (distinctBatches > 0)
+                {
+                    <div class="stage-metric" style="border-left: 2px solid var(--warning); padding-left: 8px;">
+                        <span class="stage-metric-count">@distinctBatches</span>
+                        <span class="stage-metric-label">📦 Batches</span>
+                    </div>
+                }
+            </div>
+
+            @{
+                var capableMachines = GetCapableMachines(stage);
+                var dailyCapacityHours = capableMachines.Count * ShiftHoursPerDay;
+                var isBottleneck = dailyCapacityHours > 0 && queuedHours > 2 * dailyCapacityHours;
+                var capacityPct = dailyCapacityHours > 0 ? Math.Min(100, queuedHours / dailyCapacityHours * 100) : 0;
+            }
+
+            @if (dailyCapacityHours > 0)
+            {
+                <div class="stage-capacity-row">
+                    <div class="stage-capacity-bar">
+                        <div class="stage-capacity-fill @(isBottleneck ? "stage-capacity-fill--bottleneck" : "")" style="width:@capacityPct.ToString("F0")%"></div>
+                    </div>
+                    <span class="stage-capacity-label">
+                        @queuedHours.ToString("F0")h / @dailyCapacityHours.ToString("F0")h daily
+                        @if (isBottleneck)
+                        {
+                            <span class="stage-bottleneck-badge">🔴 Bottleneck</span>
+                        }
+                    </span>
+                </div>
+            }
+            @if (capableMachines.Any())
+            {
+                <div class="stage-machines-row">
+                    <span class="stage-machines-label">🖥️</span>
+                    @foreach (var m in capableMachines)
+                    {
+                        <span class="badge badge-secondary" style="font-size:0.65rem;">@m.Name</span>
+                    }
+                </div>
+            }
+
+            @if (queuedHours > 0)
+            {
+                <div class="stage-queue-workload">
+                    <div class="stage-queue-workload-fill" style="width:@barPercent.ToString("F0")%;background:@barColor"></div>
+                </div>
+            }
+
+            @if (isExpanded && (waiting.Any() || active.Any()))
+            {
+                <div class="stage-queue-items">
+                    @foreach (var exec in active.Concat(waiting).OrderByDescending(e => e.Job?.Priority).ThenBy(e => e.ScheduledStartAt))
+                    {
+                        <div class="stage-queue-item @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item--active" : "")">
+                            <span class="stage-queue-item-dot @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item-dot--active" : "")"></span>
+                            <span class="stage-queue-item-part">
+                                @if (exec.MachineProgramId != null)
+                                {
+                                    <text>📦 @(exec.MachineProgram?.Name ?? $"Program #{exec.MachineProgramId}")</text>
+                                }
+                                else
+                                {
+                                    @(exec.Job?.Part?.PartNumber ?? "—")
+                                }
+                            </span>
+                            <span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority ?? JobPriority.Normal)</span>
+                            @if (exec.ProductionBatchId != null)
+                            {
+                                <span class="badge" style="font-size: 0.65rem; background: var(--warning); color: white;" title="Batch execution">📦 Batch</span>
+                            }
+                            <span class="stage-queue-item-hours">@(exec.EstimatedHours?.ToString("F1") ?? "—")h</span>
+                            @if (exec.Machine != null)
+                            {
+                                <span class="stage-queue-item-machine">🖥️ @exec.Machine.Name</span>
+                            }
+                            @if (exec.ScheduledStartAt != null)
+                            {
+                                <span class="stage-queue-item-time">@exec.ScheduledStartAt.Value.ToString("MM/dd HH:mm")</span>
+                            }
+                            @if (exec.Status == StageExecutionStatus.NotStarted)
+                            {
+                                <button class="btn btn-sm btn-secondary stage-queue-item-action" @onclick="() => OnShowReschedule.InvokeAsync(exec)" title="Reschedule">📅</button>
+                                @if (exec.MachineId == null || exec.ScheduledStartAt == null)
+                                {
+                                    <button class="btn btn-sm btn-primary stage-queue-item-action" @onclick="() => OnAutoSchedule.InvokeAsync(exec.Id)" title="Auto-schedule">⚡</button>
+                                }
+                                @if (exec.ProductionStage?.AllowSkip == true)
+                                {
+                                    <button class="btn btn-sm btn-ghost stage-queue-item-action" @onclick="() => SkipExecutionAsync(exec)" title="Skip this stage">⏭️</button>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else if (isExpanded && !waiting.Any() && !active.Any())
+            {
+                <div class="stage-queue-items">
+                    <div class="stage-queue-empty">No items queued</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
+    [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
+    [Parameter, EditorRequired] public List<ProductionStage> Stages { get; set; } = [];
+    [Parameter] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public string? UserName { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
+    [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
+    [Parameter] public EventCallback OnRefreshRequested { get; set; }
+
+    private HashSet<int> _expandedStages = new();
+    private const double ShiftHoursPerDay = 8.0;
+
+    private List<StageExecution> _myWork => Executions.Concat(Unscheduled)
+        .Where(e => !string.IsNullOrEmpty(e.OperatorName)
+            && e.OperatorName.Equals(UserName, StringComparison.OrdinalIgnoreCase)
+            && e.Status is StageExecutionStatus.NotStarted or StageExecutionStatus.InProgress)
+        .ToList();
+
+    /// <summary>
+    /// Resolves machines capable of executing a production stage using AssignedMachineIds
+    /// or Department matching, falling back to all machines.
+    /// </summary>
+    private List<Machine> GetCapableMachines(ProductionStage stage)
+    {
+        var assignedIntIds = stage.GetAssignedMachineIntIds();
+        if (assignedIntIds.Count > 0)
+        {
+            return Machines.Where(m => assignedIntIds.Contains(m.Id)).ToList();
+        }
+
+        if (!string.IsNullOrEmpty(stage.Department))
+        {
+            var byDept = Machines.Where(m => string.Equals(m.Department, stage.Department, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (byDept.Count > 0) return byDept;
+        }
+
+        // No specific assignment — stage doesn't require specific machines
+        if (!stage.RequiresMachineAssignment) return [];
+        return Machines.ToList();
+    }
+
+    private void ToggleStageExpand(int stageId)
+    {
+        if (!_expandedStages.Remove(stageId))
+            _expandedStages.Add(stageId);
+    }
+
+    private async Task SkipExecutionAsync(StageExecution exec)
+    {
+        try
+        {
+            await StageService.SkipStageExecutionAsync(exec.Id, "Skipped from Stages view");
+            Toast.ShowSuccess($"Skipped {exec.ProductionStage?.Name ?? "stage"}");
+            await OnRefreshRequested.InvokeAsync();
+        }
+        catch (Exception ex) { Toast.ShowError($"Skip failed: {ex.Message}"); }
+    }
+
+    private static string ResolveStageIcon(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return "⚙️";
+        if (!icon.StartsWith("fas ") && !icon.StartsWith("far ") && !icon.StartsWith("fa-")) return icon;
+        return icon switch
+        {
+            "fas fa-print"           => "🖨️",
+            "fas fa-wind"            => "💨",
+            "fas fa-fire"            => "🔥",
+            "fas fa-bolt"            => "⚡",
+            "fas fa-cog"             => "⚙️",
+            "fas fa-pen-nib"         => "✒️",
+            "fas fa-spray-can"       => "🎨",
+            "fas fa-clipboard-check" => "✅",
+            "fas fa-truck"           => "🚚",
+            _                        => "⚙️"
+        };
+    }
+}

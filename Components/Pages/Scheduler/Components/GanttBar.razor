@@ -1,0 +1,73 @@
+@using System.Globalization
+
+@{
+    var barClass = IsUnassigned ? "unassigned" : (Exec.Job?.Priority.ToString().ToLower() ?? "normal");
+    var stageColor = Exec.ProductionStage?.StageColor ?? "";
+    var isBatchScope = Exec.Job?.Scope == JobScope.Batch || Exec.ProductionBatchId != null;
+    var batchBorder = isBatchScope ? "border-bottom: 3px solid var(--warning);" : "";
+    var scopeIcon = Exec.Job?.Scope switch
+    {
+        JobScope.Build => "🏗️ ",
+        JobScope.Batch => "📦 ",
+        _ => ""
+    };
+}
+<div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "")"
+     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
+     title="@ComputeTooltip()"
+     @onclick="HandleClick">
+    <span class="gantt-bar-text">@scopeIcon@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public StageExecution Exec { get; set; } = default!;
+    [Parameter, EditorRequired] public double BarLeftPx { get; set; }
+    [Parameter, EditorRequired] public double BarWidthPx { get; set; }
+    [Parameter, EditorRequired] public DateTime Start { get; set; }
+    [Parameter, EditorRequired] public DateTime End { get; set; }
+    [Parameter] public bool IsConflict { get; set; }
+    [Parameter] public bool IsUnassigned { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnClick { get; set; }
+
+    private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
+
+    private Task HandleClick() => OnClick.InvokeAsync(Exec);
+
+    private string ComputeTooltip()
+    {
+        var part = Exec.Job?.Part?.PartNumber ?? "?";
+        var stage = Exec.ProductionStage?.Name ?? "";
+        var scope = Exec.Job?.Scope switch
+        {
+            JobScope.Build => "Build",
+            JobScope.Batch => "Batch",
+            JobScope.Part => "Part",
+            _ => ""
+        };
+
+        if (IsUnassigned)
+            return $"UNASSIGNED — {part} · {stage}";
+
+        var lines = new List<string>
+        {
+            $"{part} — {(string.IsNullOrEmpty(stage) ? "Stage" : stage)}",
+            $"{Start:MM/dd HH:mm} → {End:MM/dd HH:mm}",
+            $"Est: {Exec.EstimatedHours?.ToString("F1") ?? "?"}h | Priority: {Exec.Job?.Priority}"
+        };
+
+        if (!string.IsNullOrEmpty(scope))
+            lines.Add($"Scope: {scope} | Qty: {Exec.Job?.Quantity}");
+
+        if (Exec.Machine != null)
+            lines.Add($"Machine: {Exec.Machine.Name}");
+
+        var wo = Exec.Job?.WorkOrderLine?.WorkOrder;
+        if (wo != null)
+            lines.Add($"WO: {wo.OrderNumber} — {wo.CustomerName}");
+
+        if (Exec.BuildPackage != null)
+            lines.Add($"Build: {Exec.BuildPackage.Name}");
+
+        return string.Join("\n", lines);
+    }
+}

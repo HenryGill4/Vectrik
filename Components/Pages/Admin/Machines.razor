@@ -1,18 +1,25 @@
 @page "/admin/machines"
-@inject Opcentrix_V3.Data.TenantDbContext Db
-@inject IMaintenanceService MaintenanceService
-@using Microsoft.EntityFrameworkCore
-@using Opcentrix_V3.Models.Maintenance
-@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
+@inject IMachineService MachineService
+@inject ToastService Toast
 
 <PageTitle>Machines - Admin - OpCentrix</PageTitle>
 
 <div class="page-header">
     <h1 class="page-title">Machines</h1>
-    <button class="btn btn-primary" @onclick="NewMachine">+ New Machine</button>
+    <a href="machines/new" class="btn btn-primary">+ New Machine</a>
 </div>
 
-@if (_machines == null) { <div class="loading"><span class="spinner"></span></div> }
+@if (_machines == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!_machines.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-text">No machines configured yet. Click "+ New Machine" to add your first machine.</div>
+    </div>
+}
 else
 {
     <div class="card">
@@ -29,7 +36,10 @@ else
                         <td>$@m.HourlyRate/hr</td>
                         <td><span class="badge badge-@m.Status.ToString().ToLower()">@m.Status</span></td>
                         <td>@m.TotalOperatingHours.ToString("F0")</td>
-                        <td><button class="btn btn-sm btn-secondary" @onclick="() => EditMachine(m)">Edit</button></td>
+                        <td style="white-space: nowrap;">
+                            <a href="machines/@m.Id" class="btn btn-sm btn-secondary">Edit</a>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(m)">Delete</button>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -37,141 +47,29 @@ else
     </div>
 }
 
-@if (_showForm && _edit != null)
-{
-    <div class="modal-overlay" @onclick="() => _showForm = false">
-        <div class="modal-content" style="max-width: 750px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") Machine</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
-
-            <div class="tab-bar" style="margin-bottom: 16px;">
-                <button class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>Info</button>
-                <button class="tab @(_tab == "sls" ? "active" : "")" @onclick='() => _tab = "sls"'>Build Volume</button>
-                @if (_edit.Id > 0)
-                {
-                    <button class="tab @(_tab == "components" ? "active" : "")" @onclick='() => _tab = "components"'>Components (@(_components?.Count ?? 0))</button>
-                }
-            </div>
-
-            @if (_tab == "info")
-            {
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="form-group"><label class="form-label">Machine ID</label><input class="form-control" @bind="_edit.MachineId" disabled="@(_edit.Id > 0)" /></div>
-                    <div class="form-group"><label class="form-label">Name</label><input class="form-control" @bind="_edit.Name" /></div>
-                    <div class="form-group"><label class="form-label">Type</label>
-                        <select class="form-control" @bind="_edit.MachineType">
-                            <option>SLS</option><option>EDM</option><option>CNC</option><option>Laser</option><option>Oven</option><option>Other</option>
-                        </select>
-                    </div>
-                    <div class="form-group"><label class="form-label">Model</label><input class="form-control" @bind="_edit.MachineModel" /></div>
-                    <div class="form-group"><label class="form-label">Serial Number</label><input class="form-control" @bind="_edit.SerialNumber" /></div>
-                    <div class="form-group"><label class="form-label">Location</label><input class="form-control" @bind="_edit.Location" /></div>
-                    <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
-                    <div class="form-group"><label class="form-label">Hourly Rate ($)</label><input class="form-control" type="number" step="1" @bind="_edit.HourlyRate" /></div>
-                    <div class="form-group"><label class="form-label">Priority (1-10)</label><input class="form-control" type="number" min="1" max="10" @bind="_edit.Priority" /></div>
-                    <div class="form-group"><label class="form-label">Maint. Interval (hrs)</label><input class="form-control" type="number" @bind="_edit.MaintenanceIntervalHours" /></div>
-                    <div class="form-group">
-                        <label class="form-label"><input type="checkbox" @bind="_edit.IsAvailableForScheduling" style="margin-right: 6px;" />Available for Scheduling</label>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
-                    </div>
-                </div>
-            }
-
-            @if (_tab == "sls")
-            {
-                <p style="color: var(--text-muted); margin-bottom: 12px;">Build volume dimensions (SLS machines only)</p>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="form-group"><label class="form-label">Build Length (mm)</label><input class="form-control" type="number" @bind="_edit.BuildLengthMm" /></div>
-                    <div class="form-group"><label class="form-label">Build Width (mm)</label><input class="form-control" type="number" @bind="_edit.BuildWidthMm" /></div>
-                    <div class="form-group"><label class="form-label">Build Height (mm)</label><input class="form-control" type="number" @bind="_edit.BuildHeightMm" /></div>
-                    <div class="form-group"><label class="form-label">Max Laser Power (W)</label><input class="form-control" type="number" @bind="_edit.MaxLaserPowerWatts" /></div>
-                </div>
-            }
-
-            @if (_tab == "components" && _edit.Id > 0)
-            {
-                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                    <input class="form-control" placeholder="Component name (e.g. Recoater Arm)" @bind="_newComponentName" />
-                    <button class="btn btn-sm btn-primary" @onclick="AddComponent" disabled="@string.IsNullOrWhiteSpace(_newComponentName)">Add</button>
-                </div>
-
-                @if (_components != null && _components.Any())
-                {
-                    <table class="data-table">
-                        <thead><tr><th>Component</th><th>Description</th><th>Rules</th></tr></thead>
-                        <tbody>
-                            @foreach (var c in _components)
-                            {
-                                <tr>
-                                    <td>@c.Name</td>
-                                    <td>@(c.Description ?? "—")</td>
-                                    <td>@(c.MaintenanceRules?.Count ?? 0)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
-                else
-                {
-                    <div class="empty-state"><div class="empty-state-text">No components. Add components for maintenance tracking.</div></div>
-                }
-            }
-
-            <div style="display: flex; gap: 8px; margin-top: 16px;">
-                <button class="btn btn-primary" @onclick="Save">Save</button>
-                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
+<ConfirmDialog @ref="_confirm" />
 
 @code {
     private List<Machine>? _machines;
-    private Machine? _edit;
-    private List<MachineComponent>? _components;
-    private bool _showForm;
-    private string _tab = "info";
-    private string _newComponentName = "";
+    private ConfirmDialog _confirm = null!;
 
-    protected override async Task OnInitializedAsync() => _machines = await Db.Machines.OrderBy(m => m.MachineId).ToListAsync();
-
-    private void NewMachine()
+    protected override async Task OnInitializedAsync()
     {
-        _edit = new Machine { MachineType = "SLS", CreatedBy = "System", LastModifiedBy = "System" };
-        _components = null;
-        _tab = "info";
-        _showForm = true;
+        try { _machines = await MachineService.GetAllMachinesAsync(); }
+        catch (Exception ex) { Toast.ShowError($"Failed to load machines: {ex.Message}"); _machines = new(); }
     }
 
-    private async Task EditMachine(Machine m)
+    private async Task ConfirmDelete(Machine m)
     {
-        _edit = m;
-        _tab = "info";
-        _components = await MaintenanceService.GetComponentsByMachineAsync(m.MachineId);
-        _showForm = true;
-    }
-
-    private async Task Save()
-    {
-        if (_edit!.Id == 0) { _edit.CreatedDate = DateTime.UtcNow; Db.Machines.Add(_edit); }
-        _edit.LastModifiedDate = DateTime.UtcNow;
-        await Db.SaveChangesAsync();
-        _showForm = false;
-        _machines = await Db.Machines.OrderBy(m => m.MachineId).ToListAsync();
-    }
-
-    private async Task AddComponent()
-    {
-        if (string.IsNullOrWhiteSpace(_newComponentName) || _edit?.Id == 0) return;
-        await MaintenanceService.CreateComponentAsync(new MachineComponent
+        if (await _confirm.ShowAsync($"Delete machine '{m.Name}' ({m.MachineId})? This cannot be undone.", "Delete Machine"))
         {
-            MachineId = _edit!.MachineId,
-            Name = _newComponentName.Trim(),
-            CreatedBy = "System",
-            LastModifiedBy = "System"
-        });
-        _newComponentName = "";
-        _components = await MaintenanceService.GetComponentsByMachineAsync(_edit.MachineId);
+            try
+            {
+                await MachineService.DeleteMachineAsync(m.Id);
+                Toast.ShowSuccess($"Machine '{m.Name}' deleted.");
+                _machines = await MachineService.GetAllMachinesAsync();
+            }
+            catch (Exception ex) { Toast.ShowError($"Failed to delete: {ex.Message}"); }
+        }
     }
 }

@@ -1,0 +1,319 @@
+@page "/inventory/items"
+@inject IInventoryService InventoryService
+@inject IMaterialService MaterialService
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject ITenantFeatureService Features
+@inject ICustomFieldService CustomFieldService
+@using System.Text.Json
+
+<PageTitle>Inventory Items - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.inventory" ModuleName="Inventory Management">
+
+<div class="page-header">
+    <h1 class="page-title">📦 Inventory Items</h1>
+    <button class="btn btn-primary" @onclick="ShowCreate">+ New Item</button>
+</div>
+
+<!-- Type Filter Tabs -->
+<div class="tab-bar" style="margin-bottom: 16px;">
+    <button class="tab @(_typeFilter == null ? "active" : "")" @onclick="() => FilterByType(null)">All (@_allItems.Count)</button>
+    @foreach (var t in Enum.GetValues<InventoryItemType>())
+    {
+        var count = _allItems.Count(i => i.ItemType == t);
+        @if (count > 0)
+        {
+            <button class="tab @(_typeFilter == t ? "active" : "")" @onclick="() => FilterByType(t)">@t (@count)</button>
+        }
+    }
+</div>
+
+<!-- Search -->
+<div style="margin-bottom: 16px;">
+    <input type="text" class="form-control" placeholder="Search by item number or name..."
+           @bind="_searchTerm" @bind:event="oninput" style="max-width: 400px;" />
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Item #</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>UOM</th>
+                    <th style="text-align: right;">On Hand</th>
+                    <th style="text-align: right;">Reserved</th>
+                    <th style="text-align: right;">Available</th>
+                    <th style="text-align: right;">Unit Cost</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in FilteredItems)
+                {
+                    var stockColor = item.ReorderPoint > 0
+                        ? (item.CurrentStockQty <= 0 ? "var(--danger)" :
+                           item.CurrentStockQty <= item.ReorderPoint ? "var(--warning)" : "var(--success)")
+                        : "inherit";
+                    <tr class="clickable-row" @onclick="() => GoToLedger(item.Id)">
+                        <td style="font-weight: 600;">@item.ItemNumber</td>
+                        <td>@item.Name</td>
+                        <td><span class="badge badge-secondary">@item.ItemType</span></td>
+                        <td>@item.UnitOfMeasure</td>
+                        <td style="text-align: right; color: @stockColor; font-weight: 600;">@item.CurrentStockQty</td>
+                        <td style="text-align: right;">@item.ReservedQty</td>
+                        <td style="text-align: right; font-weight: 600;">@item.AvailableQty</td>
+                        <td style="text-align: right;">@(item.UnitCost?.ToString("C2") ?? "—")</td>
+                        <td>
+                            @if (!item.IsActive)
+                            {
+                                <span class="badge badge-danger">Inactive</span>
+                            }
+                            else if (item.ReorderPoint > 0 && item.CurrentStockQty <= item.ReorderPoint)
+                            {
+                                <span class="badge badge-warning">Low Stock</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-success">OK</span>
+                            }
+                        </td>
+                        <td style="white-space: nowrap;" @onclick:stopPropagation>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ShowEdit(item)">Edit</button>
+                            <button class="btn btn-sm btn-danger" style="margin-left: 4px;" @onclick="() => DeleteItem(item)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (!FilteredItems.Any())
+    {
+        <div style="text-align: center; color: var(--text-muted); padding: 40px;">No items found.</div>
+    }
+}
+
+@if (_showForm)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">@(_editItem.Id == 0 ? "New Inventory Item" : "Edit Inventory Item")</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
+            <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div>
+                    <label class="form-label">Item Number *</label>
+                    <input class="form-control" @bind="_editItem.ItemNumber" />
+                </div>
+                <div>
+                    <label class="form-label">Name *</label>
+                    <input class="form-control" @bind="_editItem.Name" />
+                </div>
+                <div>
+                    <label class="form-label">Type *</label>
+                    <select class="form-control" @bind="_editItem.ItemType">
+                        @foreach (var t in Enum.GetValues<InventoryItemType>())
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Unit of Measure</label>
+                    <select class="form-control" @bind="_editItem.UnitOfMeasure">
+                        <option value="each">each</option>
+                        <option value="kg">kg</option>
+                        <option value="lb">lb</option>
+                        <option value="ft">ft</option>
+                        <option value="m">m</option>
+                        <option value="gal">gal</option>
+                        <option value="L">L</option>
+                        <option value="in">in</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Linked Material</label>
+                    <select class="form-control" @bind="_editItem.MaterialId">
+                        <option value="">— None —</option>
+                        @foreach (var m in _materials)
+                        {
+                            <option value="@m.Id">@m.Name</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Unit Cost</label>
+                    <input type="number" step="0.01" class="form-control" @bind="_editItem.UnitCost" />
+                </div>
+                <div>
+                    <label class="form-label">Reorder Point</label>
+                    <input type="number" step="0.01" class="form-control" @bind="_editItem.ReorderPoint" />
+                </div>
+                <div>
+                    <label class="form-label">Reorder Quantity</label>
+                    <input type="number" step="0.01" class="form-control" @bind="_editItem.ReorderQuantity" />
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" rows="2" @bind="_editItem.Description"></textarea>
+                </div>
+                <div>
+                    <label class="form-check">
+                        <input type="checkbox" @bind="_editItem.TrackLots" /> Track Lots / Heat Numbers
+                    </label>
+                </div>
+                <div>
+                    <label class="form-check">
+                        <input type="checkbox" @bind="_editItem.TrackSerials" /> Track Serial Numbers
+                    </label>
+                </div>
+            </div>
+
+            @if (_customFieldDefs.Count > 0)
+            {
+                <div style="margin-top: 12px;">
+                    <label class="form-label" style="font-weight: 600;">Custom Fields</label>
+                    <CustomFieldsEditor FieldDefinitions="_customFieldDefs" Values="_customFieldValues"
+                                        ValuesChanged="OnCustomFieldsChanged" />
+                </div>
+            }
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveItem">@(_editItem.Id == 0 ? "Create" : "Save")</button>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+</FeatureGate>
+
+@code {
+    private bool _loading = true;
+    private bool _showForm;
+    private List<InventoryItem> _allItems = new();
+    private List<Material> _materials = new();
+    private InventoryItemType? _typeFilter;
+    private string _searchTerm = string.Empty;
+    private InventoryItem _editItem = new();
+    private ConfirmDialog _confirm = null!;
+
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
+
+    private IEnumerable<InventoryItem> FilteredItems
+    {
+        get
+        {
+            var items = _typeFilter.HasValue
+                ? _allItems.Where(i => i.ItemType == _typeFilter.Value)
+                : _allItems;
+
+            if (!string.IsNullOrWhiteSpace(_searchTerm))
+            {
+                var term = _searchTerm.Trim().ToLower();
+                items = items.Where(i =>
+                    i.ItemNumber.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    i.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return items;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allItems = await InventoryService.GetAllItemsAsync();
+        _materials = await MaterialService.GetAllMaterialsAsync();
+        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("InventoryItem");
+        _loading = false;
+    }
+
+    private void FilterByType(InventoryItemType? type) => _typeFilter = type;
+
+    private void GoToLedger(int itemId) => Nav.NavigateTo($"/inventory/items/{itemId}/ledger");
+
+    private void ShowCreate()
+    {
+        _editItem = new InventoryItem();
+        _customFieldValues = new();
+        _showForm = true;
+    }
+
+    private void ShowEdit(InventoryItem item)
+    {
+        _editItem = item;
+        _customFieldValues = new();
+        if (!string.IsNullOrEmpty(item.CustomFieldValues))
+        {
+            try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(item.CustomFieldValues) ?? new(); }
+            catch { _customFieldValues = new(); }
+        }
+        _showForm = true;
+    }
+
+    private async Task DeleteItem(InventoryItem item)
+    {
+        var confirmed = await _confirm.ShowAsync(
+            $"Delete inventory item \"{item.ItemNumber} — {item.Name}\"? This cannot be undone.",
+            "Delete Item");
+        if (!confirmed) return;
+
+        try
+        {
+            await InventoryService.DeleteItemAsync(item.Id);
+            Toast.ShowSuccess("Item deleted.");
+            _allItems = await InventoryService.GetAllItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private async Task SaveItem()
+    {
+        if (string.IsNullOrWhiteSpace(_editItem.ItemNumber) || string.IsNullOrWhiteSpace(_editItem.Name))
+        {
+            Toast.ShowError("Item number and name are required.");
+            return;
+        }
+
+        try
+        {
+            if (_customFieldValues.Count > 0)
+                _editItem.CustomFieldValues = JsonSerializer.Serialize(_customFieldValues);
+
+            if (_editItem.Id == 0)
+            {
+                await InventoryService.CreateItemAsync(_editItem);
+                Toast.ShowSuccess("Item created.");
+            }
+            else
+            {
+                await InventoryService.UpdateItemAsync(_editItem);
+                Toast.ShowSuccess("Item updated.");
+            }
+
+            _showForm = false;
+            _allItems = await InventoryService.GetAllItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private void OnCustomFieldsChanged(Dictionary<string, string> values) => _customFieldValues = values;
+}

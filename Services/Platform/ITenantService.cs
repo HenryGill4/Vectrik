@@ -1,3 +1,4 @@
+using Opcentrix_V3.Models;
 using Opcentrix_V3.Models.Platform;
 
 namespace Opcentrix_V3.Services.Platform;
@@ -12,4 +13,11 @@ public interface ITenantService
     Task DeactivateTenantAsync(int id);
     Task ActivateTenantAsync(int id);
     Task SeedTenantDatabaseAsync(string tenantCode);
+
+    // Tenant user management
+    Task<List<User>> GetTenantUsersAsync(string tenantCode);
+    Task<User?> GetTenantUserByIdAsync(string tenantCode, int userId);
+    Task<User> CreateTenantUserAsync(string tenantCode, User user, string password);
+    Task UpdateTenantUserAsync(string tenantCode, User user);
+    Task ResetTenantUserPasswordAsync(string tenantCode, int userId, string newPassword);
 }

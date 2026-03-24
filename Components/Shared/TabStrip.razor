@@ -1,0 +1,270 @@
+@inject TabManagerService Tabs
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="tab-strip" @oncontextmenu:preventDefault>
+    <div class="tab-strip-scroll">
+        @foreach (var tab in Tabs.Tabs)
+        {
+            var isActive = tab.Id == Tabs.ActiveTabId;
+            <div class="tab-item @(isActive ? "active" : "") @(tab.Pinned ? "pinned" : "") @(tab.HasUnsavedWork ? "dirty" : "")"
+                 @key="tab.Id"
+                 @onclick="() => ActivateTab(tab)"
+                 @onmousedown="(e) => OnMouseDown(e, tab)"
+                 @oncontextmenu="(e) => ShowContextMenu(e, tab)"
+                 @oncontextmenu:preventDefault
+                 title="@TabTooltip(tab)"
+                 id="tab-@tab.Id">
+                @if (tab.Pinned)
+                {
+                    <span class="tab-pin-indicator" title="Pinned">📌</span>
+                }
+                <span class="tab-icon">@tab.Icon</span>
+                <span class="tab-title">@tab.Title</span>
+                @if (tab.HasUnsavedWork)
+                {
+                    <span class="tab-dirty-dot" title="Unsaved work">●</span>
+                }
+                @if (!tab.Pinned)
+                {
+                    <button class="tab-close"
+                            @onclick="() => CloseTab(tab)"
+                            @onclick:stopPropagation
+                            title="Close tab">
+                        ×
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    @if (Tabs.Tabs.Count > 1)
+    {
+        <div class="tab-overflow-area">
+            <button class="tab-overflow-btn" @onclick="ToggleOverflowMenu" @onclick:stopPropagation title="All open tabs">
+                <span class="tab-overflow-count">@Tabs.Tabs.Count</span>
+                <span class="tab-overflow-chevron">▾</span>
+            </button>
+
+            @if (_showOverflow)
+            {
+                <div class="tab-overflow-backdrop" @onclick="CloseOverflowMenu"></div>
+                <div class="tab-overflow-dropdown">
+                    <div class="tab-overflow-header">
+                        <span>Open tabs (@Tabs.Tabs.Count)</span>
+                        @if (Tabs.Tabs.Count(t => !t.Pinned) > 1)
+                        {
+                            <button class="tab-overflow-close-all" @onclick="CloseAllTabs" title="Close all">✕ Close all</button>
+                        }
+                    </div>
+                    <div class="tab-overflow-list">
+                        @foreach (var tab in Tabs.Tabs)
+                        {
+                            var isActive = tab.Id == Tabs.ActiveTabId;
+                            <button class="tab-overflow-item @(isActive ? "active" : "")"
+                                    @key="tab.Id"
+                                    @onclick="() => OverflowActivate(tab)">
+                                @if (tab.Pinned)
+                                {
+                                    <span class="tab-overflow-item-pin">📌</span>
+                                }
+                                <span class="tab-overflow-item-icon">@tab.Icon</span>
+                                <span class="tab-overflow-item-title">@tab.Title</span>
+                                @if (tab.HasUnsavedWork)
+                                {
+                                    <span class="tab-dirty-dot">●</span>
+                                }
+                                @if (!tab.Pinned)
+                                {
+                                    <span class="tab-overflow-item-close"
+                                          @onclick="() => OverflowClose(tab)"
+                                          @onclick:stopPropagation>×</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (_contextTab is not null)
+{
+    <div class="tab-context-overlay" @onclick="HideContextMenu"></div>
+    <div class="tab-context-menu" style="left: @(_contextX)px; top: @(_contextY)px;">
+        @* Pin / Unpin *@
+        @if (IsHomeDashboard(_contextTab))
+        {
+            <button class="tab-context-item disabled" disabled>📌 Pinned (home)</button>
+        }
+        else
+        {
+            <button class="tab-context-item" @onclick="() => ContextTogglePin()">
+                @(_contextTab.Pinned ? "📌 Unpin tab" : "📌 Pin tab")
+            </button>
+        }
+
+        <div class="tab-context-separator"></div>
+
+        @* Close actions *@
+        @if (!_contextTab.Pinned)
+        {
+            <button class="tab-context-item" @onclick="() => ContextClose()">Close</button>
+        }
+        <button class="tab-context-item" @onclick="() => ContextCloseOthers()">Close others</button>
+        <button class="tab-context-item" @onclick="() => ContextCloseAll()">Close all unpinned</button>
+
+        <div class="tab-context-separator"></div>
+
+        @* Smart close *@
+        <button class="tab-context-item" @onclick="() => ContextCloseAllButPinned()">Close all but pinned</button>
+        <button class="tab-context-item" @onclick="() => ContextCloseSaved()">Close saved tabs</button>
+    </div>
+}
+
+@code {
+    private TabInfo? _contextTab;
+    private double _contextX;
+    private double _contextY;
+    private bool _showOverflow;
+
+    protected override void OnInitialized()
+    {
+        Tabs.OnChanged += HandleTabChange;
+    }
+
+    private static string TabTooltip(TabInfo tab)
+    {
+        var tip = tab.Title;
+        if (tab.Pinned) tip += " (pinned)";
+        if (tab.HasUnsavedWork) tip += " • unsaved work";
+        return tip;
+    }
+
+    private static bool IsHomeDashboard(TabInfo tab) =>
+        tab.Pinned && tab.Url.TrimStart('/') is "" or "/";
+
+    private void ActivateTab(TabInfo tab)
+    {
+        Tabs.Activate(tab.Id);
+        Nav.NavigateTo(tab.Url);
+        _showOverflow = false;
+    }
+
+    /// <summary>Middle-click (button 1) closes a tab.</summary>
+    private void OnMouseDown(MouseEventArgs e, TabInfo tab)
+    {
+        if (e.Button == 1 && !tab.Pinned)
+        {
+            CloseTab(tab);
+        }
+    }
+
+    private void CloseTab(TabInfo tab)
+    {
+        Tabs.Close(tab.Id);
+        var active = Tabs.ActiveTab;
+        if (active is not null)
+            Nav.NavigateTo(active.Url);
+        else
+            Nav.NavigateTo("/");
+    }
+
+    private void CloseAllTabs()
+    {
+        Tabs.CloseAll();
+        var active = Tabs.ActiveTab;
+        Nav.NavigateTo(active?.Url ?? "/");
+        _showOverflow = false;
+    }
+
+    private void ToggleOverflowMenu() => _showOverflow = !_showOverflow;
+    private void CloseOverflowMenu() => _showOverflow = false;
+
+    private void OverflowActivate(TabInfo tab)
+    {
+        ActivateTab(tab);
+        _showOverflow = false;
+    }
+
+    private void OverflowClose(TabInfo tab)
+    {
+        Tabs.Close(tab.Id);
+        if (Tabs.Tabs.Count <= 1)
+            _showOverflow = false;
+    }
+
+    // ── Context menu actions ──
+
+    private void ShowContextMenu(MouseEventArgs e, TabInfo tab)
+    {
+        _contextTab = tab;
+        _contextX = e.ClientX;
+        _contextY = e.ClientY;
+    }
+
+    private void HideContextMenu() => _contextTab = null;
+
+    private void ContextTogglePin()
+    {
+        if (_contextTab is not null)
+            Tabs.TogglePin(_contextTab.Id);
+        _contextTab = null;
+    }
+
+    private void ContextClose()
+    {
+        if (_contextTab is not null)
+            CloseTab(_contextTab);
+        _contextTab = null;
+    }
+
+    private void ContextCloseOthers()
+    {
+        if (_contextTab is not null)
+        {
+            Tabs.CloseOthers(_contextTab.Id);
+            Tabs.Activate(_contextTab.Id);
+            Nav.NavigateTo(_contextTab.Url);
+        }
+        _contextTab = null;
+    }
+
+    private void ContextCloseAll()
+    {
+        Tabs.CloseAll();
+        NavigateToActiveOrHome();
+        _contextTab = null;
+    }
+
+    private void ContextCloseAllButPinned()
+    {
+        Tabs.CloseUnpinned();
+        NavigateToActiveOrHome();
+        _contextTab = null;
+    }
+
+    private void ContextCloseSaved()
+    {
+        Tabs.CloseSaved();
+        NavigateToActiveOrHome();
+        _contextTab = null;
+    }
+
+    private void NavigateToActiveOrHome()
+    {
+        var active = Tabs.ActiveTab;
+        Nav.NavigateTo(active?.Url ?? "/");
+    }
+
+    private async void HandleTabChange()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Tabs.OnChanged -= HandleTabChange;
+    }
+}

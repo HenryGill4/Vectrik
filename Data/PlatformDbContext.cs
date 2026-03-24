@@ -12,6 +12,7 @@ public class PlatformDbContext : DbContext
 
     public DbSet<Tenant> Tenants { get; set; }
     public DbSet<PlatformUser> PlatformUsers { get; set; }
+    public DbSet<TenantFeatureFlag> TenantFeatureFlags { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,6 +26,11 @@ public class PlatformDbContext : DbContext
         modelBuilder.Entity<PlatformUser>(entity =>
         {
             entity.HasIndex(e => e.Username).IsUnique();
+        });
+
+        modelBuilder.Entity<TenantFeatureFlag>(entity =>
+        {
+            entity.HasIndex(e => new { e.TenantCode, e.FeatureKey }).IsUnique();
         });
     }
 }

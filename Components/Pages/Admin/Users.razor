@@ -1,9 +1,10 @@
 @page "/admin/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @inject IAuthService AuthService
 @inject IStageService StageService
+@inject ToastService Toast
 @using Microsoft.EntityFrameworkCore
-@rendermode InteractiveServer
 
 <PageTitle>Users - Admin - OpCentrix</PageTitle>
 
@@ -12,23 +13,36 @@
     <button class="btn btn-primary" @onclick="NewUser">+ New User</button>
 </div>
 
-@if (_users == null) { <div class="loading"><span class="spinner"></span></div> }
+@if (_users == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!_users.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-text">No users configured. Click "+ New User" to add one.</div>
+    </div>
+}
 else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>Username</th><th>Full Name</th><th>Role</th><th>Department</th><th>Stages</th><th>Active</th><th></th></tr></thead>
+            <thead><tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Department</th><th>Stages</th><th>Active</th><th></th></tr></thead>
             <tbody>
                 @foreach (var u in _users)
                 {
                     <tr>
                         <td>@u.Username</td>
                         <td>@u.FullName</td>
+                        <td>@(u.Email ?? "—")</td>
                         <td><span class="badge">@u.Role</span></td>
                         <td>@(u.Department ?? "—")</td>
                         <td>@(string.IsNullOrWhiteSpace(u.AssignedStageIds) ? "All" : u.AssignedStageIds.Split(',').Length.ToString())</td>
                         <td><span class="badge @(u.IsActive ? "badge-active" : "badge-cancelled")">@(u.IsActive ? "Yes" : "No")</span></td>
-                        <td><button class="btn btn-sm btn-secondary" @onclick="() => EditUser(u)">Edit</button></td>
+                        <td style="white-space: nowrap;">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditUser(u)">Edit</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(u)">Delete</button>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -42,12 +56,23 @@ else
         <div class="modal-content" style="max-width: 650px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
             <div class="modal-header"><span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") User</span><button class="modal-close" @onclick="() => _showForm = false">&times;</button></div>
             @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
-            @if (!string.IsNullOrEmpty(_success)) { <div class="alert" style="background: var(--success); color: white; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;">@_success</div> }
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div class="form-group"><label class="form-label">Username</label><input class="form-control" @bind="_edit.Username" disabled="@(_edit.Id > 0)" /></div>
-                <div class="form-group"><label class="form-label">Full Name</label><input class="form-control" @bind="_edit.FullName" /></div>
-                <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" @bind="_edit.Email" /></div>
+                <div class="form-group">
+                    <label class="form-label">Username <span style="color:var(--danger);">*</span></label>
+                    <input class="form-control @(_validationErrors.ContainsKey("Username") ? "is-invalid" : "")" @bind="_edit.Username" disabled="@(_edit.Id > 0)" />
+                    @if (_validationErrors.ContainsKey("Username")) { <small style="color:var(--danger);">@_validationErrors["Username"]</small> }
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Full Name <span style="color:var(--danger);">*</span></label>
+                    <input class="form-control @(_validationErrors.ContainsKey("FullName") ? "is-invalid" : "")" @bind="_edit.FullName" />
+                    @if (_validationErrors.ContainsKey("FullName")) { <small style="color:var(--danger);">@_validationErrors["FullName"]</small> }
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input class="form-control @(_validationErrors.ContainsKey("Email") ? "is-invalid" : "")" type="email" @bind="_edit.Email" />
+                    @if (_validationErrors.ContainsKey("Email")) { <small style="color:var(--danger);">@_validationErrors["Email"]</small> }
+                </div>
                 <div class="form-group"><label class="form-label">Role</label>
                     <select class="form-control" @bind="_edit.Role">
                         @foreach (var r in _roles) { <option>@r</option> }
@@ -59,16 +84,18 @@ else
                 </div>
             </div>
 
-            @* Password section *@
             <div class="card" style="padding: 12px; margin-top: 12px;">
-                <div class="form-group" style="margin-bottom: 8px;"><label class="form-label">@(_edit.Id == 0 ? "Password" : "Reset Password")</label><input class="form-control" type="password" @bind="_newPassword" placeholder="@(_edit.Id == 0 ? "Required" : "Leave blank to keep current")" /></div>
+                <div class="form-group" style="margin-bottom: 8px;">
+                    <label class="form-label">@(_edit.Id == 0 ? "Password" : "Reset Password") <span style="color:var(--danger);">@(_edit.Id == 0 ? "*" : "")</span></label>
+                    <input class="form-control @(_validationErrors.ContainsKey("Password") ? "is-invalid" : "")" type="password" @bind="_newPassword" placeholder="@(_edit.Id == 0 ? "Required — min 8 characters" : "Leave blank to keep current")" />
+                    @if (_validationErrors.ContainsKey("Password")) { <small style="color:var(--danger);">@_validationErrors["Password"]</small> }
+                </div>
                 @if (_edit.Id > 0 && !string.IsNullOrWhiteSpace(_newPassword))
                 {
                     <button class="btn btn-sm btn-secondary" @onclick="ResetPassword">Reset Password</button>
                 }
             </div>
 
-            @* Stage assignment (for Operators) *@
             @if (_edit.Role == "Operator" && _allStages != null)
             {
                 <div class="card" style="padding: 12px; margin-top: 12px;">
@@ -84,20 +111,24 @@ else
             }
 
             <div style="display: flex; gap: 8px; margin-top: 16px;">
-                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-primary" @onclick="Save" disabled="@_saving">@(_saving ? "Saving..." : "Save")</button>
                 <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
             </div>
         </div>
     </div>
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     private List<User>? _users;
     private List<ProductionStage>? _allStages;
     private User? _edit;
-    private bool _showForm;
-    private string? _error, _success, _newPassword;
+    private bool _showForm, _saving;
+    private string? _error, _newPassword;
     private HashSet<int> _assignedStageIds = new();
+    private Dictionary<string, string> _validationErrors = new();
+    private ConfirmDialog _confirm = null!;
     private readonly string[] _roles = ["Admin", "Manager", "Supervisor", "Scheduler", "Operator", "MaintenanceTech", "QCSpecialist", "Analyst"];
 
     protected override async Task OnInitializedAsync()
@@ -111,7 +142,7 @@ else
         _edit = u;
         _newPassword = null;
         _error = null;
-        _success = null;
+        _validationErrors.Clear();
         _assignedStageIds = string.IsNullOrWhiteSpace(u.AssignedStageIds)
             ? new HashSet<int>()
             : u.AssignedStageIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToHashSet();
@@ -123,7 +154,7 @@ else
         _edit = new User { Role = "Operator", CreatedBy = "System", LastModifiedBy = "System" };
         _newPassword = null;
         _error = null;
-        _success = null;
+        _validationErrors.Clear();
         _assignedStageIds = new();
         _showForm = true;
     }
@@ -136,28 +167,78 @@ else
         else _assignedStageIds.Remove(id);
     }
 
+    private bool Validate()
+    {
+        _validationErrors.Clear();
+        if (string.IsNullOrWhiteSpace(_edit!.Username))
+            _validationErrors["Username"] = "Username is required.";
+        if (string.IsNullOrWhiteSpace(_edit.FullName))
+            _validationErrors["FullName"] = "Full name is required.";
+        if (!string.IsNullOrWhiteSpace(_edit.Email) && !_edit.Email.Contains('@'))
+            _validationErrors["Email"] = "Invalid email format.";
+        if (_edit.Id == 0 && string.IsNullOrWhiteSpace(_newPassword))
+            _validationErrors["Password"] = "Password is required for new users.";
+        if (!string.IsNullOrWhiteSpace(_newPassword) && _newPassword.Length < 8)
+            _validationErrors["Password"] = "Password must be at least 8 characters.";
+        return _validationErrors.Count == 0;
+    }
+
     private async Task ResetPassword()
     {
         if (string.IsNullOrWhiteSpace(_newPassword) || _edit?.Id == 0) return;
-        _edit!.PasswordHash = AuthService.HashPassword(_newPassword);
-        _edit.LastModifiedDate = DateTime.UtcNow;
-        await Db.SaveChangesAsync();
-        _newPassword = null;
-        _success = "Password reset successfully.";
+        if (_newPassword.Length < 8)
+        {
+            _validationErrors["Password"] = "Password must be at least 8 characters.";
+            return;
+        }
+        try
+        {
+            _edit!.PasswordHash = AuthService.HashPassword(_newPassword);
+            _edit.LastModifiedDate = DateTime.UtcNow;
+            await Db.SaveChangesAsync();
+            _newPassword = null;
+            Toast.ShowSuccess("Password reset successfully.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task ConfirmDelete(User u)
+    {
+        if (u.Role == "Admin")
+        {
+            var adminCount = _users!.Count(x => x.Role == "Admin" && x.IsActive);
+            if (adminCount <= 1)
+            {
+                Toast.ShowError("Cannot delete the last admin user.");
+                return;
+            }
+        }
+        if (await _confirm.ShowAsync($"Delete user '{u.Username}' ({u.FullName})? This cannot be undone.", "Delete User"))
+        {
+            try
+            {
+                Db.Users.Remove(u);
+                await Db.SaveChangesAsync();
+                Toast.ShowSuccess($"User '{u.Username}' deleted.");
+                _users = await Db.Users.OrderBy(x => x.Username).ToListAsync();
+            }
+            catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+        }
     }
 
     private async Task Save()
     {
         _error = null;
-        _success = null;
+        if (!Validate()) return;
+
+        _saving = true;
         try
         {
             _edit!.AssignedStageIds = _assignedStageIds.Any() ? string.Join(",", _assignedStageIds.OrderBy(x => x)) : null;
 
             if (_edit.Id == 0)
             {
-                if (string.IsNullOrWhiteSpace(_newPassword)) { _error = "Password required for new users."; return; }
-                _edit.PasswordHash = AuthService.HashPassword(_newPassword);
+                _edit.PasswordHash = AuthService.HashPassword(_newPassword!);
                 _edit.CreatedDate = DateTime.UtcNow;
                 Db.Users.Add(_edit);
             }
@@ -165,7 +246,9 @@ else
             await Db.SaveChangesAsync();
             _showForm = false;
             _users = await Db.Users.OrderBy(u => u.Username).ToListAsync();
+            Toast.ShowSuccess($"User '{_edit.Username}' saved.");
         }
         catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
     }
 }

@@ -1,38 +1,174 @@
 @page "/machines"
-@inject Opcentrix_V3.Data.TenantDbContext Db
-@using Microsoft.EntityFrameworkCore
-@rendermode InteractiveServer
+@inject IMachineService MachineService
+@inject IMaintenanceService MaintenanceService
+@inject NavigationManager Nav
+@inject ToastService Toast
+@implements IDisposable
+@using Opcentrix_V3.Models.Maintenance
 
-<PageTitle>Machine Status - OpCentrix</PageTitle>
+<PageTitle>Machines - OpCentrix</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Machine Status</h1>
-    <button class="btn btn-secondary btn-sm" @onclick="LoadMachines">Refresh</button>
+    <h1 class="page-title">Machines</h1>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary btn-sm" @onclick="LoadMachines" disabled="@_loading">🔄 Refresh</button>
+        <a href="machines/new" class="btn btn-primary btn-sm">+ New Machine</a>
+    </div>
 </div>
 
+@* ── Filter Bar ── *@
+<div class="card" style="padding: 12px; margin-bottom: 16px;">
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
+        <div class="form-group" style="margin-bottom: 0; min-width: 180px;">
+            <label class="form-label" style="font-size: 0.78rem;">Search</label>
+            <input class="form-control" placeholder="Name, ID, model, location…" @bind="_search" @bind:after="LoadMachines" />
+        </div>
+        <div class="form-group" style="margin-bottom: 0; min-width: 140px;">
+            <label class="form-label" style="font-size: 0.78rem;">Type</label>
+            <select class="form-control" @bind="_filterType" @bind:after="LoadMachines">
+                <option value="">All Types</option>
+                @foreach (var t in _machineTypes) { <option value="@t">@t</option> }
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0; min-width: 130px;">
+            <label class="form-label" style="font-size: 0.78rem;">Status</label>
+            <select class="form-control" @bind="_filterStatusStr" @bind:after="LoadMachines">
+                <option value="">All Statuses</option>
+                @foreach (var s in Enum.GetValues<MachineStatus>()) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0; min-width: 130px;">
+            <label class="form-label" style="font-size: 0.78rem;">Department</label>
+            <select class="form-control" @bind="_filterDept" @bind:after="LoadMachines">
+                <option value="">All Departments</option>
+                @foreach (var d in _departments) { <option value="@d">@d</option> }
+            </select>
+        </div>
+        @if (!string.IsNullOrEmpty(_search) || !string.IsNullOrEmpty(_filterType) || !string.IsNullOrEmpty(_filterStatusStr) || !string.IsNullOrEmpty(_filterDept))
+        {
+            <button class="btn btn-sm btn-secondary" style="align-self: end; margin-bottom: 2px;" @onclick="ClearFilters">✕ Clear</button>
+        }
+    </div>
+</div>
+
+@* ── KPI Summary ── *@
+@if (_machines != null)
+{
+    <div class="kpi-grid" style="margin-bottom: 16px;">
+        <div class="kpi-card">
+            <div class="kpi-label">Total Machines</div>
+            <div class="kpi-value">@_machines.Count</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Running</div>
+            <div class="kpi-value" style="color: var(--success);">@_machines.Count(m => m.Status == MachineStatus.Running || m.Status == MachineStatus.Building)</div>
+        </div>
+        <div class="kpi-card" style="@(_machines.Any(m => m.Status == MachineStatus.Error) ? "border-color: var(--danger);" : "")">
+            <div class="kpi-label">Errors</div>
+            <div class="kpi-value" style="color: var(--danger);">@_machines.Count(m => m.Status == MachineStatus.Error)</div>
+        </div>
+        <div class="kpi-card" style="@(_maintenanceAlertCount > 0 ? "border-color: var(--warning);" : "")">
+            <div class="kpi-label">Maint. Alerts</div>
+            <div class="kpi-value" style="color: var(--warning);">@_maintenanceAlertCount</div>
+        </div>
+    </div>
+}
+
+@* ── Machine Grid ── *@
 @if (_machines == null) { <div class="loading"><span class="spinner"></span></div> }
+else if (!_machines.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">🖥️</div>
+        <div class="empty-state-text">
+            @if (HasActiveFilters) { <span>No machines match the current filters.</span> }
+            else { <span>No machines configured. <a href="machines/new">Add your first machine</a>.</span> }
+        </div>
+    </div>
+}
 else
 {
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px;">
         @foreach (var m in _machines)
         {
-            <div class="card">
+            var alerts = GetAlertsForMachine(m.MachineId);
+            <div class="card" style="cursor: pointer; transition: border-color 0.15s; @(m.Status == MachineStatus.Error ? "border-color: var(--danger);" : alerts.Any(a => a.IsOverdue) ? "border-color: var(--warning);" : "")" @onclick="() => NavigateToDetail(m.Id)">
+                @* Header *@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <div>
                         <div style="font-weight: 600; font-size: 1rem;">@m.Name</div>
-                        <div style="font-size: 0.8rem; color: var(--text-muted);">@m.MachineId · @m.MachineType</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">@m.MachineId · @m.MachineType@(m.Department != null ? $" · {m.Department}" : "")</div>
                     </div>
-                    <span class="badge badge-@m.Status.ToString().ToLower()">@m.Status</span>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        @if (!m.IsActive)
+                        {
+                            <span class="badge badge-secondary" style="font-size: 0.7rem;">Inactive</span>
+                        }
+                        <span class="badge badge-@m.Status.ToString().ToLower()">@m.Status</span>
+                    </div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
-                    <div><span class="form-label">Hours</span><div>@m.TotalOperatingHours.ToString("F0")</div></div>
-                    <div><span class="form-label">Since PM</span><div>@m.HoursSinceLastMaintenance.ToString("F0") / @m.MaintenanceIntervalHours.ToString("F0")</div></div>
-                    <div><span class="form-label">Material</span><div>@(m.CurrentMaterial ?? "—")</div></div>
-                    <div><span class="form-label">Rate</span><div>$@m.HourlyRate/hr</div></div>
+
+                @* Stats Grid *@
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 0.85rem; margin-bottom: 10px;">
+                    <div>
+                        <span class="form-label">Hours</span>
+                        <div>@m.TotalOperatingHours.ToString("F0")</div>
+                    </div>
+                    <div>
+                        <span class="form-label">Rate</span>
+                        <div>$@m.HourlyRate/hr</div>
+                    </div>
+                    <div>
+                        <span class="form-label">Material</span>
+                        <div>@(m.CurrentMaterial ?? "—")</div>
+                    </div>
                 </div>
-                @if (m.HoursSinceLastMaintenance / m.MaintenanceIntervalHours > 0.8)
+
+                @* Maintenance Health Bar *@
+                @if (m.MaintenanceIntervalHours > 0)
                 {
-                    <div class="alert alert-warning" style="margin-top: 10px; margin-bottom: 0;">Maintenance due soon</div>
+                    var pct = Math.Min(m.HoursSinceLastMaintenance / m.MaintenanceIntervalHours, 1.0);
+                    var barColor = pct >= 0.9 ? "var(--danger)" : pct >= 0.7 ? "var(--warning)" : "var(--success)";
+                    <div style="margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 3px;">
+                            <span>Maintenance Health</span>
+                            <span>@m.HoursSinceLastMaintenance.ToString("F0") / @m.MaintenanceIntervalHours.ToString("F0") hrs</span>
+                        </div>
+                        <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                            <div style="width: @(pct * 100)%; height: 100%; background: @barColor; border-radius: 3px; transition: width 0.3s;"></div>
+                        </div>
+                    </div>
+                }
+
+                @* Alerts *@
+                @if (alerts.Any(a => a.IsOverdue))
+                {
+                    <div class="alert alert-danger" style="margin-bottom: 8px; padding: 6px 10px; font-size: 0.82rem;">
+                        🚨 @alerts.Count(a => a.IsOverdue) overdue maintenance alert(s)
+                    </div>
+                }
+                else if (alerts.Any())
+                {
+                    <div class="alert alert-warning" style="margin-bottom: 8px; padding: 6px 10px; font-size: 0.82rem;">
+                        ⚠️ @alerts.Count maintenance warning(s)
+                    </div>
+                }
+
+                @if (m.Status == MachineStatus.Error)
+                {
+                    <div class="alert alert-danger" style="margin-bottom: 8px; padding: 6px 10px; font-size: 0.82rem;">
+                        🚨 Machine error — needs attention
+                        <button class="btn btn-danger btn-sm" style="margin-left: 8px; font-size: 0.75rem;" @onclick:stopPropagation @onclick="() => AcknowledgeAlarm(m)" disabled="@_actionInProgress">Acknowledge</button>
+                    </div>
+                }
+
+                @* Location & Model *@
+                @if (!string.IsNullOrEmpty(m.Location) || !string.IsNullOrEmpty(m.MachineModel))
+                {
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">
+                        @if (!string.IsNullOrEmpty(m.MachineModel)) { <span>📋 @m.MachineModel</span> }
+                        @if (!string.IsNullOrEmpty(m.Location)) { <span style="margin-left: 8px;">📍 @m.Location</span> }
+                    </div>
                 }
             </div>
         }
@@ -41,6 +177,123 @@ else
 
 @code {
     private List<Machine>? _machines;
-    protected override async Task OnInitializedAsync() => await LoadMachines();
-    private async Task LoadMachines() => _machines = await Db.Machines.Where(m => m.IsActive).OrderBy(m => m.MachineId).ToListAsync();
+    private List<MaintenanceAlert> _alerts = new();
+    private Dictionary<string, List<MaintenanceAlert>> _alertsByMachine = new();
+    private List<string> _machineTypes = new();
+    private List<string> _departments = new();
+    private int _maintenanceAlertCount;
+    private bool _loading;
+    private bool _actionInProgress;
+    private bool _disposed;
+    private System.Threading.Timer? _refreshTimer;
+
+    // Filters
+    private string _search = "";
+    private string _filterType = "";
+    private string _filterStatusStr = "";
+    private string _filterDept = "";
+
+    private bool HasActiveFilters =>
+        !string.IsNullOrEmpty(_search) || !string.IsNullOrEmpty(_filterType) ||
+        !string.IsNullOrEmpty(_filterStatusStr) || !string.IsNullOrEmpty(_filterDept);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var typesTask = MachineService.GetDistinctMachineTypesAsync();
+            var deptsTask = MachineService.GetDistinctDepartmentsAsync();
+            _machineTypes = await typesTask;
+            _departments = await deptsTask;
+        }
+        catch { /* filter lists are non-critical */ }
+
+        await LoadMachines();
+        await LoadAlerts();
+
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            if (_disposed) return;
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadMachines();
+                    await LoadAlerts();
+                    StateHasChanged();
+                });
+            }
+            catch (ObjectDisposedException) { }
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task LoadMachines()
+    {
+        _loading = true;
+        try
+        {
+            MachineStatus? statusFilter = Enum.TryParse<MachineStatus>(_filterStatusStr, out var s) ? s : null;
+            _machines = await MachineService.GetFilteredMachinesAsync(
+                string.IsNullOrEmpty(_filterType) ? null : _filterType,
+                statusFilter,
+                string.IsNullOrEmpty(_filterDept) ? null : _filterDept,
+                string.IsNullOrEmpty(_search) ? null : _search);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading machines: {ex.Message}");
+            _machines ??= new();
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task LoadAlerts()
+    {
+        try
+        {
+            _alerts = await MaintenanceService.EvaluateMaintenanceRulesAsync();
+            _alertsByMachine = _alerts.GroupBy(a => a.MachineId).ToDictionary(g => g.Key, g => g.ToList());
+            _maintenanceAlertCount = _alerts.Count;
+        }
+        catch
+        {
+            _alerts = new();
+            _alertsByMachine = new();
+            _maintenanceAlertCount = 0;
+        }
+    }
+
+    private List<MaintenanceAlert> GetAlertsForMachine(string machineId) =>
+        _alertsByMachine.TryGetValue(machineId, out var list) ? list : [];
+
+    private void NavigateToDetail(int id) => Nav.NavigateTo($"machines/{id}");
+
+    private async Task AcknowledgeAlarm(Machine machine)
+    {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
+        try
+        {
+            machine.Status = MachineStatus.Idle;
+            await MachineService.UpdateMachineAsync(machine);
+            Toast.ShowSuccess($"Alarm acknowledged for {machine.Name}");
+        }
+        catch (Exception ex) { Toast.ShowError($"Error: {ex.Message}"); }
+        finally { _actionInProgress = false; }
+    }
+
+    private async Task ClearFilters()
+    {
+        _search = "";
+        _filterType = "";
+        _filterStatusStr = "";
+        _filterDept = "";
+        await LoadMachines();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _refreshTimer?.Dispose();
+    }
 }

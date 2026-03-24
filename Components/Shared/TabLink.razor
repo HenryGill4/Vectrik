@@ -1,0 +1,28 @@
+@inject TabManagerService Tabs
+@inject NavigationManager Nav
+
+<a href="@Url" class="@CssClass" @onclick="HandleClick" @onclick:preventDefault>@ChildContent</a>
+
+@code {
+    /// <summary>The target URL to open in a tab.</summary>
+    [Parameter, EditorRequired] public string Url { get; set; } = "";
+
+    /// <summary>Tab title. If not set, uses the child content text.</summary>
+    [Parameter] public string Title { get; set; } = "";
+
+    /// <summary>Tab icon emoji.</summary>
+    [Parameter] public string Icon { get; set; } = "📄";
+
+    /// <summary>Optional CSS class on the anchor.</summary>
+    [Parameter] public string? CssClass { get; set; }
+
+    /// <summary>Content rendered inside the link.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private void HandleClick()
+    {
+        var title = string.IsNullOrWhiteSpace(Title) ? Url : Title;
+        Tabs.Open(title, Icon, Url);
+        Nav.NavigateTo(Url);
+    }
+}

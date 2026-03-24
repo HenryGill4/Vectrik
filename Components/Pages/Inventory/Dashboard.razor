@@ -1,0 +1,231 @@
+@page "/inventory"
+@inject IInventoryService InventoryService
+@inject IMaterialPlanningService PlanningService
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject ITenantFeatureService Features
+
+<PageTitle>Inventory - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.inventory" ModuleName="Inventory Management">
+
+<div class="page-header">
+    <h1 class="page-title">📦 Inventory Dashboard</h1>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-primary" @onclick='() => Nav.NavigateTo("/inventory/receive")'>📥 Receive Stock</button>
+        <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/inventory/items")'>📋 All Items</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <!-- KPI Row -->
+    <div class="kpi-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div class="card kpi-card">
+            <div class="kpi-label">Total SKUs</div>
+            <div class="kpi-value">@_allItems.Count</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">Total Stock Value</div>
+            <div class="kpi-value">@_totalValue.ToString("C0")</div>
+        </div>
+        <div class="card kpi-card" style="@(_lowStockItems.Count > 0 ? "border-left: 4px solid var(--danger);" : "")">
+            <div class="kpi-label">Low Stock Items</div>
+            <div class="kpi-value" style="@(_lowStockItems.Count > 0 ? "color: var(--danger);" : "")">@_lowStockItems.Count</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">Pending Requests</div>
+            <div class="kpi-value">@_pendingRequests.Count</div>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <!-- Low Stock Alerts -->
+        <div class="card">
+            <div class="card-header">⚠️ Low Stock Alerts</div>
+            @if (_lowStockItems.Count == 0)
+            {
+                <div style="color: var(--text-muted); padding: 12px;">All items above reorder point.</div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th style="text-align: right;">On Hand</th>
+                            <th style="text-align: right;">Reorder Pt</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _lowStockItems.Take(10))
+                        {
+                            <tr class="clickable-row" @onclick="() => GoToLedger(item.Id)">
+                                <td>
+                                    <div style="font-weight: 600;">@item.ItemNumber</div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted);">@item.Name</div>
+                                </td>
+                                <td style="text-align: right; color: var(--danger); font-weight: 600;">@item.CurrentStockQty @item.UnitOfMeasure</td>
+                                <td style="text-align: right;">@item.ReorderPoint</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <!-- Reorder Suggestions -->
+        <div class="card">
+            <div class="card-header">🔄 Reorder Suggestions</div>
+            @if (_reorderSuggestions.Count == 0)
+            {
+                <div style="color: var(--text-muted); padding: 12px;">No reorder suggestions at this time.</div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th style="text-align: right;">Suggested Qty</th>
+                            <th>Reason</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _reorderSuggestions.Take(10))
+                        {
+                            <tr>
+                                <td>
+                                    <div style="font-weight: 600;">@s.ItemNumber</div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted);">@s.ItemName</div>
+                                </td>
+                                <td style="text-align: right; font-weight: 600;">@s.SuggestedOrderQty</td>
+                                <td><span class="badge @(s.Reason == "Out of stock" ? "badge-danger" : "badge-warning")">@s.Reason</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary" @onclick="() => CreateRequestFromSuggestion(s)" title="Create material request">📋 Request</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+
+    <!-- Recent Transactions -->
+    <div class="card" style="margin-top: 20px;">
+        <div class="card-header">📜 Recent Transactions</div>
+        @if (_recentTransactions.Count == 0)
+        {
+            <div style="color: var(--text-muted); padding: 12px;">No transactions yet.</div>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Item</th>
+                        <th>Type</th>
+                        <th style="text-align: right;">Qty</th>
+                        <th>Reference</th>
+                        <th>By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _recentTransactions)
+                    {
+                        <tr>
+                            <td>@t.TransactedAt.ToString("MMM dd HH:mm")</td>
+                            <td>@(t.InventoryItem?.ItemNumber ?? "—")</td>
+                            <td><span class="badge @GetTxBadge(t.TransactionType)">@t.TransactionType</span></td>
+                            <td style="text-align: right; color: @(t.Quantity >= 0 ? "var(--success)" : "var(--danger)"); font-weight: 600;">
+                                @(t.Quantity >= 0 ? "+" : "")@t.Quantity
+                            </td>
+                            <td style="color: var(--text-muted);">@t.Reference</td>
+                            <td>@t.PerformedByUserId</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <!-- Pending Material Requests -->
+    @if (_pendingRequests.Count > 0)
+    {
+        <div class="card" style="margin-top: 20px;">
+            <div class="card-header">📋 Pending Material Requests</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Requested</th>
+                        <th>Item</th>
+                        <th>Job</th>
+                        <th style="text-align: right;">Qty Requested</th>
+                        <th style="text-align: right;">Qty Issued</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _pendingRequests)
+                    {
+                        <tr>
+                            <td>@r.RequestedAt.ToString("MMM dd HH:mm")</td>
+                            <td>@(r.InventoryItem?.ItemNumber ?? "—") — @(r.InventoryItem?.Name ?? "")</td>
+                            <td>Job #@r.JobId</td>
+                            <td style="text-align: right;">@r.QuantityRequested</td>
+                            <td style="text-align: right;">@(r.QuantityIssued ?? 0)</td>
+                            <td><span class="badge badge-warning">@r.Status</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+</FeatureGate>
+
+@code {
+    private bool _loading = true;
+    private List<InventoryItem> _allItems = new();
+    private List<InventoryItem> _lowStockItems = new();
+    private List<InventoryTransaction> _recentTransactions = new();
+    private List<MaterialRequest> _pendingRequests = new();
+    private List<ReorderSuggestion> _reorderSuggestions = new();
+    private decimal _totalValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allItems = await InventoryService.GetAllItemsAsync();
+        _lowStockItems = await InventoryService.GetLowStockItemsAsync();
+        _recentTransactions = await InventoryService.GetRecentTransactionsAsync(20);
+        _pendingRequests = await InventoryService.GetPendingRequestsAsync();
+        _reorderSuggestions = await PlanningService.GetReorderSuggestionsAsync();
+        _totalValue = _allItems.Where(i => i.UnitCost.HasValue).Sum(i => i.CurrentStockQty * i.UnitCost!.Value);
+        _loading = false;
+    }
+
+    private void GoToLedger(int itemId) => Nav.NavigateTo($"/inventory/items/{itemId}/ledger");
+
+    private void CreateRequestFromSuggestion(ReorderSuggestion suggestion)
+    {
+        Toast.ShowSuccess($"Reorder {suggestion.ItemNumber}: {suggestion.SuggestedOrderQty} units needed — navigating to item.");
+        Nav.NavigateTo($"/inventory/items/{suggestion.ItemId}/ledger");
+    }
+
+    private static string GetTxBadge(TransactionType type) => type switch
+    {
+        TransactionType.Receipt => "badge-success",
+        TransactionType.JobConsumption => "badge-info",
+        TransactionType.Adjustment or TransactionType.CycleCount => "badge-warning",
+        TransactionType.Scrap => "badge-danger",
+        _ => "badge-secondary"
+    };
+}

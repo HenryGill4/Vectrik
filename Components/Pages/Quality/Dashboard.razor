@@ -1,0 +1,175 @@
+@page "/quality"
+@inject IQualityService QualityService
+@inject NavigationManager Nav
+@inject ITenantFeatureService Features
+
+<PageTitle>Quality Dashboard - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.quality" ModuleName="Quality Management">
+
+<div class="page-header">
+    <h1 class="page-title">🔍 Quality Dashboard</h1>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-primary" @onclick='() => Nav.NavigateTo("/quality/ncr")'>📋 NCR Management</button>
+        <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/quality/capa")'>🔧 CAPA Board</button>
+        <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/quality/spc")'>📈 SPC Charts</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_data != null)
+{
+    <!-- KPI Row -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div class="card kpi-card clickable-row" @onclick="GoToSpc" title="View SPC Charts">
+            <div class="kpi-label">First Pass Yield (30d)</div>
+            <div class="kpi-value" style="color: @GetFpyColor()">@_data.FirstPassYieldPercent%</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">Inspections (30d)</div>
+            <div class="kpi-value">@_data.TotalInspections</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">Passed</div>
+            <div class="kpi-value" style="color: var(--success);">@_data.PassedInspections</div>
+        </div>
+        <div class="card kpi-card clickable-row" style="@(_data.OpenNcrCount > 0 ? "border-left: 4px solid var(--danger);" : "")" @onclick="GoToNcr" title="View NCR Management">
+            <div class="kpi-label">Open NCRs</div>
+            <div class="kpi-value" style="@(_data.OpenNcrCount > 0 ? "color: var(--danger);" : "")">@_data.OpenNcrCount</div>
+        </div>
+        <div class="card kpi-card clickable-row" style="@(_data.OpenCapaCount > 0 ? "border-left: 4px solid var(--warning);" : "")" @onclick="GoToCapa" title="View CAPA Board">
+            <div class="kpi-label">Open CAPAs</div>
+            <div class="kpi-value" style="@(_data.OpenCapaCount > 0 ? "color: var(--warning);" : "")">@_data.OpenCapaCount</div>
+        </div>
+        <div class="card kpi-card">
+            <div class="kpi-label">In Inspection</div>
+            <div class="kpi-value">@_data.PartsInInspection</div>
+        </div>
+    </div>
+
+    <!-- Recent NCRs -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">📋 Recent Non-Conformance Reports</div>
+        @if (_data.RecentNcrs.Count == 0)
+        {
+            <div style="padding: 16px; color: var(--text-muted);">No NCRs recorded yet.</div>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>NCR #</th>
+                        <th>Part</th>
+                        <th>Type</th>
+                        <th>Severity</th>
+                        <th>Status</th>
+                        <th>Days Open</th>
+                        <th>Disposition</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ncr in _data.RecentNcrs)
+                    {
+                        <tr style="cursor: pointer;" @onclick="() => GoToNcr()">
+                            <td style="font-weight: 600;">@ncr.NcrNumber</td>
+                            <td>@(ncr.Part?.PartNumber ?? "—")</td>
+                            <td><span class="badge badge-secondary">@ncr.Type</span></td>
+                            <td><span class="badge @GetSeverityBadge(ncr.Severity)">@ncr.Severity</span></td>
+                            <td><span class="badge @GetNcrStatusBadge(ncr.Status)">@ncr.Status</span></td>
+                            <td>@((int)(DateTime.UtcNow - ncr.ReportedAt).TotalDays)</td>
+                            <td>@ncr.Disposition</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <!-- Overdue CAPAs -->
+    @if (_data.OverduaCapas.Count > 0)
+    {
+        <div class="card">
+            <div class="card-header" style="color: var(--danger);">⚠️ Overdue CAPAs</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>CAPA #</th>
+                        <th>Type</th>
+                        <th>Problem</th>
+                        <th>Owner</th>
+                        <th>Due Date</th>
+                        <th>Days Overdue</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var capa in _data.OverduaCapas)
+                    {
+                        <tr>
+                            <td style="font-weight: 600;">@capa.CapaNumber</td>
+                            <td><span class="badge badge-secondary">@capa.Type</span></td>
+                            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@capa.ProblemStatement</td>
+                            <td>@capa.OwnerId</td>
+                            <td style="color: var(--danger);">@capa.DueDate?.ToString("MMM dd, yyyy")</td>
+                            <td style="color: var(--danger); font-weight: 600;">@((int)(DateTime.UtcNow - (capa.DueDate ?? DateTime.UtcNow)).TotalDays)</td>
+                            <td><span class="badge @GetCapaStatusBadge(capa.Status)">@capa.Status</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+</FeatureGate>
+
+@code {
+    private bool _loading = true;
+    private QualityDashboardData? _data;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _data = await QualityService.GetDashboardDataAsync();
+        _loading = false;
+    }
+
+    private void GoToNcr() => Nav.NavigateTo("/quality/ncr");
+    private void GoToCapa() => Nav.NavigateTo("/quality/capa");
+    private void GoToSpc() => Nav.NavigateTo("/quality/spc");
+
+    private string GetFpyColor() => _data?.FirstPassYieldPercent switch
+    {
+        >= 95 => "var(--success)",
+        >= 85 => "var(--warning)",
+        _ => "var(--danger)"
+    };
+
+    private static string GetSeverityBadge(NcrSeverity s) => s switch
+    {
+        NcrSeverity.Critical => "badge-danger",
+        NcrSeverity.Major => "badge-warning",
+        _ => "badge-secondary"
+    };
+
+    private static string GetNcrStatusBadge(NcrStatus s) => s switch
+    {
+        NcrStatus.Open => "badge-danger",
+        NcrStatus.InReview => "badge-warning",
+        NcrStatus.Dispositioned => "badge-info",
+        NcrStatus.Closed => "badge-success",
+        _ => "badge-secondary"
+    };
+
+    private static string GetCapaStatusBadge(CapaStatus s) => s switch
+    {
+        CapaStatus.Open => "badge-danger",
+        CapaStatus.InProgress => "badge-warning",
+        CapaStatus.PendingVerification => "badge-info",
+        CapaStatus.Closed => "badge-success",
+        _ => "badge-secondary"
+    };
+}

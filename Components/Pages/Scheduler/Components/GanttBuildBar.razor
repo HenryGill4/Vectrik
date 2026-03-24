@@ -1,0 +1,101 @@
+@using System.Globalization
+
+@{
+    var statusClass = Build.ScheduleStatus switch
+    {
+        ProgramScheduleStatus.Scheduled => "gantt-build-scheduled",
+        ProgramScheduleStatus.Printing => "gantt-build-printing",
+        ProgramScheduleStatus.PostPrint => "gantt-build-postprint",
+        ProgramScheduleStatus.Completed => "gantt-build-completed",
+        _ => "gantt-build-scheduled"
+    };
+    var statusLabel = Build.ScheduleStatus switch
+    {
+        ProgramScheduleStatus.Printing => "🖨️",
+        ProgramScheduleStatus.PostPrint => "⏳",
+        ProgramScheduleStatus.Completed => "✅",
+        _ => "📦"
+    };
+}
+<div class="gantt-build-bar-wrapper" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;">
+    <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "")"
+         title="@ComputeTooltip()"
+         @onclick="TogglePopover"
+         @onclick:stopPropagation="true">
+        @if (HasChangeoverConflict)
+        {
+            <span class="gantt-conflict-icon" title="Changeover conflict: cooldown chamber may not be emptied in time">⚠️</span>
+        }
+        <span class="gantt-bar-text">@statusLabel @Build.Name — @Build.TotalPartCount parts</span>
+    </div>
+
+    @if (_showPopover)
+    {
+        <div class="gantt-build-popover" @onclick:stopPropagation="true">
+            <div class="gantt-build-popover-header">
+                <strong>@Build.Name</strong>
+                <button class="gantt-build-popover-close" @onclick="() => _showPopover = false">✕</button>
+            </div>
+            <div class="gantt-build-popover-body">
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Status</span><span class="badge badge-sm">@statusLabel @Build.ScheduleStatus</span></div>
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Machine</span><span>@(Build.Machine?.Name ?? "—")</span></div>
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Parts</span><span>@Build.TotalPartCount (@Build.UniquePartCount types)</span></div>
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Duration</span><span>@(Build.EstimatedPrintHours?.ToString("F1") ?? "?")h</span></div>
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Time</span><span>@Start.ToString("MM/dd HH:mm") → @End.ToString("MM/dd HH:mm")</span></div>
+            </div>
+            <div class="gantt-build-popover-actions">
+                @switch (Build.ScheduleStatus)
+                {
+                    case ProgramScheduleStatus.Scheduled:
+                        <button class="btn btn-sm btn-accent" @onclick="OnStartPrint">🖨️ Start Print</button>
+                        break;
+                    case ProgramScheduleStatus.Printing:
+                        <button class="btn btn-sm btn-warning" @onclick="OnPostPrint">🔄 → Post-Print</button>
+                        break;
+                    case ProgramScheduleStatus.PostPrint:
+                        <button class="btn btn-sm btn-success" @onclick="OnReleasePlate">📦 Release Plate</button>
+                        break;
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Build { get; set; } = default!;
+    [Parameter, EditorRequired] public double BarLeftPx { get; set; }
+    [Parameter, EditorRequired] public double BarWidthPx { get; set; }
+    [Parameter, EditorRequired] public DateTime Start { get; set; }
+    [Parameter, EditorRequired] public DateTime End { get; set; }
+    [Parameter] public bool HasChangeoverConflict { get; set; }
+
+    /// <summary>Raised when the user clicks a status action. Value is (MachineProgram, actionKey).</summary>
+    [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
+
+    private bool _showPopover;
+
+    private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
+
+    private void TogglePopover() => _showPopover = !_showPopover;
+
+    private Task OnStartPrint() => InvokeAction("start-print");
+    private Task OnPostPrint() => InvokeAction("post-print");
+    private Task OnReleasePlate() => InvokeAction("release-plate");
+
+    private async Task InvokeAction(string action)
+    {
+        _showPopover = false;
+        await OnBuildAction.InvokeAsync((Build, action));
+    }
+
+    private string ComputeTooltip()
+    {
+        var parts = Build.TotalPartCount;
+        var unique = Build.UniquePartCount;
+        var tip = $"{Build.Name}\nStatus: {Build.ScheduleStatus}\nParts: {parts} ({unique} types)\n{Start:MM/dd HH:mm} → {End:MM/dd HH:mm}\nEst: {Build.EstimatedPrintHours?.ToString("F1") ?? "?"}h";
+        if (HasChangeoverConflict)
+            tip += "\n⚠️ CHANGEOVER CONFLICT: Cooldown chamber may not be emptied before next build completes. Machine will be down until an operator arrives.";
+        tip += "\nClick for actions";
+        return tip;
+    }
+}

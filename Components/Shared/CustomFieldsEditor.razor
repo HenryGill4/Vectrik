@@ -1,0 +1,149 @@
+@using Opcentrix_V3.Models
+
+@if (_definitions.Count > 0)
+{
+    <div class="custom-fields-editor">
+        @foreach (var field in _definitions)
+        {
+            @if (IsFieldVisible(field))
+            {
+                <div class="form-group">
+                    <label class="form-label">
+                        @field.Label
+                        @if (field.IsRequired)
+                        {
+                            <span style="color: var(--danger);">*</span>
+                        }
+                    </label>
+
+                    @switch (field.FieldType)
+                    {
+                        case "textarea":
+                            <textarea class="form-control" rows="3"
+                                      value="@GetValue(field.Name)"
+                                      @onchange="e => SetValue(field.Name, e.Value?.ToString())"></textarea>
+                            break;
+
+                        case "checkbox":
+                            <div>
+                                <input type="checkbox"
+                                       checked="@(GetValue(field.Name) == "true")"
+                                       @onchange="e => SetCheckboxValue(field.Name, e)" />
+                            </div>
+                            break;
+
+                        case "select":
+                            <select class="form-control"
+                                    value="@GetValue(field.Name)"
+                                    @onchange="e => SetValue(field.Name, e.Value?.ToString())">
+                                <option value="">-- Select --</option>
+                                @foreach (var opt in GetOptions(field))
+                                {
+                                    <option value="@opt">@opt</option>
+                                }
+                            </select>
+                            break;
+
+                        case "multiselect":
+                            <select class="form-control" multiple
+                                    @onchange="e => SetValue(field.Name, e.Value?.ToString())">
+                                @foreach (var opt in GetOptions(field))
+                                {
+                                    <option value="@opt" selected="@IsMultiSelected(field.Name, opt)">@opt</option>
+                                }
+                            </select>
+                            break;
+
+                        case "date":
+                            <input type="date" class="form-control"
+                                   value="@GetValue(field.Name)"
+                                   @onchange="e => SetValue(field.Name, e.Value?.ToString())" />
+                            break;
+
+                        case "number":
+                            <input type="number" class="form-control"
+                                   value="@GetValue(field.Name)"
+                                   min="@field.MinValue" max="@field.MaxValue"
+                                   @onchange="e => SetValue(field.Name, e.Value?.ToString())" />
+                            break;
+
+                        case "decimal":
+                            <input type="number" step="0.01" class="form-control"
+                                   value="@GetValue(field.Name)"
+                                   min="@field.MinValue" max="@field.MaxValue"
+                                   @onchange="e => SetValue(field.Name, e.Value?.ToString())" />
+                            break;
+
+                        default:
+                            <input type="text" class="form-control"
+                                   value="@GetValue(field.Name)"
+                                   @onchange="e => SetValue(field.Name, e.Value?.ToString())" />
+                            break;
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// JSON array of CustomFieldDefinition objects.
+    /// </summary>
+    [Parameter] public List<CustomFieldDefinition> FieldDefinitions { get; set; } = new();
+
+    /// <summary>
+    /// Dictionary of field name → value. Two-way bound.
+    /// </summary>
+    [Parameter] public Dictionary<string, string> Values { get; set; } = new();
+    [Parameter] public EventCallback<Dictionary<string, string>> ValuesChanged { get; set; }
+
+    private List<CustomFieldDefinition> _definitions = new();
+
+    protected override void OnParametersSet()
+    {
+        _definitions = FieldDefinitions ?? new();
+    }
+
+    private string GetValue(string name)
+    {
+        return Values.TryGetValue(name, out var val) ? val : string.Empty;
+    }
+
+    private async Task SetValue(string name, string? value)
+    {
+        Values[name] = value ?? string.Empty;
+        await ValuesChanged.InvokeAsync(Values);
+    }
+
+    private async Task SetCheckboxValue(string name, ChangeEventArgs e)
+    {
+        var isChecked = (bool)(e.Value ?? false);
+        await SetValue(name, isChecked ? "true" : "false");
+    }
+
+    private static string[] GetOptions(CustomFieldDefinition field)
+    {
+        if (string.IsNullOrWhiteSpace(field.Options)) return [];
+        return field.Options.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private bool IsMultiSelected(string name, string option)
+    {
+        var val = GetValue(name);
+        return val.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Contains(option);
+    }
+
+    private bool IsFieldVisible(CustomFieldDefinition field)
+    {
+        if (string.IsNullOrWhiteSpace(field.VisibleWhen)) return true;
+
+        var parts = field.VisibleWhen.Split('=', 2);
+        if (parts.Length != 2) return true;
+
+        var depField = parts[0].Trim();
+        var depValue = parts[1].Trim();
+        return GetValue(depField) == depValue;
+    }
+}

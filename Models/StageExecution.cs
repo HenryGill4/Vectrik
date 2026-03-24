@@ -18,10 +18,19 @@ public class StageExecution
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
 
+    // Scheduling
+    public int? MachineId { get; set; }
+    public DateTime? ScheduledStartAt { get; set; }
+    public DateTime? ScheduledEndAt { get; set; }
+    public DateTime? ActualStartAt { get; set; }
+    public DateTime? ActualEndAt { get; set; }
+
     // Time
     public double? EstimatedHours { get; set; }
     public double? ActualHours { get; set; }
     public double? SetupHours { get; set; }
+    public decimal SetupHoursActual { get; set; }
+    public decimal RunHoursActual { get; set; }
 
     // Cost
     [Column(TypeName = "decimal(10,2)")]
@@ -39,6 +48,9 @@ public class StageExecution
     [MaxLength(100)]
     public string? OperatorName { get; set; }
 
+    [MaxLength(100)]
+    public string? AssignedOperatorId { get; set; }
+
     // Custom Form Data
     public string CustomFieldValues { get; set; } = "{}";
 
@@ -49,9 +61,55 @@ public class StageExecution
     [MaxLength(1000)]
     public string? QualityNotes { get; set; }
 
-    // Notes
+    // Notes & Completion
     public string? Notes { get; set; }
     public string? Issues { get; set; }
+
+    [MaxLength(500)]
+    public string? CompletionNotes { get; set; }
+
+    [MaxLength(500)]
+    public string? FailureReason { get; set; }
+
+    // Sign-Off (linked to Work Instructions)
+    [MaxLength(200)]
+    public string? SignedOffBy { get; set; }
+
+    public DateTime? SignedOffAt { get; set; }
+
+    /// <summary>
+    /// JSON array of sign-off checklist items derived from Work Instruction steps.
+    /// Format: [{"stepId":1,"title":"Verify dimensions","required":true,"signedOff":false,"signedBy":null,"signedAt":null}]
+    /// </summary>
+    public string? SignOffChecklistJson { get; set; }
+
+    // Unmanned / lights-out
+    public bool IsUnmanned { get; set; }
+
+    // Sequence within job
+    public int SortOrder { get; set; }
+
+    // Batch execution grouping (e.g. "DEPOW-{buildPackageId}-1")
+    [MaxLength(100)]
+    public string? BatchGroupId { get; set; }
+
+    public int? BatchPartCount { get; set; }
+
+    /// <summary>
+    /// FK to ProductionBatch — links this execution to a formal batch entity.
+    /// </summary>
+    public int? ProductionBatchId { get; set; }
+
+    /// <summary>
+    /// FK to ProcessStage — links this execution to the process stage definition that created it.
+    /// </summary>
+    public int? ProcessStageId { get; set; }
+
+    /// <summary>
+    /// FK to MachineProgram — records which program version was used for this execution.
+    /// Enables tracking of program performance across runs and learning feedback.
+    /// </summary>
+    public int? MachineProgramId { get; set; }
 
     // Audit
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
@@ -67,4 +125,11 @@ public class StageExecution
     public virtual Job? Job { get; set; }
     public virtual ProductionStage ProductionStage { get; set; } = null!;
     public virtual User? Operator { get; set; }
+    public virtual Machine? Machine { get; set; }
+    public virtual ICollection<DelayLog> DelayLogs { get; set; } = new List<DelayLog>();
+    public virtual ExternalOperation? ExternalOperation { get; set; }
+
+    public virtual ProductionBatch? ProductionBatch { get; set; }
+    public virtual ProcessStage? ProcessStage { get; set; }
+    public virtual MachineProgram? MachineProgram { get; set; }
 }

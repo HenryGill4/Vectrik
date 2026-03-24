@@ -9,11 +9,13 @@ public class QuoteService : IQuoteService
 {
     private readonly TenantDbContext _db;
     private readonly IWorkOrderService _workOrderService;
+    private readonly INumberSequenceService _numberSeq;
 
-    public QuoteService(TenantDbContext db, IWorkOrderService workOrderService)
+    public QuoteService(TenantDbContext db, IWorkOrderService workOrderService, INumberSequenceService numberSeq)
     {
         _db = db;
         _workOrderService = workOrderService;
+        _numberSeq = numberSeq;
     }
 
     public async Task<List<Quote>> GetAllQuotesAsync(QuoteStatus? statusFilter = null)
@@ -34,6 +36,16 @@ public class QuoteService : IQuoteService
         return await _db.Quotes
             .Include(q => q.Lines)
                 .ThenInclude(l => l.Part)
+            .Include(q => q.ConvertedWorkOrder)
+            .FirstOrDefaultAsync(q => q.Id == id);
+    }
+
+    public async Task<Quote?> GetQuoteDetailAsync(int id)
+    {
+        return await _db.Quotes
+            .Include(q => q.Lines)
+                .ThenInclude(l => l.Part)
+            .Include(q => q.Revisions.OrderByDescending(r => r.RevisionNumber))
             .Include(q => q.ConvertedWorkOrder)
             .FirstOrDefaultAsync(q => q.Id == id);
     }
@@ -59,6 +71,8 @@ public class QuoteService : IQuoteService
 
     public async Task<QuoteLine> AddLineAsync(int quoteId, int partId, int quantity, decimal quotedPricePerPart)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+
         var estimatedCost = await CalculateEstimatedCostAsync(partId);
 
         var line = new QuoteLine
@@ -143,6 +157,8 @@ public class QuoteService : IQuoteService
             Status = WorkOrderStatus.Draft,
             Priority = JobPriority.Normal,
             QuoteId = quote.Id,
+            ContractNumber = quote.ContractNumber,
+            IsDefenseContract = quote.IsDefenseContract,
             Notes = $"Converted from quote {quote.QuoteNumber}",
             CreatedBy = createdBy,
             LastModifiedBy = createdBy
@@ -179,22 +195,146 @@ public class QuoteService : IQuoteService
 
     public async Task<string> GenerateQuoteNumberAsync()
     {
-        var year = DateTime.UtcNow.Year;
-        var prefix = $"Q-{year}-";
+        return await _numberSeq.NextAsync("Quote");
+    }
 
-        var lastQuote = await _db.Quotes
-            .Where(q => q.QuoteNumber.StartsWith(prefix))
-            .OrderByDescending(q => q.QuoteNumber)
-            .FirstOrDefaultAsync();
+    public async Task<QuoteLine> UpdateLineAsync(QuoteLine line)
+    {
+        _db.QuoteLines.Update(line);
+        await _db.SaveChangesAsync();
+        await RecalculateTotalsAsync(line.QuoteId);
+        return line;
+    }
 
-        var nextNumber = 1;
-        if (lastQuote != null)
+    public async Task RecalculateTotalsAsync(int quoteId)
+    {
+        var quote = await _db.Quotes
+            .Include(q => q.Lines)
+            .FirstOrDefaultAsync(q => q.Id == quoteId);
+
+        if (quote == null) return;
+
+        quote.TotalEstimatedCost = quote.Lines.Sum(l => l.EstimatedCostPerPart * l.Quantity);
+        quote.QuotedPrice = quote.Lines.Sum(l => l.QuotedPricePerPart * l.Quantity);
+        quote.Markup = quote.QuotedPrice - quote.TotalEstimatedCost;
+        quote.EstimatedLaborCost = quote.Lines.Sum(l => (decimal)l.LaborMinutes / 60m * l.Quantity);
+        quote.EstimatedMaterialCost = quote.Lines.Sum(l => l.MaterialCostEach * l.Quantity);
+        quote.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task<QuoteRevision> CreateRevisionAsync(int quoteId, string changeNotes, string createdBy)
+    {
+        var quote = await _db.Quotes
+            .Include(q => q.Lines)
+            .FirstOrDefaultAsync(q => q.Id == quoteId)
+            ?? throw new InvalidOperationException("Quote not found.");
+
+        var linesSnapshot = System.Text.Json.JsonSerializer.Serialize(
+            quote.Lines.Select(l => new
+            {
+                l.PartId,
+                l.Quantity,
+                l.EstimatedCostPerPart,
+                l.QuotedPricePerPart,
+                l.LaborMinutes,
+                l.SetupMinutes,
+                l.MaterialCostEach,
+                l.OutsideProcessCost,
+                l.Notes
+            }).ToList());
+
+        var revision = new QuoteRevision
         {
-            var suffix = lastQuote.QuoteNumber.Replace(prefix, "");
-            if (int.TryParse(suffix, out var lastNum))
-                nextNumber = lastNum + 1;
-        }
+            QuoteId = quoteId,
+            RevisionNumber = quote.RevisionNumber,
+            TotalEstimatedCost = quote.TotalEstimatedCost,
+            QuotedPrice = quote.QuotedPrice,
+            EstimatedLaborCost = quote.EstimatedLaborCost,
+            EstimatedMaterialCost = quote.EstimatedMaterialCost,
+            EstimatedOverheadCost = quote.EstimatedOverheadCost,
+            TargetMarginPct = quote.TargetMarginPct,
+            LinesSnapshot = linesSnapshot,
+            ChangeNotes = changeNotes,
+            CreatedBy = createdBy
+        };
 
-        return $"{prefix}{nextNumber:D4}";
+        quote.RevisionNumber++;
+        quote.LastModifiedBy = createdBy;
+        quote.LastModifiedDate = DateTime.UtcNow;
+
+        _db.QuoteRevisions.Add(revision);
+        await _db.SaveChangesAsync();
+        return revision;
+    }
+
+    // RFQ methods
+
+    public async Task<List<RfqRequest>> GetRfqRequestsAsync(string? statusFilter = null)
+    {
+        var query = _db.RfqRequests.AsQueryable();
+        if (!string.IsNullOrEmpty(statusFilter))
+            query = query.Where(r => r.Status == statusFilter);
+        return await query.OrderByDescending(r => r.SubmittedDate).ToListAsync();
+    }
+
+    public async Task<RfqRequest?> GetRfqByIdAsync(int id)
+    {
+        return await _db.RfqRequests
+            .Include(r => r.ConvertedQuote)
+            .FirstOrDefaultAsync(r => r.Id == id);
+    }
+
+    public async Task<RfqRequest> SubmitRfqAsync(RfqRequest rfq)
+    {
+        rfq.SubmittedDate = DateTime.UtcNow;
+        rfq.Status = "New";
+        _db.RfqRequests.Add(rfq);
+        await _db.SaveChangesAsync();
+        return rfq;
+    }
+
+    public async Task<Quote> ConvertRfqToQuoteAsync(int rfqId, string createdBy)
+    {
+        var rfq = await _db.RfqRequests.FindAsync(rfqId)
+            ?? throw new InvalidOperationException("RFQ not found.");
+
+        var quote = new Quote
+        {
+            QuoteNumber = await GenerateQuoteNumberAsync(),
+            CustomerName = rfq.CompanyName,
+            CustomerEmail = rfq.Email,
+            CustomerPhone = rfq.Phone,
+            Status = QuoteStatus.Draft,
+            CreatedDate = DateTime.UtcNow,
+            CreatedBy = createdBy,
+            Notes = $"Converted from RFQ #{rfq.Id}: {rfq.Description}"
+        };
+
+        _db.Quotes.Add(quote);
+
+        rfq.Status = "Quoted";
+        rfq.ReviewedBy = createdBy;
+        rfq.ReviewedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        rfq.ConvertedQuoteId = quote.Id;
+        await _db.SaveChangesAsync();
+
+        return quote;
+    }
+
+    public async Task DeclineRfqAsync(int rfqId, string reason, string declinedBy)
+    {
+        var rfq = await _db.RfqRequests.FindAsync(rfqId)
+            ?? throw new InvalidOperationException("RFQ not found.");
+
+        rfq.Status = "Declined";
+        rfq.DeclineReason = reason;
+        rfq.ReviewedBy = declinedBy;
+        rfq.ReviewedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
     }
 }

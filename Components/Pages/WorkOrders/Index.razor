@@ -1,72 +1,156 @@
 @page "/workorders"
 @inject IWorkOrderService WorkOrderService
 @inject IPartService PartService
+@inject ITenantFeatureService Features
 @inject NavigationManager Nav
-@rendermode InteractiveServer
+@inject ToastService Toast
 
 <PageTitle>Work Orders - OpCentrix</PageTitle>
 
 <div class="page-header">
     <h1 class="page-title">Work Orders</h1>
-    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Work Order</button>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        <button class="btn btn-sm @(_viewMode == "table" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "table"'>📋 Table</button>
+        <button class="btn btn-sm @(_viewMode == "kanban" ? "btn-primary" : "btn-secondary")" @onclick='() => _viewMode = "kanban"'>🗂️ Kanban</button>
+        <button class="btn btn-primary" @onclick="GoToCreate">+ New Work Order</button>
+    </div>
 </div>
 
-@if (_orders == null) { <div class="loading"><span class="spinner"></span></div> }
+<!-- Status Filter Tabs -->
+<div class="tab-bar" style="margin-bottom: 16px;">
+    <button class="tab @(_statusFilter == null ? "active" : "")" @onclick="() => FilterByStatus(null)">All (@_allOrders.Count)</button>
+    @foreach (var s in _statusCounts)
+    {
+        <button class="tab @(_statusFilter == s.Key ? "active" : "")" @onclick="() => FilterByStatus(s.Key)">@s.Key (@s.Value)</button>
+    }
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_viewMode == "kanban")
+{
+    <!-- Kanban View -->
+    <div class="kanban-board">
+        @foreach (var status in new[] { WorkOrderStatus.Draft, WorkOrderStatus.Released, WorkOrderStatus.InProgress, WorkOrderStatus.Complete })
+        {
+            var statusOrders = _allOrders.Where(o => o.Status == status).ToList();
+            <div class="kanban-column">
+                <div class="kanban-column-header">
+                    <span class="badge @GetBadge(status)">@status</span>
+                    <span style="color: var(--text-muted); font-size: 0.8rem;">@statusOrders.Count</span>
+                </div>
+                @foreach (var wo in statusOrders.Take(20))
+                {
+                    <div class="kanban-card clickable-row" @onclick="() => GoToDetail(wo.Id)">
+                        <div style="font-weight: 600; font-size: 0.85rem;">@wo.OrderNumber</div>
+                        <div style="color: var(--text-secondary); font-size: 0.8rem;">@wo.CustomerName</div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 6px;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">@wo.Lines.Count line(s)</span>
+                            <span style="font-size: 0.75rem; color: @(wo.DueDate < DateTime.UtcNow && wo.Status != WorkOrderStatus.Complete ? "var(--danger)" : "var(--text-muted)")">Due @wo.DueDate.ToString("MMM dd")</span>
+                        </div>
+                        @if (wo.Priority >= JobPriority.Rush)
+                        {
+                            <span class="badge badge-rush" style="margin-top: 4px;">@wo.Priority</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
 else
 {
+    <!-- Table View -->
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>Order #</th><th>Customer</th><th>Due Date</th><th>Lines</th><th>Status</th><th>Priority</th><th></th></tr></thead>
+            <thead>
+                <tr>
+                    <th>Order #</th>
+                    <th>Customer</th>
+                    <th>PO #</th>
+                    <th>Due Date</th>
+                    <th>Lines</th>
+                    <th>Fulfillment</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                </tr>
+            </thead>
             <tbody>
-                @foreach (var wo in _orders)
+                @foreach (var wo in _filtered.Skip((_page - 1) * _pageSize).Take(_pageSize))
                 {
-                    <tr>
-                        <td>@wo.OrderNumber</td>
+                    var totalQty = wo.Lines.Sum(l => l.Quantity);
+                    var producedQty = wo.Lines.Sum(l => l.ProducedQuantity);
+                    var pct = totalQty > 0 ? (int)(producedQty * 100.0 / totalQty) : 0;
+                    <tr class="clickable-row" @onclick="() => GoToDetail(wo.Id)">
+                        <td><strong>@wo.OrderNumber</strong></td>
                         <td>@wo.CustomerName</td>
+                        <td>@(wo.CustomerPO ?? "—")</td>
                         <td style="color: @(wo.DueDate < DateTime.UtcNow && wo.Status != WorkOrderStatus.Complete ? "var(--danger)" : "inherit")">@wo.DueDate.ToString("yyyy-MM-dd")</td>
                         <td>@wo.Lines.Count</td>
-                        <td><span class="badge badge-@wo.Status.ToString().ToLower()">@wo.Status</span></td>
+                        <td>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" style="width: @(pct)%;"></div>
+                            </div>
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">@producedQty / @totalQty (@pct%)</span>
+                        </td>
+                        <td><span class="badge @GetBadge(wo.Status)">@wo.Status</span></td>
                         <td><span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span></td>
-                        <td><a href="/workorders/@wo.Id" class="btn btn-sm btn-secondary">View</a></td>
                     </tr>
                 }
             </tbody>
         </table>
     </div>
-}
 
-@if (_showCreate)
-{
-    <div class="modal-overlay" @onclick="() => _showCreate = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">New Work Order</span><button class="modal-close" @onclick="() => _showCreate = false">&times;</button></div>
-            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
-            <div class="form-group"><label class="form-label">Customer Name</label><input class="form-control" @bind="_customerName" /></div>
-            <div class="form-group"><label class="form-label">Customer PO</label><input class="form-control" @bind="_customerPO" /></div>
-            <div class="form-group"><label class="form-label">Due Date</label><input class="form-control" type="date" @bind="_dueDate" /></div>
-            <button class="btn btn-primary" @onclick="Create">Create</button>
-        </div>
-    </div>
+    @if (_filtered.Count > _pageSize)
+    {
+        <Pagination CurrentPage="_page" TotalItems="_filtered.Count" PageSize="_pageSize" OnPageChanged="p => _page = p" />
+    }
 }
 
 @code {
-    private List<WorkOrder>? _orders;
-    private bool _showCreate;
-    private string _customerName = "", _customerPO = "";
-    private DateTime _dueDate = DateTime.UtcNow.AddDays(30);
-    private string? _error;
+    private bool _loading = true;
+    private List<WorkOrder> _allOrders = new();
+    private List<WorkOrder> _filtered = new();
+    private Dictionary<WorkOrderStatus, int> _statusCounts = new();
+    private WorkOrderStatus? _statusFilter;
+    private string _viewMode = "table";
+    private int _page = 1;
+    private int _pageSize = 25;
 
-    protected override async Task OnInitializedAsync() => _orders = await WorkOrderService.GetAllWorkOrdersAsync();
-
-    private async Task Create()
+    protected override async Task OnInitializedAsync()
     {
-        _error = null;
         try
         {
-            var wo = await WorkOrderService.CreateWorkOrderAsync(new WorkOrder { CustomerName = _customerName, CustomerPO = _customerPO, DueDate = _dueDate, CreatedBy = "System", LastModifiedBy = "System" });
-            _showCreate = false;
-            Nav.NavigateTo($"/workorders/{wo.Id}");
+            _allOrders = await WorkOrderService.GetAllWorkOrdersAsync();
+            _statusCounts = _allOrders.GroupBy(o => o.Status).ToDictionary(g => g.Key, g => g.Count());
+            _filtered = _allOrders;
         }
-        catch (Exception ex) { _error = ex.Message; }
+        catch (Exception ex) { Toast.ShowError($"Failed to load work orders: {ex.Message}"); }
+        finally { _loading = false; }
     }
+
+    private void FilterByStatus(WorkOrderStatus? status)
+    {
+        _statusFilter = status;
+        _filtered = status.HasValue
+            ? _allOrders.Where(o => o.Status == status.Value).ToList()
+            : _allOrders;
+        _page = 1;
+    }
+
+    private void GoToCreate() => Nav.NavigateTo("/workorders/new");
+    private void GoToDetail(int id) => Nav.NavigateTo($"/workorders/{id}");
+
+    private static string GetBadge(WorkOrderStatus status) => status switch
+    {
+        WorkOrderStatus.Draft => "badge-draft",
+        WorkOrderStatus.Released => "badge-released",
+        WorkOrderStatus.InProgress => "badge-inprogress",
+        WorkOrderStatus.Complete => "badge-complete",
+        WorkOrderStatus.Cancelled => "badge-cancelled",
+        WorkOrderStatus.OnHold => "badge-warning",
+        _ => ""
+    };
 }

@@ -1,15 +1,97 @@
-@* SLS/LPBF Printing - Rich built-in stage partial *@
+@* SLS/LPBF Printing - Rich built-in stage partial with build-level context *@
 @using Opcentrix_V3.Models
+@using Opcentrix_V3.Services
+@inject IMachineProgramService MachineProgramService
 
-<div class="card" style="margin-bottom: 16px;">
-    <div class="card-header">🖨️ SLS/LPBF Printing Details</div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-        <div><span class="form-label">Machine</span><div>@(Execution?.Job?.MachineId ?? "—")</div></div>
-        <div><span class="form-label">Material</span><div>@(Execution?.Job?.SlsMaterial ?? "—")</div></div>
-        <div><span class="form-label">Stack Level</span><div>@(Execution?.Job?.StackLevel?.ToString() ?? "—")x</div></div>
-        <div><span class="form-label">Parts in Build</span><div>@(Execution?.Job?.PartsPerBuild ?? Execution?.Job?.Quantity)</div></div>
+<WorkInstructionBanner PartId="Execution?.Job?.Part?.Id" StageId="Stage?.Id" />
+
+@if (_program != null)
+{
+    @* ── Build-Level Mode ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">📦 Build Plate: @_program.Name</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? _program.Machine?.Name ?? "—")</div></div>
+            <div><span class="form-label">Material</span><div>@(_program.Material ?? "—")</div></div>
+            <div><span class="form-label">Total Parts</span><div>@_program.TotalPartCount (@_program.UniquePartCount unique)</div></div>
+            <div><span class="form-label">Est. Duration</span><div>@(_program.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div></div>
+            <div><span class="form-label">Revision</span><div>@(_program.CurrentRevision ?? 0)</div></div>
+        </div>
+
+        @if (_program.BuildFileInfo != null)
+        {
+            var bfi = _program.BuildFileInfo;
+            <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 6px; margin-bottom: 12px;">
+                <div class="form-label" style="margin-bottom: 4px;">Slice File Data</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
+                    <div>Layers: @(bfi.LayerCount?.ToString("N0") ?? "—")</div>
+                    <div>Height: @(bfi.BuildHeightMm?.ToString("F1") ?? "—") mm</div>
+                    <div>Print Time: @(bfi.EstimatedPrintTimeHours?.ToString("F1") ?? "—") hrs</div>
+                    <div>Powder: @(bfi.EstimatedPowderKg?.ToString("F2") ?? "—") kg</div>
+                    <div>Slicer: @(bfi.SlicerSoftware ?? "—") @bfi.SlicerVersion</div>
+                </div>
+            </div>
+        }
+
+        @* Build Contents Table *@
+        <div class="form-label" style="margin-bottom: 4px;">Build Contents</div>
+        <table class="data-table" style="font-size: 0.85rem; margin-bottom: 12px;">
+            <thead><tr><th>Part #</th><th>Name</th><th>Qty</th><th>WO #</th></tr></thead>
+            <tbody>
+                @foreach (var pp in _program.ProgramParts)
+                {
+                    <tr>
+                        <td>@(pp.Part?.PartNumber ?? "—")</td>
+                        <td>@(pp.Part?.Name ?? "—")</td>
+                        <td>@pp.Quantity</td>
+                        <td>@(pp.WorkOrderLine?.WorkOrder?.OrderNumber ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
-</div>
+
+    @* Build Progress *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">📊 Build Progress</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 8px;">
+            <div class="form-group">
+                <label class="form-label">Current Layer</label>
+                <input class="form-control" type="number" inputmode="numeric" min="0"
+                       max="@(_program.BuildFileInfo?.LayerCount ?? 99999)"
+                       @bind="_currentLayer" />
+            </div>
+            <div>
+                <span class="form-label">Total Layers</span>
+                <div style="font-size: 1.1rem; font-weight: 600;">@(_program.BuildFileInfo?.LayerCount?.ToString("N0") ?? "—")</div>
+            </div>
+            <div>
+                <span class="form-label">Progress</span>
+                <div style="font-size: 1.1rem; font-weight: 600;">@(_progressPercent.ToString("F1"))%</div>
+            </div>
+        </div>
+        @if (_program.BuildFileInfo?.LayerCount > 0)
+        {
+            <div style="background: var(--bg-tertiary); border-radius: 4px; height: 20px; overflow: hidden;">
+                <div style="background: var(--accent); height: 100%; width: @(_progressPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%; transition: width 0.3s;"></div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    @* ── Single-Part Mode (backward compatible) ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">🖨️ SLS/LPBF Printing Details</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? Execution?.Job?.Machine?.Name ?? "—")</div></div>
+            <div><span class="form-label">Material</span><div>@(Execution?.Job?.SlsMaterial ?? "—")</div></div>
+            <div><span class="form-label">Part</span><div>@(Execution?.Job?.Part?.PartNumber ?? "—") — @(Execution?.Job?.Part?.Name ?? "")</div></div>
+            <div><span class="form-label">Stack Level</span><div>@(Execution?.Job?.StackLevel?.ToString() ?? "—")x</div></div>
+            <div><span class="form-label">Parts in Build</span><div>@(Execution?.Job?.PartsPerBuild ?? Execution?.Job?.Quantity)</div></div>
+        </div>
+    </div>
+}
 
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">Machine Telemetry</div>
@@ -22,6 +104,35 @@
     <div class="alert alert-info" style="margin-top: 8px; margin-bottom: 0;">Live telemetry requires SignalR connection</div>
 </div>
 
+<LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
+
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public ProductionStage? Stage { get; set; }
+
+    private MachineProgram? _program;
+    private int _currentLayer;
+    private double _progressPercent => _program?.BuildFileInfo?.LayerCount > 0
+        ? Math.Min(100.0, _currentLayer * 100.0 / _program.BuildFileInfo.LayerCount.Value)
+        : 0;
+    private string _operatorName => Execution?.OperatorName ?? "Operator";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Execution?.MachineProgramId != null)
+        {
+            try
+            {
+                _program = await MachineProgramService.GetByIdAsync(Execution.MachineProgramId.Value);
+            }
+            catch
+            {
+                _program = null;
+            }
+        }
+        else
+        {
+            _program = null;
+        }
+    }
 }

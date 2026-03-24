@@ -1,0 +1,267 @@
+@page "/admin/custom-fields"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject ICustomFieldService CustomFieldService
+@inject ToastService Toast
+
+<PageTitle>Custom Fields - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Custom Field Designer</h1>
+</div>
+
+<div class="tab-bar" style="margin-bottom: 16px;">
+    @foreach (var entity in _entityTypes)
+    {
+        <button class="tab @(_selectedEntity == entity ? "active" : "")"
+                @onclick="() => SelectEntity(entity)">@entity</button>
+    }
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <div class="card">
+        <div class="card-header">
+            @_selectedEntity Fields
+            <button class="btn btn-sm btn-primary" style="float:right;" @onclick="AddField">+ Add Field</button>
+        </div>
+
+        @if (_fields.Count == 0)
+        {
+            <div style="padding: 24px; color: var(--text-muted); text-align: center;">
+                No custom fields defined for @_selectedEntity. Click "Add Field" to create one.
+            </div>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Label</th>
+                        <th>Type</th>
+                        <th>Required</th>
+                        <th>Options</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var (field, index) in _fields.Select((f, i) => (f, i)))
+                    {
+                        <tr>
+                            <td style="font-family: monospace;">@field.Name</td>
+                            <td>@field.Label</td>
+                            <td>@field.FieldType</td>
+                            <td>@(field.IsRequired ? "✔" : "")</td>
+                            <td style="color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis;">@field.Options</td>
+                            <td>
+                                <button class="btn btn-sm btn-secondary" @onclick="() => EditField(index)">Edit</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => RemoveField(index)">Remove</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    @if (_showForm)
+    {
+        <AppModal Visible="_showForm" VisibleChanged="v => _showForm = v" Title="@_formTitle">
+            <div class="form-group">
+                <label class="form-label">Field Name <span style="color:var(--danger);">*</span></label>
+                <input class="form-control" @bind="_editField.Name" placeholder="e.g. contract_number" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Label <span style="color:var(--danger);">*</span></label>
+                <input class="form-control" @bind="_editField.Label" placeholder="e.g. Contract Number" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Field Type</label>
+                <select class="form-control" @bind="_editField.FieldType">
+                    <option value="text">Text</option>
+                    <option value="textarea">Text Area</option>
+                    <option value="number">Number</option>
+                    <option value="decimal">Decimal</option>
+                    <option value="date">Date</option>
+                    <option value="select">Dropdown</option>
+                    <option value="multiselect">Multi-Select</option>
+                    <option value="checkbox">Checkbox</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><input type="checkbox" @bind="_editField.IsRequired" /> Required</label>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Default Value</label>
+                <input class="form-control" @bind="_editField.DefaultValue" />
+            </div>
+            @if (_editField.FieldType is "select" or "multiselect")
+            {
+                <div class="form-group">
+                    <label class="form-label">Options (comma-separated)</label>
+                    <input class="form-control" @bind="_editField.Options" placeholder="Option1, Option2, Option3" />
+                </div>
+            }
+            @if (_editField.FieldType is "number" or "decimal")
+            {
+                <div style="display:flex;gap:12px;">
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label">Min</label>
+                        <input type="number" class="form-control" @bind="_editField.MinValue" />
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label">Max</label>
+                        <input type="number" class="form-control" @bind="_editField.MaxValue" />
+                    </div>
+                </div>
+            }
+            <div class="form-group">
+                <label class="form-label">Validation Regex</label>
+                <input class="form-control" @bind="_editField.ValidationRegex" placeholder="Optional" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Visible When (FieldName=Value)</label>
+                <input class="form-control" @bind="_editField.VisibleWhen" placeholder="Optional, e.g. is_defense=true" />
+            </div>
+            <div style="margin-top: 16px; display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveField">Save Field</button>
+            </div>
+        </AppModal>
+    }
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private static readonly string[] _entityTypes = ["WorkOrder", "Quote", "Part", "Inventory", "Inspection", "PurchaseOrder", "Vendor", "Shipment"];
+
+    private bool _loading = true;
+    private string _selectedEntity = "WorkOrder";
+    private List<CustomFieldDefinition> _fields = new();
+    private bool _showForm;
+    private int? _editIndex;
+    private CustomFieldDefinition _editField = new();
+    private ConfirmDialog _confirm = null!;
+
+    private string _formTitle => (_editIndex.HasValue ? "Edit" : "Add") + " Custom Field";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadFields();
+        }
+        catch
+        {
+            _fields = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadFields()
+    {
+        _fields = await CustomFieldService.GetFieldDefinitionsAsync(_selectedEntity);
+    }
+
+    private async Task SelectEntity(string entity)
+    {
+        _selectedEntity = entity;
+        _loading = true;
+        try
+        {
+            await LoadFields();
+        }
+        catch
+        {
+            _fields = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void AddField()
+    {
+        _editIndex = null;
+        _editField = new CustomFieldDefinition();
+        _showForm = true;
+    }
+
+    private void EditField(int index)
+    {
+        _editIndex = index;
+        var source = _fields[index];
+        _editField = new CustomFieldDefinition
+        {
+            Name = source.Name,
+            Label = source.Label,
+            FieldType = source.FieldType,
+            IsRequired = source.IsRequired,
+            DefaultValue = source.DefaultValue,
+            Options = source.Options,
+            MinValue = source.MinValue,
+            MaxValue = source.MaxValue,
+            ValidationRegex = source.ValidationRegex,
+            VisibleWhen = source.VisibleWhen
+        };
+        _showForm = true;
+    }
+
+    private async Task SaveField()
+    {
+        if (string.IsNullOrWhiteSpace(_editField.Name) || string.IsNullOrWhiteSpace(_editField.Label))
+        {
+            Toast.ShowError("Name and Label are required.");
+            return;
+        }
+
+        try
+        {
+            if (_editIndex.HasValue)
+            {
+                _fields[_editIndex.Value] = _editField;
+            }
+            else
+            {
+                _fields.Add(_editField);
+            }
+
+            await CustomFieldService.SaveConfigAsync(_selectedEntity, _fields, "Admin");
+            _showForm = false;
+            Toast.ShowSuccess("Custom field saved.");
+            await LoadFields();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private async Task RemoveField(int index)
+    {
+        var field = _fields[index];
+        if (await _confirm.ShowAsync($"Remove custom field '{field.Label}'? Existing data for this field will be hidden.", "Remove Field"))
+        {
+            try
+            {
+                _fields.RemoveAt(index);
+                await CustomFieldService.SaveConfigAsync(_selectedEntity, _fields, "Admin");
+                Toast.ShowSuccess("Field removed.");
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError(ex.Message);
+                await LoadFields();
+            }
+        }
+    }
+}

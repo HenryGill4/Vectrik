@@ -1,0 +1,382 @@
+@page "/parts"
+@page "/admin/parts"
+@implements IDisposable
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject IPartService PartService
+@inject ITenantFeatureService Features
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Parts Library - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Parts Library</h1>
+        @if (!_loading)
+        {
+            <span style="color: var(--text-muted); font-size: 0.85rem;">
+                @_allParts.Count total · @_allParts.Count(p => p.IsActive) active · @_allParts.Sum(p => p.ManufacturingProcess?.Stages?.Count ?? 0) process stages
+            </span>
+        }
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        <div style="position: relative;">
+            <input class="form-control" placeholder="Search part #, name, material..."
+                   @bind="_searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
+                   style="min-width: 300px; padding-left: 32px;" />
+            <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted);">🔍</span>
+        </div>
+        <button class="btn btn-primary" @onclick="GoToNewPart">+ New Part</button>
+    </div>
+</div>
+
+<!-- Filter Tabs + Material Filter -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
+    <div class="tab-bar" style="margin-bottom: 0;">
+        <button class="tab @(_statusFilter == "all" ? "active" : "")" @onclick='() => SetStatusFilter("all")'>All (@_allParts.Count)</button>
+        <button class="tab @(_statusFilter == "active" ? "active" : "")" @onclick='() => SetStatusFilter("active")'>Active (@_allParts.Count(p => p.IsActive))</button>
+        <button class="tab @(_statusFilter == "inactive" ? "active" : "")" @onclick='() => SetStatusFilter("inactive")'>Inactive (@_allParts.Count(p => !p.IsActive))</button>
+        @if (_showDefenseFilter)
+        {
+            <button class="tab @(_statusFilter == "defense" ? "active" : "")" @onclick='() => SetStatusFilter("defense")'>🛡️ Defense (@_allParts.Count(p => p.IsDefensePart))</button>
+        }
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        @if (_materialOptions.Count > 1)
+        {
+            <select class="form-control" style="width: auto; min-width: 160px; font-size: 0.85rem;" value="@_materialFilter" @onchange="OnMaterialFilterChanged">
+                <option value="">All Materials</option>
+                @foreach (var mat in _materialOptions)
+                {
+                    <option value="@mat">@mat</option>
+                }
+            </select>
+        }
+        @if (_approachOptions.Count > 1)
+        {
+            <select class="form-control" style="width: auto; min-width: 160px; font-size: 0.85rem;" value="@_approachFilter" @onchange="OnApproachFilterChanged">
+                <option value="">All Approaches</option>
+                @foreach (var a in _approachOptions)
+                {
+                    <option value="@a">@a</option>
+                }
+            </select>
+        }
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading parts...</div>
+}
+else if (!_filteredParts.Any())
+{
+    <div class="card" style="text-align: center; padding: 48px;">
+        @if (string.IsNullOrWhiteSpace(_searchTerm) && _statusFilter == "active" && string.IsNullOrEmpty(_materialFilter) && string.IsNullOrEmpty(_approachFilter))
+        {
+            <div style="font-size: 2.5rem; margin-bottom: 12px;">🔩</div>
+            <p style="color: var(--text-muted); font-size: 1.1rem; margin-bottom: 16px;">No parts configured yet.</p>
+            <button class="btn btn-primary" @onclick="GoToNewPart">Create Your First Part</button>
+        }
+        else
+        {
+            <p style="color: var(--text-muted); font-size: 1.05rem;">No parts match the current filters.</p>
+            <button class="btn btn-secondary" style="margin-top: 8px;" @onclick="ClearFilters">Clear Filters</button>
+        }
+    </div>
+}
+else
+{
+    <div class="card" style="overflow-x: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th class="sortable-header" @onclick='() => ToggleSort("PartNumber")'>
+                        Part # @SortIcon("PartNumber")
+                    </th>
+                    <th class="sortable-header" @onclick='() => ToggleSort("Name")'>
+                        Name @SortIcon("Name")
+                    </th>
+                    <th class="sortable-header" @onclick='() => ToggleSort("Revision")'>
+                        Rev @SortIcon("Revision")
+                    </th>
+                    <th class="sortable-header" @onclick='() => ToggleSort("Material")'>
+                        Material @SortIcon("Material")
+                    </th>
+                    <th>Approach</th>
+                    <th class="sortable-header" @onclick='() => ToggleSort("Stages")'>
+                        Stages @SortIcon("Stages")
+                    </th>
+                    <th>Drawings</th>
+                    <th class="sortable-header" @onclick='() => ToggleSort("Status")'>
+                        Status @SortIcon("Status")
+                    </th>
+                    <th style="width: 80px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in _pagedParts)
+                {
+                    <tr class="clickable-row" @onclick="() => ViewPart(p.Id)">
+                        <td><strong style="color: var(--accent);">@p.PartNumber</strong></td>
+                        <td>
+                            @p.Name
+                            @if (!string.IsNullOrEmpty(p.CustomerPartNumber))
+                            {
+                                <br /><small style="color: var(--text-muted);">Customer: @p.CustomerPartNumber</small>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(p.Revision))
+                            {
+                                <span class="badge badge-info">@p.Revision</span>
+                            }
+                            else
+                            {
+                                <span style="color: var(--text-muted);">—</span>
+                            }
+                        </td>
+                        <td>@p.Material</td>
+                        <td><span class="badge" style="background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.75rem;">@(p.ManufacturingApproach?.IconEmoji) @(p.ManufacturingApproach?.Name ?? "—")</span></td>
+                        <td>
+                            @{ var stageCount = p.ManufacturingProcess?.Stages?.Count ?? 0; }
+                            @if (stageCount > 0)
+                            {
+                                <span>@stageCount</span>
+                            }
+                            else
+                            {
+                                <span style="color: var(--warning);" title="No process defined">⚠ 0</span>
+                            }
+                        </td>
+                        <td>@(p.Drawings?.Count ?? 0)</td>
+                        <td>
+                            <span class="badge @(p.IsActive ? "badge-active" : "badge-cancelled")">@(p.IsActive ? "Active" : "Inactive")</span>
+                            @if (p.IsDefensePart)
+                            {
+                                <span class="badge badge-warning" style="margin-left: 4px;">🛡️</span>
+                            }
+                        </td>
+                        <td @onclick:stopPropagation style="display: flex; gap: 4px;">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditPart(p.Id)" title="Edit">✏️</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ViewPart(p.Id)" title="View Detail">👁️</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (_filteredParts.Count > _pageSize)
+    {
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
+            <span style="color: var(--text-muted); font-size: 0.85rem;">Showing @((_currentPage - 1) * _pageSize + 1)–@Math.Min(_currentPage * _pageSize, _filteredParts.Count) of @_filteredParts.Count</span>
+            <Pagination CurrentPage="_currentPage" TotalItems="_filteredParts.Count" PageSize="_pageSize" OnPageChanged="OnPageChanged" />
+        </div>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private string _searchTerm = string.Empty;
+    private string _statusFilter = "active";
+    private string _materialFilter = string.Empty;
+    private string _approachFilter = string.Empty;
+    private string _sortField = "PartNumber";
+    private bool _sortAscending = true;
+    private int _currentPage = 1;
+    private int _pageSize = 25;
+    private bool _showDefenseFilter;
+
+    private List<Part> _allParts = new();
+    private List<Part> _filteredParts = new();
+    private List<Part> _pagedParts = new();
+    private List<string> _materialOptions = new();
+    private List<string> _approachOptions = new();
+
+    private System.Timers.Timer? _debounceTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _showDefenseFilter = Features.IsEnabled("dlms");
+        try
+        {
+            await LoadParts();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load parts: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    private async Task LoadParts()
+    {
+        _allParts = await PartService.GetAllPartsAsync(activeOnly: false);
+        BuildFilterOptions();
+        ApplyFilters();
+    }
+
+    private void BuildFilterOptions()
+    {
+        _materialOptions = _allParts
+            .Where(p => !string.IsNullOrWhiteSpace(p.Material))
+            .Select(p => p.Material)
+            .Distinct()
+            .OrderBy(m => m)
+            .ToList();
+
+        _approachOptions = _allParts
+            .Where(p => p.ManufacturingApproach != null)
+            .Select(p => p.ManufacturingApproach!.Name)
+            .Distinct()
+            .OrderBy(a => a)
+            .ToList();
+    }
+
+    private void SetStatusFilter(string filter)
+    {
+        _statusFilter = filter;
+        _currentPage = 1;
+        ApplyFilters();
+    }
+
+    private void OnMaterialFilterChanged(ChangeEventArgs e)
+    {
+        _materialFilter = e.Value?.ToString() ?? "";
+        _currentPage = 1;
+        ApplyFilters();
+    }
+
+    private void OnApproachFilterChanged(ChangeEventArgs e)
+    {
+        _approachFilter = e.Value?.ToString() ?? "";
+        _currentPage = 1;
+        ApplyFilters();
+    }
+
+    private void ClearFilters()
+    {
+        _searchTerm = string.Empty;
+        _statusFilter = "all";
+        _materialFilter = string.Empty;
+        _approachFilter = string.Empty;
+        _currentPage = 1;
+        ApplyFilters();
+    }
+
+    private bool _disposed;
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        _debounceTimer?.Stop();
+        _debounceTimer?.Dispose();
+
+        _debounceTimer = new System.Timers.Timer(300);
+        _debounceTimer.AutoReset = false;
+        _debounceTimer.Elapsed += async (_, _) =>
+        {
+            if (_disposed) return;
+            await InvokeAsync(async () =>
+            {
+                if (_disposed) return;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(_searchTerm) && _searchTerm.Length >= 2)
+                    {
+                        _allParts = await PartService.SearchPartsAsync(_searchTerm, activeOnly: false);
+                    }
+                    else if (string.IsNullOrWhiteSpace(_searchTerm))
+                    {
+                        _allParts = await PartService.GetAllPartsAsync(activeOnly: false);
+                    }
+                    BuildFilterOptions();
+                    _currentPage = 1;
+                    ApplyFilters();
+                }
+                catch (Exception ex)
+                {
+                    Toast.ShowError($"Search failed: {ex.Message}");
+                }
+                StateHasChanged();
+            });
+        };
+        _debounceTimer.Start();
+    }
+
+    private void ApplyFilters()
+    {
+        var parts = _statusFilter switch
+        {
+            "active" => _allParts.Where(p => p.IsActive),
+            "inactive" => _allParts.Where(p => !p.IsActive),
+            "defense" => _allParts.Where(p => p.IsDefensePart),
+            _ => _allParts.AsEnumerable()
+        };
+
+        if (!string.IsNullOrEmpty(_materialFilter))
+            parts = parts.Where(p => p.Material == _materialFilter);
+
+        if (!string.IsNullOrEmpty(_approachFilter))
+            parts = parts.Where(p => p.ManufacturingApproach?.Name == _approachFilter);
+
+        // Sort
+        parts = (_sortField, _sortAscending) switch
+        {
+            ("PartNumber", true) => parts.OrderBy(p => p.PartNumber),
+            ("PartNumber", false) => parts.OrderByDescending(p => p.PartNumber),
+            ("Name", true) => parts.OrderBy(p => p.Name),
+            ("Name", false) => parts.OrderByDescending(p => p.Name),
+            ("Revision", true) => parts.OrderBy(p => p.Revision ?? ""),
+            ("Revision", false) => parts.OrderByDescending(p => p.Revision ?? ""),
+            ("Material", true) => parts.OrderBy(p => p.Material),
+            ("Material", false) => parts.OrderByDescending(p => p.Material),
+            ("Stages", true) => parts.OrderBy(p => p.ManufacturingProcess?.Stages?.Count ?? 0),
+            ("Stages", false) => parts.OrderByDescending(p => p.ManufacturingProcess?.Stages?.Count ?? 0),
+            ("Status", true) => parts.OrderBy(p => p.IsActive).ThenBy(p => p.PartNumber),
+            ("Status", false) => parts.OrderByDescending(p => p.IsActive).ThenBy(p => p.PartNumber),
+            _ => parts.OrderBy(p => p.PartNumber)
+        };
+
+        _filteredParts = parts.ToList();
+        _pagedParts = _filteredParts.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
+    }
+
+    private void ToggleSort(string field)
+    {
+        if (_sortField == field)
+            _sortAscending = !_sortAscending;
+        else
+        {
+            _sortField = field;
+            _sortAscending = true;
+        }
+        _currentPage = 1;
+        ApplyFilters();
+    }
+
+    private MarkupString SortIcon(string field)
+    {
+        if (_sortField != field) return new MarkupString("<span style=\"color:var(--text-muted);font-size:0.7rem;\">⇅</span>");
+        return _sortAscending
+            ? new MarkupString("<span style=\"color:var(--accent);font-size:0.7rem;\">▲</span>")
+            : new MarkupString("<span style=\"color:var(--accent);font-size:0.7rem;\">▼</span>");
+    }
+
+    private void OnPageChanged(int page)
+    {
+        _currentPage = page;
+        ApplyFilters();
+    }
+
+    private void ViewPart(int id) => Nav.NavigateTo($"/parts/{id}");
+    private void EditPart(int id) => Nav.NavigateTo($"/parts/{id}/edit");
+    private void GoToNewPart() => Nav.NavigateTo("/parts/new");
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _debounceTimer?.Stop();
+        _debounceTimer?.Dispose();
+    }
+}

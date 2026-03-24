@@ -1,0 +1,507 @@
+@page "/shopfloor"
+@implements IDisposable
+@inject IStageService StageService
+@inject IMachineProgramService MachineProgramService
+@inject ISerialNumberService SerialNumberService
+@inject IQualityService QualityService
+@inject INumberSequenceService NumberSequenceService
+@inject ToastService Toast
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using Opcentrix_V3.Models.Enums
+
+<PageTitle>Shop Floor - OpCentrix</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{
+            var userName = context.User.FindFirst("FullName")?.Value
+                ?? context.User.FindFirst(ClaimTypes.Name)?.Value
+                ?? "Operator";
+            var userIdStr = context.User.FindFirst("UserId")?.Value;
+            _currentUserId = int.TryParse(userIdStr, out var uid) ? uid : 0;
+            _currentUserName = userName;
+        }
+
+        <div class="page-header">
+            <h1 class="page-title">👋 Welcome, @userName</h1>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="loading"><span class="spinner"></span> Loading your queue...</div>
+        }
+        else
+        {
+            @* ── Active Work ── *@
+            @if (_currentExecution != null)
+            {
+                <div class="card" style="border-left: 4px solid var(--accent); margin-bottom: 20px;">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>🔧 Currently Working</span>
+                        <span class="badge badge-@_currentExecution.Status.ToString().ToLower()">@_currentExecution.Status</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px;">
+                        <div>
+                            <span class="form-label">Part</span>
+                            <div style="font-weight: 600;">
+                                @if (_currentExecution.MachineProgramId != null)
+                                        {
+                                            <span>📦 @(_currentExecution.MachineProgram?.Name ?? $"Build #{_currentExecution.MachineProgramId}")</span>
+                                        }
+                                        else
+                                        {
+                                            @(_currentExecution.Job?.Part?.PartNumber ?? "—")
+                                        }
+                            </div>
+                        </div>
+                        <div>
+                            <span class="form-label">Stage</span>
+                            <div style="font-weight: 600;">@(_currentExecution.ProductionStage?.Name ?? "—")</div>
+                        </div>
+                        <div>
+                            <span class="form-label">Job</span>
+                            <div>#@_currentExecution.JobId</div>
+                        </div>
+                        <div>
+                            <span class="form-label">Machine</span>
+                            <div>@(_currentExecution.Machine?.Name ?? "Unassigned")</div>
+                        </div>
+                        <div>
+                            <span class="form-label">Started</span>
+                            <div>@_currentExecution.ActualStartAt?.ToString("HH:mm") @GetElapsed(_currentExecution.ActualStartAt)</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        @if (_currentExecution.Status == StageExecutionStatus.Paused)
+                        {
+                            <button class="btn btn-primary" @onclick="ResumeCurrentWork" disabled="@_actionInProgress" style="min-height: 44px;">▶ Resume</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-success" @onclick="() => ShowCompleteDialog(_currentExecution.Id)" disabled="@_actionInProgress" style="min-height: 44px;">✓ Complete</button>
+                            <button class="btn btn-warning" @onclick="() => ShowPauseDialog(_currentExecution.Id)" disabled="@_actionInProgress" style="min-height: 44px;">⏸ Pause</button>
+                        }
+                        <button class="btn btn-danger btn-sm" @onclick="() => ShowFailDialog(_currentExecution.Id)" disabled="@_actionInProgress" style="min-height: 44px;">✗ Fail / NCR</button>
+                        <button class="btn btn-sm btn-secondary" style="min-height: 44px;" disabled>📖 Work Instructions</button>
+                    </div>
+
+                    @* Stage-Specific Partial *@
+                    @{ var stageSlug = _currentExecution.ProductionStage?.StageSlug?.ToLower(); }
+                    @switch (stageSlug)
+                    {
+                        case "sls-printing":
+                            <ShopFloor.Partials.SLSPrinting Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "cnc-machining":
+                            <ShopFloor.Partials.CNCMachining Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "quality-control":
+                            <ShopFloor.Partials.QualityControl Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "shipping":
+                            <ShopFloor.Partials.Shipping Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "wire-edm":
+                            <ShopFloor.Partials.WireEDM Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "heat-treatment":
+                            <ShopFloor.Partials.HeatTreatment Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "surface-finishing":
+                            <ShopFloor.Partials.SurfaceFinishing Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "depowdering":
+                            <ShopFloor.Partials.Depowdering Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        case "laser-engraving":
+                            <ShopFloor.Partials.LaserEngraving Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                        default:
+                            <ShopFloor.Partials.GenericStage Execution="_currentExecution" Stage="_currentExecution.ProductionStage" />
+                            break;
+                    }
+                </div>
+            }
+
+            @* ── My Queue ── *@
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">📋 My Queue (@_myQueue.Count)</div>
+                @if (!_myQueue.Any())
+                {
+                    <div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No assigned work</div></div>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Part</th><th>Stage</th><th>Priority</th><th>Due</th><th>Machine</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var exec in _myQueue)
+                            {
+                                <tr>
+                                    <td>
+                                        @if (exec.MachineProgramId != null)
+                                        {
+                                            <span>📦 @(exec.MachineProgram?.Name ?? $"Build #{exec.MachineProgramId}")</span>
+                                        }
+                                        else
+                                        {
+                                            @(exec.Job?.Part?.PartNumber ?? "—")
+                                        }
+                                    </td>
+                                    <td>@(exec.ProductionStage?.Name ?? "—")</td>
+                                    <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
+                                    <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
+                                    <td>@(exec.Machine?.Name ?? "—")</td>
+                                    <td>
+                                        @if (_currentExecution == null)
+                                        {
+                                            <button class="btn btn-primary btn-sm" @onclick="() => StartWork(exec.Id)" disabled="@_actionInProgress" style="min-height: 44px;">▶ Start</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            @* ── Available Work ── *@
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">🔓 Available Work (@_availableWork.Count)</div>
+                @if (!_availableWork.Any())
+                {
+                    <div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-text">No unassigned work available</div></div>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Part</th><th>Stage</th><th>Priority</th><th>Due</th><th>Machine</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var exec in _availableWork)
+                            {
+                                <tr>
+                                    <td>
+                                        @if (exec.MachineProgramId != null)
+                                        {
+                                            <span>📦 @(exec.MachineProgram?.Name ?? $"Build #{exec.MachineProgramId}")</span>
+                                        }
+                                        else
+                                        {
+                                            @(exec.Job?.Part?.PartNumber ?? "—")
+                                        }
+                                    </td>
+                                    <td>@(exec.ProductionStage?.Name ?? "—")</td>
+                                    <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
+                                    <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
+                                    <td>@(exec.Machine?.Name ?? "—")</td>
+                                    <td>
+                                        @if (_currentExecution == null)
+                                        {
+                                            <button class="btn btn-primary btn-sm" @onclick="() => ClaimAndStart(exec.Id)" disabled="@_actionInProgress" style="min-height: 44px;">🙋 Claim & Start</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+
+        @* ── Pause Dialog ── *@
+        @if (_showPauseDialog)
+        {
+            <div class="modal-overlay" @onclick="() => _showPauseDialog = false">
+                <div class="modal-content" @onclick:stopPropagation>
+                    <div class="modal-header"><span class="modal-title">⏸ Pause / Delay</span><button class="modal-close" @onclick="() => _showPauseDialog = false">&times;</button></div>
+                    <div class="form-group">
+                        <label class="form-label">Category</label>
+                        <select class="form-control" @bind="_pauseCategory">
+                            @foreach (var cat in Enum.GetValues<DelayCategory>())
+                            {
+                                <option value="@cat">@cat</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Reason</label>
+                        <textarea class="form-control" @bind="_pauseReason" rows="3" placeholder="Describe the delay..."></textarea>
+                    </div>
+                    <button class="btn btn-warning" @onclick="ConfirmPause" disabled="@string.IsNullOrWhiteSpace(_pauseReason)">Pause Work</button>
+                </div>
+            </div>
+        }
+
+        @* ── Complete Dialog ── *@
+        @if (_showCompleteDialog)
+        {
+            <div class="modal-overlay" @onclick="() => _showCompleteDialog = false">
+                <div class="modal-content" @onclick:stopPropagation>
+                    <div class="modal-header"><span class="modal-title">✓ Complete Stage</span><button class="modal-close" @onclick="() => _showCompleteDialog = false">&times;</button></div>
+                    <div class="form-group">
+                        <label class="form-label">Notes (optional)</label>
+                        <textarea class="form-control" @bind="_completeNotes" rows="3" placeholder="Any notes about the work..."></textarea>
+                    </div>
+                    <button class="btn btn-success" @onclick="ConfirmComplete">Complete</button>
+                </div>
+            </div>
+        }
+
+        @* ── Fail Dialog ── *@
+        @if (_showFailDialog)
+        {
+            <div class="modal-overlay" @onclick="() => _showFailDialog = false">
+                <div class="modal-content" @onclick:stopPropagation>
+                    <div class="modal-header"><span class="modal-title">✗ Report Failure</span><button class="modal-close" @onclick="() => _showFailDialog = false">&times;</button></div>
+                    <div class="form-group">
+                        <label class="form-label">Failure Reason *</label>
+                        <textarea class="form-control" @bind="_failReason" rows="3" placeholder="Describe what went wrong..."></textarea>
+                    </div>
+                    <button class="btn btn-danger" @onclick="ConfirmFail" disabled="@string.IsNullOrWhiteSpace(_failReason)">Report Failure</button>
+                </div>
+            </div>
+        }
+    </Authorized>
+</AuthorizeView>
+
+<ConfirmDialog @ref="_confirm" />
+<PartSeparationDialog @ref="_separationDialog" OnConfirmed="HandlePartSeparation" />
+
+@code {
+    private bool _loading = true;
+    private int _currentUserId;
+    private string _currentUserName = "";
+    private StageExecution? _currentExecution;
+    private List<StageExecution> _myQueue = new();
+    private List<StageExecution> _availableWork = new();
+    private System.Threading.Timer? _elapsedTimer;
+
+    // Dialog state
+    private bool _showPauseDialog, _showCompleteDialog, _showFailDialog;
+    private int _dialogExecutionId;
+    private string _pauseReason = "";
+    private DelayCategory _pauseCategory = DelayCategory.Other;
+    private string _completeNotes = "";
+    private string _failReason = "";
+    private bool _actionInProgress;
+    private ConfirmDialog _confirm = null!;
+    private PartSeparationDialog _separationDialog = null!;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _currentUserId > 0)
+        {
+            try
+            {
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to load shop floor: {ex.Message}");
+            }
+            finally
+            {
+                _loading = false;
+                _elapsedTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task LoadData()
+    {
+        _currentExecution = await StageService.GetCurrentExecutionForOperatorAsync(_currentUserId);
+        var queue = await StageService.GetOperatorQueueAsync(_currentUserId);
+        _myQueue = queue.Where(e => e.Status == StageExecutionStatus.NotStarted).ToList();
+        _availableWork = await StageService.GetAvailableWorkAsync();
+    }
+
+    private async Task StartWork(int executionId)
+    {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
+        try
+        {
+            await StageService.StartStageExecutionAsync(executionId, _currentUserId, _currentUserName);
+            Toast.ShowSuccess("Stage started");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
+    }
+
+    private async Task ClaimAndStart(int executionId)
+    {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
+        try
+        {
+            await StageService.AssignOperatorAsync(executionId, _currentUserId);
+            await StageService.StartStageExecutionAsync(executionId, _currentUserId, _currentUserName);
+            Toast.ShowSuccess("Work claimed and started");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
+    }
+
+    private async Task ResumeCurrentWork()
+    {
+        if (_currentExecution == null || _actionInProgress) return;
+        _actionInProgress = true;
+        try
+        {
+            await StageService.ResumeStageExecutionAsync(_currentExecution.Id);
+            Toast.ShowSuccess("Work resumed");
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
+    }
+
+    // Pause
+    private void ShowPauseDialog(int executionId) { _dialogExecutionId = executionId; _pauseReason = ""; _pauseCategory = DelayCategory.Other; _showPauseDialog = true; }
+    private async Task ConfirmPause()
+    {
+        if (_actionInProgress) return;
+        _actionInProgress = true;
+        try
+        {
+            await StageService.PauseStageExecutionAsync(_dialogExecutionId, _pauseReason, _pauseCategory, _currentUserName);
+            Toast.ShowSuccess("Work paused — delay logged");
+            _showPauseDialog = false;
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
+    }
+
+    // Complete
+    private void ShowCompleteDialog(int executionId) { _dialogExecutionId = executionId; _completeNotes = ""; _showCompleteDialog = true; }
+    private async Task ConfirmComplete()
+    {
+        if (!await _confirm.ShowAsync("Mark this stage as complete?")) return;
+        if (_actionInProgress) return;
+        _actionInProgress = true;
+        try
+        {
+            await StageService.CompleteStageExecutionAsync(_dialogExecutionId, notes: _completeNotes);
+            _showCompleteDialog = false;
+
+            // If this was the Wire EDM build-level stage, show the part separation dialog
+            if (_currentExecution?.MachineProgramId != null
+                && _currentExecution.ProductionStage?.StageSlug == "wire-edm")
+            {
+                var program = await MachineProgramService.GetByIdAsync(_currentExecution.MachineProgramId.Value);
+                if (program != null)
+                {
+                    Toast.ShowSuccess("EDM complete — confirm part separation");
+                    await _separationDialog.ShowAsync(program);
+                    await LoadData();
+                    return;
+                }
+            }
+
+            // Build-level stage toast with context
+            if (_currentExecution?.MachineProgramId != null)
+            {
+                var nextStage = _currentExecution.ProductionStage.StageSlug switch
+                {
+                    "sls-printing" => "Depowdering",
+                    "depowdering" => "Wire EDM",
+                    _ => "next stage"
+                };
+                Toast.ShowSuccess($"Build advanced to {nextStage}");
+            }
+            else
+            {
+                Toast.ShowSuccess("Stage completed!");
+            }
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
+    }
+
+    // Part separation after EDM
+    private async Task HandlePartSeparation(PartSeparationResult result)
+    {
+        try
+        {
+            // Create PartInstance records for OK parts
+            foreach (var ok in result.OkParts)
+            {
+                if (ok.WorkOrderLineId.HasValue)
+                {
+                    await SerialNumberService.AssignSerialNumbersAsync(
+                        ok.WorkOrderLineId.Value, ok.PartId, ok.Quantity, _currentUserName,
+                        machineProgramId: result.MachineProgramId);
+                }
+            }
+
+            // Create NCRs for damaged parts
+            foreach (var damaged in result.DamagedParts)
+            {
+                var ncrNumber = await NumberSequenceService.NextAsync("NCR");
+                await QualityService.CreateNcrAsync(new NonConformanceReport
+                {
+                    NcrNumber = ncrNumber,
+                    PartId = damaged.PartId,
+                    Type = NcrType.InProcess,
+                    Description = $"Part damaged during EDM separation: {damaged.Reason}",
+                    QuantityAffected = damaged.Quantity.ToString(),
+                    Severity = NcrSeverity.Major,
+                    Disposition = NcrDisposition.Scrap,
+                    Status = NcrStatus.Open,
+                    ReportedByUserId = _currentUserName,
+                    ReportedAt = DateTime.UtcNow
+                });
+            }
+
+            var okCount = result.OkParts.Sum(p => p.Quantity);
+            var damagedCount = result.DamagedParts.Sum(p => p.Quantity);
+            var msg = $"Separation complete: {okCount} part(s) OK";
+            if (damagedCount > 0)
+                msg += $", {damagedCount} damaged (NCR created)";
+
+            Toast.ShowSuccess(msg);
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError($"Separation failed: {ex.Message}"); }
+    }
+
+    // Fail
+    private void ShowFailDialog(int executionId) { _dialogExecutionId = executionId; _failReason = ""; _showFailDialog = true; }
+    private async Task ConfirmFail()
+    {
+        if (!await _confirm.ShowAsync("Report this stage as failed? An NCR may be created.")) return;
+        if (_actionInProgress) return;
+        _actionInProgress = true;
+        try
+        {
+            await StageService.FailStageExecutionAsync(_dialogExecutionId, _failReason);
+            Toast.ShowError("Failure reported");
+            _showFailDialog = false;
+            await LoadData();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
+    }
+
+    private string GetElapsed(DateTime? start)
+    {
+        if (!start.HasValue) return "";
+        var elapsed = DateTime.UtcNow - start.Value;
+        return $"({elapsed.Hours}h {elapsed.Minutes}m ago)";
+    }
+
+    public void Dispose()
+    {
+        _elapsedTimer?.Dispose();
+    }
+}

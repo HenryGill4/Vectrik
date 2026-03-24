@@ -1,0 +1,280 @@
+@inject IPartPricingService PricingService
+@inject IManufacturingProcessService ProcessService
+@inject IStageCostService CostService
+@inject ToastService Toast
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }
+    </Authorized>
+</AuthorizeView>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span></div>
+}
+else
+{
+    @* ── Pricing Form ── *@
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="card" style="padding: 16px;">
+            <div style="font-weight: 600; margin-bottom: 12px;">💰 Sell Price & Target</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Sell Price Per Unit ($)</label>
+                    <input class="form-control" type="number" step="0.01" min="0" @bind="_pricing.SellPricePerUnit" @bind:after="RecalculatePreview" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Currency</label>
+                    <select class="form-control" @bind="_pricing.Currency">
+                        <option value="USD">USD</option>
+                        <option value="GBP">GBP</option>
+                        <option value="EUR">EUR</option>
+                        <option value="CAD">CAD</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Margin (%)</label>
+                    <input class="form-control" type="number" step="1" min="0" max="100" @bind="_pricing.TargetMarginPct" @bind:after="RecalculatePreview" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Min Order Qty</label>
+                    <input class="form-control" type="number" min="1" @bind="_pricing.MinimumOrderQty" />
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="padding: 16px;">
+            <div style="font-weight: 600; margin-bottom: 12px;">🧪 Material Cost</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Material Cost Per Unit ($)</label>
+                    <input class="form-control" type="number" step="0.01" min="0" @bind="_pricing.MaterialCostPerUnit" @bind:after="RecalculatePreview" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Material Weight/Unit (kg)</label>
+                    <input class="form-control" type="number" step="0.001" min="0" @bind="_pricing.MaterialWeightPerUnitKg" />
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 8px;">
+                <label class="form-label">Pricing Tier</label>
+                <select class="form-control" @bind="_pricing.PricingTier">
+                    <option value="">— None —</option>
+                    <option value="Standard">Standard</option>
+                    <option value="Volume">Volume</option>
+                    <option value="Defense">Defense</option>
+                    <option value="Prototype">Prototype</option>
+                    <option value="Premium">Premium</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    @* ── Dates & Notes ── *@
+    <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 12px; margin-top: 12px;">
+        <div class="form-group">
+            <label class="form-label">Effective Date</label>
+            <input class="form-control" type="date" @bind="_pricing.EffectiveDate" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Expiration Date</label>
+            <input class="form-control" type="date" @bind="_pricing.ExpirationDate" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Pricing Notes</label>
+            <input class="form-control" @bind="_pricing.PricingNotes" placeholder="Pricing assumptions, contract terms..." />
+        </div>
+    </div>
+
+    @* ── Profit Preview ── *@
+    <div class="card" style="margin-top: 16px; padding: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="font-weight: 600;">📊 Profit Preview</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <label class="form-label" style="margin: 0; font-size: 0.8rem;">Qty:</label>
+                <input class="form-control" type="number" min="1" style="width: 80px;" @bind="_previewQty" @bind:after="RecalculatePreview" />
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Sell Price</div>
+                <div style="font-size: 1.2rem; font-weight: 700; color: var(--primary);">$@_pricing.SellPricePerUnit.ToString("F2")</div>
+            </div>
+            <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Mfg Cost</div>
+                <div style="font-size: 1.2rem; font-weight: 700;">$@_previewMfgCost.ToString("F2")</div>
+            </div>
+            <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Material</div>
+                <div style="font-size: 1.2rem; font-weight: 700;">$@_pricing.MaterialCostPerUnit.ToString("F2")</div>
+            </div>
+            <div style="flex: 1; min-width: 100px; background: var(--bg-tertiary); border-radius: 6px; padding: 10px; text-align: center;">
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Total Cost</div>
+                <div style="font-size: 1.2rem; font-weight: 700;">$@(_previewMfgCost + _pricing.MaterialCostPerUnit).ToString("F2")</div>
+            </div>
+            <div style="flex: 1; min-width: 100px; background: @(_previewProfit >= 0 ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)"); border-radius: 6px; padding: 10px; text-align: center;">
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Profit / Unit</div>
+                <div style="font-size: 1.2rem; font-weight: 700; color: @(_previewProfit >= 0 ? "var(--success)" : "var(--danger)");">$@_previewProfit.ToString("F2")</div>
+                <div style="font-size: 0.7rem; color: @(_previewMargin >= _pricing.TargetMarginPct ? "var(--success)" : "var(--danger)");">@_previewMargin.ToString("F1")% margin</div>
+            </div>
+        </div>
+
+        @* Margin Progress Bar *@
+        <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 8px 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 3px;">
+                <span>Actual: @_previewMargin.ToString("F1")%</span>
+                <span>Target: @_pricing.TargetMarginPct.ToString("F0")%</span>
+            </div>
+            <div style="height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; position: relative;">
+                @{ var barW = Math.Clamp((double)_previewMargin, 0, 100); }
+                <div style="width: @(barW)%; height: 100%; background: @(_previewMargin >= _pricing.TargetMarginPct ? "var(--success)" : _previewMargin >= 0 ? "var(--warning)" : "var(--danger)"); border-radius: 5px; transition: width 0.3s;"></div>
+                <div style="position: absolute; left: @((double)_pricing.TargetMarginPct)%; top: -2px; bottom: -2px; width: 2px; background: var(--text-primary); opacity: 0.5;"></div>
+            </div>
+        </div>
+
+        @if (!_hasProcess)
+        {
+            <div style="margin-top: 8px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.8rem; color: var(--warning);">
+                ⚠️ No ManufacturingProcess defined. Manufacturing cost is estimated at $0.
+                <a href="/parts/@PartId/edit">Set up a process</a> for accurate cost breakdown.
+            </div>
+        }
+    </div>
+
+    @* ── Save / Delete ── *@
+    <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button class="btn btn-primary" @onclick="SavePricing" disabled="@_saving">
+            @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+            @(_pricing.Id > 0 ? "Update Pricing" : "Save Pricing")
+        </button>
+        @if (_pricing.Id > 0)
+        {
+            <button class="btn btn-danger" @onclick="DeletePricing" disabled="@_saving">Delete Pricing</button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public int PartId { get; set; }
+
+    private string _currentUser = "System";
+    private bool _loading = true;
+    private bool _saving;
+    private PartPricing _pricing = new();
+    private bool _hasProcess;
+
+    // Preview
+    private int _previewQty = 60;
+    private decimal _previewMfgCost;
+    private decimal _previewProfit;
+    private decimal _previewMargin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var existing = await PricingService.GetByPartIdAsync(PartId);
+            if (existing != null)
+            {
+                _pricing = existing;
+            }
+            else
+            {
+                _pricing = new PartPricing
+                {
+                    PartId = PartId,
+                    TargetMarginPct = 25,
+                    Currency = "USD",
+                    MinimumOrderQty = 1,
+                    EffectiveDate = DateTime.UtcNow,
+                    CreatedBy = _currentUser,
+                    LastModifiedBy = _currentUser
+                };
+            }
+
+            var process = await ProcessService.GetByPartIdAsync(PartId);
+            _hasProcess = process != null;
+
+            await RecalculatePreview();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load pricing: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    private async Task RecalculatePreview()
+    {
+        try
+        {
+            var profitability = await PricingService.CalculateProfitabilityAsync(PartId, _previewQty);
+            _previewMfgCost = profitability.ManufacturingCostPerUnit;
+
+            // Use the live form values, not the saved values
+            var totalCost = _previewMfgCost + _pricing.MaterialCostPerUnit;
+            _previewProfit = _pricing.SellPricePerUnit - totalCost;
+            _previewMargin = _pricing.SellPricePerUnit > 0
+                ? (_previewProfit / _pricing.SellPricePerUnit) * 100
+                : 0;
+        }
+        catch
+        {
+            _previewMfgCost = 0;
+            _previewProfit = _pricing.SellPricePerUnit - _pricing.MaterialCostPerUnit;
+            _previewMargin = _pricing.SellPricePerUnit > 0
+                ? (_previewProfit / _pricing.SellPricePerUnit) * 100
+                : 0;
+        }
+    }
+
+    private async Task SavePricing()
+    {
+        _saving = true;
+        try
+        {
+            _pricing.LastModifiedBy = _currentUser;
+            if (_pricing.Id == 0)
+                _pricing.CreatedBy = _currentUser;
+
+            await PricingService.SaveAsync(_pricing);
+            Toast.ShowSuccess("Part pricing saved.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed: {ex.Message}");
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeletePricing()
+    {
+        if (_pricing.Id == 0) return;
+        _saving = true;
+        try
+        {
+            await PricingService.DeleteAsync(_pricing.Id);
+            Toast.ShowSuccess("Part pricing deleted.");
+            _pricing = new PartPricing
+            {
+                PartId = PartId,
+                TargetMarginPct = 25,
+                Currency = "USD",
+                MinimumOrderQty = 1,
+                EffectiveDate = DateTime.UtcNow,
+                CreatedBy = _currentUser,
+                LastModifiedBy = _currentUser
+            };
+            await RecalculatePreview();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed: {ex.Message}");
+        }
+        finally { _saving = false; }
+    }
+}

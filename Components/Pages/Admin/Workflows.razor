@@ -1,0 +1,274 @@
+@page "/admin/workflows"
+@inject IWorkflowEngine WorkflowEngine
+@inject ToastService Toast
+
+<PageTitle>Workflow Configuration - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">🔄 Workflow Configuration</h1>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/admin")'>← Admin</button>
+        <button class="btn btn-primary" @onclick="ShowCreate">+ New Workflow</button>
+    </div>
+</div>
+
+@inject NavigationManager Nav
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_definitions.Count == 0)
+{
+    <div class="card" style="text-align: center; padding: 40px;">
+        <p style="font-size: 1.1rem; color: var(--text-muted);">No workflows configured yet.</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">Workflows add approval chains to actions like releasing work orders, accepting quotes, or NCR dispositions.</p>
+        <button class="btn btn-primary" @onclick="ShowCreate">+ Create First Workflow</button>
+    </div>
+}
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Entity Type</th>
+                    <th>Trigger</th>
+                    <th>Steps</th>
+                    <th>Active</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var def in _definitions)
+                {
+                    <tr>
+                        <td style="font-weight: 600;">@def.Name</td>
+                        <td><span class="badge badge-info">@def.EntityType</span></td>
+                        <td>@def.TriggerEvent</td>
+                        <td>@def.Steps.Count step(s)</td>
+                        <td>
+                            @if (def.IsActive)
+                            {
+                                <span class="badge badge-active">Active</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-secondary">Inactive</span>
+                            }
+                        </td>
+                        <td style="white-space: nowrap;">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ShowEdit(def)">Edit</button>
+                            <button class="btn btn-sm btn-danger" style="margin-left: 4px;" @onclick="() => Delete(def)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") Workflow</span>
+                <button class="modal-close" @onclick="() => _showForm = false">&times;</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Name *</label>
+                    <input class="form-control" @bind="_edit.Name" placeholder="e.g., WO Release Approval" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Entity Type *</label>
+                    <select class="form-control" @bind="_edit.EntityType">
+                        <option value="">— Select —</option>
+                        <option value="WorkOrder">WorkOrder</option>
+                        <option value="Quote">Quote</option>
+                        <option value="NCR">NCR</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Trigger Event</label>
+                    <select class="form-control" @bind="_edit.TriggerEvent">
+                        <option value="StatusChange">Status Change</option>
+                        <option value="Create">Create</option>
+                        <option value="FieldUpdate">Field Update</option>
+                    </select>
+                </div>
+                <div class="form-group" style="display: flex; align-items: end;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" @bind="_edit.IsActive" /> Active
+                    </label>
+                </div>
+            </div>
+
+            <!-- Steps -->
+            <div style="margin-top: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <label class="form-label" style="font-weight: 600; margin: 0;">Approval Steps</label>
+                    <button class="btn btn-sm btn-secondary" @onclick="AddStep">+ Add Step</button>
+                </div>
+
+                @if (_editSteps.Count == 0)
+                {
+                    <p style="color: var(--text-muted); font-size: 0.85rem;">No steps defined. Add at least one approval step.</p>
+                }
+                else
+                {
+                    @for (var i = 0; i < _editSteps.Count; i++)
+                    {
+                        var step = _editSteps[i];
+                        var idx = i;
+                        <div class="card" style="margin-bottom: 8px; padding: 12px; background: var(--bg-secondary);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <strong>Step @(idx + 1)</strong>
+                                <button class="btn btn-sm btn-danger" @onclick="() => RemoveStep(idx)">✕</button>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                <div class="form-group">
+                                    <label class="form-label">Action Type</label>
+                                    <select class="form-control" @bind="step.ActionType">
+                                        <option value="RequireApproval">Require Approval</option>
+                                        <option value="SendNotification">Send Notification</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Assign to Role</label>
+                                    <select class="form-control" @bind="step.AssignToRole">
+                                        <option value="">— Any —</option>
+                                        <option value="Admin">Admin</option>
+                                        <option value="Manager">Manager</option>
+                                        <option value="Supervisor">Supervisor</option>
+                                        <option value="Quality">Quality</option>
+                                        <option value="Engineering">Engineering</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Timeout (hours)</label>
+                                    <input class="form-control" type="number" step="0.5" @bind="step.TimeoutHours" placeholder="Optional" />
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+                <button class="btn btn-primary" @onclick="Save">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private bool _loading = true;
+    private List<WorkflowDefinition> _definitions = new();
+    private WorkflowDefinition? _edit;
+    private List<WorkflowStep> _editSteps = new();
+    private bool _showForm;
+    private ConfirmDialog _confirm = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _definitions = await WorkflowEngine.GetAllDefinitionsAsync();
+        _loading = false;
+    }
+
+    private void ShowCreate()
+    {
+        _edit = new WorkflowDefinition { CreatedBy = "System" };
+        _editSteps = new();
+        _showForm = true;
+    }
+
+    private void ShowEdit(WorkflowDefinition def)
+    {
+        _edit = new WorkflowDefinition
+        {
+            Id = def.Id,
+            Name = def.Name,
+            EntityType = def.EntityType,
+            TriggerEvent = def.TriggerEvent,
+            IsActive = def.IsActive,
+            ConditionsJson = def.ConditionsJson,
+            CreatedBy = def.CreatedBy,
+            CreatedDate = def.CreatedDate
+        };
+        _editSteps = def.Steps.OrderBy(s => s.StepOrder).Select(s => new WorkflowStep
+        {
+            ActionType = s.ActionType,
+            AssignToRole = s.AssignToRole,
+            AssignToUserId = s.AssignToUserId,
+            TimeoutHours = s.TimeoutHours,
+            ConfigJson = s.ConfigJson
+        }).ToList();
+        _showForm = true;
+    }
+
+    private void AddStep()
+    {
+        _editSteps.Add(new WorkflowStep { ActionType = "RequireApproval" });
+    }
+
+    private void RemoveStep(int index)
+    {
+        if (index >= 0 && index < _editSteps.Count)
+            _editSteps.RemoveAt(index);
+    }
+
+    private async Task Save()
+    {
+        if (_edit == null) return;
+
+        if (string.IsNullOrWhiteSpace(_edit.Name))
+        {
+            Toast.ShowError("Name is required.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_edit.EntityType))
+        {
+            Toast.ShowError("Entity type is required.");
+            return;
+        }
+        if (_editSteps.Count == 0)
+        {
+            Toast.ShowError("At least one approval step is required.");
+            return;
+        }
+
+        // Assign step orders
+        for (var i = 0; i < _editSteps.Count; i++)
+            _editSteps[i].StepOrder = i + 1;
+
+        _edit.Steps = _editSteps;
+
+        try
+        {
+            await WorkflowEngine.SaveDefinitionAsync(_edit);
+            Toast.ShowSuccess(_edit.Id == 0 ? "Workflow created." : "Workflow updated.");
+            _definitions = await WorkflowEngine.GetAllDefinitionsAsync();
+            _showForm = false;
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task Delete(WorkflowDefinition def)
+    {
+        if (!await _confirm.ShowAsync($"Delete workflow \"{def.Name}\"? This cannot be undone.")) return;
+        try
+        {
+            await WorkflowEngine.DeleteDefinitionAsync(def.Id);
+            Toast.ShowSuccess("Workflow deleted.");
+            _definitions = await WorkflowEngine.GetAllDefinitionsAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+}

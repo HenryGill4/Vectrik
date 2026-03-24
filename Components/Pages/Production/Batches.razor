@@ -1,0 +1,502 @@
+@page "/production/batches"
+@inject IBatchService BatchService
+@inject IMachineProgramService MachineProgramService
+@inject IMachineService MachineService
+@inject ToastService Toast
+@using Opcentrix_V3.Models.Enums
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Production Batches - OpCentrix</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }
+    </Authorized>
+</AuthorizeView>
+
+<ConfirmDialog @ref="_confirmDialog" />
+
+<div class="page-header">
+    <h1 class="page-title">Production Batches</h1>
+    <div class="page-actions">
+        <select class="form-control" style="width: 160px; display: inline-block;" @bind="_statusFilter" @bind:after="LoadBatches">
+            <option value="">All Statuses</option>
+            @foreach (var s in Enum.GetValues<BatchStatus>())
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+        <select class="form-control" style="width: 200px; display: inline-block;" @bind="_buildFilter" @bind:after="LoadBatches">
+            <option value="0">All Builds</option>
+            @if (_builds != null)
+            {
+                @foreach (var b in _builds)
+                {
+                    <option value="@b.Id">@b.Name</option>
+                }
+            }
+        </select>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading batches...</div>
+}
+else if (!_allBatches.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">📦</div>
+        <div class="empty-state-text">No production batches found. Batches are created automatically when builds go through plate release.</div>
+    </div>
+}
+else
+{
+    @* ── Status Summary ── *@
+    <div class="builds-pipeline-summary" style="margin-bottom: 16px;">
+        @{
+            var openCount = _allBatches.Count(b => b.Status == BatchStatus.Open);
+            var sealedCount = _allBatches.Count(b => b.Status == BatchStatus.Sealed);
+            var inProcessCount = _allBatches.Count(b => b.Status == BatchStatus.InProcess);
+            var completedCount = _allBatches.Count(b => b.Status == BatchStatus.Completed);
+            var dissolvedCount = _allBatches.Count(b => b.Status == BatchStatus.Dissolved);
+            var totalParts = _allBatches.Where(b => b.Status != BatchStatus.Dissolved).Sum(b => b.CurrentPartCount);
+        }
+        <div class="builds-pipeline-stat" style="cursor:pointer;" @onclick="() => _statusFilter = string.Empty">
+            <span class="builds-pipeline-count">@_allBatches.Count</span>
+            <span class="builds-pipeline-label">Total Batches</span>
+        </div>
+        @if (openCount > 0)
+        {
+            <div class="builds-pipeline-stat" style="cursor:pointer;" @onclick="() => { _statusFilter = nameof(BatchStatus.Open); }">
+                <span class="builds-pipeline-count">@openCount</span>
+                <span class="builds-pipeline-label">📂 Open</span>
+            </div>
+        }
+        @if (sealedCount > 0)
+        {
+            <div class="builds-pipeline-stat" style="cursor:pointer;" @onclick="() => { _statusFilter = nameof(BatchStatus.Sealed); }">
+                <span class="builds-pipeline-count">@sealedCount</span>
+                <span class="builds-pipeline-label">🔒 Sealed</span>
+            </div>
+        }
+        @if (inProcessCount > 0)
+        {
+            <div class="builds-pipeline-stat builds-pipeline-stat--printing" style="cursor:pointer;" @onclick="() => { _statusFilter = nameof(BatchStatus.InProcess); }">
+                <span class="builds-pipeline-count">@inProcessCount</span>
+                <span class="builds-pipeline-label">⚙️ In Process</span>
+            </div>
+        }
+        @if (completedCount > 0)
+        {
+            <div class="builds-pipeline-stat builds-pipeline-stat--ready" style="cursor:pointer;" @onclick="() => { _statusFilter = nameof(BatchStatus.Completed); }">
+                <span class="builds-pipeline-count">@completedCount</span>
+                <span class="builds-pipeline-label">✅ Completed</span>
+            </div>
+        }
+        <div class="builds-pipeline-stat">
+            <span class="builds-pipeline-count">@totalParts</span>
+            <span class="builds-pipeline-label">Total Parts</span>
+        </div>
+    </div>
+
+    @* ── Batch List ── *@
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Batch #</th>
+                    <th>Container</th>
+                    <th>Origin Build</th>
+                    <th>Parts</th>
+                    <th>Status</th>
+                    <th>Current Stage</th>
+                    <th>Machine</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var batch in FilteredBatches)
+                {
+                    var statusBadge = batch.Status switch
+                    {
+                        BatchStatus.Open => "badge-active",
+                        BatchStatus.Sealed => "badge-warning",
+                        BatchStatus.InProcess => "badge-printing",
+                        BatchStatus.Completed => "badge-completed",
+                        BatchStatus.Dissolved => "badge-cancelled",
+                        _ => "badge-secondary"
+                    };
+                    <tr>
+                        <td>
+                            <strong style="cursor: pointer; color: var(--accent);" @onclick="() => ShowBatchDetail(batch)">
+                                @batch.BatchNumber
+                            </strong>
+                        </td>
+                        <td>@(batch.ContainerLabel ?? "—")</td>
+                        <td>@(batch.OriginMachineProgram?.Name ?? $"Program #{batch.OriginMachineProgramId}")</td>
+                        <td>
+                            <strong>@batch.CurrentPartCount</strong> / @batch.Capacity
+                            @if (batch.CurrentPartCount >= batch.Capacity)
+                            {
+                                <span style="color: var(--warning); margin-left: 4px;" title="At capacity">●</span>
+                            }
+                        </td>
+                        <td><span class="badge @statusBadge">@batch.Status</span></td>
+                        <td>@(batch.CurrentProcessStage?.ProductionStage?.Name ?? "—")</td>
+                        <td>@(batch.AssignedMachine?.Name ?? "—")</td>
+                        <td>@batch.CreatedDate.ToString("yyyy-MM-dd")</td>
+                        <td style="white-space: nowrap;">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ShowBatchDetail(batch)" title="View details">👁</button>
+                            @if (batch.Status == BatchStatus.Open)
+                            {
+                                <button class="btn btn-sm btn-warning" @onclick="() => SealBatch(batch)" title="Seal batch">🔒</button>
+                            }
+                            @if (batch.Status is BatchStatus.InProcess or BatchStatus.Sealed)
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => CompleteBatch(batch)" title="Complete batch">✅</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @* ── Consolidation Assistant ── *@
+    <div class="card" style="margin-top: 16px;">
+        <h3 class="card-title">🔀 Batch Consolidation</h3>
+        <p style="color: var(--text-muted); margin-bottom: 12px;">
+            Select open/sealed batches from the same build to attempt machine-driven consolidation.
+        </p>
+        <div style="display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-bottom: 12px;">
+            <div class="form-group" style="margin: 0; flex: 1; min-width: 200px;">
+                <label class="form-label">Target Machine Capacity</label>
+                <input class="form-control" type="number" min="1" max="10000" @bind="_consolidateCapacity" />
+            </div>
+            <button class="btn btn-primary" @onclick="TryConsolidate" disabled="@(!_selectedBatchIds.Any() || _processing)">
+                @if (_processing) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                Consolidate (@_selectedBatchIds.Count batches)
+            </button>
+        </div>
+        @if (_selectedBatchIds.Any())
+        {
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+                Selected: @string.Join(", ", _allBatches.Where(b => _selectedBatchIds.Contains(b.Id)).Select(b => b.BatchNumber))
+                — Total parts: @_allBatches.Where(b => _selectedBatchIds.Contains(b.Id)).Sum(b => b.CurrentPartCount)
+            </div>
+        }
+        <div style="margin-top: 8px;">
+            @foreach (var batch in _allBatches.Where(b => b.Status is BatchStatus.Open or BatchStatus.Sealed))
+            {
+                <label style="display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; font-size: 0.9rem;">
+                    <input type="checkbox" checked="@_selectedBatchIds.Contains(batch.Id)" @onchange="e => ToggleBatchSelection(batch.Id, (bool)(e.Value ?? false))" />
+                    @batch.BatchNumber (@batch.CurrentPartCount parts)
+                </label>
+            }
+        </div>
+        @if (_consolidationResult != null)
+        {
+            <div style="margin-top: 12px; padding: 10px; border-radius: 6px; background: @(_consolidationResult.Success ? "var(--success-bg, #e8f5e9)" : "var(--bg-tertiary)"); border: 1px solid @(_consolidationResult.Success ? "var(--success)" : "var(--border-color)");">
+                <strong>@(_consolidationResult.Success ? "✅ Consolidation successful" : "ℹ️ Cannot consolidate")</strong>
+                <div style="margin-top: 4px; color: var(--text-secondary);">@_consolidationResult.Message</div>
+            </div>
+        }
+    </div>
+}
+
+@* ── Batch Detail Modal ── *@
+@if (_showDetail && _detailBatch != null)
+{
+    <div class="modal-overlay" @onclick="() => _showDetail = false">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">📦 Batch @_detailBatch.BatchNumber</span>
+                <button class="modal-close" @onclick="() => _showDetail = false">&times;</button>
+            </div>
+
+            @* ── Batch Info ── *@
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                <div>
+                    <span class="form-label">Status</span>
+                    <div><span class="badge @GetStatusBadge(_detailBatch.Status)">@_detailBatch.Status</span></div>
+                </div>
+                <div>
+                    <span class="form-label">Parts</span>
+                    <div><strong>@_detailBatch.CurrentPartCount</strong> / @_detailBatch.Capacity</div>
+                </div>
+                <div>
+                    <span class="form-label">Origin Build</span>
+                    <div>@(_detailBatch.OriginMachineProgram?.Name ?? $"Program #{_detailBatch.OriginMachineProgramId}")</div>
+                </div>
+                <div>
+                    <span class="form-label">Container</span>
+                    <div>
+                        <input class="form-control form-control-sm" value="@(_detailBatch.ContainerLabel ?? "")"
+                               placeholder="Label this container..."
+                               @onchange="e => UpdateContainerLabel(e.Value?.ToString())" />
+                    </div>
+                </div>
+                <div>
+                    <span class="form-label">Current Stage</span>
+                    <div>@(_detailBatch.CurrentProcessStage?.ProductionStage?.Name ?? "—")</div>
+                </div>
+                <div>
+                    <span class="form-label">Machine</span>
+                    <div>@(_detailBatch.AssignedMachine?.Name ?? "—")</div>
+                </div>
+            </div>
+
+            @* ── Part Assignments (Current) ── *@
+            <h4 style="font-size: 0.95rem; margin-bottom: 8px;">Parts in Batch</h4>
+            @if (_detailAssignments.Any(a => a.Action == BatchAssignmentAction.Assigned))
+            {
+                @* Show current parts (most recent Assigned that aren't subsequently Removed) *@
+                var currentPartIds = GetCurrentPartInstanceIds();
+                <table class="data-table" style="font-size: 0.85rem; margin-bottom: 16px;">
+                    <thead><tr><th>Part Instance</th><th>Part</th><th>Status</th><th>Assigned</th></tr></thead>
+                    <tbody>
+                        @foreach (var assignment in _detailAssignments
+                            .Where(a => a.Action == BatchAssignmentAction.Assigned && currentPartIds.Contains(a.PartInstanceId))
+                            .OrderBy(a => a.Timestamp))
+                        {
+                            <tr>
+                                <td>@(assignment.PartInstance?.DisplayIdentifier ?? $"#{assignment.PartInstanceId}")</td>
+                                <td>@(assignment.PartInstance?.Part?.PartNumber ?? "—")</td>
+                                <td>@(assignment.PartInstance?.Status.ToString() ?? "—")</td>
+                                <td>@assignment.Timestamp.ToString("yyyy-MM-dd HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 16px;">No parts currently assigned.</div>
+            }
+
+            @* ── Assignment History (ITAR Traceability) ── *@
+            <h4 style="font-size: 0.95rem; margin-bottom: 8px;">📋 Assignment History (ITAR Traceability)</h4>
+            @if (_detailAssignments.Any())
+            {
+                <table class="data-table" style="font-size: 0.85rem;">
+                    <thead><tr><th>Timestamp</th><th>Action</th><th>Part Instance</th><th>Reason</th><th>Stage</th><th>By</th></tr></thead>
+                    <tbody>
+                        @foreach (var h in _detailAssignments.OrderByDescending(a => a.Timestamp))
+                        {
+                            <tr>
+                                <td>@h.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td>
+                                    <span class="badge @(h.Action == BatchAssignmentAction.Assigned ? "badge-active" : "badge-cancelled")">
+                                        @h.Action
+                                    </span>
+                                </td>
+                                <td>@(h.PartInstance?.DisplayIdentifier ?? $"#{h.PartInstanceId}")</td>
+                                <td>@(h.Reason ?? "—")</td>
+                                <td>@(h.AtProcessStage?.ProductionStage?.Name ?? "—")</td>
+                                <td>@h.PerformedBy</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div style="color: var(--text-muted); font-size: 0.85rem;">No assignment history recorded.</div>
+            }
+
+            @* ── Actions ── *@
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                @if (_detailBatch.Status == BatchStatus.Open)
+                {
+                    <button class="btn btn-warning" @onclick="() => SealBatch(_detailBatch)">🔒 Seal Batch</button>
+                }
+                @if (_detailBatch.Status is BatchStatus.InProcess or BatchStatus.Sealed)
+                {
+                    <button class="btn btn-success" @onclick="() => CompleteBatch(_detailBatch)">✅ Complete</button>
+                }
+                @if (_detailBatch.Status is BatchStatus.Open or BatchStatus.Sealed)
+                {
+                    <button class="btn btn-danger" @onclick="() => DissolveBatch(_detailBatch)">🗑️ Dissolve</button>
+                }
+                <button class="btn btn-secondary" @onclick="() => _showDetail = false">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string _currentUser = "System";
+    private bool _loading = true;
+    private bool _processing;
+    private List<ProductionBatch> _allBatches = [];
+    private List<MachineProgram>? _builds;
+    private string _statusFilter = "";
+    private int _buildFilter;
+    private ConfirmDialog _confirmDialog = null!;
+
+    // Detail modal
+    private bool _showDetail;
+    private ProductionBatch? _detailBatch;
+    private List<BatchPartAssignment> _detailAssignments = [];
+
+    // Consolidation
+    private HashSet<int> _selectedBatchIds = [];
+    private int _consolidateCapacity = 60;
+    private ConsolidationResult? _consolidationResult;
+
+    private IEnumerable<ProductionBatch> FilteredBatches
+    {
+        get
+        {
+            var q = _allBatches.AsEnumerable();
+            if (!string.IsNullOrEmpty(_statusFilter) && Enum.TryParse<BatchStatus>(_statusFilter, out var status))
+                q = q.Where(b => b.Status == status);
+            if (_buildFilter > 0)
+                q = q.Where(b => b.OriginMachineProgramId == _buildFilter);
+            return q.OrderByDescending(b => b.CreatedDate);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _builds = await MachineProgramService.GetBuildPlateProgramsAsync();
+            await LoadBatches();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to load: {ex.Message}"); }
+        finally { _loading = false; }
+    }
+
+    private async Task LoadBatches()
+    {
+        try
+        {
+            if (_buildFilter > 0)
+            {
+                _allBatches = await BatchService.GetBatchesForBuildAsync(_buildFilter);
+            }
+            else
+            {
+                // Load all batches across builds
+                var batches = new List<ProductionBatch>();
+                if (_builds != null)
+                {
+                    foreach (var build in _builds)
+                    {
+                        batches.AddRange(await BatchService.GetBatchesForBuildAsync(build.Id));
+                    }
+                }
+                _allBatches = batches.DistinctBy(b => b.Id).ToList();
+            }
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to load batches: {ex.Message}"); }
+    }
+
+    private async Task ShowBatchDetail(ProductionBatch batch)
+    {
+        _detailBatch = await BatchService.GetByIdAsync(batch.Id) ?? batch;
+        _detailAssignments = _detailBatch.PartAssignments?.ToList() ?? [];
+        _showDetail = true;
+    }
+
+    private async Task SealBatch(ProductionBatch batch)
+    {
+        if (!await _confirmDialog.ShowAsync($"Seal batch {batch.BatchNumber}? No more parts can be added.", "Confirm Seal")) return;
+        try
+        {
+            await BatchService.SealBatchAsync(batch.Id);
+            batch.Status = BatchStatus.Sealed;
+            Toast.ShowSuccess($"Batch {batch.BatchNumber} sealed.");
+            if (_showDetail) await ShowBatchDetail(batch);
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task CompleteBatch(ProductionBatch batch)
+    {
+        if (!await _confirmDialog.ShowAsync($"Mark batch {batch.BatchNumber} as completed?", "Confirm Complete")) return;
+        try
+        {
+            await BatchService.CompleteBatchAsync(batch.Id);
+            batch.Status = BatchStatus.Completed;
+            Toast.ShowSuccess($"Batch {batch.BatchNumber} completed.");
+            if (_showDetail) await ShowBatchDetail(batch);
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task DissolveBatch(ProductionBatch batch)
+    {
+        if (!await _confirmDialog.ShowAsync($"Dissolve batch {batch.BatchNumber}? Parts must be reassigned.", "Confirm Dissolve")) return;
+        try
+        {
+            await BatchService.DissolveBatchAsync(batch.Id, "Manually dissolved", _currentUser);
+            batch.Status = BatchStatus.Dissolved;
+            Toast.ShowSuccess($"Batch {batch.BatchNumber} dissolved.");
+            _showDetail = false;
+            await LoadBatches();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
+    }
+
+    private async Task TryConsolidate()
+    {
+        if (!_selectedBatchIds.Any()) return;
+        _processing = true;
+        _consolidationResult = null;
+        try
+        {
+            _consolidationResult = await BatchService.TryConsolidateBatchesAsync(
+                _selectedBatchIds.ToList(), _consolidateCapacity, _currentUser);
+            if (_consolidationResult.Success)
+            {
+                _selectedBatchIds.Clear();
+                await LoadBatches();
+            }
+        }
+        catch (Exception ex) { Toast.ShowError($"Consolidation failed: {ex.Message}"); }
+        finally { _processing = false; }
+    }
+
+    private void ToggleBatchSelection(int batchId, bool selected)
+    {
+        if (selected) _selectedBatchIds.Add(batchId);
+        else _selectedBatchIds.Remove(batchId);
+        _consolidationResult = null;
+    }
+
+    private void UpdateContainerLabel(string? label)
+    {
+        if (_detailBatch != null)
+            _detailBatch.ContainerLabel = label;
+    }
+
+    /// <summary>
+    /// Determines which PartInstanceIds are currently assigned (have a more recent Assigned than Removed).
+    /// </summary>
+    private HashSet<int> GetCurrentPartInstanceIds()
+    {
+        var current = new HashSet<int>();
+        foreach (var group in _detailAssignments.GroupBy(a => a.PartInstanceId))
+        {
+            var latest = group.OrderByDescending(a => a.Timestamp).First();
+            if (latest.Action == BatchAssignmentAction.Assigned)
+                current.Add(group.Key);
+        }
+        return current;
+    }
+
+    private static string GetStatusBadge(BatchStatus status) => status switch
+    {
+        BatchStatus.Open => "badge-active",
+        BatchStatus.Sealed => "badge-warning",
+        BatchStatus.InProcess => "badge-printing",
+        BatchStatus.Completed => "badge-completed",
+        BatchStatus.Dissolved => "badge-cancelled",
+        _ => "badge-secondary"
+    };
+}

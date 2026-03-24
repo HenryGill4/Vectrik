@@ -1,0 +1,87 @@
+@implements IDisposable
+@inject ToastService ToastService
+
+<div class="toast-container">
+    @foreach (var toast in _toasts.ToList())
+    {
+        <div class="toast-item toast-@toast.Level.ToString().ToLower() @(toast.Fading ? "toast-fade-out" : "")">
+            <div class="toast-icon">@GetIcon(toast.Level)</div>
+            <div class="toast-body">
+                <strong>@toast.Title</strong>
+                <span>@toast.Message</span>
+            </div>
+            <button class="toast-dismiss" @onclick="() => RemoveToast(toast)">&times;</button>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<ToastItem> _toasts = new();
+
+    protected override void OnInitialized()
+    {
+        ToastService.OnShow += HandleToast;
+    }
+
+    private async void HandleToast(ToastMessage message)
+    {
+        var item = new ToastItem(message);
+        await InvokeAsync(() =>
+        {
+            _toasts.Add(item);
+            StateHasChanged();
+        });
+
+        _ = DismissAfterDelayAsync(item);
+    }
+
+    private async Task DismissAfterDelayAsync(ToastItem item)
+    {
+        await Task.Delay(4000);
+        await InvokeAsync(() =>
+        {
+            item.Fading = true;
+            StateHasChanged();
+        });
+        await Task.Delay(300);
+        await InvokeAsync(() =>
+        {
+            _toasts.Remove(item);
+            StateHasChanged();
+        });
+    }
+
+    private void RemoveToast(ToastItem toast)
+    {
+        _toasts.Remove(toast);
+    }
+
+    private static string GetIcon(ToastLevel level) => level switch
+    {
+        ToastLevel.Success => "✓",
+        ToastLevel.Error => "✕",
+        ToastLevel.Warning => "⚠",
+        ToastLevel.Info => "ℹ",
+        _ => ""
+    };
+
+    public void Dispose()
+    {
+        ToastService.OnShow -= HandleToast;
+    }
+
+    private class ToastItem
+    {
+        public ToastLevel Level { get; }
+        public string Title { get; }
+        public string Message { get; }
+        public bool Fading { get; set; }
+
+        public ToastItem(ToastMessage msg)
+        {
+            Level = msg.Level;
+            Title = msg.Title;
+            Message = msg.Message;
+        }
+    }
+}

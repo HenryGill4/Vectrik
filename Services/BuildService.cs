@@ -86,6 +86,8 @@ public class BuildService : IBuildService
 
     public async Task<BuildJobPart> AddPartToBuildAsync(int buildId, int partId, string partNumber, int quantity)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+
         var part = new BuildJobPart
         {
             BuildJobId = buildId,

@@ -4,15 +4,6 @@ using System.Text.Json;
 
 namespace Opcentrix_V3.Models;
 
-public record CustomFieldDefinition(
-    string Name,
-    string Type,
-    string Label,
-    bool Required = false,
-    string[]? Options = null,
-    double? Min = null,
-    double? Max = null);
-
 public class ProductionStage
 {
     public int Id { get; set; }
@@ -44,6 +35,9 @@ public class ProductionStage
     [MaxLength(50)]
     public string? RequiredRole { get; set; }
 
+    public int? RequiredOperatorRoleId { get; set; }
+    public virtual OperatorRole? RequiredOperatorRole { get; set; }
+
     public string CustomFieldsConfig { get; set; } = "[]";
 
     [MaxLength(500)]
@@ -69,7 +63,9 @@ public class ProductionStage
     public decimal DefaultMaterialCost { get; set; }
 
     public double DefaultDurationHours { get; set; } = 1.0;
-    public bool IsBatchStage { get; set; }
+
+    public bool IsExternalOperation { get; set; }
+    public double? DefaultTurnaroundDays { get; set; }
     public bool IsActive { get; set; } = true;
 
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
@@ -113,6 +109,33 @@ public class ProductionStage
     public bool CanMachineExecuteStage(string machineId)
     {
         var assigned = GetAssignedMachineIds();
+        return assigned.Count == 0 || assigned.Contains(machineId);
+    }
+
+    /// <summary>
+    /// Returns assigned machine IDs as integers (Machine.Id), parsed from the
+    /// comma-separated AssignedMachineIds field which stores Machine.Id int values.
+    /// </summary>
+    public List<int> GetAssignedMachineIntIds()
+    {
+        if (string.IsNullOrWhiteSpace(AssignedMachineIds))
+            return new List<int>();
+        var result = new List<int>();
+        foreach (var entry in AssignedMachineIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (int.TryParse(entry, out var id))
+                result.Add(id);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Checks whether the given machine (by int PK) can execute this stage.
+    /// Returns true if no machines are assigned (any machine is capable) or the machine is in the assigned list.
+    /// </summary>
+    public bool CanMachineExecuteStage(int machineId)
+    {
+        var assigned = GetAssignedMachineIntIds();
         return assigned.Count == 0 || assigned.Contains(machineId);
     }
 

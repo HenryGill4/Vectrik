@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -9,14 +9,35 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
+  <!-- Exclude test project files from main project compilation -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.9" />
+    <Compile Remove="Opcentrix-V3.Tests\**" />
+    <Content Remove="Opcentrix-V3.Tests\**" />
+    <EmbeddedResource Remove="Opcentrix-V3.Tests\**" />
+    <None Remove="Opcentrix-V3.Tests\**" />
+  </ItemGroup>
+
+  <!-- Exclude SQLite DB files from build/watch to prevent Hot Reload restart loops -->
+  <ItemGroup>
+    <Watch Remove="data\**" />
+    <None Remove="data\**" />
+    <Content Remove="data\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include=".github\copilot-instructions.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.4">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.4" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Components\Pages\Builds\" />
   </ItemGroup>
 
 </Project>

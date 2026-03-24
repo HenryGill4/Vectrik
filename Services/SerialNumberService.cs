@@ -28,12 +28,12 @@ public class SerialNumberService : ISerialNumberService
         var pattern = $"{prefix}-{year}-";
 
         var lastSerial = await _db.PartInstances
-            .Where(p => p.SerialNumber.StartsWith(pattern))
+            .Where(p => p.SerialNumber != null && p.SerialNumber.StartsWith(pattern))
             .OrderByDescending(p => p.SerialNumber)
             .FirstOrDefaultAsync();
 
         var nextNumber = 1;
-        if (lastSerial != null)
+        if (lastSerial?.SerialNumber != null)
         {
             var suffix = lastSerial.SerialNumber.Replace(pattern, "");
             if (int.TryParse(suffix, out var lastNum))
@@ -45,6 +45,8 @@ public class SerialNumberService : ISerialNumberService
 
     public async Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+
         var instances = new List<PartInstance>();
 
         for (int i = 0; i < quantity; i++)
@@ -54,6 +56,8 @@ public class SerialNumberService : ISerialNumberService
             var instance = new PartInstance
             {
                 SerialNumber = serialNumber,
+                TemporaryTrackingId = serialNumber, // When serial is assigned immediately, tracking ID mirrors it
+                IsSerialAssigned = true,
                 WorkOrderLineId = workOrderLineId,
                 PartId = partId,
                 Status = PartInstanceStatus.InProcess,
@@ -90,7 +94,7 @@ public class SerialNumberService : ISerialNumberService
             .Include(p => p.Part)
             .Include(p => p.CurrentStage)
             .Where(p => p.WorkOrderLineId == workOrderLineId)
-            .OrderBy(p => p.SerialNumber)
+            .OrderBy(p => p.SerialNumber ?? p.TemporaryTrackingId)
             .ToListAsync();
     }
 
@@ -133,5 +137,41 @@ public class SerialNumberService : ISerialNumberService
 
         await _db.SaveChangesAsync();
         return instance;
+    }
+
+    public Task<string> GenerateTemporaryTrackingIdAsync(int programId, int index)
+    {
+        return Task.FromResult($"TMP-{programId}-{index:D4}");
+    }
+
+    public async Task<PartInstance> AssignOfficialSerialAsync(int partInstanceId)
+    {
+        var instance = await _db.PartInstances.FindAsync(partInstanceId)
+            ?? throw new InvalidOperationException("Part instance not found.");
+
+        if (instance.IsSerialAssigned)
+            throw new InvalidOperationException(
+                $"Part instance {partInstanceId} already has an official serial: {instance.SerialNumber}");
+
+        var serialNumber = await GenerateSerialNumberAsync();
+        instance.SerialNumber = serialNumber;
+        instance.IsSerialAssigned = true;
+        instance.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        return instance;
+    }
+
+    public async Task<List<string>> GenerateSerialRangeAsync(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+
+        var serials = new List<string>(count);
+        for (int i = 0; i < count; i++)
+        {
+            serials.Add(await GenerateSerialNumberAsync());
+        }
+
+        return serials;
     }
 }

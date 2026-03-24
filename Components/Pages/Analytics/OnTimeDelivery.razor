@@ -1,0 +1,134 @@
+@page "/analytics/on-time-delivery"
+@inject IAnalyticsService AnalyticsService
+@inject NavigationManager Nav
+
+<PageTitle>On-Time Delivery - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">On-Time Delivery Report</h1>
+    <div class="page-actions">
+        <select class="form-control" style="width:160px;display:inline-block" @onchange="OnRangeChanged">
+            <option value="30" selected>Last 30 Days</option>
+            <option value="60">Last 60 Days</option>
+            <option value="90">Last 90 Days</option>
+            <option value="180">Last 6 Months</option>
+        </select>
+        <input type="text" class="form-control" style="width:200px;display:inline-block;margin-left:0.5rem"
+               placeholder="Filter by customer..." @bind="_customerFilter" @bind:event="oninput" @onkeydown="HandleKeyDown" />
+        <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="LoadDataAsync">Apply</button>
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
+    </div>
+</div>
+
+@if (_loading) { <div class="loading"><span class="spinner"></span> Loading...</div> }
+else
+{
+    <div class="kpi-grid" style="margin-bottom:1rem">
+        <div class="kpi-card">
+            <div class="kpi-label">On-Time Delivery %</div>
+            <div class="kpi-value" style="color: @(_otdPct >= 90 ? "var(--success)" : _otdPct >= 75 ? "var(--warning)" : "var(--danger)")">
+                @_otdPct.ToString("F1")%
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Total Completed</div>
+            <div class="kpi-value">@_rows.Count</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">On Time</div>
+            <div class="kpi-value" style="color:var(--success)">@_rows.Count(r => r.IsOnTime)</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Late</div>
+            <div class="kpi-value" style="color:var(--danger)">@_rows.Count(r => !r.IsOnTime)</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>WO #</th>
+                    <th>Customer</th>
+                    <th>Due Date</th>
+                    <th>Completed</th>
+                    <th>Delta (Days)</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr style="@(!row.IsOnTime ? "background:rgba(var(--danger-rgb, 239,68,68),0.08)" : "")">
+                        <td>@row.OrderNumber</td>
+                        <td>@row.CustomerName</td>
+                        <td>@row.DueDate.ToString("yyyy-MM-dd")</td>
+                        <td>@row.CompletedDate?.ToString("yyyy-MM-dd")</td>
+                        <td style="color: @(row.DeltaDays >= 0 ? "var(--success)" : "var(--danger)")">
+                            @(row.DeltaDays >= 0 ? $"+{row.DeltaDays} early" : $"{row.DeltaDays} late")
+                        </td>
+                        <td>
+                            <span class="badge @(row.IsOnTime ? "badge-success" : "badge-danger")">
+                                @(row.IsOnTime ? "On Time" : "Late")
+                            </span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private int _rangeDays = 30;
+    private string _customerFilter = "";
+    private List<OnTimeDeliveryRow> _rows = new();
+    private double _otdPct;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var from = now.AddDays(-_rangeDays);
+            var filter = string.IsNullOrWhiteSpace(_customerFilter) ? null : _customerFilter;
+            _rows = await AnalyticsService.GetOnTimeDeliveryDetailsAsync(from, now, filter);
+            _otdPct = _rows.Count > 0 ? (double)_rows.Count(r => r.IsOnTime) / _rows.Count * 100 : 100;
+        }
+        catch
+        {
+            _rows = new();
+            _otdPct = 0;
+        }
+        _loading = false;
+    }
+
+    private async Task OnRangeChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var d))
+        {
+            _rangeDays = d;
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+
+    private void ExportCsv()
+    {
+        if (!_rows.Any()) return;
+        var csv = "WO#,Customer,DueDate,CompletedDate,DeltaDays,OnTime\n" +
+            string.Join("\n", _rows.Select(r => $"{r.OrderNumber},{r.CustomerName},{r.DueDate:yyyy-MM-dd},{r.CompletedDate:yyyy-MM-dd},{r.DeltaDays},{r.IsOnTime}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+    }
+}

@@ -1,0 +1,43 @@
+@if (Executions.Any())
+{
+    <div class="sched-sidebar">
+        <div class="card">
+            <div class="card-header sched-sidebar-header">
+                @Title
+            </div>
+            <div class="sched-sidebar-list">
+                @foreach (var exec in Executions)
+                {
+                    var priorityClass = exec.Job?.Priority.ToString().ToLower() ?? "normal";
+                    <div class="sched-sidebar-item" @onclick="() => OnAutoSchedule.InvokeAsync(exec.Id)">
+                        <div class="sched-sidebar-priority sched-priority-@priorityClass"></div>
+                        <div class="sched-sidebar-info">
+                            <span class="sched-sidebar-part">@GetLabel(exec)</span>
+                            <span class="sched-sidebar-stage">@(exec.ProductionStage?.Name ?? "—")</span>
+                            <span class="sched-sidebar-est">@(exec.EstimatedHours?.ToString("F1") ?? "?")h est</span>
+                        </div>
+                        @if (ShowManualSchedule)
+                        {
+                            <span class="sched-sidebar-action" title="Manual schedule" @onclick="() => OnManualSchedule.InvokeAsync(exec)" @onclick:stopPropagation>📅</span>
+                        }
+                        <span class="sched-sidebar-action" title="Auto-schedule" @onclick="() => OnAutoSchedule.InvokeAsync(exec.Id)" @onclick:stopPropagation>⚡</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
+    [Parameter] public string Title { get; set; } = "📋 Unscheduled";
+    [Parameter] public bool ShowManualSchedule { get; set; }
+    [Parameter] public bool UseProgramName { get; set; }
+    [Parameter] public EventCallback<StageExecution> OnManualSchedule { get; set; }
+    [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
+
+    private string GetLabel(StageExecution exec) =>
+        UseProgramName
+            ? $"📦 {exec.MachineProgram?.Name ?? exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}"}"
+            : exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}";
+}

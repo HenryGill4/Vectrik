@@ -1,0 +1,421 @@
+@* ── Work Orders Command Center: demand dashboard + WO cards (Program-based scheduling) ── *@
+@using Opcentrix_V3.Components.Pages.Scheduler.Modals
+@inject ISchedulingService SchedulingService
+@inject IProgramSchedulingService ProgramScheduling
+@inject IMachineProgramService ProgramService
+@inject IWorkOrderService WoService
+@inject IJSRuntime JS
+@inject ToastService Toast
+
+<div class="wo-demand-view">
+    @{
+        var woAllLines = WorkOrders.SelectMany(w => w.Lines).ToList();
+        var woTotalOutstanding = woAllLines.Sum(l => GetOutstanding(l));
+        var woTotalInPrograms = woAllLines.Sum(l => GetInProgramQty(l));
+        var woTotalInProduction = woAllLines.Sum(l => GetInProductionQty(l));
+        var woAddLines = woAllLines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+        var woCncLines = woAllLines.Where(l => !IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+        var woUnscheduledLines = woAllLines.Where(l => GetOutstanding(l) > 0 && GetInProgramQty(l) == 0 && !HasExistingJobs(l)).ToList();
+        var today = DateTime.UtcNow.Date;
+        var endOfWeek = today.AddDays(7 - (int)today.DayOfWeek);
+        var endOfNextWeek = endOfWeek.AddDays(7);
+        var overdueWos = WorkOrders.Where(w => w.DueDate.Date < today && w.Lines.Any(l => GetOutstanding(l) > 0)).ToList();
+        var thisWeekWos = WorkOrders.Where(w => w.DueDate.Date >= today && w.DueDate.Date < endOfWeek).ToList();
+        var nextWeekWos = WorkOrders.Where(w => w.DueDate.Date >= endOfWeek && w.DueDate.Date < endOfNextWeek).ToList();
+    }
+
+    @if (!WorkOrders.Any())
+    {
+        <div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No released work orders. Release a work order to see demand here.</div></div>
+    }
+    else
+    {
+        <div class="wo-demand-stats">
+            <div class="wo-demand-stat">
+                <span class="wo-demand-stat-count">@WorkOrders.Count</span>
+                <span class="wo-demand-stat-label">Active Orders</span>
+            </div>
+            <div class="wo-demand-stat wo-demand-stat--outstanding">
+                <span class="wo-demand-stat-count">@woTotalOutstanding</span>
+                <span class="wo-demand-stat-label">Parts Outstanding</span>
+            </div>
+            <div class="wo-demand-stat wo-demand-stat--additive">
+                <span class="wo-demand-stat-count">@woAddLines.Count</span>
+                <span class="wo-demand-stat-label">Need Builds (SLS)</span>
+            </div>
+            <div class="wo-demand-stat wo-demand-stat--cnc">
+                <span class="wo-demand-stat-count">@woCncLines.Count</span>
+                <span class="wo-demand-stat-label">Need Machining</span>
+            </div>
+            @if (woTotalInPrograms > 0)
+            {
+                <div class="wo-demand-stat wo-demand-stat--inprograms">
+                    <span class="wo-demand-stat-count">@woTotalInPrograms</span>
+                    <span class="wo-demand-stat-label">In Programs</span>
+                </div>
+            }
+            @if (woTotalInProduction > 0)
+            {
+                <div class="wo-demand-stat wo-demand-stat--inprod">
+                    <span class="wo-demand-stat-count">@woTotalInProduction</span>
+                    <span class="wo-demand-stat-label">In Production</span>
+                </div>
+            }
+            <div class="wo-demand-stat wo-demand-stat--unscheduled">
+                <span class="wo-demand-stat-count">@woUnscheduledLines.Count</span>
+                <span class="wo-demand-stat-label">Not Yet Scheduled</span>
+            </div>
+            @if (overdueWos.Count > 0)
+            {
+                <div class="wo-demand-stat wo-demand-stat--overdue @(_statFilter == "overdue" ? "wo-demand-stat--active" : "")" @onclick='() => ToggleStatFilter("overdue")'>
+                    <span class="wo-demand-stat-count">@overdueWos.Count</span>
+                    <span class="wo-demand-stat-label">🔴 Overdue</span>
+                </div>
+            }
+            <div class="wo-demand-stat wo-demand-stat--thisweek @(_statFilter == "thisweek" ? "wo-demand-stat--active" : "")" @onclick='() => ToggleStatFilter("thisweek")'>
+                <span class="wo-demand-stat-count">@thisWeekWos.Count</span>
+                <span class="wo-demand-stat-label">Due This Week</span>
+            </div>
+            <div class="wo-demand-stat wo-demand-stat--nextweek @(_statFilter == "nextweek" ? "wo-demand-stat--active" : "")" @onclick='() => ToggleStatFilter("nextweek")'>
+                <span class="wo-demand-stat-count">@nextWeekWos.Count</span>
+                <span class="wo-demand-stat-label">Due Next Week</span>
+            </div>
+        </div>
+
+        @* ── Schedule Diagnostic Report ── *@
+        <ScheduleIssueReport Reports="_diagnosticReports" Warnings="_diagnosticWarnings"
+                             OnClear="StateHasChanged" />
+
+        @* ── Work Order Cards ── *@
+        @if (_statFilter != null)
+        {
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.82rem; color: var(--text-secondary);">
+                <span>Showing: <strong>@_statFilter</strong></span>
+                <button class="btn btn-sm btn-ghost" @onclick="() => _statFilter = null">✕ Clear filter</button>
+            </div>
+        }
+        <div class="wo-demand-list">
+            @foreach (var wo in GetFilteredWorkOrders().OrderBy(w => w.DueDate))
+            {
+                var daysUntilDue = (wo.DueDate.Date - DateTime.UtcNow.Date).Days;
+                var dueClass = daysUntilDue < 0 ? "wo-card--overdue" : (daysUntilDue <= 3 ? "wo-card--urgent" : "");
+                var woOutstanding = wo.Lines.Sum(l => GetOutstanding(l));
+
+                <div class="wo-demand-card @dueClass">
+                    <div class="wo-card-header">
+                        <div class="wo-card-title">
+                            <a href="/workorders/@wo.Id" class="wo-card-number">@wo.OrderNumber</a>
+                            <span class="wo-card-customer">@wo.CustomerName</span>
+                        </div>
+                        <div class="wo-card-meta">
+                            <span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span>
+                            <span class="badge badge-@(wo.Status == WorkOrderStatus.Released ? "primary" : "info")">@wo.Status</span>
+                            @if (daysUntilDue < 0)
+                            {
+                                <span class="badge badge-danger">@Math.Abs(daysUntilDue)d OVERDUE</span>
+                            }
+                            else if (daysUntilDue <= 3)
+                            {
+                                <span class="badge badge-warning">Due in @(daysUntilDue)d</span>
+                            }
+                            else
+                            {
+                                <span class="wo-card-due">Due @wo.DueDate.ToString("MM/dd")</span>
+                            }
+                        </div>
+                    </div>
+
+                    @if (woOutstanding <= 0)
+                    {
+                        <div class="wo-card-fulfilled">
+                            <span>✅ All parts produced or scheduled</span>
+                        </div>
+                    }
+                    else
+                    {
+                        var additiveLinesNeedingSchedule = wo.Lines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+                            @if (additiveLinesNeedingSchedule.Any())
+                            {
+                                <button class="btn btn-sm btn-accent" @onclick="() => OpenProgramWizard(wo)" title="Open the Program Schedule Wizard to select and schedule programs for all SLS parts">
+                                    🖨️ Schedule via Programs (@additiveLinesNeedingSchedule.Count)
+                                </button>
+                            }
+                        </div>
+                        <div class="wo-card-lines">
+                            @foreach (var line in wo.Lines.OrderByDescending(l => GetOutstanding(l)))
+                            {
+                                var outstanding = GetOutstanding(line);
+                                var isAdditive = IsAdditiveLine(line);
+                                var hasJobs = HasExistingJobs(line);
+                                var inPrograms = GetInProgramQty(line);
+                                var inProduction = GetInProductionQty(line);
+                                var progressPct = line.Quantity > 0 ? Math.Min(100, line.ProducedQuantity * 100.0 / line.Quantity) : 0;
+                                var prodPct = line.Quantity > 0 ? Math.Min(100 - progressPct, inProduction * 100.0 / line.Quantity) : 0;
+                                var programPct = line.Quantity > 0 ? Math.Min(100 - progressPct - prodPct, inPrograms * 100.0 / line.Quantity) : 0;
+
+                                <div class="wo-line-row @(outstanding <= 0 ? "wo-line-row--done" : "")">
+                                    <div class="wo-line-info">
+                                        <div class="wo-line-part">
+                                            <span class="wo-line-type-badge @(isAdditive ? "wo-line-type--sls" : "wo-line-type--cnc")">
+                                                @(isAdditive ? "🖨️ SLS" : "⚙️ CNC")
+                                            </span>
+                                            <span class="wo-line-partnum">@(line.Part?.PartNumber ?? "?")</span>
+                                            <span class="wo-line-partname">@(line.Part?.Name ?? "")</span>
+                                        </div>
+                                         <div class="wo-line-qty">
+                                            <span class="wo-line-qty-detail">@line.ProducedQuantity / @line.Quantity</span>
+                                            @if (inProduction > 0)
+                                            {
+                                                <span style="color: var(--warning); font-size: 0.75rem;">⚙️ @inProduction in jobs</span>
+                                            }
+                                            @if (inPrograms > 0)
+                                            {
+                                                <span style="color: var(--accent); font-size: 0.75rem;">🖨️ @inPrograms in programs</span>
+                                            }
+                                            @if (outstanding > 0)
+                                            {
+                                                <span class="wo-line-outstanding">@outstanding remaining</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="wo-line-complete">✅ Covered</span>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    @* Progress bar: produced (green) + in-production (yellow) + in-programs (blue) *@
+                                    <div class="wo-line-progress">
+                                        <div style="display: flex; height: 100%;">
+                                            @if (progressPct > 0)
+                                            {
+                                                <div class="wo-line-progress-fill" style="width: @progressPct.ToString("F0")%;"></div>
+                                            }
+                                            @if (prodPct > 0)
+                                            {
+                                                <div class="wo-line-progress-prod" style="width: @prodPct.ToString("F0")%;"></div>
+                                            }
+                                            @if (programPct > 0)
+                                            {
+                                                <div class="wo-line-progress-build" style="width: @programPct.ToString("F0")%;"></div>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    @* Actions *@
+                                    @if (outstanding > 0)
+                                    {
+                                        <div class="wo-line-actions">
+                                            @if (hasJobs)
+                                            {
+                                                <span class="badge badge-info" style="font-size:0.7rem;">Jobs exist</span>
+                                            }
+                                            @if (isAdditive)
+                                            {
+                                                <button class="btn btn-sm btn-primary" @onclick="() => OpenProgramWizardForLine(wo, line)" title="Open program wizard to select or create programs for this part">
+                                                    🖨️ Schedule via Programs
+                                                </button>
+                                                @if (inPrograms > 0)
+                                                {
+                                                    <span class="badge badge-accent" style="font-size: 0.7rem;">@inPrograms in programs</span>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                @if (!hasJobs)
+                                                {
+                                                    <button class="btn btn-sm btn-accent" @onclick="() => OpenWoJobModal(wo, line)" title="Generate and auto-schedule a job for this part">
+                                                        ⚙️ Schedule Job
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenWoJobModal(wo, line)" title="Create another job for remaining quantity">
+                                                        ⚙️ Add Job
+                                                    </button>
+                                                    @if (HasUnscheduledJobs(line))
+                                                    {
+                                                        <button class="btn btn-sm btn-primary" @onclick="() => AutoScheduleLineJobsAsync(line)" title="Auto-schedule all Draft jobs on this line">
+                                                            📅 Auto-Schedule
+                                                        </button>
+                                                    }
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@* ── WO-specific Modals ── *@
+<WoJobModal
+    IsVisible="_showWoJobModal"
+    WorkOrder="_selectedWo"
+    WorkOrderLine="_selectedWoLine"
+    UserName="@UserName"
+    OnClose="() => { _showWoJobModal = false; }"
+    OnScheduled="OnModalConfirmedAsync" />
+
+<ProgramScheduleWizard
+    IsVisible="_showProgramWizard"
+    WorkOrder="_wizardWo"
+    Lines="_wizardLines"
+    SlsMachines="SlsMachines"
+    UserName="@UserName"
+    OnClose="() => { _showProgramWizard = false; }"
+    OnScheduled="OnModalConfirmedAsync" />
+
+@code {
+    [Parameter, EditorRequired] public List<WorkOrder> WorkOrders { get; set; } = [];
+    [Parameter] public List<MachineProgram> Programs { get; set; } = [];
+    [Parameter, EditorRequired] public List<Machine> SlsMachines { get; set; } = [];
+    [Parameter, EditorRequired] public string UserName { get; set; } = "System";
+    [Parameter] public bool ShowOverdueOnly { get; set; }
+    [Parameter] public EventCallback OnRefreshRequested { get; set; }
+
+    // Program Schedule Wizard state
+    private bool _showProgramWizard;
+    private WorkOrder? _wizardWo;
+    private List<WorkOrderLine>? _wizardLines;
+
+    // WO Job modal state
+    private bool _showWoJobModal;
+    private WorkOrder? _selectedWo;
+    private WorkOrderLine? _selectedWoLine;
+
+    // Stat filter
+    private string? _statFilter;
+
+    // Diagnostic report state
+    private List<ScheduleDiagnosticReport> _diagnosticReports = [];
+    private List<string> _diagnosticWarnings = [];
+
+    private async Task OnModalConfirmedAsync()
+    {
+        _showWoJobModal = false;
+        _showProgramWizard = false;
+        await OnRefreshRequested.InvokeAsync();
+    }
+
+    private void ToggleStatFilter(string filter)
+    {
+        _statFilter = _statFilter == filter ? null : filter;
+    }
+
+    private List<WorkOrder> GetFilteredWorkOrders()
+    {
+        var today = DateTime.UtcNow.Date;
+        var endOfWeek = today.AddDays(7 - (int)today.DayOfWeek);
+        var endOfNextWeek = endOfWeek.AddDays(7);
+
+        // Toolbar overdue toggle takes precedence
+        if (ShowOverdueOnly)
+            return WorkOrders.Where(w => w.DueDate.Date < today && w.Lines.Any(l => GetOutstanding(l) > 0)).ToList();
+
+        return _statFilter switch
+        {
+            "overdue" => WorkOrders.Where(w => w.DueDate.Date < today && w.Lines.Any(l => GetOutstanding(l) > 0)).ToList(),
+            "thisweek" => WorkOrders.Where(w => w.DueDate.Date >= today && w.DueDate.Date < endOfWeek).ToList(),
+            "nextweek" => WorkOrders.Where(w => w.DueDate.Date >= endOfWeek && w.DueDate.Date < endOfNextWeek).ToList(),
+            _ => WorkOrders
+        };
+    }
+
+    // ── Work Order Demand Helpers ──
+
+    /// <summary>
+    /// Calculates outstanding quantity for a WO line (ordered - produced - in programs).
+    /// </summary>
+    private int GetOutstanding(WorkOrderLine line)
+    {
+        var produced = line.ProducedQuantity;
+        var inPrograms = GetInProgramQty(line);
+        var ordered = line.Quantity;
+        return Math.Max(0, ordered - produced - inPrograms);
+    }
+
+    /// <summary>
+    /// Quantity covered by active MachinePrograms (program-based scheduling).
+    /// </summary>
+    private int GetInProgramQty(WorkOrderLine line)
+    {
+        return Programs
+            .Where(p => p.ScheduleStatus is not (ProgramScheduleStatus.Completed or ProgramScheduleStatus.Cancelled)
+                && p.ProgramParts != null
+                && p.ProgramParts.Any(pp => pp.PartId == line.PartId))
+            .SelectMany(p => p.ProgramParts!.Where(pp => pp.PartId == line.PartId))
+            .Sum(pp => pp.Quantity);
+    }
+
+    private static bool IsAdditiveLine(WorkOrderLine line) =>
+        line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
+
+    private static bool HasExistingJobs(WorkOrderLine line) =>
+        line.Jobs?.Any() == true;
+
+    /// <summary>
+    /// Quantity covered by active (non-terminal) jobs — Scheduled, InProgress, Paused, Draft.
+    /// </summary>
+    private static int GetInProductionQty(WorkOrderLine line)
+    {
+        if (line.Jobs == null) return 0;
+        return line.Jobs
+            .Where(j => j.Status is not (JobStatus.Completed or JobStatus.Cancelled))
+            .Sum(j => j.Quantity);
+    }
+
+    private static bool HasUnscheduledJobs(WorkOrderLine line) =>
+        line.Jobs?.Any(j => j.Status == JobStatus.Draft) == true;
+
+    private void OpenProgramWizard(WorkOrder wo)
+    {
+        _wizardWo = wo;
+        _wizardLines = wo.Lines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+        _showProgramWizard = true;
+    }
+
+    private void OpenProgramWizardForLine(WorkOrder wo, WorkOrderLine line)
+    {
+        _wizardWo = wo;
+        _wizardLines = [line];
+        _showProgramWizard = true;
+    }
+
+    private void OpenWoJobModal(WorkOrder wo, WorkOrderLine line)
+    {
+        _selectedWo = wo;
+        _selectedWoLine = line;
+        _showWoJobModal = true;
+    }
+
+    private async Task AutoScheduleLineJobsAsync(WorkOrderLine line)
+    {
+        var draftJobs = line.Jobs?.Where(j => j.Status == JobStatus.Draft).ToList() ?? [];
+        if (draftJobs.Count == 0) return;
+        var scheduled = 0;
+        foreach (var job in draftJobs)
+        {
+            try
+            {
+                await SchedulingService.AutoScheduleJobAsync(job.Id);
+                scheduled++;
+            }
+            catch { /* skip jobs that can't be scheduled */ }
+        }
+        if (scheduled > 0)
+        {
+            Toast.ShowSuccess($"Auto-scheduled {scheduled} job(s) for {line.Part?.PartNumber ?? "?"}");
+            await OnRefreshRequested.InvokeAsync();
+        }
+        else
+        {
+            Toast.ShowWarning("No jobs could be scheduled (no capable machines found)");
+        }
+    }
+}

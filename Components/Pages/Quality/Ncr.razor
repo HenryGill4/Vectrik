@@ -1,0 +1,420 @@
+@page "/quality/ncr"
+@inject IQualityService QualityService
+@inject IPartService PartService
+@inject IWorkflowEngine WorkflowEngine
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject ITenantFeatureService Features
+@inject ICustomFieldService CustomFieldService
+@using System.Security.Claims
+@using System.Text.Json
+
+<PageTitle>NCR Management - OpCentrix</PageTitle>
+
+<FeatureGate Feature="module.quality" ModuleName="Quality Management">
+
+<div class="page-header">
+    <h1 class="page-title">📋 Non-Conformance Reports</h1>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" @onclick='() => Nav.NavigateTo("/quality")'>← Dashboard</button>
+        <button class="btn btn-primary" @onclick="ShowCreate">+ New NCR</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <!-- Filters -->
+    <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+        <select class="form-control" style="max-width: 160px;" @bind="_filterStatus">
+            <option value="">All Statuses</option>
+            @foreach (var s in Enum.GetValues<NcrStatus>())
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+        <select class="form-control" style="max-width: 160px;" @bind="_filterSeverity">
+            <option value="">All Severities</option>
+            @foreach (var s in Enum.GetValues<NcrSeverity>())
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+        <select class="form-control" style="max-width: 160px;" @bind="_filterType">
+            <option value="">All Types</option>
+            @foreach (var t in Enum.GetValues<NcrType>())
+            {
+                <option value="@t">@t</option>
+            }
+        </select>
+        <input class="form-control" style="max-width: 200px;" placeholder="Search..." @bind="_search" @bind:event="oninput" />
+    </div>
+
+    <div class="card">
+        @if (FilteredNcrs.Count == 0)
+        {
+            <div style="padding: 24px; text-align: center; color: var(--text-muted);">No NCRs found.</div>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>NCR #</th>
+                        <th>Part</th>
+                        <th>Job</th>
+                        <th>Type</th>
+                        <th>Severity</th>
+                        <th>Description</th>
+                        <th>Disposition</th>
+                        <th>Status</th>
+                        <th>Days Open</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ncr in FilteredNcrs)
+                    {
+                        <tr>
+                            <td style="font-weight: 600;">@ncr.NcrNumber</td>
+                            <td>@(ncr.Part?.PartNumber ?? "—")</td>
+                            <td>@(ncr.Job != null ? $"Job #{ncr.Job.Id}" : "—")</td>
+                            <td><span class="badge badge-secondary">@ncr.Type</span></td>
+                            <td><span class="badge @GetSeverityBadge(ncr.Severity)">@ncr.Severity</span></td>
+                            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@ncr.Description</td>
+                            <td><span class="badge @GetDispositionBadge(ncr.Disposition)">@ncr.Disposition</span></td>
+                            <td><span class="badge @GetStatusBadge(ncr.Status)">@ncr.Status</span>
+                                @if (_ncrPendingApprovals.ContainsKey(ncr.Id))
+                                {
+                                    <span class="badge badge-warning" style="margin-left: 4px;">⏳ Pending Approval</span>
+                                }
+                            </td>
+                            <td>@((int)(DateTime.UtcNow - ncr.ReportedAt).TotalDays)</td>
+                            <td style="white-space: nowrap;">
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShowEdit(ncr)">Edit</button>
+                                @if (ncr.CorrectiveActionId == null && ncr.Status != NcrStatus.Closed)
+                                {
+                                    <button class="btn btn-sm btn-primary" style="margin-left: 4px;" @onclick="() => CreateCapaFromNcr(ncr)" title="Create CAPA from this NCR">+ CAPA</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") NCR</span>
+                <button class="modal-close" @onclick="() => _showForm = false">&times;</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Part *</label>
+                    <select class="form-control" @bind="_edit.PartId">
+                        <option value="">— Select Part —</option>
+                        @foreach (var p in _parts)
+                        {
+                            <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Job ID</label>
+                    <input class="form-control" type="number" @bind="_edit.JobId" placeholder="Optional" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type *</label>
+                    <select class="form-control" @bind="_edit.Type">
+                        @foreach (var t in Enum.GetValues<NcrType>())
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Severity *</label>
+                    <select class="form-control" @bind="_edit.Severity">
+                        @foreach (var s in Enum.GetValues<NcrSeverity>())
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Disposition</label>
+                    <select class="form-control" @bind="_pendingDisposition">
+                        @foreach (var d in Enum.GetValues<NcrDisposition>())
+                        {
+                            <option value="@d">@d</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-control" @bind="_edit.Status">
+                        @foreach (var s in Enum.GetValues<NcrStatus>())
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Quantity Affected</label>
+                    <input class="form-control" @bind="_edit.QuantityAffected" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Description *</label>
+                <textarea class="form-control" rows="3" @bind="_edit.Description" placeholder="Describe the non-conformance..."></textarea>
+            </div>
+
+            @if (_customFieldDefs.Count > 0)
+            {
+                <div style="margin-top: 12px;">
+                    <label class="form-label" style="font-weight: 600;">Custom Fields</label>
+                    <CustomFieldsEditor FieldDefinitions="_customFieldDefs" Values="_customFieldValues"
+                                        ValuesChanged="OnCustomFieldsChanged" />
+                </div>
+            }
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveNcr">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+</FeatureGate>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool _loading = true;
+    private List<NonConformanceReport> _ncrs = new();
+    private List<Part> _parts = new();
+    private NonConformanceReport? _edit;
+    private bool _showForm;
+    private string _search = string.Empty;
+    private string _filterStatus = string.Empty;
+    private string _filterSeverity = string.Empty;
+    private string _filterType = string.Empty;
+    private ConfirmDialog _confirm = null!;
+    private NcrDisposition _pendingDisposition;
+    private string _currentUserId = "System";
+
+    // Workflow
+    private Dictionary<int, WorkflowInstance> _ncrPendingApprovals = new();
+
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
+
+    private List<NonConformanceReport> FilteredNcrs => _ncrs
+        .Where(n => string.IsNullOrEmpty(_filterStatus) || n.Status.ToString() == _filterStatus)
+        .Where(n => string.IsNullOrEmpty(_filterSeverity) || n.Severity.ToString() == _filterSeverity)
+        .Where(n => string.IsNullOrEmpty(_filterType) || n.Type.ToString() == _filterType)
+        .Where(n => string.IsNullOrEmpty(_search) ||
+            n.NcrNumber.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            n.Description.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            (n.Part?.PartNumber ?? "").Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUserId = state.User.FindFirst("UserId")?.Value ?? "System";
+        }
+
+        _ncrs = await QualityService.GetAllNcrsAsync();
+        _parts = await PartService.GetAllPartsAsync(activeOnly: true);
+        _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("NCR");
+        foreach (var ncr in _ncrs)
+        {
+            var pending = await WorkflowEngine.GetPendingAsync("NCR", ncr.Id);
+            if (pending != null) _ncrPendingApprovals[ncr.Id] = pending;
+        }
+        _loading = false;
+    }
+
+    private void ShowCreate()
+    {
+        _edit = new NonConformanceReport { ReportedByUserId = _currentUserId };
+        _pendingDisposition = NcrDisposition.PendingReview;
+        _customFieldValues = new();
+        _showForm = true;
+    }
+
+    private void ShowEdit(NonConformanceReport ncr)
+    {
+        _edit = ncr;
+        _pendingDisposition = ncr.Disposition;
+        _customFieldValues = new();
+        if (!string.IsNullOrEmpty(ncr.CustomFieldValues))
+        {
+            try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(ncr.CustomFieldValues) ?? new(); }
+            catch { _customFieldValues = new(); }
+        }
+        _showForm = true;
+    }
+
+    private async Task SaveNcr()
+    {
+        if (_edit == null) return;
+
+        if (string.IsNullOrWhiteSpace(_edit.Description))
+        {
+            Toast.ShowError("Description is required.");
+            return;
+        }
+
+        if (_edit.PartId == null || _edit.PartId == 0)
+        {
+            Toast.ShowError("Part selection is required.");
+            return;
+        }
+
+        // Confirm disposition change if it changed to a destructive action
+        if (_edit.Id > 0 && _pendingDisposition != _edit.Disposition &&
+            _pendingDisposition != NcrDisposition.PendingReview)
+        {
+            var confirmed = await _confirm.ShowAsync(
+                $"Change disposition to \"{_pendingDisposition}\"? This action may affect inventory and production.",
+                "Confirm Disposition Change");
+            if (!confirmed) return;
+
+            // Check workflow requirement for disposition change
+            var instance = await WorkflowEngine.StartAsync("NCR", _edit.Id);
+            if (instance != null)
+            {
+                _ncrPendingApprovals[_edit.Id] = instance;
+                _showForm = false;
+                Toast.ShowInfo("Disposition change requires approval. Workflow started.");
+                return;
+            }
+        }
+
+        _edit.Disposition = _pendingDisposition;
+
+        if (_customFieldValues.Count > 0)
+            _edit.CustomFieldValues = JsonSerializer.Serialize(_customFieldValues);
+
+        try
+        {
+            if (_edit.Id == 0)
+            {
+                await QualityService.CreateNcrAsync(_edit);
+                Toast.ShowSuccess("NCR created.");
+            }
+            else
+            {
+                await QualityService.UpdateNcrAsync(_edit);
+                Toast.ShowSuccess("NCR updated.");
+            }
+
+            _ncrs = await QualityService.GetAllNcrsAsync();
+            _showForm = false;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private void OnCustomFieldsChanged(Dictionary<string, string> values) => _customFieldValues = values;
+
+    private async Task CreateCapaFromNcr(NonConformanceReport ncr)
+    {
+        var confirmed = await _confirm.ShowAsync(
+            $"Create a CAPA from NCR {ncr.NcrNumber}? This will link the CAPA to this NCR.",
+            "Create CAPA");
+        if (!confirmed) return;
+
+        try
+        {
+            var capa = new CorrectiveAction
+            {
+                Type = CapaType.Corrective,
+                ProblemStatement = $"[From NCR {ncr.NcrNumber}] {ncr.Description}",
+                OwnerId = _currentUserId,
+                DueDate = DateTime.UtcNow.AddDays(30)
+            };
+
+            var created = await QualityService.CreateCapaAsync(capa);
+            ncr.CorrectiveActionId = created.Id;
+            await QualityService.UpdateNcrAsync(ncr);
+
+            Toast.ShowSuccess($"CAPA {created.CapaNumber} created and linked to NCR {ncr.NcrNumber}.");
+            _ncrs = await QualityService.GetAllNcrsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private async Task ApproveNcr(int ncrId)
+    {
+        if (!_ncrPendingApprovals.TryGetValue(ncrId, out var instance)) return;
+        var result = await WorkflowEngine.ApproveAsync(instance.Id, _currentUserId);
+        if (result?.Status == "Approved")
+        {
+            _ncrPendingApprovals.Remove(ncrId);
+            Toast.ShowSuccess("Disposition approved.");
+        }
+        else if (result != null)
+        {
+            _ncrPendingApprovals[ncrId] = result;
+            Toast.ShowSuccess("Step approved. Awaiting next approval.");
+        }
+    }
+
+    private async Task RejectNcr(int ncrId)
+    {
+        if (!_ncrPendingApprovals.TryGetValue(ncrId, out var instance)) return;
+        await WorkflowEngine.RejectAsync(instance.Id, _currentUserId);
+        _ncrPendingApprovals.Remove(ncrId);
+        Toast.ShowWarning("Workflow rejected. Disposition change cancelled.");
+    }
+
+    private static string GetSeverityBadge(NcrSeverity s) => s switch
+    {
+        NcrSeverity.Critical => "badge-danger",
+        NcrSeverity.Major => "badge-warning",
+        _ => "badge-secondary"
+    };
+
+    private static string GetStatusBadge(NcrStatus s) => s switch
+    {
+        NcrStatus.Open => "badge-danger",
+        NcrStatus.InReview => "badge-warning",
+        NcrStatus.Dispositioned => "badge-info",
+        NcrStatus.Closed => "badge-success",
+        _ => "badge-secondary"
+    };
+
+    private static string GetDispositionBadge(NcrDisposition d) => d switch
+    {
+        NcrDisposition.PendingReview => "badge-warning",
+        NcrDisposition.Scrap => "badge-danger",
+        NcrDisposition.Rework => "badge-info",
+        NcrDisposition.UseAsIs => "badge-success",
+        NcrDisposition.ReturnToVendor => "badge-secondary",
+        _ => "badge-secondary"
+    };
+}

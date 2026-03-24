@@ -1,0 +1,203 @@
+@* ── Schedule Issue Report: displays diagnostic output from scheduling operations ── *@
+
+@if (Reports.Count > 0 || Warnings.Count > 0)
+{
+    <div class="schedule-diag">
+        <div class="schedule-diag-header" @onclick="() => _expanded = !_expanded">
+            <span class="schedule-diag-icon">🔍</span>
+            <span class="schedule-diag-title">Schedule Diagnostic Report</span>
+            <span class="badge badge-info">@Reports.Count run(s)</span>
+            @if (TotalWarnings > 0)
+            {
+                <span class="badge badge-warning">@TotalWarnings warning(s)</span>
+            }
+            @if (TotalUnassigned > 0)
+            {
+                <span class="badge badge-danger">@TotalUnassigned unassigned</span>
+            }
+            <span class="schedule-diag-chevron @(_expanded ? "schedule-diag-chevron--open" : "")">▸</span>
+        </div>
+
+        @if (_expanded)
+        {
+            <div class="schedule-diag-body">
+                @* ── Top-level warnings ── *@
+                @foreach (var warning in Warnings)
+                {
+                    <div class="schedule-diag-warning">⚠️ @warning</div>
+                }
+
+                @* ── Per-run reports ── *@
+                @foreach (var (report, runIdx) in Reports.Select((r, i) => (r, i)))
+                {
+                    <div class="schedule-diag-run">
+                        <div class="schedule-diag-run-header" @onclick="() => ToggleRun(runIdx)">
+                            <strong>Run #@(runIdx + 1)</strong>
+                            <span class="schedule-diag-meta">
+                                @report.Operation | Build #@report.BuildPackageId
+                                | @report.TotalExecutionsCreated exec(s)
+                                @if (report.UnassignedCount > 0)
+                                {
+                                    <span class="text-danger">(@report.UnassignedCount unassigned)</span>
+                                }
+                            </span>
+                            <span class="schedule-diag-chevron @(_expandedRuns.Contains(runIdx) ? "schedule-diag-chevron--open" : "")">▸</span>
+                        </div>
+
+                        @if (_expandedRuns.Contains(runIdx))
+                        {
+                            @* ── Build slot info ── *@
+                            @foreach (var slot in report.BuildSlots)
+                            {
+                                <div class="schedule-diag-slot">
+                                    <span class="schedule-diag-label">Build Slot:</span>
+                                    <span>@slot.MachineName</span>
+                                    <span>@slot.SlotStart.ToString("MM/dd HH:mm") → @slot.SlotEnd.ToString("MM/dd HH:mm")</span>
+                                    <span>(@slot.DurationHours.ToString("F1")h)</span>
+                                </div>
+                            }
+
+                            @* ── Report-level warnings ── *@
+                            @foreach (var w in report.Warnings)
+                            {
+                                <div class="schedule-diag-warning">⚠️ @w</div>
+                            }
+
+                            @* ── Per-job details ── *@
+                            @foreach (var job in report.Jobs)
+                            {
+                                <div class="schedule-diag-job">
+                                    <div class="schedule-diag-job-header">
+                                        📋 Job @job.JobNumber (@job.Scope) — @job.PartNumber — @job.ExecutionCount stages
+                                    </div>
+
+                                    <table class="schedule-diag-table">
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Stage</th>
+                                                <th>Hours</th>
+                                                <th>Machine</th>
+                                                <th>Start</th>
+                                                <th>End</th>
+                                                <th>Resolution Path</th>
+                                                <th>Issues</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var exec in job.Executions)
+                                            {
+                                                <tr class="@(!exec.HasMachine ? "schedule-diag-row--unassigned" : "")">
+                                                    <td>@exec.SortOrder</td>
+                                                    <td>@exec.StageName</td>
+                                                    <td>@exec.TotalDurationHours.ToString("F1")</td>
+                                                    <td>
+                                                        @if (exec.HasMachine)
+                                                        {
+                                                            <span>@exec.AssignedMachineName</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-danger">Unassigned</span>
+                                                        }
+                                                        @if (exec.CandidateMachines.Count > 0)
+                                                        {
+                                                            <span class="schedule-diag-candidates" title="@string.Join(", ", exec.CandidateMachines)">
+                                                                (@exec.CandidateMachines.Count candidates)
+                                                            </span>
+                                                        }
+                                                    </td>
+                                                    <td>@(exec.ScheduledStart?.ToString("MM/dd HH:mm") ?? "—")</td>
+                                                    <td>@(exec.ScheduledEnd?.ToString("MM/dd HH:mm") ?? "—")</td>
+                                                    <td class="schedule-diag-path">@exec.MachineResolutionPath</td>
+                                                    <td>
+                                                        @foreach (var issue in exec.Issues)
+                                                        {
+                                                            <span class="schedule-diag-issue">@issue</span>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+
+                <div class="schedule-diag-actions">
+                    <button class="btn btn-sm btn-outline" @onclick="Clear">Clear Report</button>
+                    <button class="btn btn-sm btn-outline" @onclick="CopyToClipboard">📋 Copy as Text</button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public List<ScheduleDiagnosticReport> Reports { get; set; } = [];
+    [Parameter] public List<string> Warnings { get; set; } = [];
+    [Parameter] public EventCallback OnClear { get; set; }
+
+    [Inject] private IJSRuntime JS { get; set; } = null!;
+
+    private bool _expanded = true;
+    private HashSet<int> _expandedRuns = [];
+
+    private int TotalWarnings => Warnings.Count + Reports.Sum(r => r.Warnings.Count);
+    private int TotalUnassigned => Reports.Sum(r => r.UnassignedCount);
+
+    private void ToggleRun(int idx)
+    {
+        if (!_expandedRuns.Add(idx))
+            _expandedRuns.Remove(idx);
+    }
+
+    private async Task Clear()
+    {
+        Reports.Clear();
+        Warnings.Clear();
+        await OnClear.InvokeAsync();
+    }
+
+    private async Task CopyToClipboard()
+    {
+        var lines = new List<string>
+        {
+            $"Schedule Diagnostic Report — {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss UTC}",
+            $"Runs: {Reports.Count}, Total Warnings: {TotalWarnings}, Unassigned: {TotalUnassigned}",
+            ""
+        };
+
+        foreach (var w in Warnings)
+            lines.Add($"WARNING: {w}");
+
+        foreach (var (report, idx) in Reports.Select((r, i) => (r, i)))
+        {
+            lines.Add($"--- Run #{idx + 1}: {report.Operation} Build#{report.BuildPackageId} ---");
+            foreach (var slot in report.BuildSlots)
+                lines.Add($"  Build Slot: {slot.MachineName} {slot.SlotStart:MM/dd HH:mm}→{slot.SlotEnd:MM/dd HH:mm} ({slot.DurationHours:F1}h)");
+            foreach (var w in report.Warnings)
+                lines.Add($"  WARNING: {w}");
+            foreach (var job in report.Jobs)
+            {
+                lines.Add($"  Job {job.JobNumber} ({job.Scope}) {job.PartNumber} — {job.ExecutionCount} stages");
+                lines.Add("    #  Stage                  Hours  Machine              Start         End           Resolution Path");
+                foreach (var e in job.Executions)
+                {
+                    var machine = e.HasMachine ? e.AssignedMachineName ?? "?" : "UNASSIGNED";
+                    var start = e.ScheduledStart?.ToString("MM/dd HH:mm") ?? "—";
+                    var end = e.ScheduledEnd?.ToString("MM/dd HH:mm") ?? "—";
+                    lines.Add($"    {e.SortOrder,-2} {e.StageName,-22} {e.TotalDurationHours,5:F1}  {machine,-20} {start,-13} {end,-13} {e.MachineResolutionPath}");
+                    foreach (var issue in e.Issues)
+                        lines.Add($"       ⚠ {issue}");
+                }
+            }
+            lines.Add("");
+        }
+
+        var text = string.Join("\n", lines);
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+    }
+}

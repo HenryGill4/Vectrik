@@ -41,6 +41,15 @@ public class MaintenanceService : IMaintenanceService
         return component;
     }
 
+    public async Task DeleteComponentAsync(int componentId)
+    {
+        var component = await _db.MachineComponents.FindAsync(componentId);
+        if (component == null) throw new InvalidOperationException("Component not found.");
+        component.IsActive = false;
+        component.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
     // Rules
     public async Task<List<MaintenanceRule>> GetRulesForComponentAsync(int componentId)
     {

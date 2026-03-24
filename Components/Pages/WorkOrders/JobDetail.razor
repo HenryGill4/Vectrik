@@ -1,0 +1,286 @@
+@page "/workorders/{WoId:int}/jobs/{JobId:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject IWorkOrderService WorkOrderService
+@inject IStageService StageService
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Job Detail - OpCentrix</PageTitle>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_job == null)
+{
+    <div class="alert alert-danger">Job not found.</div>
+}
+else
+{
+    <div class="page-header">
+        <div>
+            <h1 class="page-title" style="margin-bottom: 2px;">Job #@_job.Id</h1>
+            <span style="color: var(--text-muted); font-size: 0.85rem;">
+                @_job.Part?.PartNumber — @_job.Part?.Name
+                @if (_job.WorkOrderLine?.WorkOrder != null)
+                {
+                    <text> • WO: </text><a href="/workorders/@WoId">@_job.WorkOrderLine.WorkOrder.OrderNumber</a>
+                }
+            </span>
+        </div>
+        <span class="badge @GetJobBadge(_job.Status)" style="font-size: 0.9rem; padding: 6px 14px;">@_job.Status</span>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid" style="margin-bottom: 16px;">
+        <div class="kpi-card">
+            <div class="kpi-label">Quantity</div>
+            <div class="kpi-value" style="font-size: 1.4rem;">@_job.Quantity</div>
+            <div class="kpi-sub">@_job.ProducedQuantity produced / @_job.DefectQuantity defects</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Estimated Hours</div>
+            <div class="kpi-value" style="font-size: 1.4rem;">@_job.EstimatedHours.ToString("F1")h</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Scheduled</div>
+            <div class="kpi-value" style="font-size: 1rem;">@_job.ScheduledStart.ToString("MMM dd") — @_job.ScheduledEnd.ToString("MMM dd")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Priority</div>
+            <div class="kpi-value" style="font-size: 1.2rem;"><span class="badge badge-@_job.Priority.ToString().ToLower()">@_job.Priority</span></div>
+        </div>
+    </div>
+
+    <!-- Stage Timeline -->
+    <div class="card" style="margin-bottom: 16px;">
+        <h3 class="card-title">Stage Timeline</h3>
+        @if (_job.Stages.Any())
+        {
+            <div class="stage-timeline">
+                @foreach (var stage in _job.Stages.OrderBy(s => s.ProductionStage?.DisplayOrder ?? 0))
+                {
+                    <div class="stage-timeline-item @(stage.Status == StageExecutionStatus.Completed ? "stage-complete" : stage.Status == StageExecutionStatus.InProgress ? "stage-active" : "")">
+                        <div class="stage-timeline-marker">
+                            @if (stage.Status == StageExecutionStatus.Completed) { <text>✅</text> }
+                            else if (stage.Status == StageExecutionStatus.InProgress) { <text>🔄</text> }
+                            else if (stage.Status == StageExecutionStatus.Failed) { <text>❌</text> }
+                            else if (stage.Status == StageExecutionStatus.Skipped) { <text>⏭️</text> }
+                            else { <text>⬜</text> }
+                        </div>
+                        <div class="stage-timeline-content">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <strong>@(stage.ProductionStage?.Name ?? $"Stage #{stage.ProductionStageId}")</strong>
+                                <span class="badge @GetStageBadge(stage.Status)">@stage.Status</span>
+                            </div>
+                            <div style="display: flex; gap: 16px; font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                                @if (stage.EstimatedHours.HasValue)
+                                {
+                                    <span>Est: @stage.EstimatedHours.Value.ToString("F1")h</span>
+                                }
+                                @if (stage.ActualHours.HasValue)
+                                {
+                                    <span>Actual: @stage.ActualHours.Value.ToString("F1")h</span>
+                                }
+                                @if (stage.OperatorName != null)
+                                {
+                                    <span>Op: @stage.OperatorName</span>
+                                }
+                                @if (stage.StartedAt.HasValue)
+                                {
+                                    <span>Started: @stage.StartedAt.Value.ToString("MMM dd HH:mm")</span>
+                                }
+                                @if (stage.CompletedAt.HasValue)
+                                {
+                                    <span>Completed: @stage.CompletedAt.Value.ToString("MMM dd HH:mm")</span>
+                                }
+                            </div>
+                            @if (stage.QualityCheckRequired)
+                            {
+                                <div style="margin-top: 4px;">
+                                    <span style="font-size: 0.75rem;">QC:
+                                        @if (stage.QualityCheckPassed == true) { <span style="color: var(--success);">✓ Passed</span> }
+                                        else if (stage.QualityCheckPassed == false) { <span style="color: var(--danger);">✗ Failed</span> }
+                                        else { <span style="color: var(--text-muted);">Pending</span> }
+                                    </span>
+                                </div>
+                            }
+                            @if (stage.ScheduledStartAt.HasValue || stage.ScheduledEndAt.HasValue)
+                            {
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                                    Scheduled: @(stage.ScheduledStartAt?.ToString("MMM dd HH:mm") ?? "—") → @(stage.ScheduledEndAt?.ToString("MMM dd HH:mm") ?? "—")
+                                </div>
+                            }
+                            @if (stage.Status != StageExecutionStatus.Completed && stage.Status != StageExecutionStatus.Skipped)
+                            {
+                                <button class="btn btn-sm btn-secondary" style="margin-top: 6px; font-size: 0.75rem; padding: 2px 8px;" @onclick="() => ShowReschedule(stage)">📅 Reschedule</button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div style="text-align: center; padding: 24px; color: var(--text-muted);">No stages assigned to this job.</div>
+        }
+    </div>
+
+    <!-- Job Notes -->
+    @if (_job.JobNotes.Any())
+    {
+        <div class="card">
+            <h3 class="card-title">Notes</h3>
+            @foreach (var note in _job.JobNotes.OrderByDescending(n => n.CreatedDate))
+            {
+                <div class="comment-item">
+                    <div style="display: flex; justify-content: space-between;">
+                        <strong style="font-size: 0.85rem;">@note.CreatedBy</strong>
+                        <span style="color: var(--text-muted); font-size: 0.75rem;">@note.CreatedDate.ToString("MMM dd HH:mm")</span>
+                    </div>
+                    <div style="color: var(--text-secondary); font-size: 0.9rem;">@note.NoteText</div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Delay Logs -->
+    @if (_job.DelayLogs.Any())
+    {
+        <div class="card" style="margin-top: 16px;">
+            <h3 class="card-title">⏱️ Delay Log (@_job.DelayLogs.Count)</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Reason</th>
+                        <th>Duration</th>
+                        <th>Logged By</th>
+                        <th>When</th>
+                        <th>Resolution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var delay in _job.DelayLogs.OrderByDescending(d => d.LoggedAt))
+                    {
+                        <tr>
+                            <td><span class="badge badge-warning">@delay.Category</span></td>
+                            <td>@delay.Reason</td>
+                            <td style="white-space: nowrap;">
+                                @if (delay.DelayMinutes >= 60)
+                                {
+                                    <text>@(delay.DelayMinutes / 60)h @(delay.DelayMinutes % 60)m</text>
+                                }
+                                else
+                                {
+                                    <text>@(delay.DelayMinutes)m</text>
+                                }
+                            </td>
+                            <td>@delay.LoggedBy</td>
+                            <td style="white-space: nowrap; font-size: 0.8rem;">@delay.LoggedAt.ToString("MMM dd HH:mm")</td>
+                            <td style="color: var(--text-muted); font-size: 0.85rem;">@(delay.Resolution ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+<!-- Reschedule Modal -->
+<AppModal Visible="_showReschedule" VisibleChanged="v => _showReschedule = v" Title="Reschedule Stage" Size="sm">
+    <ChildContent>
+        @if (_rescheduleStage != null)
+        {
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">
+                @(_rescheduleStage.ProductionStage?.Name ?? $"Stage #{_rescheduleStage.ProductionStageId}")
+            </p>
+            <div class="form-group">
+                <label class="form-label">Start Date/Time</label>
+                <input class="form-control" type="datetime-local" @bind="_rescheduleStart" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">End Date/Time</label>
+                <input class="form-control" type="datetime-local" @bind="_rescheduleEnd" />
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showReschedule = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="SaveReschedule">Save</button>
+    </Footer>
+</AppModal>
+
+@code {
+    [Parameter] public int WoId { get; set; }
+    [Parameter] public int JobId { get; set; }
+
+    private Job? _job;
+    private bool _loading = true;
+
+    // Reschedule
+    private bool _showReschedule;
+    private StageExecution? _rescheduleStage;
+    private DateTime _rescheduleStart;
+    private DateTime _rescheduleEnd;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _job = await WorkOrderService.GetJobDetailAsync(JobId);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load job: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    private void ShowReschedule(StageExecution stage)
+    {
+        _rescheduleStage = stage;
+        _rescheduleStart = stage.ScheduledStartAt ?? DateTime.UtcNow;
+        _rescheduleEnd = stage.ScheduledEndAt ?? DateTime.UtcNow.AddHours(stage.EstimatedHours ?? 1);
+        _showReschedule = true;
+    }
+
+    private async Task SaveReschedule()
+    {
+        if (_rescheduleStage == null) return;
+        if (_rescheduleEnd <= _rescheduleStart)
+        {
+            Toast.ShowError("End date must be after start date.");
+            return;
+        }
+        try
+        {
+            await StageService.UpdateScheduleAsync(_rescheduleStage.Id, _rescheduleStart, _rescheduleEnd);
+            Toast.ShowSuccess("Stage rescheduled");
+            _showReschedule = false;
+            _job = await WorkOrderService.GetJobDetailAsync(JobId);
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private static string GetJobBadge(JobStatus status) => status switch
+    {
+        JobStatus.Draft => "badge-draft",
+        JobStatus.Scheduled => "badge-scheduled",
+        JobStatus.InProgress => "badge-inprogress",
+        JobStatus.Paused => "badge-warning",
+        JobStatus.Completed => "badge-complete",
+        JobStatus.Cancelled => "badge-cancelled",
+        _ => ""
+    };
+
+    private static string GetStageBadge(StageExecutionStatus status) => status switch
+    {
+        StageExecutionStatus.NotStarted => "badge-draft",
+        StageExecutionStatus.InProgress => "badge-inprogress",
+        StageExecutionStatus.Completed => "badge-complete",
+        StageExecutionStatus.Failed => "badge-failed",
+        StageExecutionStatus.Skipped => "badge-warning",
+        _ => ""
+    };
+}

@@ -1,99 +1,1015 @@
 @page "/workorders/{Id:int}"
 @inject IWorkOrderService WorkOrderService
 @inject IPartService PartService
-@rendermode InteractiveServer
+@inject ITenantFeatureService Features
+@inject ICustomFieldService CustomFieldService
+@inject IDocumentTemplateService TemplateService
+@inject IStageService StageService
+@inject IWorkInstructionService WorkInstructionService
+@inject IJSRuntime JS
+@inject IWorkflowEngine WorkflowEngine
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>Work Order Details - OpCentrix</PageTitle>
 
-@if (_order == null) { <div class="loading"><span class="spinner"></span></div> }
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_order == null)
+{
+    <div class="alert alert-danger">Work order not found.</div>
+}
 else
 {
     <div class="page-header">
-        <h1 class="page-title">@_order.OrderNumber</h1>
-        <div style="display: flex; gap: 8px;">
+        <div>
+            <h1 class="page-title" style="margin-bottom: 2px;">@_order.OrderNumber</h1>
+            <span style="color: var(--text-muted); font-size: 0.85rem;">@_order.CustomerName @(string.IsNullOrEmpty(_order.CustomerPO) ? "" : $"• PO: {_order.CustomerPO}")</span>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
             @if (_order.Status == WorkOrderStatus.Draft)
             {
-                <button class="btn btn-success" @onclick="Release">Release</button>
+                <button class="btn btn-success" @onclick="Release">🚀 Release</button>
             }
-            <span class="badge badge-@_order.Status.ToString().ToLower()" style="font-size: 0.9rem;">@_order.Status</span>
+            @if (_order.Status == WorkOrderStatus.Released)
+            {
+                <button class="btn btn-warning" @onclick="() => SetStatus(WorkOrderStatus.OnHold)">⏸ Hold</button>
+            }
+            @if (_order.Status == WorkOrderStatus.OnHold)
+            {
+                <button class="btn btn-primary" @onclick="() => SetStatus(WorkOrderStatus.Released)">▶ Resume</button>
+            }
+            @if (_order.Status != WorkOrderStatus.Complete && _order.Status != WorkOrderStatus.Cancelled)
+            {
+                <button class="btn btn-danger" @onclick="Cancel">✕ Cancel</button>
+            }
+            <button class="btn btn-secondary" @onclick="PrintTraveler">🖨️ Print Traveler</button>
+            <span class="badge @GetBadge(_order.Status)" style="font-size: 0.9rem; padding: 6px 14px;">@_order.Status</span>
         </div>
     </div>
 
-    <div class="card" style="margin-bottom: 16px;">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-            <div><span class="form-label">Customer</span><div>@_order.CustomerName</div></div>
-            <div><span class="form-label">PO</span><div>@(_order.CustomerPO ?? "—")</div></div>
-            <div><span class="form-label">Order Date</span><div>@_order.OrderDate.ToString("yyyy-MM-dd")</div></div>
-            <div><span class="form-label">Due Date</span><div style="color: @(_order.DueDate < DateTime.UtcNow && _order.Status != WorkOrderStatus.Complete ? "var(--danger)" : "inherit")">@_order.DueDate.ToString("yyyy-MM-dd")</div></div>
-        </div>
-    </div>
+    @if (_pendingApproval != null)
+    {
+        <ApprovalStatus Instance="_pendingApproval" OnApproved="HandleApproved" OnRejected="HandleRejected" />
+    }
 
-    <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>Line Items</span>
-            <button class="btn btn-sm btn-primary" @onclick="() => _showAddLine = true">+ Add Line</button>
+    <!-- Info Cards -->
+    <div class="kpi-grid" style="margin-bottom: 16px;">
+        @{
+            var totalQty = _order.Lines.Sum(l => l.Quantity);
+            var producedQty = _order.Lines.Sum(l => l.ProducedQuantity);
+            var shippedQty = _order.Lines.Sum(l => l.ShippedQuantity);
+            var inBuildsQty = _order.Lines.Sum(l => GetInBuildQuantity(l));
+            var inProductionQty = _order.Lines.Sum(l => l.PartInstances?.Count(pi => !string.Equals(pi.Status.ToString(), "Completed", StringComparison.OrdinalIgnoreCase)) ?? 0);
+            var pct = totalQty > 0 ? (int)(producedQty * 100.0 / totalQty) : 0;
+        }
+        <div class="kpi-card">
+            <div class="kpi-label">Due Date</div>
+            <div class="kpi-value" style="font-size: 1.2rem; color: @(_order.DueDate < DateTime.UtcNow && _order.Status != WorkOrderStatus.Complete ? "var(--danger)" : "var(--text-primary)")">@_order.DueDate.ToString("MMM dd, yyyy")</div>
         </div>
-        <table class="data-table">
-            <thead><tr><th>Part</th><th>Ordered</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead>
-            <tbody>
-                @foreach (var line in _order.Lines)
-                {
-                    <tr>
-                        <td>@line.Part?.PartNumber - @line.Part?.Name</td>
-                        <td>@line.Quantity</td>
-                        <td>@line.ProducedQuantity</td>
-                        <td>@line.ShippedQuantity</td>
-                        <td><span class="badge badge-@line.Status.ToString().ToLower()">@line.Status</span></td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-}
-
-@if (_showAddLine)
-{
-    <div class="modal-overlay" @onclick="() => _showAddLine = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header"><span class="modal-title">Add Line</span><button class="modal-close" @onclick="() => _showAddLine = false">&times;</button></div>
-            <div class="form-group"><label class="form-label">Part</label>
-                <select class="form-control" @bind="_linePartId">
-                    <option value="0">Select part...</option>
-                    @if (_parts != null) { @foreach (var p in _parts) { <option value="@p.Id">@p.PartNumber - @p.Name</option> } }
-                </select>
+        <div class="kpi-card">
+            <div class="kpi-label">Priority</div>
+            <div class="kpi-value" style="font-size: 1.2rem;"><span class="badge badge-@_order.Priority.ToString().ToLower()">@_order.Priority</span></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Fulfillment</div>
+            <div class="kpi-value" style="font-size: 1.4rem;">@pct%</div>
+            <div class="kpi-sub">@producedQty / @totalQty produced</div>
+        </div>
+        @if (inBuildsQty > 0)
+        {
+            <div class="kpi-card" style="border-left: 3px solid var(--accent);">
+                <div class="kpi-label">In Builds</div>
+                <div class="kpi-value" style="font-size: 1.4rem; color: var(--accent);">@inBuildsQty</div>
+                <div class="kpi-sub">parts on build plates</div>
             </div>
-            <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" @bind="_lineQty" min="1" /></div>
-            <button class="btn btn-primary" @onclick="AddLine">Add</button>
-        </div>
+        }
+        @if (inProductionQty > 0)
+        {
+            <div class="kpi-card" style="border-left: 3px solid var(--info);">
+                <div class="kpi-label">In Production</div>
+                <div class="kpi-value" style="font-size: 1.4rem; color: var(--info);">@inProductionQty</div>
+                <div class="kpi-sub">parts in process</div>
+            </div>
+        }
+        @if (shippedQty > 0)
+        {
+            <div class="kpi-card" style="border-left: 3px solid var(--success);">
+                <div class="kpi-label">Shipped</div>
+                <div class="kpi-value" style="font-size: 1.4rem; color: var(--success);">@shippedQty</div>
+                <div class="kpi-sub">of @totalQty total</div>
+            </div>
+        }
     </div>
+
+    <!-- Tabs -->
+    <div class="tab-bar" style="margin-bottom: 16px;">
+        <button class="tab @(_tab == "lines" ? "active" : "")" @onclick='() => _tab = "lines"'>Lines & Jobs</button>
+        <button class="tab @(_tab == "comments" ? "active" : "")" @onclick='() => _tab = "comments"'>Comments (@(_order.Comments?.Count ?? 0))</button>
+        <button class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>Details</button>
+    </div>
+
+    @if (_tab == "lines")
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 class="card-title" style="margin-bottom: 0;">Line Items</h3>
+                @if (_order.Status == WorkOrderStatus.Draft)
+                {
+                    <button class="btn btn-sm btn-primary" @onclick="() => _showAddLine = true">+ Add Line</button>
+                }
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th style="text-align:center">Ordered</th>
+                        <th style="text-align:center">Production Status</th>
+                        <th>Builds / Jobs</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _order.Lines)
+                    {
+                        var lineInBuilds = GetInBuildQuantity(line);
+                        var lineProduced = line.ProducedQuantity;
+                        var lineShipped = line.ShippedQuantity;
+                        var lineRemaining = Math.Max(0, line.Quantity - lineProduced - lineInBuilds);
+                        var lineProgressPct = line.Quantity > 0 ? Math.Min(100, (int)((lineProduced + lineInBuilds) * 100.0 / line.Quantity)) : 0;
+                        var isAdditive = line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
+                        var activeProgramParts = line.ProgramParts?
+                            .Where(pp => pp.MachineProgram != null
+                                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
+                            .ToList() ?? new();
+
+                        <tr>
+                            <td>
+                                <div>
+                                    <strong>@(line.Part?.PartNumber ?? "?")</strong>
+                                    <span style="color: var(--text-secondary);"> — @(line.Part?.Name ?? "")</span>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                                    @if (isAdditive)
+                                    {
+                                        <span class="badge badge-accent" style="font-size: 0.65rem; padding: 1px 6px;">🖨️ SLS</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-info" style="font-size: 0.65rem; padding: 1px 6px;">⚙️ CNC</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(line.Part?.Material))
+                                    {
+                                        <span style="margin-left: 4px;">@(line.Part.MaterialEntity?.Name ?? line.Part.Material)</span>
+                                    }
+                                </div>
+                            </td>
+                            <td style="text-align:center;">
+                                <div style="font-size: 1.1rem; font-weight: 600;">@line.Quantity</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; flex-direction: column; gap: 4px; min-width: 180px;">
+                                    @* Progress bar showing produced + in-builds *@
+                                    <div style="display: flex; gap: 6px; font-size: 0.78rem; color: var(--text-secondary);">
+                                        @if (lineProduced > 0)
+                                        {
+                                            <span style="color: var(--success);">✅ @lineProduced produced</span>
+                                        }
+                                        @if (lineInBuilds > 0)
+                                        {
+                                            <span style="color: var(--accent);">🖨️ @lineInBuilds in builds</span>
+                                        }
+                                        @if (lineShipped > 0)
+                                        {
+                                            <span style="color: var(--info);">📦 @lineShipped shipped</span>
+                                        }
+                                        @if (lineRemaining > 0)
+                                        {
+                                            <span>@lineRemaining remaining</span>
+                                        }
+                                    </div>
+                                    <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                                        @{
+                                            var producedPct = line.Quantity > 0 ? lineProduced * 100.0 / line.Quantity : 0;
+                                            var buildPct = line.Quantity > 0 ? lineInBuilds * 100.0 / line.Quantity : 0;
+                                        }
+                                        <div style="display: flex; height: 100%;">
+                                            @if (producedPct > 0)
+                                            {
+                                                <div style="width: @producedPct.ToString("F1")%; background: var(--success);"></div>
+                                            }
+                                            @if (buildPct > 0)
+                                            {
+                                                <div style="width: @buildPct.ToString("F1")%; background: var(--accent); opacity: 0.7;"></div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div style="display: flex; flex-direction: column; gap: 3px;">
+                                    @* Show active programs *@
+                                    @foreach (var pp in activeProgramParts)
+                                    {
+                                        var progStatusClass = pp.MachineProgram!.ScheduleStatus switch
+                                        {
+                                            ProgramScheduleStatus.Printing => "accent",
+                                            ProgramScheduleStatus.Scheduled => "primary",
+                                            ProgramScheduleStatus.PostPrint => "info",
+                                            ProgramScheduleStatus.Ready => "warning",
+                                            _ => "secondary"
+                                        };
+                                        var progIcon = pp.MachineProgram.ScheduleStatus switch
+                                        {
+                                            ProgramScheduleStatus.Printing => "🖨️",
+                                            ProgramScheduleStatus.Scheduled => "📅",
+                                            ProgramScheduleStatus.PostPrint => "🔥",
+                                            ProgramScheduleStatus.Ready => "✅",
+                                            _ => "📦"
+                                        };
+                                        <a href="/programs" style="text-decoration:none;">
+                                            <span class="badge badge-@progStatusClass" style="font-size: 0.7rem;">@progIcon @(pp.MachineProgram.Name) ×@pp.Quantity</span>
+                                        </a>
+                                    }
+                                    @* Show jobs *@
+                                    @foreach (var job in line.Jobs.Take(3))
+                                    {
+                                        <a href="/workorders/@_order.Id/jobs/@job.Id" style="text-decoration:none;">
+                                            <span class="badge badge-secondary" style="font-size: 0.7rem;">🔧 Job #@job.Id</span>
+                                        </a>
+                                    }
+                                    @if (line.Jobs.Count > 3)
+                                    {
+                                        <span style="font-size: 0.7rem; color: var(--text-muted);">+@(line.Jobs.Count - 3) more</span>
+                                    }
+                                    @if (!activeBuildParts.Any() && !line.Jobs.Any() && _order.Status != WorkOrderStatus.Draft)
+                                    {
+                                        <span style="font-size: 0.75rem; color: var(--text-muted);">No builds or jobs yet</span>
+                                    }
+                                </div>
+                            </td>
+                            <td><span class="badge @GetBadge(line.Status)">@line.Status</span></td>
+                            <td>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                    @if (line.Jobs.Count == 0 && !activeBuildParts.Any() && _order.Status != WorkOrderStatus.Draft)
+                                    {
+                                        <button class="btn btn-sm btn-primary" @onclick="() => GenerateJobs(line.Id)">Generate Jobs</button>
+                                    }
+                                    @if (_order.Status == WorkOrderStatus.Draft)
+                                    {
+                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(line.Id)">✕</button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                        @* Manufacturing Process & Stage Execution detail row *@
+                        var process = line.Part?.ManufacturingProcess;
+                        var processStages = process?.Stages?.OrderBy(s => s.ExecutionOrder).ToList();
+                        var allExecs = line.Jobs.SelectMany(j => j.Stages).OrderBy(s => s.SortOrder).ToList();
+                        @if (processStages?.Count > 0 || allExecs.Count > 0)
+                        {
+                            <tr>
+                                <td colspan="6" style="padding: 0 16px 12px 16px; background: var(--bg-secondary);">
+                                    @if (processStages?.Count > 0)
+                                    {
+                                        <div style="margin-bottom: 8px;">
+                                            <div style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                Process: @(process!.Name)
+                                            </div>
+                                            <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
+                                                @for (var i = 0; i < processStages.Count; i++)
+                                                {
+                                                    var ps = processStages[i];
+                                                    var stageName = ps.ProductionStage?.Name ?? $"Stage {ps.ExecutionOrder}";
+                                                    var levelBadge = ps.ProcessingLevel switch
+                                                    {
+                                                        ProcessingLevel.Build => "🖨️",
+                                                        ProcessingLevel.Batch => "📦",
+                                                        _ => "🔧"
+                                                    };
+                                                    var matchingExecs = allExecs.Where(e => e.ProcessStageId == ps.Id || e.ProductionStageId == ps.ProductionStageId).ToList();
+                                                    var stageCompleted = matchingExecs.Any(e => e.Status == StageExecutionStatus.Completed);
+                                                    var stageInProgress = matchingExecs.Any(e => e.Status == StageExecutionStatus.InProgress);
+                                                    var stageColor = stageCompleted ? "var(--success)" : stageInProgress ? "var(--accent)" : "var(--border)";
+                                                    var stageBg = stageCompleted ? "var(--success)" : stageInProgress ? "var(--accent)" : "var(--bg-tertiary)";
+                                                    var stageTextColor = stageCompleted || stageInProgress ? "#fff" : "var(--text-secondary)";
+
+                                                    @if (i > 0)
+                                                    {
+                                                        <span style="color: var(--text-muted); font-size: 0.7rem;">→</span>
+                                                    }
+                                                    <span style="font-size: 0.72rem; padding: 2px 8px; border-radius: 10px; background: @stageBg; color: @stageTextColor; border: 1px solid @stageColor; white-space: nowrap;"
+                                                          title="@ps.ProcessingLevel level — Setup: @(ps.SetupTimeMinutes?.ToString("F0") ?? "—")m, Run: @(ps.RunTimeMinutes?.ToString("F0") ?? "—")m@(ps.AssignedMachine != null ? $" • Machine: {ps.AssignedMachine.Name}" : "")">
+                                                        @levelBadge @stageName
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    @if (processStages?.Count > 0 || allExecs.Count > 0)
+                                    {
+                                        <div style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                            Routing & Sign-Off
+                                        </div>
+                                        <table style="width: 100%; font-size: 0.78rem; border-collapse: collapse;">
+                                            <thead>
+                                                <tr style="border-bottom: 1px solid var(--border);">
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">#</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Stage</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Level</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Setup</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Run</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Machine</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Status</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Operator</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Date</th>
+                                                    <th style="text-align: left; padding: 3px 6px; color: var(--text-muted); font-weight: 500;">Sign-off</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @{ var execNum = 1; }
+                                                @foreach (var exec in allExecs)
+                                                {
+                                                    var execStatusColor = exec.Status switch
+                                                    {
+                                                        StageExecutionStatus.Completed => "var(--success)",
+                                                        StageExecutionStatus.InProgress => "var(--accent)",
+                                                        StageExecutionStatus.Failed => "var(--danger)",
+                                                        StageExecutionStatus.Skipped => "var(--text-muted)",
+                                                        _ => "var(--text-secondary)"
+                                                    };
+                                                    var levelLabel = exec.ProcessStage?.ProcessingLevel.ToString() ?? "—";
+                                                    var setupLabel = exec.ProcessStage?.SetupTimeMinutes is {} sm ? $"{sm:F0}m" : "—";
+                                                    var runLabel = exec.ProcessStage?.RunTimeMinutes is {} rm ? $"{rm:F0}m" : "—";
+                                                    var hasChecklist = _signOffChecklists.ContainsKey(exec.Id) && _signOffChecklists[exec.Id].Count > 0;
+                                                    var isFullySignedOff = exec.SignedOffAt.HasValue;
+                                                    var checklistItems = _signOffChecklists.GetValueOrDefault(exec.Id) ?? [];
+                                                    var signedCount = checklistItems.Count(c => c.SignedOff);
+                                                    var totalCount = checklistItems.Count;
+                                                    <tr style="border-bottom: 1px solid var(--bg-tertiary);">
+                                                        <td style="padding: 3px 6px;">@(execNum++)</td>
+                                                        <td style="padding: 3px 6px; font-weight: 500;">@(exec.ProductionStage?.Name ?? "—")</td>
+                                                        <td style="padding: 3px 6px;">@levelLabel</td>
+                                                        <td style="padding: 3px 6px;">@setupLabel</td>
+                                                        <td style="padding: 3px 6px;">@runLabel</td>
+                                                        <td style="padding: 3px 6px;">@(exec.Machine?.Name ?? "—")</td>
+                                                        <td style="padding: 3px 6px; color: @execStatusColor; font-weight: 500;">@exec.Status</td>
+                                                        <td style="padding: 3px 6px;">@(exec.OperatorName ?? "—")</td>
+                                                        <td style="padding: 3px 6px;">@(exec.CompletedAt?.ToString("MMM dd HH:mm") ?? "—")</td>
+                                                        <td style="padding: 3px 6px;">
+                                                            @if (isFullySignedOff)
+                                                            {
+                                                                <span style="color: var(--success); font-weight: 600;" title="Signed off by @exec.SignedOffBy at @exec.SignedOffAt?.ToString("MMM dd HH:mm")">
+                                                                    ✅ @exec.SignedOffBy
+                                                                </span>
+                                                            }
+                                                            else if (hasChecklist)
+                                                            {
+                                                                <button class="btn btn-sm btn-secondary" style="font-size: 0.7rem; padding: 1px 6px;"
+                                                                        @onclick="() => ToggleChecklist(exec.Id)">
+                                                                    ✍️ @signedCount/@totalCount
+                                                                </button>
+                                                            }
+                                                            else if (exec.Status == StageExecutionStatus.Completed)
+                                                            {
+                                                                <button class="btn btn-sm btn-primary" style="font-size: 0.7rem; padding: 1px 6px;"
+                                                                        @onclick="() => QuickSignOff(exec.Id)">
+                                                                    ✍️ Sign off
+                                                                </button>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span style="color: var(--text-muted);">—</span>
+                                                            }
+                                                        </td>
+                                                    </tr>
+                                                    @if (hasChecklist && _expandedChecklistId == exec.Id)
+                                                    {
+                                                        <tr>
+                                                            <td colspan="10" style="padding: 4px 6px 8px 24px; background: var(--bg-tertiary);">
+                                                                <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">Sign-off Checklist (from Work Instructions)</div>
+                                                                @foreach (var item in checklistItems)
+                                                                {
+                                                                    <div style="display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--bg-secondary);">
+                                                                        @if (item.SignedOff)
+                                                                        {
+                                                                            <span style="color: var(--success); font-weight: 600;">✅</span>
+                                                                            <span style="flex: 1;">@item.Title</span>
+                                                                            <span style="color: var(--text-muted); font-size: 0.7rem;">@item.SignedBy — @item.SignedAt?.ToString("MMM dd HH:mm")</span>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <span style="color: var(--text-muted);">☐</span>
+                                                                            <span style="flex: 1;">@item.Title</span>
+                                                                            <button class="btn btn-sm btn-primary" style="font-size: 0.65rem; padding: 1px 6px;"
+                                                                                    @onclick="() => SignOffItem(exec.Id, item.StepId)">
+                                                                                Sign off
+                                                                            </button>
+                                                                        }
+                                                                    </div>
+                                                                }
+                                                                @if (checklistItems.Any(c => !c.SignedOff))
+                                                                {
+                                                                    <div style="margin-top: 6px;">
+                                                                        <button class="btn btn-sm btn-success" style="font-size: 0.7rem;"
+                                                                                @onclick="() => SignOffAll(exec.Id)">
+                                                                            ✍️ Sign off all remaining
+                                                                        </button>
+                                                                    </div>
+                                                                }
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                }
+                                                @if (allExecs.Count == 0 && processStages != null)
+                                                {
+                                                    @for (var i = 0; i < processStages.Count; i++)
+                                                    {
+                                                        var ps = processStages[i];
+                                                        var psSetup = ps.SetupTimeMinutes is {} psm ? $"{psm:F0}m" : "—";
+                                                        var psRun = ps.RunTimeMinutes is {} prm ? $"{prm:F0}m" : "—";
+                                                        <tr style="border-bottom: 1px solid var(--bg-tertiary);">
+                                                            <td style="padding: 3px 6px;">@(i + 1)</td>
+                                                            <td style="padding: 3px 6px; font-weight: 500;">@(ps.ProductionStage?.Name ?? $"Stage {ps.ExecutionOrder}")</td>
+                                                            <td style="padding: 3px 6px;">@ps.ProcessingLevel</td>
+                                                            <td style="padding: 3px 6px;">@psSetup</td>
+                                                            <td style="padding: 3px 6px;">@psRun</td>
+                                                            <td style="padding: 3px 6px;">@(ps.AssignedMachine?.Name ?? "—")</td>
+                                                            <td style="padding: 3px 6px; color: var(--text-muted);">Pending</td>
+                                                            <td style="padding: 3px 6px;">—</td>
+                                                            <td style="padding: 3px 6px;">—</td>
+                                                            <td style="padding: 3px 6px;"><span style="color: var(--text-muted);">—</span></td>
+                                                        </tr>
+                                                    }
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (_tab == "comments")
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <h3 class="card-title">Comments</h3>
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                <input class="form-control" @bind="_newComment" placeholder="Add a comment..." style="flex: 1;" />
+                <button class="btn btn-primary" @onclick="AddComment" disabled="@string.IsNullOrWhiteSpace(_newComment)">Post</button>
+            </div>
+            @if (_order.Comments != null && _order.Comments.Any())
+            {
+                @foreach (var comment in _order.Comments.OrderByDescending(c => c.CreatedDate))
+                {
+                    <div class="comment-item">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <div>
+                                <strong style="font-size: 0.85rem;">@comment.AuthorName</strong>
+                                @if (comment.EditedDate.HasValue)
+                                {
+                                    <span style="color: var(--text-muted); font-size: 0.7rem; margin-left: 6px;">(edited)</span>
+                                }
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <span style="color: var(--text-muted); font-size: 0.75rem;">@comment.CreatedDate.ToString("MMM dd, yyyy HH:mm")</span>
+                                @if (_editingCommentId != comment.Id)
+                                {
+                                    <button class="btn btn-sm btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;" @onclick="() => StartEditComment(comment)">✏️</button>
+                                    <button class="btn btn-sm btn-danger" style="padding: 2px 6px; font-size: 0.7rem;" @onclick="() => DeleteComment(comment.Id)">✕</button>
+                                }
+                            </div>
+                        </div>
+                        @if (_editingCommentId == comment.Id)
+                        {
+                            <div style="display: flex; gap: 8px; margin-top: 4px;">
+                                <input class="form-control" @bind="_editingCommentText" style="flex: 1; font-size: 0.9rem;" />
+                                <button class="btn btn-sm btn-primary" @onclick="SaveEditComment">Save</button>
+                                <button class="btn btn-sm btn-secondary" @onclick="CancelEditComment">Cancel</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="color: var(--text-secondary); font-size: 0.9rem; white-space: pre-wrap;">@comment.Content</div>
+                        }
+                        @if (comment.Replies != null && comment.Replies.Any())
+                        {
+                            <div style="margin-left: 20px; margin-top: 8px; border-left: 2px solid var(--border); padding-left: 12px;">
+                                @foreach (var reply in comment.Replies.OrderBy(r => r.CreatedDate))
+                                {
+                                    <div style="margin-bottom: 8px;">
+                                        <strong style="font-size: 0.8rem;">@reply.AuthorName</strong>
+                                        <span style="color: var(--text-muted); font-size: 0.7rem; margin-left: 8px;">@reply.CreatedDate.ToString("MMM dd HH:mm")</span>
+                                        <div style="color: var(--text-secondary); font-size: 0.85rem;">@reply.Content</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <div style="text-align: center; padding: 24px; color: var(--text-muted);">No comments yet.</div>
+            }
+        </div>
+    }
+    else if (_tab == "info")
+    {
+        <div class="card">
+            <h3 class="card-title">Work Order Details</h3>
+            <div class="detail-grid">
+                <div class="detail-label">Order Number</div><div class="detail-value">@_order.OrderNumber</div>
+                <div class="detail-label">Customer</div><div class="detail-value">@_order.CustomerName</div>
+                <div class="detail-label">Customer PO</div><div class="detail-value">@(_order.CustomerPO ?? "—")</div>
+                <div class="detail-label">Email</div><div class="detail-value">@(_order.CustomerEmail ?? "—")</div>
+                <div class="detail-label">Phone</div><div class="detail-value">@(_order.CustomerPhone ?? "—")</div>
+                <div class="detail-label">Order Date</div><div class="detail-value">@_order.OrderDate.ToString("yyyy-MM-dd")</div>
+                <div class="detail-label">Due Date</div><div class="detail-value">@_order.DueDate.ToString("yyyy-MM-dd")</div>
+                <div class="detail-label">Ship By</div><div class="detail-value">@(_order.ShipByDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                <div class="detail-label">Promised</div><div class="detail-value">@(_order.PromisedDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                <div class="detail-label">Approved By</div><div class="detail-value">@(_order.ApprovedBy ?? "—")</div>
+                <div class="detail-label">Created By</div><div class="detail-value">@_order.CreatedBy</div>
+                <div class="detail-label">Created Date</div><div class="detail-value">@_order.CreatedDate.ToString("yyyy-MM-dd HH:mm")</div>
+                @if (_order.QuoteId.HasValue)
+                {
+                    <div class="detail-label">From Quote</div>
+                    <div class="detail-value"><a href="/quotes/@_order.QuoteId">Quote #@_order.Quote?.QuoteNumber</a></div>
+                }
+                @if (_order.IsDefenseContract)
+                {
+                    <div class="detail-label">Contract #</div><div class="detail-value">@_order.ContractNumber</div>
+                    <div class="detail-label">CLIN</div><div class="detail-value">@(_order.ContractLineItem ?? "—")</div>
+                }
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_order.Notes))
+            {
+                <div style="margin-top: 16px;">
+                    <label class="form-label">Notes</label>
+                    <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 12px; color: var(--text-secondary); white-space: pre-wrap;">@_order.Notes</div>
+                </div>
+            }
+
+            @if (_customFieldDefs.Count > 0 && _customFieldValues.Any())
+            {
+                <div style="margin-top: 16px;">
+                    <h4 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 8px;">Custom Fields</h4>
+                    <div class="detail-grid">
+                        @foreach (var def in _customFieldDefs)
+                        {
+                            <div class="detail-label">@def.Label</div>
+                            <div class="detail-value">@(_customFieldValues.TryGetValue(def.Name, out var v) ? v : "—")</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
 }
+
+<!-- Add Line Modal -->
+<AppModal Visible="_showAddLine" VisibleChanged="v => _showAddLine = v" Title="Add Line Item" Size="sm">
+    <ChildContent>
+        <div class="form-group">
+            <label class="form-label">Part</label>
+            <select class="form-control" @bind="_linePartId">
+                <option value="0">Select part...</option>
+                @if (_parts != null)
+                {
+                    @foreach (var p in _parts)
+                    {
+                        <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input class="form-control" type="number" min="1" @bind="_lineQty" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showAddLine = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="AddLine">Add</button>
+    </Footer>
+</AppModal>
+
+<ConfirmDialog @ref="_confirm" />
 
 @code {
     [Parameter] public int Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
     private WorkOrder? _order;
     private List<Part>? _parts;
+    private bool _loading = true;
+    private string _userName = "System";
+    private string _tab = "lines";
+    private string _newComment = "";
     private bool _showAddLine;
-    private int _linePartId, _lineQty = 1;
+    private int _linePartId;
+    private int _lineQty = 1;
+    private ConfirmDialog _confirm = null!;
+
+    // Workflow
+    private WorkflowInstance? _pendingApproval;
+
+    // Custom fields
+    private List<CustomFieldDefinition> _customFieldDefs = new();
+    private Dictionary<string, string> _customFieldValues = new();
+
+    // Comment editing
+    private int? _editingCommentId;
+    private string _editingCommentText = string.Empty;
+
+    // Sign-off state
+    private Dictionary<int, List<SignOffChecklistItem>> _signOffChecklists = new();
+    private int? _expandedChecklistId;
 
     protected override async Task OnInitializedAsync()
     {
-        _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
-        _parts = await PartService.GetAllPartsAsync();
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _userName = state.User?.Identity?.Name ?? "System";
+        }
+        try
+        {
+            await LoadOrder();
+            _parts = await PartService.GetAllPartsAsync();
+            _customFieldDefs = await CustomFieldService.GetFieldDefinitionsAsync("WorkOrder");
+            if (_order != null && !string.IsNullOrEmpty(_order.CustomFieldValues))
+            {
+                try { _customFieldValues = JsonSerializer.Deserialize<Dictionary<string, string>>(_order.CustomFieldValues) ?? new(); }
+                catch { _customFieldValues = new(); }
+            }
+            if (_order != null)
+                _pendingApproval = await WorkflowEngine.GetPendingAsync("WorkOrder", _order.Id);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load work order: {ex.Message}");
+        }
+        _loading = false;
+    }
+
+    private async Task LoadOrder()
+    {
+        _order = await WorkOrderService.GetWorkOrderDetailAsync(Id);
+        await LoadSignOffChecklistsAsync();
+    }
+
+    private async Task LoadSignOffChecklistsAsync()
+    {
+        _signOffChecklists.Clear();
+        if (_order == null) return;
+
+        foreach (var line in _order.Lines)
+        {
+            foreach (var job in line.Jobs)
+            {
+                foreach (var exec in job.Stages)
+                {
+                    try
+                    {
+                        var checklist = await StageService.GetSignOffChecklistAsync(exec.Id);
+                        if (checklist.Count > 0)
+                            _signOffChecklists[exec.Id] = checklist;
+                    }
+                    catch { /* checklist loading is non-critical */ }
+                }
+            }
+        }
     }
 
     private async Task Release()
     {
-        await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, "System");
-        _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
+        if (!await _confirm.ShowAsync("Release this work order? Jobs will be auto-generated from part routing.")) return;
+        try
+        {
+            var instance = await WorkflowEngine.StartAsync("WorkOrder", Id);
+            if (instance != null)
+            {
+                _pendingApproval = instance;
+                Toast.ShowInfo("Release requires approval. Workflow started.");
+                return;
+            }
+
+            await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, _userName);
+            await LoadOrder();
+            var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
+            Toast.ShowSuccess($"Work order released — {jobCount} job(s) generated from routing");
+
+            Nav.NavigateTo("/scheduler?view=orders");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task HandleApproved(WorkflowInstance result)
+    {
+        if (result.Status == "Approved")
+        {
+            await WorkOrderService.UpdateStatusAsync(Id, WorkOrderStatus.Released, result.LastActionBy ?? "System");
+            await LoadOrder();
+            _pendingApproval = null;
+            var jobCount = _order?.Lines.Sum(l => l.Jobs.Count) ?? 0;
+            Toast.ShowSuccess($"Approved! Work order released — {jobCount} job(s) generated.");
+
+            Nav.NavigateTo("/scheduler?view=orders");
+        }
+        else
+        {
+            _pendingApproval = result;
+            Toast.ShowSuccess("Step approved. Awaiting next approval.");
+        }
+    }
+
+    private async Task HandleRejected(WorkflowInstance result)
+    {
+        _pendingApproval = null;
+        await LoadOrder();
+        Toast.ShowWarning("Workflow rejected. Release cancelled.");
+    }
+
+    private async Task SetStatus(WorkOrderStatus status)
+    {
+        var message = status switch
+        {
+            WorkOrderStatus.OnHold => "Put this work order on hold?",
+            WorkOrderStatus.Released => "Resume this work order?",
+            _ => $"Change status to {status}?"
+        };
+        if (!await _confirm.ShowAsync(message)) return;
+        try
+        {
+            await WorkOrderService.UpdateStatusAsync(Id, status, _userName);
+            Toast.ShowSuccess($"Status changed to {status}");
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task Cancel()
+    {
+        if (!await _confirm.ShowAsync("Cancel this work order? This cannot be undone.")) return;
+        await SetStatus(WorkOrderStatus.Cancelled);
+    }
+
+    private async Task GenerateJobs(int lineId)
+    {
+        try
+        {
+            var job = await WorkOrderService.GenerateJobForLineAsync(lineId, _userName);
+            Toast.ShowSuccess($"Job {job.JobNumber} created with {job.Stages.Count} stage(s)");
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task AddLine()
     {
-        if (_linePartId > 0)
+        if (_linePartId == 0) return;
+        if (_lineQty < 1) _lineQty = 1;
+        try
         {
             await WorkOrderService.AddLineAsync(Id, _linePartId, _lineQty);
             _showAddLine = false;
-            _order = await WorkOrderService.GetWorkOrderByIdAsync(Id);
+            _linePartId = 0;
+            _lineQty = 1;
+            await LoadOrder();
         }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task RemoveLine(int lineId)
+    {
+        if (!await _confirm.ShowAsync("Remove this line item?")) return;
+        try
+        {
+            await WorkOrderService.RemoveLineAsync(lineId);
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task AddComment()
+    {
+        if (string.IsNullOrWhiteSpace(_newComment)) return;
+        try
+        {
+            await WorkOrderService.AddCommentAsync(Id, _newComment, _userName);
+            _newComment = "";
+            await LoadOrder();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private void StartEditComment(WorkOrderComment comment)
+    {
+        _editingCommentId = comment.Id;
+        _editingCommentText = comment.Content;
+    }
+
+    private void CancelEditComment()
+    {
+        _editingCommentId = null;
+        _editingCommentText = string.Empty;
+    }
+
+    private async Task SaveEditComment()
+    {
+        if (_editingCommentId == null || string.IsNullOrWhiteSpace(_editingCommentText)) return;
+        try
+        {
+            await WorkOrderService.UpdateCommentAsync(_editingCommentId.Value, _editingCommentText);
+            _editingCommentId = null;
+            _editingCommentText = string.Empty;
+            await LoadOrder();
+            Toast.ShowSuccess("Comment updated");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task DeleteComment(int commentId)
+    {
+        if (!await _confirm.ShowAsync("Delete this comment?")) return;
+        try
+        {
+            await WorkOrderService.DeleteCommentAsync(commentId);
+            await LoadOrder();
+            Toast.ShowSuccess("Comment deleted");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task PrintTraveler()
+    {
+        if (_order == null) return;
+        var template = await TemplateService.GetDefaultTemplateAsync("WorkOrder");
+        if (template == null)
+        {
+            Toast.ShowError("No default traveler template configured. Go to Admin → Document Templates.");
+            return;
+        }
+
+        var linesHtml = "<table><thead><tr><th>Part</th><th>Process</th><th>Qty</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead><tbody>";
+        foreach (var l in _order.Lines)
+        {
+            var proc = l.Part?.ManufacturingProcess;
+            var procName = proc?.Name ?? "—";
+            var stagesSummary = proc?.Stages?.OrderBy(s => s.ExecutionOrder)
+                .Select(s => s.ProductionStage?.Name ?? $"Stage {s.ExecutionOrder}")
+                .ToList();
+            var procDetail = stagesSummary?.Count > 0
+                ? $"{procName}<br/><small style='color:#888;'>{string.Join(" → ", stagesSummary)}</small>"
+                : procName;
+            linesHtml += $"<tr><td>{l.Part?.PartNumber ?? "—"} — {l.Part?.Name ?? ""}</td><td>{procDetail}</td><td>{l.Quantity}</td><td>{l.ProducedQuantity}</td><td>{l.ShippedQuantity}</td><td>{l.Status}</td></tr>";
+        }
+        linesHtml += "</tbody></table>";
+
+        var routingHtml = "<table><thead><tr><th>#</th><th>Stage</th><th>Level</th><th>Setup</th><th>Run</th><th>Machine</th><th>Status</th><th>Operator</th><th>Date</th><th>Sign-off</th></tr></thead><tbody>";
+        var stageNum = 1;
+        foreach (var line in _order.Lines)
+        {
+            var proc = line.Part?.ManufacturingProcess;
+            if (proc != null)
+            {
+                routingHtml += $"<tr><td colspan='10' style='background:#f5f5f5; font-weight:bold; padding:6px;'>{line.Part?.PartNumber} — {proc.Name} ({proc.Stages?.Count ?? 0} stages)</td></tr>";
+            }
+
+            foreach (var job in line.Jobs.OrderBy(j => j.Id))
+            {
+                foreach (var stage in job.Stages.OrderBy(s => s.SortOrder))
+                {
+                    var ps = stage.ProcessStage;
+                    var level = ps?.ProcessingLevel.ToString() ?? "—";
+                    var setup = ps?.SetupTimeMinutes is {} stm ? $"{stm:F0}m" : "—";
+                    var run = ps?.RunTimeMinutes is {} rtm ? $"{rtm:F0}m" : "—";
+                    var machine = stage.Machine?.Name ?? ps?.AssignedMachine?.Name ?? "—";
+
+                    // Sign-off column: show signed-off status or blank line
+                    var signOffCell = stage.SignedOffAt.HasValue
+                        ? $"✓ {stage.SignedOffBy} ({stage.SignedOffAt?.ToString("MM/dd")})"
+                        : "<span class='sign-line'></span>";
+
+                    routingHtml += $"<tr><td>{stageNum++}</td><td>{stage.ProductionStage?.Name ?? "—"}</td><td>{level}</td><td>{setup}</td><td>{run}</td><td>{machine}</td><td>{stage.Status}</td><td>{stage.OperatorName ?? ""}</td><td>{stage.CompletedAt?.ToString("yyyy-MM-dd") ?? ""}</td><td>{signOffCell}</td></tr>";
+
+                    // Add work instruction sign-off checklist items as sub-rows
+                    var checklist = _signOffChecklists.GetValueOrDefault(stage.Id);
+                    if (checklist is { Count: > 0 })
+                    {
+                        foreach (var item in checklist)
+                        {
+                            var itemStatus = item.SignedOff
+                                ? $"✓ {item.SignedBy} ({item.SignedAt?.ToString("MM/dd HH:mm")})"
+                                : "<span class='sign-line'></span>";
+                            routingHtml += $"<tr><td></td><td colspan='8' style='padding-left:24px; font-size:0.85em; color:#555;'>☐ {item.Title}</td><td>{itemStatus}</td></tr>";
+                        }
+                    }
+                }
+            }
+
+            // Fallback: show process stages when no jobs exist yet
+            if (!line.Jobs.Any() && proc?.Stages != null)
+            {
+                foreach (var ps in proc.Stages.OrderBy(s => s.ExecutionOrder))
+                {
+                    var level = ps.ProcessingLevel.ToString();
+                    var setup = ps.SetupTimeMinutes is {} stm ? $"{stm:F0}m" : "—";
+                    var run = ps.RunTimeMinutes is {} rtm ? $"{rtm:F0}m" : "—";
+                    var machine = ps.AssignedMachine?.Name ?? "—";
+                    routingHtml += $"<tr><td>{stageNum++}</td><td>{ps.ProductionStage?.Name ?? $"Stage {ps.ExecutionOrder}"}</td><td>{level}</td><td>{setup}</td><td>{run}</td><td>{machine}</td><td>Pending</td><td></td><td></td><td><span class='sign-line'></span></td></tr>";
+                }
+            }
+        }
+        routingHtml += "</tbody></table>";
+
+        var fields = new Dictionary<string, string>
+        {
+            ["OrderNumber"] = _order.OrderNumber,
+            ["CustomerName"] = _order.CustomerName,
+            ["CustomerPO"] = _order.CustomerPO ?? "—",
+            ["OrderDate"] = _order.OrderDate.ToString("yyyy-MM-dd"),
+            ["DueDate"] = _order.DueDate.ToString("yyyy-MM-dd"),
+            ["Priority"] = _order.Priority.ToString(),
+            ["Status"] = _order.Status.ToString(),
+            ["Notes"] = _order.Notes ?? "",
+            ["LinesTable"] = linesHtml,
+            ["RoutingTable"] = routingHtml
+        };
+
+        var html = TemplateService.RenderHtml(template, fields);
+        await JS.InvokeVoidAsync("opcentrix.printHtml", html, $"Traveler {_order.OrderNumber}");
+    }
+
+    private static string GetBadge(WorkOrderStatus status) => status switch
+    {
+        WorkOrderStatus.Draft => "badge-draft",
+        WorkOrderStatus.Released => "badge-released",
+        WorkOrderStatus.InProgress => "badge-inprogress",
+        WorkOrderStatus.Complete => "badge-complete",
+        WorkOrderStatus.Cancelled => "badge-cancelled",
+        WorkOrderStatus.OnHold => "badge-warning",
+        _ => ""
+    };
+
+    private static int GetInBuildQuantity(WorkOrderLine line)
+    {
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
+            .Sum(pp => pp.Quantity);
+    }
+
+    // ── Sign-off actions ─────────────────────────────────────────
+
+    private void ToggleChecklist(int executionId)
+    {
+        _expandedChecklistId = _expandedChecklistId == executionId ? null : executionId;
+    }
+
+    private async Task SignOffItem(int executionId, int stepId)
+    {
+        try
+        {
+            await StageService.SignOffChecklistItemAsync(executionId, stepId, _userName);
+            await LoadOrder();
+            Toast.ShowSuccess("Checklist item signed off");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task SignOffAll(int executionId)
+    {
+        try
+        {
+            await StageService.SignOffStageAsync(executionId, _userName);
+            await LoadOrder();
+            _expandedChecklistId = null;
+            Toast.ShowSuccess("Stage signed off");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task QuickSignOff(int executionId)
+    {
+        try
+        {
+            await StageService.SignOffStageAsync(executionId, _userName);
+            await LoadOrder();
+            Toast.ShowSuccess("Stage signed off");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 }

@@ -1,0 +1,87 @@
+@using Microsoft.AspNetCore.Components.Forms
+
+<div class="file-upload-zone @(_isDragging ? "drag-over" : "")"
+     @ondragenter="OnDragEnter"
+     @ondragleave="OnDragLeave"
+     @ondragover:preventDefault>
+    <InputFile OnChange="OnFilesSelected" multiple="@Multiple" accept="@Accept" class="file-input-hidden" />
+    <div class="file-upload-content">
+        <span class="file-upload-icon">📁</span>
+        <p class="file-upload-text">Drag & drop files here or click to browse</p>
+        @if (!string.IsNullOrEmpty(Accept))
+        {
+            <p class="file-upload-hint">Accepted: @Accept</p>
+        }
+        @if (MaxSizeMB > 0)
+        {
+            <p class="file-upload-hint">Max size: @MaxSizeMB MB</p>
+        }
+    </div>
+</div>
+
+@if (_selectedFiles.Count > 0)
+{
+    <div class="file-upload-list">
+        @foreach (var file in _selectedFiles)
+        {
+            <div class="file-upload-item">
+                <span class="file-upload-item-icon">@GetFileIcon(file.Name)</span>
+                <span class="file-upload-item-name">@file.Name</span>
+                <span class="file-upload-item-size">@FormatSize(file.Size)</span>
+                <button class="btn btn-sm btn-danger" @onclick="() => RemoveFile(file)">✕</button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public bool Multiple { get; set; } = true;
+    [Parameter] public string Accept { get; set; } = ".pdf,.dxf,.step,.stp,.png,.jpg,.jpeg";
+    [Parameter] public int MaxSizeMB { get; set; } = 50;
+    [Parameter] public EventCallback<IReadOnlyList<IBrowserFile>> OnFilesChanged { get; set; }
+
+    private bool _isDragging;
+    private List<IBrowserFile> _selectedFiles = new();
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        var maxBytes = MaxSizeMB * 1024L * 1024L;
+        foreach (var file in e.GetMultipleFiles(20))
+        {
+            if (file.Size <= maxBytes && !_selectedFiles.Any(f => f.Name == file.Name))
+            {
+                _selectedFiles.Add(file);
+            }
+        }
+        await OnFilesChanged.InvokeAsync(_selectedFiles.AsReadOnly());
+    }
+
+    private async Task RemoveFile(IBrowserFile file)
+    {
+        _selectedFiles.Remove(file);
+        await OnFilesChanged.InvokeAsync(_selectedFiles.AsReadOnly());
+    }
+
+    private void OnDragEnter() => _isDragging = true;
+    private void OnDragLeave() => _isDragging = false;
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
+    };
+
+    private static string GetFileIcon(string name)
+    {
+        var ext = Path.GetExtension(name).ToLowerInvariant();
+        return ext switch
+        {
+            ".pdf" => "📄",
+            ".dxf" or ".dwg" => "📐",
+            ".step" or ".stp" => "🧊",
+            ".png" or ".jpg" or ".jpeg" => "🖼️",
+            _ => "📎"
+        };
+    }
+}

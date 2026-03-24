@@ -1,0 +1,158 @@
+@page "/analytics/cost"
+@inject IAnalyticsService AnalyticsService
+@inject NavigationManager Nav
+
+<PageTitle>Cost Analysis - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Cost Analysis Report</h1>
+    <div class="page-actions">
+        <select class="form-control" style="width:160px;display:inline-block" @onchange="OnRangeChanged">
+            <option value="30" selected>Last 30 Days</option>
+            <option value="60">Last 60 Days</option>
+            <option value="90">Last 90 Days</option>
+            <option value="180">Last 6 Months</option>
+        </select>
+        <input type="text" class="form-control" style="width:200px;display:inline-block;margin-left:0.5rem"
+               placeholder="Filter by customer..." @bind="_customerFilter" @bind:event="oninput" @onkeydown="HandleKeyDown" />
+        <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="LoadDataAsync">Apply</button>
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Export to CSV">📥 Export</button>
+    </div>
+</div>
+
+@if (_loading) { <div class="loading"><span class="spinner"></span> Loading...</div> }
+else
+{
+    <div class="kpi-grid" style="margin-bottom:1rem">
+        <div class="kpi-card">
+            <div class="kpi-label">Total Quoted</div>
+            <div class="kpi-value">$@_summary.TotalQuoted.ToString("N2")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Total Actual</div>
+            <div class="kpi-value">$@_summary.TotalActual.ToString("N2")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Variance</div>
+            <div class="kpi-value" style="color: @(_summary.AvgVariancePct <= 0 ? "var(--success)" : "var(--danger)")">
+                @_summary.AvgVariancePct.ToString("F1")%
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Margin</div>
+            <div class="kpi-value" style="color: @(_summary.AvgMarginPct >= 0 ? "var(--success)" : "var(--danger)")">
+                @_summary.AvgMarginPct.ToString("F1")%
+            </div>
+        </div>
+    </div>
+
+    @if (_rows.Count > 0)
+    {
+        <div class="card">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Job #</th>
+                        <th>Part</th>
+                        <th>Customer</th>
+                        <th>Quoted</th>
+                        <th>Actual</th>
+                        <th>Variance ($)</th>
+                        <th>Variance %</th>
+                        <th>Margin %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        var rowColor = row.ActualCost <= row.QuotedCost ? "" : "background:rgba(var(--danger-rgb, 239,68,68),0.06)";
+                        <tr style="@rowColor">
+                            <td>@row.JobId</td>
+                            <td>@row.PartNumber</td>
+                            <td>@row.CustomerName</td>
+                            <td>$@row.QuotedCost.ToString("N2")</td>
+                            <td>$@row.ActualCost.ToString("N2")</td>
+                            <td style="color: @(row.VarianceDollar <= 0 ? "var(--success)" : "var(--danger)")">
+                                $@row.VarianceDollar.ToString("N2")
+                            </td>
+                            <td style="color: @(row.VariancePct <= 0 ? "var(--success)" : "var(--danger)")">
+                                @row.VariancePct.ToString("F1")%
+                            </td>
+                            <td style="color: @(row.MarginPct >= 0 ? "var(--success)" : "var(--danger)")">
+                                @row.MarginPct.ToString("F1")%
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="card" style="padding:2rem;text-align:center;color:var(--text-muted)">
+            No completed jobs found for the selected period.
+        </div>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private int _rangeDays = 30;
+    private string _customerFilter = "";
+    private List<CostAnalysisRow> _rows = new();
+    private CostSummary _summary = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var from = now.AddDays(-_rangeDays);
+            var filter = string.IsNullOrWhiteSpace(_customerFilter) ? null : _customerFilter;
+            _rows = await AnalyticsService.GetCostAnalysisAsync(from, now, filter);
+            _summary = _rows.Count > 0
+                ? new CostSummary
+                {
+                    TotalQuoted = _rows.Sum(r => r.QuotedCost),
+                    TotalActual = _rows.Sum(r => r.ActualCost),
+                    AvgVariancePct = _rows.Average(r => r.VariancePct),
+                    AvgMarginPct = _rows.Average(r => r.MarginPct)
+                }
+                : new CostSummary();
+        }
+        catch
+        {
+            _rows = new();
+            _summary = new();
+        }
+        _loading = false;
+    }
+
+    private async Task OnRangeChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var d))
+        {
+            _rangeDays = d;
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+
+    private void ExportCsv()
+    {
+        if (!_rows.Any()) return;
+        var csv = "Job#,PartNumber,Customer,Quoted,Actual,Variance$,Variance%,Margin%\n" +
+            string.Join("\n", _rows.Select(r => $"{r.JobId},{r.PartNumber},{r.CustomerName},{r.QuotedCost:F2},{r.ActualCost:F2},{r.VarianceDollar:F2},{r.VariancePct:F1},{r.MarginPct:F1}"));
+        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+    }
+}

@@ -1,0 +1,38 @@
+@* Work Instruction Banner - Shows at top of stage partials when instructions exist *@
+@inject IWorkInstructionService WorkInstructionService
+
+@if (_instruction != null)
+{
+    <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--accent);">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+            <span style="font-weight: 600;">
+                📋 Work Instructions — Rev @_instruction.RevisionNumber
+                <span style="color: var(--text-muted); font-weight: 400; font-size: 0.85rem; margin-left: 8px;">
+                    @_instruction.Title (@_instruction.Steps.Count steps)
+                </span>
+            </span>
+            <a href="/shopfloor/instructions/@_instruction.Id" target="_blank" class="btn btn-sm btn-primary">
+                Open Full View →
+            </a>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int? PartId { get; set; }
+    [Parameter] public int? StageId { get; set; }
+
+    private WorkInstruction? _instruction;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (PartId.HasValue && StageId.HasValue)
+        {
+            try
+            {
+                _instruction = await WorkInstructionService.GetByPartAndStageAsync(PartId.Value, StageId.Value);
+            }
+            catch { /* Instruction lookup is optional — don't break stage view */ }
+        }
+    }
+}
