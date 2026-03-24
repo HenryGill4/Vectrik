@@ -122,6 +122,144 @@ public static class ShiftTimeHelper
     }
 
     /// <summary>
+    /// Given a build start time, finds the optimal build duration such that
+    /// buildEnd + changeoverMinutes aligns with the next shift start.
+    /// Returns null if no alignment is possible.
+    /// </summary>
+    public static double? FindChangeoverAlignedDuration(
+        DateTime buildStart, double changeoverMinutes, List<OperatingShift> shifts)
+    {
+        if (!shifts.Any()) return null;
+
+        // Look forward up to 5 days for shift starts
+        for (int dayOffset = 0; dayOffset < 5; dayOffset++)
+        {
+            var checkDate = buildStart.Date.AddDays(dayOffset);
+            var dayName = checkDate.DayOfWeek.ToString()[..3];
+
+            var dayShifts = shifts
+                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => s.StartTime)
+                .ToList();
+
+            foreach (var shift in dayShifts)
+            {
+                var shiftStart = checkDate + shift.StartTime;
+                if (shiftStart <= buildStart) continue;
+
+                // Target: buildEnd + changeover = shiftStart
+                var targetEnd = shiftStart.AddMinutes(-changeoverMinutes);
+                var duration = (targetEnd - buildStart).TotalHours;
+
+                if (duration > 0.5 && duration < 200) // Sanity bounds
+                    return duration;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Determines how many non-shift hours exist between two times.
+    /// Useful for weekend gap calculation.
+    /// </summary>
+    public static double GetNonShiftHours(DateTime from, DateTime to, List<OperatingShift> shifts)
+    {
+        if (!shifts.Any()) return 0; // 24/7 = no gaps
+
+        double gapHours = 0;
+        var cursor = from;
+
+        for (int dayOffset = 0; cursor < to && dayOffset < 30; dayOffset++)
+        {
+            var checkDate = cursor.Date;
+            var dayName = checkDate.DayOfWeek.ToString()[..3];
+
+            var dayShifts = shifts
+                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => s.StartTime)
+                .ToList();
+
+            if (!dayShifts.Any())
+            {
+                // Entire day is a gap
+                var dayEnd = checkDate.AddDays(1);
+                var gapStart = cursor > from ? cursor : from;
+                var gapEnd = dayEnd < to ? dayEnd : to;
+                gapHours += (gapEnd - gapStart).TotalHours;
+                cursor = dayEnd;
+                continue;
+            }
+
+            foreach (var shift in dayShifts)
+            {
+                var shiftStart = checkDate + shift.StartTime;
+                var shiftEnd = checkDate + shift.EndTime;
+                if (shift.EndTime <= shift.StartTime)
+                    shiftEnd = shiftEnd.AddDays(1);
+
+                // Gap before shift
+                if (cursor < shiftStart && shiftStart < to)
+                {
+                    var gapStart = cursor > from ? cursor : from;
+                    var gapEnd = shiftStart < to ? shiftStart : to;
+                    if (gapStart < gapEnd)
+                        gapHours += (gapEnd - gapStart).TotalHours;
+                }
+
+                cursor = shiftEnd > cursor ? shiftEnd : cursor;
+            }
+
+            if (cursor <= checkDate.AddDays(1))
+                cursor = checkDate.AddDays(1);
+        }
+
+        return gapHours;
+    }
+
+    /// <summary>
+    /// Suggests the best stack level for a weekend build.
+    /// Returns the stack level whose duration best spans the weekend gap.
+    /// </summary>
+    public static int SuggestWeekendStackLevel(
+        DateTime buildStart, double changeoverMinutes,
+        List<OperatingShift> shifts,
+        IReadOnlyList<(int Level, double DurationHours, int PartsPerBuild)> stackOptions)
+    {
+        if (!stackOptions.Any()) return 1;
+        if (!shifts.Any()) return stackOptions[0].Level;
+
+        // Find the next shift start (Monday morning typically)
+        var nextShift = FindNextShiftStart(buildStart, shifts);
+        if (nextShift == null) return stackOptions[0].Level;
+
+        var targetEnd = nextShift.Value.AddMinutes(-changeoverMinutes);
+        var targetDuration = (targetEnd - buildStart).TotalHours;
+
+        if (targetDuration <= 0) return stackOptions[0].Level;
+
+        // Pick the stack level whose duration is closest to target without being significantly shorter
+        var best = stackOptions[0];
+        var bestDelta = double.MaxValue;
+
+        foreach (var opt in stackOptions)
+        {
+            var delta = Math.Abs(opt.DurationHours - targetDuration);
+            // Prefer durations that END before the shift (not after)
+            if (opt.DurationHours <= targetDuration + 1) // Allow 1h tolerance for being slightly over
+            {
+                if (delta < bestDelta)
+                {
+                    bestDelta = delta;
+                    best = opt;
+                }
+            }
+        }
+
+        return best.Level;
+    }
+
+    /// <summary>
     /// Finds the next shift start strictly after <paramref name="after"/>.
     /// Returns null if no shifts or none found within 7 days.
     /// </summary>

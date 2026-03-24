@@ -472,15 +472,22 @@
                 @if (!_isLoading && _errorMessage == null && CurrentStep == WizardStep.Schedule)
                 {
                     <div class="wizard-content">
-                        <p class="wizard-hint">Select machines and confirm scheduling.</p>
+                        <p class="wizard-hint">Select machines and scheduling strategy. Options are ranked by changeover safety and efficiency.</p>
 
                         <div class="program-wizard-schedule-options">
-                            <div class="form-group">
-                                <label>Machine Selection:</label>
-                                <select class="form-control" @bind="_machineSelectionMode">
-                                    <option value="auto">Auto-select (earliest available)</option>
-                                    <option value="manual">Manual per build</option>
-                                </select>
+                            <div class="form-row" style="gap: 12px; margin-bottom: 12px;">
+                                <div class="form-group" style="flex:1;">
+                                    <label>Machine Selection:</label>
+                                    <select class="form-control" @bind="_machineSelectionMode">
+                                        <option value="auto">Auto-select (earliest available)</option>
+                                        <option value="manual">Manual per build</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Start After:</label>
+                                    <input type="datetime-local" class="form-control" style="max-width:220px;"
+                                           @bind="_startAfter" />
+                                </div>
                             </div>
 
                             @if (_machineSelectionMode == "manual")
@@ -499,13 +506,69 @@
                                     </div>
                                 }
                             }
-
-                            <div class="form-group" style="margin-top:16px;">
-                                <label>Start After:</label>
-                                <input type="datetime-local" class="form-control" style="max-width:250px;"
-                                       @bind="_startAfter" />
-                            </div>
                         </div>
+
+                        @* ── Changeover-Aware Schedule Options ── *@
+                        @if (_scheduleOptions.Any())
+                        {
+                            <div style="margin-bottom: 16px;">
+                                <h4 style="font-size: 0.9rem; font-weight: 600; margin-bottom: 8px;">Schedule Options</h4>
+                                <div style="display: flex; flex-direction: column; gap: 6px;">
+                                    @foreach (var opt in _scheduleOptions)
+                                    {
+                                        var isSelected = _selectedOption == opt;
+                                        <div class="program-wizard-match-option @(isSelected ? "program-wizard-match-option--selected" : "")"
+                                             style="@(opt.IsRecommended && !isSelected ? "border-color: var(--success);" : "")"
+                                             @onclick="() => _selectedOption = opt">
+                                            <div class="program-wizard-match-option-radio">
+                                                <input type="radio" checked="@isSelected" @onchange="() => _selectedOption = opt" />
+                                            </div>
+                                            <div class="program-wizard-match-option-info" style="flex:1;">
+                                                <div class="program-wizard-match-option-name">
+                                                    @opt.Label
+                                                    @if (opt.IsRecommended)
+                                                    {
+                                                        <span class="badge badge-success" style="font-size:0.65rem;">Recommended</span>
+                                                    }
+                                                    @if (opt.ChangeoverAligned)
+                                                    {
+                                                        <span class="badge badge-info" style="font-size:0.65rem;">Changeover Safe</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge badge-danger" style="font-size:0.65rem;">Changeover Risk</span>
+                                                    }
+                                                    @if (opt.IsWeekendOptimal)
+                                                    {
+                                                        <span class="badge badge-secondary" style="font-size:0.65rem;">Weekend</span>
+                                                    }
+                                                </div>
+                                                <div class="program-wizard-match-option-detail">
+                                                    @opt.Description
+                                                    <span style="margin-left:8px;opacity:0.6;">Score: @opt.RecommendationScore/100</span>
+                                                </div>
+                                            </div>
+                                            <div style="text-align:right;font-size:0.8rem;white-space:nowrap;">
+                                                <div>@opt.StackLevel x stack</div>
+                                                <div>@opt.PartsPerBuild parts</div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else if (_loadingOptions)
+                        {
+                            <div class="wizard-loading" style="padding: 16px;">
+                                <span class="spinner"></span> Analyzing schedule options...
+                            </div>
+                        }
+                        else if (_buildVariations.Any())
+                        {
+                            <button class="btn btn-sm btn-accent" style="margin-bottom:12px;" @onclick="LoadScheduleOptionsAsync">
+                                Analyze Changeover Options
+                            </button>
+                        }
 
                         @* ── Summary ── *@
                         <div class="program-wizard-summary">
@@ -629,6 +692,9 @@
     private DateTime _startAfter = DateTime.UtcNow;
     private bool _scheduling;
     private bool _isLoading;
+    private List<ScheduleOption> _scheduleOptions = [];
+    private ScheduleOption? _selectedOption;
+    private bool _loadingOptions;
     private string? _errorMessage;
 
     // Downstream
@@ -1274,6 +1340,65 @@
     // ══════════════════════════════════════════════════════════
     // Execution
     // ══════════════════════════════════════════════════════════
+
+    private async Task LoadScheduleOptionsAsync()
+    {
+        _loadingOptions = true;
+        _scheduleOptions.Clear();
+        _selectedOption = null;
+        StateHasChanged();
+
+        try
+        {
+            // Get the first SLS machine for analysis (or use selected machine)
+            var slsMachines = Machines.Where(m => m.IsAdditiveMachine && m.IsAvailableForScheduling).ToList();
+            if (!slsMachines.Any()) return;
+
+            foreach (var bv in _buildVariations.Take(1)) // Analyze first build as representative
+            {
+                var firstPart = bv.Parts.FirstOrDefault();
+                if (firstPart == null) continue;
+
+                var duration = bv.EstimatedHours;
+                var buildConfig = firstPart.Part?.AdditiveBuildConfig;
+                var demand = _partSelections
+                    .Where(p => p.IsSelected && p.IsAdditive)
+                    .Sum(p => p.OutstandingQty);
+
+                foreach (var machine in slsMachines)
+                {
+                    var options = await ProgramScheduling.GenerateScheduleOptionsAsync(
+                        machine.Id, duration, _startAfter, buildConfig, demand);
+
+                    foreach (var opt in options)
+                    {
+                        // Annotate with machine name
+                        _scheduleOptions.Add(opt with
+                        {
+                            Label = $"{machine.Name}: {opt.Label}",
+                            Description = $"{machine.Name} — {opt.Description}"
+                        });
+                    }
+                }
+            }
+
+            // Sort by recommendation score
+            _scheduleOptions = _scheduleOptions
+                .OrderByDescending(o => o.RecommendationScore)
+                .ToList();
+
+            _selectedOption = _scheduleOptions.FirstOrDefault(o => o.IsRecommended)
+                ?? _scheduleOptions.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to analyze options: {ex.Message}");
+        }
+        finally
+        {
+            _loadingOptions = false;
+        }
+    }
 
     private async Task ExecuteScheduleAsync()
     {

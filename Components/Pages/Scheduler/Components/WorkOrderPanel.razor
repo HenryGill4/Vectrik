@@ -1,0 +1,177 @@
+@* ── Work Order Sidebar: fulfillment status + scheduling controls ── *@
+
+<div class="wo-panel">
+    @* ── Header with quick stats ── *@
+    <div class="wo-panel-header">
+        <span class="wo-panel-title">Orders</span>
+        <div style="display: flex; gap: 4px;">
+            @if (OverdueCount > 0)
+            {
+                <span class="badge badge-danger" style="font-size:0.65rem;" title="Overdue">@OverdueCount late</span>
+            }
+            @if (Unscheduled.Any())
+            {
+                <span class="badge badge-warning" style="font-size:0.65rem;" title="Unscheduled tasks">@Unscheduled.Count unscheduled</span>
+            }
+        </div>
+    </div>
+
+    @* ── Filter tabs ── *@
+    <div class="wo-panel-filters">
+        <button class="wo-panel-filter @(_filter == "active" ? "wo-panel-filter--active" : "")" @onclick='() => _filter = "active"'>Active</button>
+        <button class="wo-panel-filter @(_filter == "overdue" ? "wo-panel-filter--active wo-panel-filter--danger" : "")" @onclick='() => _filter = "overdue"'>Overdue</button>
+        <button class="wo-panel-filter @(_filter == "week" ? "wo-panel-filter--active" : "")" @onclick='() => _filter = "week"'>This Week</button>
+    </div>
+
+    @* ── Work order list ── *@
+    <div class="wo-panel-list">
+        @if (!FilteredOrders.Any())
+        {
+            <div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 0.82rem;">
+                No orders match this filter.
+            </div>
+        }
+        @foreach (var wo in FilteredOrders)
+        {
+            var dueStatus = GetDueStatus(wo);
+            var progress = GetProgress(wo);
+            var hasOutstanding = wo.Lines.Any(l => l.Quantity > l.ProducedQuantity);
+            <div class="wo-panel-item wo-panel-item--@dueStatus">
+                <div class="wo-panel-item-header">
+                    <a href="/workorders/@wo.Id" class="wo-panel-order" @onclick:stopPropagation>@wo.OrderNumber</a>
+                    <span class="wo-panel-due badge badge-@dueStatus">@GetDueLabel(wo)</span>
+                </div>
+                <div class="wo-panel-customer">@wo.CustomerName</div>
+
+                @* ── Progress bar ── *@
+                <div class="wo-panel-progress-bar">
+                    <div class="wo-panel-progress-fill" style="width: @(progress.Percent)%;"></div>
+                </div>
+                <div class="wo-panel-progress-label">
+                    @progress.Produced / @progress.Total parts
+                </div>
+
+                @* ── Outstanding lines with actions ── *@
+                @if (hasOutstanding)
+                {
+                    <div class="wo-panel-lines">
+                        @foreach (var line in wo.Lines.Where(l => l.Quantity > l.ProducedQuantity))
+                        {
+                            var outstanding = Math.Max(0, line.Quantity - line.ProducedQuantity);
+                            var isAdditive = line.Part?.ManufacturingApproach?.IsAdditive == true;
+                            <div class="wo-panel-line">
+                                <span class="wo-panel-line-type @(isAdditive ? "wo-panel-line-type--sls" : "wo-panel-line-type--cnc")">
+                                    @(isAdditive ? "SLS" : "CNC")
+                                </span>
+                                <span class="wo-panel-line-part">@(line.Part?.PartNumber ?? "?")</span>
+                                <span class="wo-panel-line-qty">@outstanding left</span>
+                            </div>
+                        }
+                    </div>
+
+                    @* ── Schedule button ── *@
+                    <button class="btn btn-sm btn-accent wo-panel-schedule-btn"
+                            @onclick="() => OnScheduleRequested.InvokeAsync()"
+                            @onclick:stopPropagation>
+                        Schedule
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    @* ── Unscheduled section ── *@
+    @if (Unscheduled.Any())
+    {
+        <div class="wo-panel-section-header" @onclick="() => _showUnscheduled = !_showUnscheduled">
+            <span>Unscheduled (@Unscheduled.Count)</span>
+            <span class="wo-panel-chevron @(_showUnscheduled ? "wo-panel-chevron--open" : "")">›</span>
+        </div>
+        @if (_showUnscheduled)
+        {
+            <div class="wo-panel-list" style="max-height: 200px;">
+                @foreach (var exec in Unscheduled.Take(20))
+                {
+                    <div class="wo-panel-unscheduled-item" @onclick="() => OnAutoSchedule.InvokeAsync(exec.Id)">
+                        <span class="wo-panel-line-part">@(exec.Job?.Part?.PartNumber ?? $"Job {exec.JobId}")</span>
+                        <span style="color: var(--text-muted); font-size: 0.72rem;">@(exec.ProductionStage?.Name ?? "Stage")</span>
+                        <span class="badge badge-warning" style="font-size:0.6rem; margin-left: auto;">⚡</span>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
+    [Parameter] public List<StageExecution> Unscheduled { get; set; } = [];
+    [Parameter] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public string UserName { get; set; } = "System";
+    [Parameter] public EventCallback OnScheduleRequested { get; set; }
+    [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
+
+    private string _filter = "active";
+    private bool _showUnscheduled = true;
+
+    private int OverdueCount
+    {
+        get
+        {
+            var today = DateTime.UtcNow.Date;
+            return WorkOrders.Count(w => w.DueDate.Date < today
+                && w.Lines.Any(l => l.Quantity > l.ProducedQuantity));
+        }
+    }
+
+    private List<WorkOrder> FilteredOrders
+    {
+        get
+        {
+            var today = DateTime.UtcNow.Date;
+            var weekEnd = today.AddDays(7 - (int)today.DayOfWeek);
+
+            var orders = _filter switch
+            {
+                "overdue" => WorkOrders.Where(w => w.DueDate.Date < today
+                    && w.Lines.Any(l => l.Quantity > l.ProducedQuantity)),
+                "week" => WorkOrders.Where(w => w.DueDate.Date >= today && w.DueDate.Date <= weekEnd),
+                _ => WorkOrders.Where(w => w.Lines.Any(l => l.Quantity > l.ProducedQuantity))
+            };
+
+            return orders.OrderBy(w => w.DueDate).ToList();
+        }
+    }
+
+    private string GetDueStatus(WorkOrder wo)
+    {
+        var today = DateTime.UtcNow.Date;
+        if (wo.DueDate.Date < today && wo.Lines.Any(l => l.Quantity > l.ProducedQuantity))
+            return "danger";
+        if (wo.DueDate.Date <= today.AddDays(3) && wo.Lines.Any(l => l.Quantity > l.ProducedQuantity))
+            return "warning";
+        if (wo.Lines.All(l => l.Quantity <= l.ProducedQuantity))
+            return "success";
+        return "secondary";
+    }
+
+    private string GetDueLabel(WorkOrder wo)
+    {
+        var today = DateTime.UtcNow.Date;
+        var days = (wo.DueDate.Date - today).Days;
+        if (wo.Lines.All(l => l.Quantity <= l.ProducedQuantity))
+            return "Done";
+        if (days < 0) return $"{-days}d late";
+        if (days == 0) return "Today";
+        if (days <= 7) return $"{days}d";
+        return wo.DueDate.ToString("MMM d");
+    }
+
+    private (int Produced, int Total, double Percent) GetProgress(WorkOrder wo)
+    {
+        var total = wo.Lines.Sum(l => l.Quantity);
+        var produced = wo.Lines.Sum(l => l.ProducedQuantity);
+        var pct = total > 0 ? (double)produced / total * 100 : 0;
+        return (produced, total, pct);
+    }
+}

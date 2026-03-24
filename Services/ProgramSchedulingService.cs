@@ -913,6 +913,267 @@ public class ProgramSchedulingService : IProgramSchedulingService
         return entries.OrderBy(e => e.PrintStart).ToList();
     }
 
+    public async Task<List<ScheduleOption>> GenerateScheduleOptionsAsync(
+        int machineId, double baseDurationHours, DateTime notBefore,
+        PartAdditiveBuildConfig? buildConfig = null, int demandQuantity = 0)
+    {
+        var machine = await _db.Machines.FindAsync(machineId)
+            ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
+
+        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var options = new List<ScheduleOption>();
+
+        // Collect stack levels to evaluate
+        var stackOptions = new List<(int Level, double Duration, int PartsPerBuild)>
+        {
+            (1, baseDurationHours, buildConfig?.PlannedPartsPerBuildSingle ?? 1)
+        };
+
+        if (buildConfig != null)
+        {
+            if (buildConfig.HasValidDoubleStack && buildConfig.DoubleStackDurationHours.HasValue)
+                stackOptions.Add((2, buildConfig.DoubleStackDurationHours.Value, buildConfig.PlannedPartsPerBuildDouble ?? 1));
+            if (buildConfig.HasValidTripleStack && buildConfig.TripleStackDurationHours.HasValue)
+                stackOptions.Add((3, buildConfig.TripleStackDurationHours.Value, buildConfig.PlannedPartsPerBuildTriple ?? 1));
+        }
+
+        foreach (var (level, duration, partsPerBuild) in stackOptions)
+        {
+            // Option 1: Earliest available slot
+            var slot = await FindEarliestSlotAsync(machineId, duration, notBefore);
+            var score = ComputeOptionScore(slot, duration, level, partsPerBuild, demandQuantity, shifts, machine);
+
+            options.Add(new ScheduleOption(
+                Label: level == 1 ? "Earliest (Single)" : level == 2 ? "Earliest (Double Stack)" : "Earliest (Triple Stack)",
+                Description: $"{slot.PrintStart:MMM d HH:mm} — {slot.PrintEnd:MMM d HH:mm} ({duration:F1}h, {partsPerBuild} parts)",
+                Slot: slot,
+                StackLevel: level,
+                PartsPerBuild: partsPerBuild,
+                DurationHours: duration,
+                ChangeoverAligned: slot.OperatorAvailableForChangeover,
+                IsWeekendOptimal: IsWeekendOptimal(slot, shifts),
+                RecommendationScore: score));
+
+            // Option 2: Shift-aligned slot (if changeover isn't already aligned)
+            if (!slot.OperatorAvailableForChangeover && machine.AutoChangeoverEnabled)
+            {
+                var aligned = await FindShiftAlignedSlotAsync(machineId, duration, notBefore, shifts, machine);
+                if (aligned != null)
+                {
+                    var alignedScore = ComputeOptionScore(aligned, duration, level, partsPerBuild, demandQuantity, shifts, machine);
+                    alignedScore += 15; // Bonus for being aligned
+
+                    options.Add(new ScheduleOption(
+                        Label: level == 1 ? "Shift-Aligned (Single)" : level == 2 ? "Shift-Aligned (Double)" : "Shift-Aligned (Triple)",
+                        Description: $"{aligned.PrintStart:MMM d HH:mm} — {aligned.PrintEnd:MMM d HH:mm} (changeover during operator hours)",
+                        Slot: aligned,
+                        StackLevel: level,
+                        PartsPerBuild: partsPerBuild,
+                        DurationHours: duration,
+                        ChangeoverAligned: true,
+                        IsWeekendOptimal: IsWeekendOptimal(aligned, shifts),
+                        RecommendationScore: alignedScore));
+                }
+            }
+        }
+
+        // Deduplicate options with identical start times
+        options = options
+            .GroupBy(o => new { o.Slot.PrintStart, o.StackLevel })
+            .Select(g => g.OrderByDescending(o => o.RecommendationScore).First())
+            .OrderByDescending(o => o.RecommendationScore)
+            .ToList();
+
+        return options;
+    }
+
+    /// <summary>
+    /// Finds a slot where buildEnd + changeover falls within a shift window.
+    /// Tries shifting the start forward to align the changeover with the next shift.
+    /// </summary>
+    private async Task<ProgramScheduleSlot?> FindShiftAlignedSlotAsync(
+        int machineId, double durationHours, DateTime notBefore,
+        List<OperatingShift> shifts, Machine machine)
+    {
+        var changeoverMinutes = machine.ChangeoverMinutes;
+
+        // Strategy: find when the next shift starts after the earliest possible end,
+        // then work backward to find a start time where end + changeover = shift start
+        var earliestSlot = await FindEarliestSlotAsync(machineId, durationHours, notBefore);
+        var nextShift = ShiftTimeHelper.FindNextShiftStart(earliestSlot.PrintEnd, shifts);
+
+        if (nextShift == null) return null;
+
+        // Target: build should end such that changeover completes at or just after shift start
+        var targetEnd = nextShift.Value.AddMinutes(-changeoverMinutes);
+        if (targetEnd <= notBefore) return null;
+
+        var targetStart = machine.AutoChangeoverEnabled
+            ? targetEnd.AddHours(-durationHours)
+            : targetEnd; // For shift-constrained, we'd need reverse-advance logic
+
+        if (targetStart < notBefore) return null;
+
+        // Verify this slot is actually available
+        var verifySlot = await FindEarliestSlotAsync(machineId, durationHours, targetStart);
+        if (Math.Abs((verifySlot.PrintStart - targetStart).TotalMinutes) < 30) // Within 30min tolerance
+            return verifySlot;
+
+        return null;
+    }
+
+    private int ComputeOptionScore(ProgramScheduleSlot slot, double durationHours,
+        int stackLevel, int partsPerBuild, int demandQuantity,
+        List<OperatingShift> shifts, Machine machine)
+    {
+        var score = 50; // Base score
+
+        // Changeover alignment: +30 if operator available
+        if (slot.OperatorAvailableForChangeover)
+            score += 30;
+
+        // Earliness: +20 if starts within 4 hours, scales down
+        var hoursFromNow = (slot.PrintStart - DateTime.UtcNow).TotalHours;
+        if (hoursFromNow < 4) score += 20;
+        else if (hoursFromNow < 24) score += 10;
+
+        // Demand fit: penalty if parts per build > remaining demand (overproduction)
+        if (demandQuantity > 0 && partsPerBuild > demandQuantity)
+        {
+            var overproduction = (double)(partsPerBuild - demandQuantity) / partsPerBuild;
+            score -= (int)(overproduction * 20); // Up to -20 for 100% overproduction
+        }
+
+        // Weekend optimization: bonus if a longer build spans the weekend cleanly
+        if (IsWeekendOptimal(slot, shifts))
+            score += 15;
+
+        return Math.Clamp(score, 0, 100);
+    }
+
+    private static bool IsWeekendOptimal(ProgramScheduleSlot slot, List<OperatingShift> shifts)
+    {
+        if (!shifts.Any()) return false;
+        var startDay = slot.PrintStart.DayOfWeek;
+        var endDay = slot.PrintEnd.DayOfWeek;
+        // Build spans a weekend if it starts Fri/Sat and ends Mon/Tue
+        var spansWeekend = (startDay is DayOfWeek.Friday or DayOfWeek.Saturday)
+            && (endDay is DayOfWeek.Monday or DayOfWeek.Tuesday);
+        return spansWeekend && slot.OperatorAvailableForChangeover;
+    }
+
+    public async Task<List<BuildSequenceSuggestion>> SuggestBuildSequenceAsync(
+        int machineId, List<BuildCandidate> candidates, DateTime horizonStart, DateTime horizonEnd)
+    {
+        var machine = await _db.Machines.FindAsync(machineId)
+            ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
+
+        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
+        var suggestions = new List<BuildSequenceSuggestion>();
+
+        var cursor = horizonStart;
+        var remaining = candidates.ToDictionary(c => c.PartId, c => c.DemandQuantity);
+
+        // Greedy: place builds one at a time, choosing the best stack level for each slot
+        for (int iteration = 0; iteration < 50 && remaining.Values.Any(v => v > 0); iteration++)
+        {
+            if (cursor >= horizonEnd) break;
+
+            // Find the next available slot on this machine
+            var slot = await FindEarliestSlotAsync(machineId, 1, cursor); // 1h placeholder
+            cursor = slot.PrintStart;
+            if (cursor >= horizonEnd) break;
+
+            // Determine if this is a weekend/overnight slot
+            var startDay = cursor.DayOfWeek;
+            var isPreWeekend = startDay is DayOfWeek.Friday or DayOfWeek.Saturday;
+
+            // Pick the candidate with highest remaining demand
+            var bestCandidate = candidates
+                .Where(c => remaining.GetValueOrDefault(c.PartId, 0) > 0)
+                .OrderByDescending(c => remaining[c.PartId])
+                .FirstOrDefault();
+
+            if (bestCandidate == null) break;
+
+            // Choose stack level
+            int stackLevel;
+            string rationale;
+
+            if (isPreWeekend && bestCandidate.StackOptions.Count > 1)
+            {
+                // Weekend: use ShiftTimeHelper to find the level that spans the weekend
+                stackLevel = ShiftTimeHelper.SuggestWeekendStackLevel(
+                    cursor, changeoverMinutes, shifts,
+                    bestCandidate.StackOptions.Select(s => (s.Level, s.DurationHours, s.PartsPerBuild)).ToList());
+                rationale = "Weekend-optimized: changeover aligns with Monday shift";
+            }
+            else if (changeoverMinutes > 0)
+            {
+                // Weekday: find duration that aligns changeover with next shift
+                var alignedDuration = ShiftTimeHelper.FindChangeoverAlignedDuration(cursor, changeoverMinutes, shifts);
+                if (alignedDuration != null)
+                {
+                    // Pick the stack level closest to the aligned duration
+                    stackLevel = bestCandidate.StackOptions
+                        .OrderBy(s => Math.Abs(s.DurationHours - alignedDuration.Value))
+                        .First().Level;
+                    rationale = $"Changeover-aligned: builds end so changeover falls during operator hours";
+                }
+                else
+                {
+                    stackLevel = bestCandidate.StackOptions[0].Level;
+                    rationale = "Default stack level";
+                }
+            }
+            else
+            {
+                stackLevel = bestCandidate.StackOptions[0].Level;
+                rationale = "No changeover constraint";
+            }
+
+            var stackOpt = bestCandidate.StackOptions.FirstOrDefault(s => s.Level == stackLevel);
+            if (stackOpt == default) stackOpt = bestCandidate.StackOptions[0];
+
+            // Check demand: don't overproduce excessively
+            var demandLeft = remaining[bestCandidate.PartId];
+            if (stackOpt.PartsPerBuild > demandLeft * 1.5 && bestCandidate.StackOptions.Count > 1)
+            {
+                // Try a smaller stack to avoid overproduction
+                var smaller = bestCandidate.StackOptions
+                    .Where(s => s.PartsPerBuild <= demandLeft * 1.2)
+                    .OrderByDescending(s => s.PartsPerBuild)
+                    .FirstOrDefault();
+                if (smaller != default)
+                {
+                    stackOpt = smaller;
+                    stackLevel = smaller.Level;
+                    rationale += " (reduced to limit overproduction)";
+                }
+            }
+
+            // Calculate actual slot for this duration
+            var actualSlot = await FindEarliestSlotAsync(machineId, stackOpt.DurationHours, cursor);
+
+            suggestions.Add(new BuildSequenceSuggestion(
+                bestCandidate.PartId,
+                bestCandidate.PartNumber,
+                stackLevel,
+                stackOpt.PartsPerBuild,
+                stackOpt.DurationHours,
+                actualSlot.PrintStart,
+                actualSlot.PrintEnd,
+                actualSlot.OperatorAvailableForChangeover,
+                rationale));
+
+            remaining[bestCandidate.PartId] -= stackOpt.PartsPerBuild;
+            cursor = actualSlot.ChangeoverEnd;
+        }
+
+        return suggestions;
+    }
+
     public async Task<ChangeoverAnalysis> AnalyzeChangeoverAsync(int machineId, DateTime buildEndTime)
     {
         var machine = await _db.Machines.FindAsync(machineId)

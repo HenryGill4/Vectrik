@@ -6,6 +6,7 @@
 @inject IProgramSchedulingService ProgramScheduling
 @inject IWorkOrderService WorkOrderService
 @inject IMachineProgramService ProgramService
+@inject IShiftManagementService ShiftService
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @inject ToastService Toast
 @implements IAsyncDisposable
@@ -54,11 +55,6 @@ else if (_viewMode == "gantt")
               Unscheduled="_unscheduled"
               Machines="_machines"
               WorkOrders="_workOrders" />
-    <ActionQueue Executions="_executions"
-                 Unscheduled="_unscheduled"
-                 WorkOrders="_workOrders"
-                 OnShowReschedule="ShowReschedule"
-                 OnAutoSchedule="AutoScheduleSingle" />
     <GanttView @ref="_ganttView"
                Executions="_executions"
                Unscheduled="_unscheduled"
@@ -66,16 +62,20 @@ else if (_viewMode == "gantt")
                Stages="_stages"
                BuildPrograms="_programs"
                MachineTimelines="_programTimelines"
+               Shifts="_shifts"
+               WorkOrders="_workOrders"
+               UserName="@_userName"
                DataRangeStart="_dataRangeStart"
                DataRangeEnd="_dataRangeEnd"
                PixelsPerHour="_pixelsPerHour"
                ShowConflictsOnly="_showConflictsOnly"
                OnShowReschedule="ShowReschedule"
-               OnManualSchedule="ManualScheduleSingle"
+               OnScheduleRequested="() => _showScheduleWizard = true"
                OnAutoSchedule="AutoScheduleSingle"
                OnPixelsPerHourChanged="HandlePixelsPerHourChanged"
                OnViewportBoundsChanged="HandleViewportBoundsChanged"
-               OnDataRangeExtensionNeeded="ExtendDataRangeAsync" />
+               OnDataRangeExtensionNeeded="ExtendDataRangeAsync"
+               OnBarDragCompleted="HandleBarDragAsync" />
 }
 else if (_viewMode == "programs")
 {
@@ -189,6 +189,7 @@ else if (_viewMode == "data")
     private Dictionary<int, List<ProgramTimelineEntry>> _programTimelines = new();
     private List<WorkOrder> _workOrders = new();
     private List<MachineProgram> _programs = new();
+    private List<OperatingShift> _shifts = new();
 
     private GanttView? _ganttView;
     private ProgramsView? _programsView;
@@ -240,6 +241,7 @@ else if (_viewMode == "data")
             _parts = await PartService.GetAllPartsAsync();
             _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
             _stages = await StageService.GetAllStagesAsync(activeOnly: true);
+            _shifts = await ShiftService.GetAllShiftsAsync();
             await LoadData();
             StartAutoRefreshTimer();
         }
@@ -513,6 +515,31 @@ else if (_viewMode == "data")
         }
 
         _showReschedule = true;
+    }
+
+    private async Task HandleBarDragAsync(GanttViewport.BarDragResult drag)
+    {
+        try
+        {
+            if (drag.BarType is "exec" or "group")
+            {
+                await Scheduler.AutoScheduleExecutionAsync(drag.EntityId, drag.NewStart);
+                Toast.ShowSuccess($"Rescheduled to {drag.NewStart:MMM d HH:mm}");
+            }
+            else if (drag.BarType == "build")
+            {
+                // Find the machine this build is on; pass 0 for auto-detect
+                await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(drag.EntityId, drag.NewStart);
+                Toast.ShowSuccess($"Build rescheduled to {drag.NewStart:MMM d HH:mm}");
+            }
+
+            await LoadData(isBackgroundRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Reschedule failed: {ex.Message}");
+            await LoadData(isBackgroundRefresh: true);
+        }
     }
 
     private async Task AutoScheduleSingle(int executionId)

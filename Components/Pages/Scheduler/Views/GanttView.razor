@@ -1,4 +1,4 @@
-@* ── Gantt View: machines gantt chart with GanttViewport + machine rows ── *@
+@* ── Gantt View: machines gantt chart with work order sidebar ── *@
 @using Opcentrix_V3.Components.Pages.Scheduler.Components
 
 <div class="sched-layout">
@@ -15,9 +15,11 @@
                     DataRangeStart="DataRangeStart"
                     DataRangeEnd="DataRangeEnd"
                     PixelsPerHour="PixelsPerHour"
+                    Shifts="Shifts"
                     OnPixelsPerHourChanged="OnPixelsPerHourChanged"
                     OnViewportBoundsChanged="OnViewportBoundsChanged"
-                    OnDataRangeExtensionNeeded="OnDataRangeExtensionNeeded">
+                    OnDataRangeExtensionNeeded="OnDataRangeExtensionNeeded"
+                    OnBarDragCompleted="OnBarDragCompleted">
                         @* ── Machine rows (grouped by department, ordered by production flow) ── *@
                         @{
                             var orderedMachines = GetOrderedMachines();
@@ -90,11 +92,13 @@
         </div>
     </div>
 
-    <UnscheduledSidebar Executions="Unscheduled"
-                        Title="@($"📋 Unscheduled ({Unscheduled.Count})")"
-                        ShowManualSchedule="true"
-                        OnManualSchedule="OnManualSchedule"
-                        OnAutoSchedule="OnAutoSchedule" />
+    @* ── Work Orders Sidebar (right) ── *@
+    <WorkOrderPanel WorkOrders="WorkOrders"
+                    Unscheduled="Unscheduled"
+                    Machines="Machines"
+                    UserName="UserName"
+                    OnScheduleRequested="OnScheduleRequested"
+                    OnAutoSchedule="OnAutoSchedule" />
 </div>
 
 @code {
@@ -104,35 +108,32 @@
     [Parameter] public List<ProductionStage> Stages { get; set; } = [];
     [Parameter] public List<MachineProgram> BuildPrograms { get; set; } = [];
     [Parameter] public Dictionary<int, List<ProgramTimelineEntry>> MachineTimelines { get; set; } = new();
+    [Parameter] public List<OperatingShift> Shifts { get; set; } = [];
+    [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
+    [Parameter] public string UserName { get; set; } = "System";
     [Parameter] public DateTime DataRangeStart { get; set; }
     [Parameter] public DateTime DataRangeEnd { get; set; }
     [Parameter] public double PixelsPerHour { get; set; }
     [Parameter] public bool ShowConflictsOnly { get; set; }
     [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
-    [Parameter] public EventCallback<StageExecution> OnManualSchedule { get; set; }
+    [Parameter] public EventCallback OnScheduleRequested { get; set; }
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
     [Parameter] public EventCallback<double> OnPixelsPerHourChanged { get; set; }
     [Parameter] public EventCallback<GanttViewport.ViewportBoundsChangedArgs> OnViewportBoundsChanged { get; set; }
     [Parameter] public EventCallback OnDataRangeExtensionNeeded { get; set; }
+    [Parameter] public EventCallback<GanttViewport.BarDragResult> OnBarDragCompleted { get; set; }
 
-    /// <summary>Exposes the inner GanttViewport for direct method calls (zoom, scroll, save state).</summary>
     public GanttViewport? Viewport { get; private set; }
 
     private List<Machine> GetOrderedMachines()
     {
-        // Build a mapping: Machine.Id → earliest stage DisplayOrder that uses this machine.
-        // Stages reference machines via DefaultMachineId (string MachineId) or AssignedMachineIds (int IDs).
         var machineStageOrder = new Dictionary<int, int>();
         foreach (var stage in Stages.OrderBy(s => s.DisplayOrder))
         {
-            // Map via AssignedMachineIds (comma-separated int Machine.Id values)
             foreach (var mid in stage.GetAssignedMachineIntIds())
-            {
                 machineStageOrder.TryAdd(mid, stage.DisplayOrder);
-            }
 
-            // Map via DefaultMachineId (string Machine.MachineId) — fallback for stages without assignments
             if (!string.IsNullOrEmpty(stage.DefaultMachineId))
             {
                 var match = Machines.FirstOrDefault(m =>
@@ -142,9 +143,6 @@
             }
         }
 
-        // Department fallback: machines not explicitly assigned to a stage still sort
-        // alongside their department peers (e.g., EOS M4 Onyx #2 sorts with SLS Printing
-        // even if only M4-1 is in AssignedMachineIds).
         foreach (var stage in Stages.OrderBy(s => s.DisplayOrder))
         {
             if (string.IsNullOrEmpty(stage.Department)) continue;
@@ -167,10 +165,7 @@
     private List<StageExecution> GetExecutionsForMachine(Machine machine)
     {
         var execs = Executions.Where(e => e.MachineId == machine.Id).ToList();
-        if (!ShowConflictsOnly)
-            return execs;
-
-        // Filter to only conflicting executions
+        if (!ShowConflictsOnly) return execs;
         return execs.Where(e => HasOverlap(e, execs)).ToList();
     }
 
@@ -178,15 +173,11 @@
     {
         var start = exec.ScheduledStartAt;
         var end = exec.ScheduledEndAt;
-        if (start == null || end == null)
-            return false;
-
+        if (start == null || end == null) return false;
         return allExecs.Any(other =>
             other.Id != exec.Id &&
-            other.ScheduledStartAt != null &&
-            other.ScheduledEndAt != null &&
-            other.ScheduledStartAt < end &&
-            other.ScheduledEndAt > start);
+            other.ScheduledStartAt != null && other.ScheduledEndAt != null &&
+            other.ScheduledStartAt < end && other.ScheduledEndAt > start);
     }
 
     private double GetBarLeftPx(DateTime start) =>

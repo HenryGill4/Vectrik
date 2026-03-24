@@ -21,6 +21,15 @@ let _isDragging = false;
 let _dragStartX = 0;
 let _dragStartScrollLeft = 0;
 
+// Bar drag state for rescheduling
+let _barDragEl = null;        // The bar element being dragged
+let _barDragType = null;      // 'exec', 'build', or 'group'
+let _barDragEntityId = null;  // The exec/program ID
+let _barDragOrigLeft = 0;     // Original CSS left value in px
+let _barDragStartX = 0;       // Mouse X at drag start
+let _barDragActive = false;   // True once mouse moves past threshold
+let _barDragGhost = null;     // Tooltip showing proposed time
+
 // Saved viewport state — survives DOM destruction
 let _savedScrollTimeMsFromStart = null; // ms offset from _dataStartMs at left edge of viewport
 let _savedPixelsPerHour = null;
@@ -362,10 +371,32 @@ function onTouchMove(e) {
     }
 }
 
-// Mouse drag-to-pan (middle button = 1, right button = 2)
+// Old onMouseDown/onMouseMove/onMouseUp removed — replaced by bar-drag-aware versions below
+
+// ── Bar Drag-to-Reschedule ──────────────────────────────────────────────────
+
+const BAR_DRAG_THRESHOLD = 5; // px before drag activates
+
 function onMouseDown(e) {
     if (_disposed || !isAlive()) return;
 
+    // Check if clicking on a draggable bar (left button only)
+    if (e.button === 0) {
+        const bar = e.target.closest('[data-bar-type]');
+        if (bar) {
+            e.preventDefault();
+            const wrapper = bar.closest('.gantt-build-bar-wrapper') || bar;
+            _barDragEl = wrapper;
+            _barDragType = bar.dataset.barType;
+            _barDragEntityId = bar.dataset.execId || bar.dataset.programId;
+            _barDragOrigLeft = parseFloat(wrapper.style.left) || 0;
+            _barDragStartX = e.clientX;
+            _barDragActive = false;
+            return;
+        }
+    }
+
+    // Middle/right button = pan
     if (e.button === 1 || e.button === 2) {
         e.preventDefault();
         _isDragging = true;
@@ -377,25 +408,85 @@ function onMouseDown(e) {
 }
 
 function onMouseMove(e) {
-    if (!_isDragging || _disposed || !isAlive()) return;
+    // Bar drag in progress
+    if (_barDragEl) {
+        const deltaX = e.clientX - _barDragStartX;
 
+        // Activate drag after threshold
+        if (!_barDragActive && Math.abs(deltaX) > BAR_DRAG_THRESHOLD) {
+            _barDragActive = true;
+            _barDragEl.style.opacity = '0.7';
+            _barDragEl.style.zIndex = '50';
+            _barDragEl.classList.add('gantt-bar-dragging');
+            document.body.style.cursor = 'grabbing';
+
+            // Create ghost tooltip
+            _barDragGhost = document.createElement('div');
+            _barDragGhost.className = 'gantt-drag-ghost';
+            _barDragEl.parentElement.appendChild(_barDragGhost);
+        }
+
+        if (_barDragActive) {
+            const newLeft = _barDragOrigLeft + deltaX;
+            _barDragEl.style.left = newLeft + 'px';
+
+            // Update ghost with proposed time
+            if (_barDragGhost) {
+                const timeMs = _dataStartMs + ((_container.scrollLeft + (e.clientX - _container.getBoundingClientRect().left)) / _pixelsPerHour) * 3600000;
+                const dt = new Date(timeMs);
+                _barDragGhost.textContent = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                _barDragGhost.style.left = newLeft + 'px';
+                _barDragGhost.style.top = '-20px';
+            }
+        }
+        return;
+    }
+
+    // Viewport pan
+    if (!_isDragging || _disposed || !isAlive()) return;
     const deltaX = e.clientX - _dragStartX;
     _container.scrollLeft = _dragStartScrollLeft - deltaX;
 }
 
-function onMouseUp() {
-    if (!_isDragging) return;
+function onMouseUp(e) {
+    // Complete bar drag
+    if (_barDragEl && _barDragActive) {
+        const finalLeft = parseFloat(_barDragEl.style.left) || 0;
+        const newTimeMs = _dataStartMs + (finalLeft / _pixelsPerHour) * 3600000;
+        const newTimeIso = new Date(newTimeMs).toISOString();
 
-    _isDragging = false;
-    if (isAlive()) {
-        _container.style.cursor = '';
-        _container.style.userSelect = '';
+        // Cleanup visual state
+        _barDragEl.style.opacity = '';
+        _barDragEl.style.zIndex = '';
+        _barDragEl.classList.remove('gantt-bar-dragging');
+        document.body.style.cursor = '';
+        if (_barDragGhost) {
+            _barDragGhost.remove();
+            _barDragGhost = null;
+        }
+
+        // Restore original position (Blazor will re-render at the correct position after reschedule)
+        _barDragEl.style.left = _barDragOrigLeft + 'px';
+
+        // Notify Blazor
+        if (_dotNetRef && _barDragEntityId) {
+            _dotNetRef.invokeMethodAsync('OnBarDragCompleted', _barDragType, _barDragEntityId, newTimeIso);
+        }
     }
-    debouncedNotify();
-}
 
-function onContextMenu(e) {
-    if (_isDragging || e.button === 2) {
-        e.preventDefault();
+    // Reset bar drag state
+    _barDragEl = null;
+    _barDragType = null;
+    _barDragEntityId = null;
+    _barDragActive = false;
+
+    // Complete viewport pan
+    if (_isDragging) {
+        _isDragging = false;
+        if (isAlive()) {
+            _container.style.cursor = '';
+            _container.style.userSelect = '';
+        }
+        debouncedNotify();
     }
 }

@@ -86,6 +86,15 @@ internal sealed class StubProgramSchedulingService : IProgramSchedulingService
     public Task<ChangeoverAnalysis> AnalyzeChangeoverAsync(int machineId, DateTime buildEndTime)
         => Task.FromResult(new ChangeoverAnalysis(true, buildEndTime, buildEndTime.AddHours(2), null, null));
 
+    public Task<List<ScheduleOption>> GenerateScheduleOptionsAsync(
+        int machineId, double baseDurationHours, DateTime notBefore,
+        PartAdditiveBuildConfig? buildConfig = null, int demandQuantity = 0)
+        => Task.FromResult(new List<ScheduleOption>());
+
+    public Task<List<BuildSequenceSuggestion>> SuggestBuildSequenceAsync(
+        int machineId, List<BuildCandidate> candidates, DateTime horizonStart, DateTime horizonEnd)
+        => Task.FromResult(new List<BuildSequenceSuggestion>());
+
     public Task<List<ProgramChangeoverConflict>> DetectChangeoverConflictsAsync(int machineId, DateTime from, DateTime to)
         => Task.FromResult(new List<ProgramChangeoverConflict>());
 

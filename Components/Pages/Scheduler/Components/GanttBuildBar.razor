@@ -17,7 +17,9 @@
         _ => "📦"
     };
 }
-<div class="gantt-build-bar-wrapper" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;">
+<div class="gantt-build-bar-wrapper" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
+     data-program-id="@Build.Id"
+     data-bar-type="build">
     <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "")"
          title="@ComputeTooltip()"
          @onclick="TogglePopover"
@@ -28,6 +30,15 @@
         }
         <span class="gantt-bar-text">@statusLabel @Build.Name — @Build.TotalPartCount parts</span>
     </div>
+    @* ── Changeover time segment (shown after build end) ── *@
+    @if (ChangeoverMinutes > 0)
+    {
+        var changeoverWidthPx = ChangeoverMinutes / 60.0 * PixelsPerHour;
+        <div class="gantt-changeover-segment @(HasChangeoverConflict ? "gantt-changeover-segment--conflict" : "")"
+             style="left: @(FormatPx(BarWidthPx))px; width: @(FormatPx(changeoverWidthPx))px;"
+             title="Changeover: @ChangeoverMinutes min @(HasChangeoverConflict ? "(NO OPERATOR AVAILABLE)" : "")">
+        </div>
+    }
 
     @if (_showPopover)
     {
@@ -68,6 +79,8 @@
     [Parameter, EditorRequired] public DateTime Start { get; set; }
     [Parameter, EditorRequired] public DateTime End { get; set; }
     [Parameter] public bool HasChangeoverConflict { get; set; }
+    [Parameter] public double ChangeoverMinutes { get; set; }
+    [Parameter] public double PixelsPerHour { get; set; }
 
     /// <summary>Raised when the user clicks a status action. Value is (MachineProgram, actionKey).</summary>
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }

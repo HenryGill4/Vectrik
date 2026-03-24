@@ -1969,6 +1969,22 @@ select.form-control {
     border-radius: 50%;
 }
 
+/* Off-shift period overlay (nights/weekends) */
+.gantt-offshift {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+        -45deg,
+        rgba(0, 0, 0, 0.08),
+        rgba(0, 0, 0, 0.08) 4px,
+        transparent 4px,
+        transparent 8px
+    );
+    pointer-events: none;
+    z-index: 0;
+}
+
 .gantt-bar {
     position: absolute;
     top: 3px;
@@ -2152,6 +2168,44 @@ select.form-control {
 .gantt-conflict-icon {
     margin-right: 2px;
     font-size: 0.75rem;
+}
+
+/* Changeover time segment (extends beyond the build bar) */
+.gantt-changeover-segment {
+    position: absolute;
+    top: 8px;
+    height: 32px;
+    background: rgba(var(--success-rgb), 0.25);
+    border: 1px dashed rgba(var(--success-rgb), 0.5);
+    border-left: none;
+    border-radius: 0 4px 4px 0;
+    pointer-events: auto;
+    cursor: help;
+    z-index: 0;
+}
+/* Bar drag visual feedback */
+.gantt-bar-dragging {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    transition: none !important;
+}
+.gantt-drag-ghost {
+    position: absolute;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--bg-card);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 2px 6px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 51;
+}
+
+.gantt-changeover-segment--conflict {
+    background: rgba(var(--danger-rgb), 0.2);
+    border-color: rgba(var(--danger-rgb), 0.6);
+    animation: gantt-conflict-pulse 1.5s ease-in-out infinite;
 }
 
 /* ── Gantt Legend ── */
@@ -2681,6 +2735,234 @@ select.form-control {
     grid-template-columns: 1fr 280px;
     gap: 16px;
     align-items: start;
+}
+/* 3-col layout removed — WO panel is now on the right replacing the old unscheduled sidebar */
+
+/* ── Work Order Panel ── */
+.wo-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    position: sticky;
+    top: 16px;
+}
+.wo-panel--collapsed {
+    width: auto;
+}
+.wo-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+.wo-panel-header:hover {
+    background: var(--bg-tertiary);
+}
+.wo-panel-chevron {
+    font-size: 0.85rem;
+    font-weight: 700;
+    transition: transform 0.2s ease;
+    transform: rotate(0deg);
+}
+.wo-panel-chevron--open {
+    transform: rotate(90deg);
+}
+.wo-panel-list {
+    max-height: calc(100vh - 300px);
+    overflow-y: auto;
+}
+.wo-panel-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    border-left: 3px solid transparent;
+}
+.wo-panel-item:hover {
+    background: var(--bg-tertiary);
+}
+.wo-panel-item:last-child {
+    border-bottom: none;
+}
+.wo-panel-item--active {
+    background: rgba(var(--accent-rgb), 0.08);
+    border-left-color: var(--accent);
+}
+.wo-panel-item--danger {
+    border-left-color: var(--danger);
+}
+.wo-panel-item--warning {
+    border-left-color: var(--warning);
+}
+.wo-panel-item--success {
+    border-left-color: var(--success);
+}
+.wo-panel-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 2px;
+}
+.wo-panel-order {
+    font-weight: 600;
+    font-size: 0.82rem;
+}
+.wo-panel-due {
+    font-size: 0.65rem;
+}
+.wo-panel-customer {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+.wo-panel-progress-bar {
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 2px;
+}
+.wo-panel-progress-fill {
+    height: 100%;
+    background: var(--success);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+.wo-panel-progress-label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+}
+
+/* WO Panel filters */
+.wo-panel-filters {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+}
+.wo-panel-filter {
+    flex: 1;
+    padding: 6px 8px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-align: center;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+.wo-panel-filter:hover {
+    color: var(--text-primary);
+    background: rgba(var(--accent-rgb), 0.04);
+}
+.wo-panel-filter--active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.wo-panel-filter--danger {
+    color: var(--danger);
+    border-bottom-color: var(--danger);
+}
+
+/* WO Panel line items */
+.wo-panel-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 6px;
+}
+.wo-panel-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+}
+.wo-panel-line-type {
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.wo-panel-line-type--sls {
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+}
+.wo-panel-line-type--cnc {
+    background: rgba(var(--warning-rgb), 0.15);
+    color: var(--warning);
+}
+.wo-panel-line-part {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.wo-panel-line-qty {
+    margin-left: auto;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* WO Panel schedule button */
+.wo-panel-schedule-btn {
+    width: 100%;
+    margin-top: 6px;
+    font-size: 0.75rem;
+    padding: 4px 8px;
+}
+
+/* WO Panel section header (unscheduled) */
+.wo-panel-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+}
+.wo-panel-section-header:hover {
+    background: var(--bg-tertiary);
+}
+.wo-panel-chevron {
+    font-size: 0.85rem;
+    font-weight: 700;
+    transition: transform 0.2s ease;
+}
+.wo-panel-chevron--open {
+    transform: rotate(90deg);
+}
+.wo-panel-unscheduled-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    border-bottom: 1px solid var(--border);
+}
+.wo-panel-unscheduled-item:hover {
+    background: var(--bg-tertiary);
+}
+.wo-panel-unscheduled-item:last-child {
+    border-bottom: none;
 }
 
 .sched-gantt-panel {
@@ -3871,10 +4153,14 @@ select.form-control {
 
 /* ── Scheduler Responsive ── */
 @media (max-width: 1024px) {
-    .sched-layout {
+    .sched-layout,
+    .sched-layout--3col {
         grid-template-columns: 1fr;
     }
     .sched-sidebar {
+        position: static;
+    }
+    .wo-panel {
         position: static;
     }
     .sched-sidebar-list {

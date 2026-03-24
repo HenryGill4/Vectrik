@@ -18,6 +18,9 @@
 }
 <div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "")"
      style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @jobColorStyle @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
+     data-exec-id="@Exec.Id"
+     data-bar-type="exec"
+     data-job-id="@Exec.JobId"
      title="@ComputeTooltip()"
      @onclick="HandleClick">
     <span class="gantt-bar-text">@scopeIcon@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>

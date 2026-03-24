@@ -18,6 +18,14 @@
                 }
             </div>
 
+            @* ── Non-shift shading (nights/weekends dimmed) ── *@
+            @foreach (var gap in GetNonShiftPeriods())
+            {
+                var gapLeft = GetBarLeftPx(gap.Start);
+                var gapWidth = (gap.End - gap.Start).TotalHours * PixelsPerHour;
+                <div class="gantt-offshift" style="left: @(FormatPx(gapLeft))px; width: @(FormatPx(gapWidth))px;" title="Off-shift"></div>
+            }
+
             @* ── Today line ── *@
             <div class="gantt-today-line" style="left: @(FormatPx(GetBarLeftPx(DateTime.UtcNow)))px;"></div>
 
@@ -32,6 +40,7 @@
     [Parameter, EditorRequired] public DateTime DataRangeEnd { get; set; }
     [Parameter, EditorRequired] public double PixelsPerHour { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public List<OperatingShift> Shifts { get; set; } = [];
 
     /// <summary>Raised when zoom changes _pixelsPerHour. Parent must update its own copy and re-render.</summary>
     [Parameter] public EventCallback<double> OnPixelsPerHourChanged { get; set; }
@@ -41,6 +50,9 @@
 
     /// <summary>Raised when the viewport scrolls near the data range edge and more data is needed.</summary>
     [Parameter] public EventCallback OnDataRangeExtensionNeeded { get; set; }
+
+    /// <summary>Raised when a bar is drag-dropped to a new time position.</summary>
+    [Parameter] public EventCallback<BarDragResult> OnBarDragCompleted { get; set; }
 
     // JS interop
     private ElementReference _containerRef;
@@ -197,6 +209,20 @@
         await OnPixelsPerHourChanged.InvokeAsync(newPph);
     }
 
+    /// <summary>
+    /// Called by JS when a bar is drag-dropped to a new position.
+    /// </summary>
+    [JSInvokable("OnBarDragCompleted")]
+    public async Task HandleBarDragFromJs(string barType, string entityId, string newStartIso)
+    {
+        if (_disposed) return;
+        var newStart = DateTime.Parse(newStartIso, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        if (int.TryParse(entityId, out var id))
+        {
+            await OnBarDragCompleted.InvokeAsync(new BarDragResult(barType, id, newStart));
+        }
+    }
+
     // ── Public Methods (called by parent via @ref) ──────────────────────────
 
     /// <summary>Zoom in from button click. Calls JS immediately, then notifies parent.</summary>
@@ -295,6 +321,69 @@
     private static string FormatPx(double value) =>
         value.ToString("F1", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Computes gaps between shift windows across the visible data range.
+    /// These periods are rendered as dimmed overlays on the Gantt background.
+    /// </summary>
+    private List<(DateTime Start, DateTime End)> GetNonShiftPeriods()
+    {
+        if (!Shifts.Any()) return []; // 24/7 — no off-shift periods
+
+        var gaps = new List<(DateTime, DateTime)>();
+        var cursor = DataRangeStart;
+        var limit = DataRangeEnd;
+
+        for (int dayOffset = 0; cursor < limit && dayOffset < 120; dayOffset++)
+        {
+            var checkDate = DataRangeStart.Date.AddDays(dayOffset);
+            if (checkDate > limit) break;
+
+            var dayName = checkDate.DayOfWeek.ToString()[..3];
+            var dayShifts = Shifts
+                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => s.StartTime)
+                .ToList();
+
+            if (!dayShifts.Any())
+            {
+                // Entire day is off-shift
+                var dayStart = checkDate;
+                var dayEnd = checkDate.AddDays(1);
+                if (dayStart < cursor) dayStart = cursor;
+                if (dayEnd > limit) dayEnd = limit;
+                if (dayStart < dayEnd)
+                    gaps.Add((dayStart, dayEnd));
+                cursor = dayEnd;
+                continue;
+            }
+
+            foreach (var shift in dayShifts)
+            {
+                var shiftStart = checkDate + shift.StartTime;
+                var shiftEnd = checkDate + shift.EndTime;
+                if (shift.EndTime <= shift.StartTime)
+                    shiftEnd = shiftEnd.AddDays(1);
+
+                // Gap before this shift
+                if (cursor < shiftStart)
+                {
+                    var gapStart = cursor < DataRangeStart ? DataRangeStart : cursor;
+                    var gapEnd = shiftStart > limit ? limit : shiftStart;
+                    if (gapStart < gapEnd)
+                        gaps.Add((gapStart, gapEnd));
+                }
+
+                cursor = shiftEnd > cursor ? shiftEnd : cursor;
+            }
+        }
+
+        // Gap after last shift to end of range
+        if (cursor < limit)
+            gaps.Add((cursor, limit));
+
+        return gaps;
+    }
+
     private List<(DateTime Time, string Label, bool IsMajor)> GenerateTimeHeaders()
     {
         var headers = new List<(DateTime, string, bool)>();
@@ -351,4 +440,7 @@
 
     /// <summary>Event args for viewport bounds changes.</summary>
     public record ViewportBoundsChangedArgs(DateTime Start, DateTime End, double PixelsPerHour);
+
+    /// <summary>Result of a bar drag-and-drop reschedule operation.</summary>
+    public record BarDragResult(string BarType, int EntityId, DateTime NewStart);
 }
