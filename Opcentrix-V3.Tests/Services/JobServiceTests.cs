@@ -16,7 +16,7 @@ public class JobServiceTests : IDisposable
     public JobServiceTests()
     {
         _db = TestDbContextFactory.Create();
-        var scheduler = new SchedulingService(_db, new StubMachineProgramService());
+        var scheduler = new SchedulingService(_db, new StubMachineProgramService(), new ShiftManagementService(_db));
         var processService = new ManufacturingProcessService(_db);
         _sut = new JobService(_db, scheduler, processService);
     }

@@ -144,6 +144,8 @@ html, body {
     background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100vh;
+    touch-action: pan-x pan-y;
+    -ms-touch-action: pan-x pan-y;
     color-scheme: dark;
     -webkit-tap-highlight-color: transparent;
     -webkit-font-smoothing: antialiased;
@@ -206,8 +208,9 @@ body.modal-open { overflow: hidden; }
     position: fixed;
     top: 0; left: 0; bottom: 0;
     z-index: 100;
-    transition: transform var(--transition-normal);
+    transition: width var(--transition-normal), transform var(--transition-normal);
     overflow-y: auto;
+    overflow-x: hidden;
     overscroll-behavior: contain;
 }
 
@@ -215,23 +218,39 @@ body.modal-open { overflow: hidden; }
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 16px;
+    padding: 0 12px 0 16px;
     height: var(--topbar-height);
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
 .sidebar-brand {
-    font-size: 1.25rem;
+    font-size: 1.15rem;
     font-weight: 700;
     color: var(--accent);
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 .sidebar-toggle {
-    background: none; border: none; color: var(--text-secondary);
-    font-size: 1.3rem; cursor: pointer;
-    min-width: var(--tap-target); min-height: var(--tap-target);
-    display: flex; align-items: center; justify-content: center;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.sidebar-toggle:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
 }
 
 .sidebar-nav {
@@ -407,10 +426,14 @@ body.modal-open { overflow: hidden; }
 
 /* Admin-only items placed in regular sections get a subtle left accent */
 .nav-item-admin {
-    border-left: 2px solid var(--accent);
+    border-left: 2px solid rgba(var(--accent-rgb), 0.4);
     margin-left: 10px;
     padding-left: 14px;
     opacity: 0.85;
+}
+.nav-item-admin:hover {
+    border-left-color: var(--accent);
+    opacity: 1;
 }
 
 .nav-item-admin:hover {
@@ -1224,10 +1247,19 @@ select.form-control {
 
 @media (min-width: 769px) {
     .sidebar-collapsed .sidebar {
-        transform: translateX(-100%);
+        width: 48px;
+        overflow: hidden;
+    }
+    .sidebar-collapsed .sidebar-nav,
+    .sidebar-collapsed .sidebar-brand {
+        display: none;
+    }
+    .sidebar-collapsed .sidebar-header {
+        justify-content: center;
+        padding: 0;
     }
     .sidebar-collapsed .main-area {
-        margin-left: 0;
+        margin-left: 48px;
     }
 }
 
@@ -2274,6 +2306,153 @@ select.form-control {
     align-items: center;
 }
 
+/* ══ Scheduler Topbar ══ */
+.sched-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    border-bottom: none;
+    flex-wrap: wrap;
+}
+.sched-topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.sched-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+.sched-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    flex-shrink: 0;
+    animation: gantt-pulse-dot 2s infinite;
+}
+.sched-topbar-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* ══ Tab Bar ══ */
+.sched-tabbar {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+.sched-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.sched-tabs::-webkit-scrollbar { display: none; }
+
+.sched-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+    white-space: nowrap;
+    min-height: 44px;
+}
+.sched-tab:hover {
+    color: var(--text-primary);
+    background: rgba(var(--accent-rgb), 0.04);
+}
+.sched-tab--active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+}
+.sched-tab-icon {
+    font-size: 1rem;
+}
+.sched-tab-label {
+    font-size: 0.85rem;
+}
+
+/* ── Tab Controls (contextual toolbar under tabs) ── */
+.sched-tab-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    min-height: 0;
+}
+.sched-tab-controls:empty {
+    display: none;
+}
+
+/* ── Filter buttons (pill-style toggles) ── */
+.sched-filter-group {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.sched-filter-btn {
+    padding: 4px 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+    min-height: 32px;
+}
+.sched-filter-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+.sched-filter-btn--active {
+    background: rgba(var(--accent-rgb), 0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+}
+.sched-filter-btn--danger.sched-filter-btn--active {
+    background: rgba(var(--danger-rgb), 0.12);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* ── KPI muted variant ── */
+.sched-kpi--muted {
+    opacity: 0.7;
+}
+.sched-kpi--muted .sched-kpi-value {
+    font-size: 1.1rem;
+}
+
 /* ── Scheduler Layout ── */
 .sched-controls {
     display: flex;
@@ -2299,6 +2478,7 @@ select.form-control {
     display: flex;
     gap: 8px;
     align-items: end;
+    flex-wrap: wrap;
 }
 
 /* C5: Toolbar quick filters */
@@ -2318,6 +2498,12 @@ select.form-control {
 .sched-status-pills .btn {
     padding: 2px 8px;
     font-size: 0.75rem;
+}
+
+.sched-last-refresh {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
 }
 
 .sched-zoom-group {
@@ -2588,11 +2774,18 @@ select.form-control {
 
 .sched-sidebar-action {
     font-size: 1.1rem;
-    opacity: 0;
+    opacity: 0.4;
     transition: opacity 0.15s;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: var(--radius-sm);
 }
 
 .sched-sidebar-item:hover .sched-sidebar-action {
+    opacity: 1;
+}
+
+.sched-sidebar-action:active {
     opacity: 1;
 }
 
@@ -3697,6 +3890,8 @@ select.form-control {
     .content-area:has(.sched-page) {
         padding: 10px;
     }
+
+    /* ── Toolbar ── */
     .sched-controls {
         flex-direction: column;
         align-items: stretch;
@@ -3708,22 +3903,183 @@ select.form-control {
         gap: 8px;
     }
     .sched-controls-right {
+        flex-wrap: wrap;
         justify-content: space-between;
+        gap: 6px;
     }
     .sched-viewport-info {
         gap: 6px;
     }
     .sched-nav-btns .btn {
-        min-width: 40px;
-        min-height: 36px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+    .sched-view-toggle {
+        flex-wrap: wrap;
     }
     .sched-view-toggle .btn {
         font-size: 0.78rem;
         padding: 6px 10px;
+        min-height: 44px;
     }
+    .sched-quick-filters {
+        margin-left: 0;
+        padding-left: 0;
+        border-left: none;
+        flex-wrap: wrap;
+    }
+    .sched-quick-filters .btn,
+    .sched-status-pills .btn {
+        min-height: 40px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+
+    /* ── Topbar + Tabs (tablet) ── */
+    .sched-topbar {
+        padding: 10px 12px;
+        gap: 8px;
+    }
+    .sched-title {
+        font-size: 1rem;
+    }
+    .sched-tab {
+        padding: 8px 12px;
+        gap: 4px;
+    }
+    .sched-tab-label {
+        font-size: 0.78rem;
+    }
+    .sched-tab-controls {
+        padding: 6px 10px;
+        gap: 8px;
+    }
+    .sched-filter-btn {
+        min-height: 36px;
+        padding: 4px 10px;
+    }
+
+    /* ── Page header (title + action buttons) ── */
+    .sched-page .page-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .sched-page .page-header > div {
+        justify-content: stretch;
+    }
+    .sched-page .page-header .btn {
+        flex: 1;
+        min-height: 44px;
+        justify-content: center;
+    }
+
+    /* ── Gantt layout: sidebar below gantt on tablet ── */
+    .sched-layout {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── KPI Strip ── */
+    .sched-kpi-strip {
+        gap: 6px;
+    }
+    .sched-kpi {
+        min-width: 70px;
+        padding: 8px 10px;
+    }
+    .sched-kpi-label {
+        font-size: 0.7rem;
+    }
+
+    /* ── Action Queue ── */
+    .sched-action-header {
+        padding: 10px 12px;
+        min-height: 44px;
+    }
+    .sched-action-item {
+        padding: 10px 12px;
+        min-height: 44px;
+    }
+    .sched-action-urgency {
+        height: 32px;
+    }
+
+    /* ── Sidebar: full-width + always-visible actions ── */
+    .sched-sidebar {
+        position: static;
+    }
+    .sched-sidebar-list {
+        max-height: 400px;
+    }
+    .sched-sidebar-item {
+        padding: 12px;
+        min-height: 48px;
+    }
+    .sched-sidebar-action {
+        opacity: 1;
+        padding: 4px;
+        min-width: 36px;
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* ── Stage queue grid ── */
     .stage-queue-grid {
+        grid-template-columns: 1fr;
         gap: 10px;
         padding: 10px 0;
+    }
+
+    /* ── Gantt viewport ── */
+    .gantt-container.gantt-viewport {
+        max-height: 60vh;
+    }
+    .gantt-resource-label {
+        padding: 8px 10px;
+        gap: 8px;
+        font-size: 0.82rem;
+    }
+    .gantt-machine-name {
+        font-size: 0.82rem;
+    }
+    .gantt-machine-type {
+        font-size: 0.72rem;
+    }
+    .gantt-tick-label {
+        font-size: 0.72rem;
+    }
+
+    /* ── Build popover ── */
+    .gantt-build-popover {
+        min-width: 220px;
+        max-width: calc(100vw - 32px);
+    }
+    .gantt-build-popover-close {
+        min-width: 36px;
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .gantt-build-popover-actions .btn {
+        min-height: 40px;
+    }
+
+    /* ── Legend ── */
+    .gantt-legend {
+        gap: 10px;
+        font-size: 0.8rem;
+    }
+
+    /* ── Table view ── */
+    .data-table {
+        font-size: 0.82rem;
+    }
+    .sched-table-actions .btn {
+        min-width: 36px;
+        min-height: 36px;
     }
 }
 
@@ -4220,57 +4576,196 @@ select.form-control {
     .sched-zoom-sep {
         display: none;
     }
+    .sched-viewport-zoom {
+        display: none;
+    }
+
+    /* ── Topbar + Tabs (phone) ── */
+    .sched-topbar {
+        padding: 8px 10px;
+    }
+    .sched-title {
+        font-size: 0.9rem;
+    }
+    .sched-topbar-actions .btn {
+        font-size: 0.75rem;
+        padding: 6px 10px;
+    }
+    .sched-tab-icon {
+        font-size: 0.9rem;
+    }
+    .sched-tab-label {
+        display: none;
+    }
+    .sched-tab {
+        padding: 8px 14px;
+        justify-content: center;
+        flex: 1;
+    }
+    .sched-tab-controls {
+        padding: 6px 8px;
+        gap: 6px;
+    }
+    .sched-filter-btn {
+        font-size: 0.72rem;
+        padding: 4px 8px;
+        min-height: 32px;
+    }
+    .sched-viewport-date {
+        font-size: 0.78rem;
+    }
+
+    /* ── Toolbar: compact for phones ── */
+    .sched-view-toggle .btn {
+        font-size: 0.72rem;
+        padding: 6px 8px;
+        min-height: 40px;
+    }
+    .sched-controls-right > .btn {
+        min-height: 40px;
+        min-width: 40px;
+    }
+
+    /* ── Page header ── */
+    .page-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .page-header h1 {
+        font-size: 1.1rem;
+    }
+    .sched-page .page-header > div {
+        flex-direction: column;
+    }
+
+    /* ── KPI: 2-column grid on phones ── */
+    .sched-kpi-strip {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+    }
+    .sched-kpi {
+        min-width: 0;
+        padding: 8px;
+    }
+    .sched-kpi-value {
+        font-size: 1.1rem;
+    }
+    .sched-kpi-label {
+        font-size: 0.68rem;
+    }
+
+    /* ── Action queue: phone ── */
+    .sched-action-list {
+        max-height: 200px;
+    }
+    .sched-action-badge {
+        font-size: 0.68rem;
+    }
+
+    /* ── Sidebar ── */
+    .sched-sidebar-list {
+        max-height: 300px;
+    }
+    .sched-sidebar-part {
+        font-size: 0.8rem;
+    }
+    .sched-sidebar-stage {
+        font-size: 0.75rem;
+    }
+    .sched-sidebar-est {
+        font-size: 0.72rem;
+    }
+
+    /* ── Gantt viewport ── */
     .gantt-container {
-        min-width: 320px;
+        min-width: 300px;
+    }
+    .gantt-container.gantt-viewport {
+        max-height: 50vh;
     }
     .gantt-resource-label {
-        padding: 4px 6px;
-        gap: 4px;
+        padding: 6px 8px;
+        gap: 6px;
     }
     .gantt-machine-name {
-        font-size: 0.68rem;
+        font-size: 0.75rem;
+    }
+    .gantt-machine-type {
+        display: none;
     }
     .gantt-machine-status {
         width: 6px;
         height: 6px;
     }
+    .gantt-queue-badge {
+        display: none;
+    }
     .gantt-bar {
-        height: 28px;
+        height: 32px;
+        font-size: 0.7rem;
+        padding: 0 6px;
+        border-radius: 4px;
+    }
+    .gantt-build-bar .gantt-bar-text {
         font-size: 0.65rem;
-        padding: 0 4px;
-        border-radius: 3px;
     }
     .gantt-bar .gantt-bar-machine {
         display: none;
     }
     .gantt-track {
-        height: 32px;
-        margin: 2px 2px 2px 0;
+        height: 36px;
+        margin: 2px 4px 2px 0;
     }
     .gantt-row {
-        min-height: 40px;
+        min-height: 44px;
+    }
+    .gantt-group-header {
+        min-height: 28px;
+    }
+    .gantt-group-label {
+        font-size: 0.68rem;
+        padding: 4px 10px;
+    }
+    .gantt-time-header {
+        height: 32px;
+    }
+    .gantt-tick-label {
+        font-size: 0.68rem;
     }
     .gantt-day-header {
         padding: 4px 1px;
     }
     .gantt-day-name {
-        font-size: 0.6rem;
+        font-size: 0.62rem;
     }
     .gantt-day-date {
-        font-size: 0.62rem;
+        font-size: 0.65rem;
     }
     .gantt-slot-header {
         font-size: 0.55rem;
     }
     .gantt-legend, .gantt-path-legend {
-        font-size: 0.68rem;
+        font-size: 0.72rem;
         gap: 8px;
     }
-    .page-header {
-        flex-wrap: wrap;
+
+    /* ── Build popover ── */
+    .gantt-build-popover {
+        min-width: 0;
+        width: calc(100vw - 24px);
+        left: 50%;
+        transform: translateX(-50%);
     }
-    .page-header h1 {
-        font-size: 1.1rem;
+
+    /* ── Table view ── */
+    .data-table th,
+    .data-table td {
+        padding: 8px 6px;
+    }
+    .table-bulk-bar {
+        flex-wrap: wrap;
+        gap: 6px;
     }
 }
 

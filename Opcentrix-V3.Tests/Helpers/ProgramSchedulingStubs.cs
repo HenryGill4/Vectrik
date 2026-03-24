@@ -92,8 +92,8 @@ internal sealed class StubProgramSchedulingService : IProgramSchedulingService
     public Task<List<StageExecution>> CreateBuildStageExecutionsAsync(int machineProgramId, string createdBy)
         => Task.FromResult(new List<StageExecution>());
 
-    public Task<PlateReleaseResult> ReleasePlateAsync(int machineProgramId, string releasedBy)
-        => Task.FromResult(new PlateReleaseResult(machineProgramId, [], [], 0));
+    public Task<ProgramPlateReleaseResult> ReleasePlateAsync(int machineProgramId, string releasedBy)
+        => Task.FromResult(new ProgramPlateReleaseResult(machineProgramId, [], [], 0));
 
     public Task LockProgramAsync(int machineProgramId, string lockedBy)
         => Task.CompletedTask;

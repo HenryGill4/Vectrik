@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Opcentrix_V3.Data;
 using Opcentrix_V3.Models;
@@ -90,12 +91,27 @@ public class TenantService : ITenantService
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
 
+        // Use an explicit connection so PRAGMA foreign_keys = OFF survives across
+        // all commands executed by MigrateAsync (SQLite table-rebuild migrations
+        // can fail with 'FOREIGN KEY constraint failed' when FK enforcement is on).
+        await using var connection = new SqliteConnection($"Data Source={dbPath}");
+        await connection.OpenAsync();
+
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA foreign_keys = OFF;";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
         var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
+            .UseSqlite(connection)
             .Options;
 
         using var tenantDb = new TenantDbContext(options);
         await tenantDb.Database.MigrateAsync();
+
+        // Re-enable FK enforcement for seeding and normal operation
+        await tenantDb.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
 
         // Use DataSeedingService when available (B16), for now just ensure DB exists
         var seedingService = _serviceProvider.GetService<IDataSeedingService>();
@@ -103,8 +119,6 @@ public class TenantService : ITenantService
         {
             await seedingService.SeedAsync(tenantDb);
         }
-
-        await Task.CompletedTask;
     }
 
     // --- Tenant user management ---

@@ -85,6 +85,6 @@ public record DatabaseStats(
     int Parts,
     int Jobs,
     int StageExecutions,
-    int BuildPackages,
+    int MachinePrograms,
     int ProductionBatches,
     int WorkOrders);

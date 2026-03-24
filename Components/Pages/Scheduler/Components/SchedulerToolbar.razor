@@ -1,100 +1,110 @@
 @using Opcentrix_V3.Models
 
-<div class="page-header">
-    <h1 class="page-title">📅 Production Scheduler</h1>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-        <a href="/builds" class="btn btn-secondary">📦 Builds</a>
-        <a href="scheduler/capacity" class="btn btn-secondary">📊 Capacity</a>
+@* ── Top bar: title + primary actions ── *@
+<div class="sched-topbar">
+    <div class="sched-topbar-left">
+        <h1 class="sched-title">Production Scheduler</h1>
+        @if (AutoRefreshEnabled)
+        {
+            <span class="sched-live-dot" title="Auto-refresh active"></span>
+        }
+        <span class="sched-last-refresh" title="Last refreshed">@LastRefresh.ToLocalTime().ToString("HH:mm:ss")</span>
+    </div>
+    <div class="sched-topbar-actions">
         @if (ShowAutoSchedule)
         {
-            <button class="btn btn-warning" @onclick="OnAutoScheduleAll" disabled="@Scheduling">
+            <button class="btn btn-warning btn-sm" @onclick="OnAutoScheduleAll" disabled="@Scheduling">
                 @if (Scheduling) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
                 ⚡ Auto-Schedule (@AutoScheduleCount)
             </button>
         }
-        <button class="btn btn-primary" @onclick="OnNewJob">+ New Job</button>
+        <button class="btn btn-primary btn-sm" @onclick="OnNewJob">+ New Job</button>
+        <button class="btn btn-secondary btn-sm" @onclick="OnManualRefresh" title="Refresh now">🔄</button>
     </div>
 </div>
 
-<div class="sched-controls">
-    <div class="sched-controls-left">
+@* ── Tab bar: view switcher ── *@
+<div class="sched-tabbar">
+    <div class="sched-tabs">
+        <button class="sched-tab @(ViewMode == "gantt" ? "sched-tab--active" : "")" @onclick='@(() => OnViewModeChanged.InvokeAsync("gantt"))'>
+            <span class="sched-tab-icon">📅</span>
+            <span class="sched-tab-label">Production</span>
+        </button>
+        <button class="sched-tab @(ViewMode == "demand" ? "sched-tab--active" : "")" @onclick='@(() => OnViewModeChanged.InvokeAsync("demand"))'>
+            <span class="sched-tab-icon">📋</span>
+            <span class="sched-tab-label">Demand</span>
+        </button>
+        <button class="sched-tab @(ViewMode == "programs" ? "sched-tab--active" : "")" @onclick='@(() => OnViewModeChanged.InvokeAsync("programs"))'>
+            <span class="sched-tab-icon">🖨️</span>
+            <span class="sched-tab-label">Programs</span>
+        </button>
+        <button class="sched-tab @(ViewMode == "floor" ? "sched-tab--active" : "")" @onclick='@(() => OnViewModeChanged.InvokeAsync("floor"))'>
+            <span class="sched-tab-icon">🔧</span>
+            <span class="sched-tab-label">Floor</span>
+        </button>
+        <button class="sched-tab @(ViewMode == "data" ? "sched-tab--active" : "")" @onclick='@(() => OnViewModeChanged.InvokeAsync("data"))'>
+            <span class="sched-tab-icon">📊</span>
+            <span class="sched-tab-label">Data</span>
+        </button>
+    </div>
+
+    @* ── Contextual controls: only shown for views that need them ── *@
+    <div class="sched-tab-controls">
         @if (HasGanttViewport)
         {
             <div class="sched-viewport-info">
-                <span class="sched-viewport-date" title="Click to jump to a date">
+                <span class="sched-viewport-date">
                     @ViewportStart.ToString("MMM d") &mdash; @ViewportEnd.ToString("MMM d, yyyy")
                 </span>
-                <span class="sched-viewport-zoom" title="Zoom level">
-                    @(PixelsPerHour.ToString("F1")) px/hr
-                </span>
+                <span class="sched-viewport-zoom">@(PixelsPerHour.ToString("F1")) px/hr</span>
             </div>
             <div class="sched-nav-btns">
                 <button class="btn btn-sm btn-secondary" @onclick="@(() => OnShiftViewport.InvokeAsync(-1))" title="Pan back">◀</button>
-                <button class="btn btn-sm btn-secondary" @onclick="OnScrollToNow" title="Jump to now">Now</button>
+                <button class="btn btn-sm btn-accent" @onclick="OnScrollToNow" title="Jump to now">Now</button>
                 <button class="btn btn-sm btn-secondary" @onclick="@(() => OnShiftViewport.InvokeAsync(1))" title="Pan forward">▶</button>
             </div>
             <div class="sched-nav-btns">
-                <button class="btn btn-sm btn-secondary" @onclick="OnZoomOut" title="Zoom out">➖</button>
-                <button class="btn btn-sm btn-secondary" @onclick="OnZoomIn" title="Zoom in">➕</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnZoomOut" title="Zoom out">−</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnZoomIn" title="Zoom in">+</button>
             </div>
         }
 
-        @* ── Context-Aware Quick Filters (C5) ── *@
+        @* ── Per-view filters ── *@
         @if (ViewMode == "gantt")
         {
-            <div class="sched-quick-filters">
-                <button class="btn btn-sm @(ShowConflictsOnly ? "btn-warning" : "btn-secondary")"
+            <div class="sched-filter-group">
+                <button class="sched-filter-btn @(ShowConflictsOnly ? "sched-filter-btn--active sched-filter-btn--danger" : "")"
                         @onclick="ToggleConflictsOnly"
                         title="Show only overlapping/conflicting executions">
-                    ⚠️ Conflicts Only
+                    ⚠️ Conflicts
                 </button>
             </div>
         }
         else if (ViewMode == "programs")
         {
-            <div class="sched-quick-filters sched-status-pills">
-                <button class="btn btn-sm @(ProgramStatusFilter == null ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetProgramStatusFilter(null)"
-                        title="Show all programs">All</button>
-                <button class="btn btn-sm @(ProgramStatusFilter == ProgramScheduleStatus.Ready ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Ready)"
-                        title="Show Ready programs">Ready</button>
-                <button class="btn btn-sm @(ProgramStatusFilter == ProgramScheduleStatus.Scheduled ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Scheduled)"
-                        title="Show Scheduled programs">Scheduled</button>
-                <button class="btn btn-sm @(ProgramStatusFilter == ProgramScheduleStatus.Printing ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Printing)"
-                        title="Show Printing programs">Printing</button>
-                <button class="btn btn-sm @(ProgramStatusFilter == ProgramScheduleStatus.PostPrint ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.PostPrint)"
-                        title="Show Post-Print programs">Post-Print</button>
+            <div class="sched-filter-group">
+                <button class="sched-filter-btn @(ProgramStatusFilter == null ? "sched-filter-btn--active" : "")"
+                        @onclick="() => SetProgramStatusFilter(null)">All</button>
+                <button class="sched-filter-btn @(ProgramStatusFilter == ProgramScheduleStatus.Ready ? "sched-filter-btn--active" : "")"
+                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Ready)">Ready</button>
+                <button class="sched-filter-btn @(ProgramStatusFilter == ProgramScheduleStatus.Scheduled ? "sched-filter-btn--active" : "")"
+                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Scheduled)">Scheduled</button>
+                <button class="sched-filter-btn @(ProgramStatusFilter == ProgramScheduleStatus.Printing ? "sched-filter-btn--active" : "")"
+                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Printing)">Printing</button>
+                <button class="sched-filter-btn @(ProgramStatusFilter == ProgramScheduleStatus.PostPrint ? "sched-filter-btn--active" : "")"
+                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.PostPrint)">Post-Print</button>
             </div>
         }
         else if (ViewMode == "demand")
         {
-            <div class="sched-quick-filters">
-                <button class="btn btn-sm @(ShowOverdueOnly ? "btn-danger" : "btn-secondary")"
+            <div class="sched-filter-group">
+                <button class="sched-filter-btn @(ShowOverdueOnly ? "sched-filter-btn--active sched-filter-btn--danger" : "")"
                         @onclick="ToggleOverdueOnly"
                         title="Show only overdue work orders">
-                    🔴 Overdue Only
+                    🔴 Overdue
                 </button>
             </div>
         }
-    </div>
-    <div class="sched-controls-right">
-        <div class="sched-view-toggle">
-            <button class="btn btn-sm @(ViewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("gantt"))'>🏭 Production</button>
-            <button class="btn btn-sm @(ViewMode == "demand" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("demand"))'>📋 Demand</button>
-            <button class="btn btn-sm @(ViewMode == "programs" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("programs"))'>📋 Programs</button>
-            <button class="btn btn-sm @(ViewMode == "floor" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("floor"))'>🔧 Floor</button>
-            <button class="btn btn-sm @(ViewMode == "data" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("data"))'>📊 Data</button>
-        </div>
-        <button class="btn btn-secondary btn-sm" @onclick="OnManualRefresh" title="Refresh now">🔄</button>
-        <button class="btn btn-sm @(AutoRefreshEnabled ? "btn-accent" : "btn-secondary")" @onclick="OnToggleAutoRefresh"
-                title="@(AutoRefreshEnabled ? "Auto-refresh ON (30s)" : "Auto-refresh OFF")">
-            @(AutoRefreshEnabled ? "⏱ ON" : "⏱ OFF")
-        </button>
-        <span style="font-size: 0.7rem; color: var(--text-muted); white-space: nowrap;">@LastRefresh.ToLocalTime().ToString("HH:mm:ss")</span>
     </div>
 </div>
 
@@ -109,7 +119,6 @@
     [Parameter] public bool ShowAutoSchedule { get; set; }
     [Parameter] public int AutoScheduleCount { get; set; }
 
-    // C5: Quick filter state parameters
     [Parameter] public bool ShowConflictsOnly { get; set; }
     [Parameter] public ProgramScheduleStatus? ProgramStatusFilter { get; set; }
     [Parameter] public bool ShowOverdueOnly { get; set; }
@@ -126,7 +135,6 @@
     [Parameter] public EventCallback OnAutoScheduleAll { get; set; }
     [Parameter] public EventCallback OnNewJob { get; set; }
 
-    // C5: Quick filter EventCallbacks
     [Parameter] public EventCallback<bool> OnShowConflictsOnlyChanged { get; set; }
     [Parameter] public EventCallback<ProgramScheduleStatus?> OnProgramStatusFilterChanged { get; set; }
     [Parameter] public EventCallback<bool> OnShowOverdueOnlyChanged { get; set; }

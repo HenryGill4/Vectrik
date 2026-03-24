@@ -18,5 +18,15 @@ public class OperatingShift
 
     public bool IsActive { get; set; } = true;
 
+    [MaxLength(500)]
+    public string? Description { get; set; }
+
+    [MaxLength(20)]
+    public string? Color { get; set; }
+
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
+
+    // Navigation
+    public virtual ICollection<MachineShiftAssignment> MachineAssignments { get; set; } = new List<MachineShiftAssignment>();
+    public virtual ICollection<UserShiftAssignment> UserAssignments { get; set; } = new List<UserShiftAssignment>();
 }

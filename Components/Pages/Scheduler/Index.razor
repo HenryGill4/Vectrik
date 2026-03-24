@@ -3,12 +3,8 @@
 @inject IPartService PartService
 @inject IMachineService MachineService
 @inject ISchedulingService Scheduler
-@inject IBuildPlanningService BuildPlanning
-@inject IBuildSchedulingService BuildScheduling
 @inject IProgramSchedulingService ProgramScheduling
 @inject IWorkOrderService WorkOrderService
-@inject IBuildTemplateService BuildTemplateService
-@inject IBuildSuggestionService BuildSuggestionService
 @inject IMachineProgramService ProgramService
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @inject ToastService Toast
@@ -29,10 +25,9 @@
                  Scheduling="_scheduling"
                  AutoRefreshEnabled="_autoRefreshEnabled"
                  LastRefresh="_lastRefresh"
-                 ShowAutoSchedule="@(_unscheduled.Any() || ReadyBuilds.Any(b => b.Status == BuildPackageStatus.Ready))"
-                 AutoScheduleCount="@(_unscheduled.Count + ReadyBuilds.Count(b => b.Status == BuildPackageStatus.Ready))"
+                 ShowAutoSchedule="@(_unscheduled.Any() || _programs.Any(p => p.ScheduleStatus == ProgramScheduleStatus.Ready))"
+                 AutoScheduleCount="@(_unscheduled.Count + _programs.Count(p => p.ScheduleStatus == ProgramScheduleStatus.Ready))"
                  ShowConflictsOnly="_showConflictsOnly"
-                 BuildStatusFilter="_buildStatusFilter"
                  ProgramStatusFilter="_programStatusFilter"
                  ShowOverdueOnly="_showOverdueOnly"
                  OnViewModeChanged="OnViewModeChangedAsync"
@@ -43,9 +38,8 @@
                  OnManualRefresh="ManualRefreshAsync"
                  OnToggleAutoRefresh="ToggleAutoRefresh"
                  OnAutoScheduleAll="AutoScheduleAll"
-                 OnNewJob="() => _showCreate = true"
+                 OnNewJob="() => _showScheduleWizard = true"
                  OnShowConflictsOnlyChanged="v => _showConflictsOnly = v"
-                 OnBuildStatusFilterChanged="v => _buildStatusFilter = v"
                  OnProgramStatusFilterChanged="v => _programStatusFilter = v"
                  OnShowOverdueOnlyChanged="v => _showOverdueOnly = v" />
 
@@ -59,11 +53,9 @@ else if (_viewMode == "gantt")
     <KpiStrip Executions="_executions"
               Unscheduled="_unscheduled"
               Machines="_machines"
-              BuildPackages="_buildPackages"
               WorkOrders="_workOrders" />
     <ActionQueue Executions="_executions"
                  Unscheduled="_unscheduled"
-                 BuildPackages="_buildPackages"
                  WorkOrders="_workOrders"
                  OnShowReschedule="ShowReschedule"
                  OnAutoSchedule="AutoScheduleSingle" />
@@ -72,14 +64,13 @@ else if (_viewMode == "gantt")
                Unscheduled="_unscheduled"
                Machines="_machines"
                Stages="_stages"
-               BuildPackages="_buildPackages"
-               MachineTimelines="_machineTimelines"
+               BuildPrograms="_programs"
+               MachineTimelines="_programTimelines"
                DataRangeStart="_dataRangeStart"
                DataRangeEnd="_dataRangeEnd"
                PixelsPerHour="_pixelsPerHour"
                ShowConflictsOnly="_showConflictsOnly"
                OnShowReschedule="ShowReschedule"
-               OnBuildAction="HandleBuildAction"
                OnManualSchedule="ManualScheduleSingle"
                OnAutoSchedule="AutoScheduleSingle"
                OnPixelsPerHourChanged="HandlePixelsPerHourChanged"
@@ -125,8 +116,8 @@ else if (_viewMode == "floor")
 else if (_viewMode == "data")
 {
     <div class="sched-data-toggle" style="margin-bottom: 8px;">
-        <button class="btn btn-sm @(_dataSubView == "table" ? "btn-primary" : "btn-secondary")" @onclick='() => _dataSubView = "table"'>📊 Table</button>
-        <button class="btn btn-sm @(_dataSubView == "path" ? "btn-primary" : "btn-secondary")" @onclick='() => _dataSubView = "path"'>🔀 Part Path</button>
+        <button class="btn btn-sm @(_dataSubView == "table" ? "btn-primary" : "btn-secondary")" @onclick='() => _dataSubView = "table"'>Table</button>
+        <button class="btn btn-sm @(_dataSubView == "path" ? "btn-primary" : "btn-secondary")" @onclick='() => _dataSubView = "path"'>Part Path</button>
     </div>
     @if (_dataSubView == "path")
     {
@@ -156,7 +147,7 @@ else if (_viewMode == "data")
 </div>
 </div>
 
-@* ── Modals (extracted components) ── *@
+@* ── Modals ── *@
 <Opcentrix_V3.Components.Pages.Scheduler.Modals.RescheduleModal
     IsVisible="_showReschedule"
     Execution="_rescheduleExec"
@@ -167,12 +158,12 @@ else if (_viewMode == "data")
     OnClose="() => { _showReschedule = false; }"
     OnConfirm="OnModalConfirmedAsync" />
 
-<Opcentrix_V3.Components.Pages.Scheduler.Modals.CreateJobModal
-    IsVisible="_showCreate"
-    Parts="_parts"
+<Opcentrix_V3.Components.Pages.Scheduler.Modals.UnifiedScheduleWizard
+    IsVisible="_showScheduleWizard"
+    Machines="_machines"
     UserName="@_userName"
-    OnClose="() => { _showCreate = false; }"
-    OnCreated="OnModalConfirmedAsync" />
+    OnClose="() => { _showScheduleWizard = false; }"
+    OnScheduled="OnModalConfirmedAsync" />
 
 <ConfirmDialog @ref="_confirmDialog" />
 
@@ -195,13 +186,9 @@ else if (_viewMode == "data")
     private List<Machine> _machines = new();
     private List<Part>? _parts;
     private List<ProductionStage> _stages = new();
-    private List<BuildPackage> _buildPackages = new();
-    private Dictionary<int, List<MachineTimelineEntry>> _machineTimelines = new();
     private Dictionary<int, List<ProgramTimelineEntry>> _programTimelines = new();
     private List<WorkOrder> _workOrders = new();
-    private List<BuildTemplate> _buildTemplates = new();
     private List<MachineProgram> _programs = new();
-    private BuildSuggestionResult? _suggestions;
 
     private GanttView? _ganttView;
     private ProgramsView? _programsView;
@@ -213,13 +200,10 @@ else if (_viewMode == "data")
     private DateTime _dataRangeStart = DateTime.UtcNow.Date.AddDays(-7);
     private DateTime _dataRangeEnd = DateTime.UtcNow.Date.AddDays(21);
 
-    // Configurable settings (loaded from SystemSettings)
     private int _autoRefreshSeconds = 30;
-
-    // Tab data staleness tracking: last time each tab's data was loaded
     private readonly Dictionary<string, DateTime> _tabLastLoaded = new();
 
-    private bool _showCreate;
+    private bool _showScheduleWizard;
     private bool _showReschedule;
     private ConfirmDialog _confirmDialog = null!;
     private StageExecution? _rescheduleExec;
@@ -227,9 +211,7 @@ else if (_viewMode == "data")
     private DateTime _rescheduleStart;
     private DateTime _rescheduleEnd;
 
-    // C5: Quick filter state
     private bool _showConflictsOnly;
-    private BuildPackageStatus? _buildStatusFilter;
     private ProgramScheduleStatus? _programStatusFilter;
     private bool _showOverdueOnly;
 
@@ -237,7 +219,6 @@ else if (_viewMode == "data")
     {
         if (!string.IsNullOrEmpty(ViewParam))
         {
-            // Map legacy tab names to new names for backward compatibility
             _viewMode = ViewParam switch
             {
                 "orders" => "demand",
@@ -275,9 +256,7 @@ else if (_viewMode == "data")
         {
             _refreshing = true;
             if (ActiveViewport != null)
-            {
                 await ActiveViewport.SaveStateAsync();
-            }
         }
         else
         {
@@ -286,9 +265,7 @@ else if (_viewMode == "data")
         StateHasChanged();
         try
         {
-            // Shared data needed by toolbar (auto-schedule count, ready builds)
             await LoadSharedDataAsync();
-            // Only load data for the active tab
             await LoadActiveTabDataAsync();
 
             _ganttView?.Viewport?.RequestReinit();
@@ -344,20 +321,14 @@ else if (_viewMode == "data")
             if (settings.TryGetValue("scheduler.gantt_default_zoom", out var zoomVal) && double.TryParse(zoomVal, out var zoom))
                 _pixelsPerHour = zoom;
         }
-        catch
-        {
-            // Use defaults if settings can't be loaded
-        }
+        catch { }
     }
 
-    /// <summary>Loads data shared across all tabs (toolbar state: unscheduled count, build packages).</summary>
     private async Task LoadSharedDataAsync()
     {
-        _buildPackages = await BuildPlanning.GetAllPackagesAsync();
         _unscheduled = await StageService.GetUnscheduledExecutionsAsync();
     }
 
-    /// <summary>Loads data specific to the active tab only.</summary>
     private async Task LoadActiveTabDataAsync()
     {
         switch (_viewMode)
@@ -385,7 +356,8 @@ else if (_viewMode == "data")
     {
         _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
         _workOrders = await WorkOrderService.GetWorkOrdersByStatusesAsync(WorkOrderStatus.Released, WorkOrderStatus.InProgress);
-        await LoadMachineTimelinesAsync();
+        _programs = await ProgramService.GetBuildPlateProgramsAsync();
+        await LoadProgramTimelinesAsync();
     }
 
     private async Task LoadDemandDataAsync()
@@ -415,7 +387,6 @@ else if (_viewMode == "data")
         if (_viewMode == newMode) return;
         _viewMode = newMode;
 
-        // Load data for the new tab if stale or never loaded
         if (!_tabLastLoaded.TryGetValue(newMode, out var lastLoaded)
             || (DateTime.UtcNow - lastLoaded).TotalSeconds > _autoRefreshSeconds)
         {
@@ -423,118 +394,43 @@ else if (_viewMode == "data")
         }
     }
 
-    private List<BuildPackage> ReadyBuilds => _buildPackages
-        .Where(b => b.Status == BuildPackageStatus.Ready || (b.Status == BuildPackageStatus.Sliced && b.IsSlicerDataEntered))
-        .ToList();
-
     private List<Machine> SlsMachines => _machines
         .Where(m => m.IsAvailableForScheduling && m.IsAdditiveMachine)
         .ToList();
 
-    private async Task LoadMachineTimelinesAsync()
+    /// <summary>Loads ProgramTimelineEntry per machine for Gantt and Programs views.</summary>
+    private async Task LoadProgramTimelinesAsync()
     {
-        var timelines = new Dictionary<int, List<MachineTimelineEntry>>();
+        var timelines = new Dictionary<int, List<ProgramTimelineEntry>>();
 
-        // Load timelines for ALL machines that have build-level executions,
-        // not just SLS machines. Depowder, Wire EDM, etc. need per-run
-        // timeline entries so GanttMachineRow renders them as individual bars.
-        var buildMachineIds = _executions
-            .Where(e => e.BuildPackageId != null && e.MachineId.HasValue)
+        var machineIds = _executions
+            .Where(e => e.MachineProgramId != null && e.MachineId.HasValue)
             .Select(e => e.MachineId!.Value)
             .Distinct()
             .ToHashSet();
 
-        // Also include machines with program-based executions
-        var programMachineIds = _executions
-            .Where(e => e.MachineProgramId != null && e.MachineId.HasValue)
-            .Select(e => e.MachineId!.Value)
-            .Distinct();
-        foreach (var mid in programMachineIds)
-            buildMachineIds.Add(mid);
-
-        // Always include SLS machines (they may have scheduled packages/programs without executions yet)
         foreach (var m in SlsMachines)
-            buildMachineIds.Add(m.Id);
+            machineIds.Add(m.Id);
 
-        var tasks = buildMachineIds.Select(async machineId =>
+        var tasks = machineIds.Select(async machineId =>
         {
             try
             {
-                // Get legacy build timeline
-                var buildTimeline = await BuildScheduling.GetMachineTimelineAsync(machineId, _dataRangeStart, _dataRangeEnd);
-
-                // Get program timeline and convert to MachineTimelineEntry for UI compatibility
-                var programTimeline = await ProgramScheduling.GetMachineTimelineAsync(machineId, _dataRangeStart, _dataRangeEnd);
-                var convertedPrograms = programTimeline.Select(p => new MachineTimelineEntry(
-                    BuildPackageId: -p.MachineProgramId, // Negative ID to distinguish from builds
-                    BuildName: p.ProgramName,
-                    PrintStart: p.PrintStart,
-                    PrintEnd: p.PrintEnd,
-                    ChangeoverStart: p.ChangeoverStart,
-                    ChangeoverEnd: p.ChangeoverEnd,
-                    Status: ConvertProgramStatusToBuildStatus(p.ScheduleStatus),
-                    StageExecutionId: p.StageExecutionId,
-                    HasChangeoverConflict: p.HasChangeoverConflict
-                )).ToList();
-
-                // Merge both timelines, avoiding duplicates (program entries may already exist in build timeline)
-                var existingBuildIds = buildTimeline.Select(b => b.BuildPackageId).ToHashSet();
-                var merged = buildTimeline.ToList();
-                merged.AddRange(convertedPrograms.Where(p => !existingBuildIds.Contains(p.BuildPackageId)));
-
-                return (machineId, Timeline: merged.OrderBy(e => e.PrintStart).ToList());
+                var timeline = await ProgramScheduling.GetMachineTimelineAsync(machineId, _dataRangeStart, _dataRangeEnd);
+                return (machineId, Timeline: timeline);
             }
             catch
             {
-                return (machineId, Timeline: new List<MachineTimelineEntry>());
+                return (machineId, Timeline: new List<ProgramTimelineEntry>());
             }
         });
 
         var results = await Task.WhenAll(tasks);
         foreach (var (machineId, timeline) in results)
-        {
             timelines[machineId] = timeline;
-        }
 
-        _machineTimelines = timelines;
-    }
-
-    /// <summary>Loads ProgramTimelineEntry per SLS machine for ProgramsView.</summary>
-    private async Task LoadProgramTimelinesAsync()
-    {
-        var timelines = new Dictionary<int, List<ProgramTimelineEntry>>();
-        var tasks = SlsMachines.Select(async machine =>
-        {
-            try
-            {
-                var timeline = await ProgramScheduling.GetMachineTimelineAsync(machine.Id, _dataRangeStart, _dataRangeEnd);
-                return (machine.Id, Timeline: timeline);
-            }
-            catch
-            {
-                return (machine.Id, Timeline: new List<ProgramTimelineEntry>());
-            }
-        });
-        var results = await Task.WhenAll(tasks);
-        foreach (var (machineId, timeline) in results)
-        {
-            timelines[machineId] = timeline;
-        }
         _programTimelines = timelines;
     }
-
-    private static BuildPackageStatus ConvertProgramStatusToBuildStatus(ProgramScheduleStatus programStatus) =>
-        programStatus switch
-        {
-            ProgramScheduleStatus.None => BuildPackageStatus.Draft,
-            ProgramScheduleStatus.Ready => BuildPackageStatus.Sliced,
-            ProgramScheduleStatus.Scheduled => BuildPackageStatus.Scheduled,
-            ProgramScheduleStatus.Printing => BuildPackageStatus.Printing,
-            ProgramScheduleStatus.PostPrint => BuildPackageStatus.PostPrint,
-            ProgramScheduleStatus.Completed => BuildPackageStatus.Completed,
-            ProgramScheduleStatus.Cancelled => BuildPackageStatus.Cancelled,
-            _ => BuildPackageStatus.Draft
-        };
 
     private void HandlePixelsPerHourChanged(double newPph) => _pixelsPerHour = newPph;
 
@@ -553,13 +449,11 @@ else if (_viewMode == "data")
         _dataRangeStart = newStart < _dataRangeStart ? newStart : _dataRangeStart;
         _dataRangeEnd = newEnd > _dataRangeEnd ? newEnd : _dataRangeEnd;
 
-        // Re-fetch data for the extended range
         try
         {
             _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
-            await LoadMachineTimelinesAsync();
+            await LoadProgramTimelinesAsync();
 
-            // Update JS module with the new data range
             if (_ganttView?.Viewport != null)
                 await _ganttView.Viewport.UpdateDataRangeInJsAsync();
             if (_programsView?.Viewport != null)
@@ -589,7 +483,7 @@ else if (_viewMode == "data")
     private async Task OnModalConfirmedAsync()
     {
         _showReschedule = false;
-        _showCreate = false;
+        _showScheduleWizard = false;
         await LoadData(isBackgroundRefresh: true);
     }
 
@@ -609,7 +503,6 @@ else if (_viewMode == "data")
         _rescheduleStart = DateTime.UtcNow;
         _rescheduleEnd = DateTime.UtcNow.AddHours(exec.EstimatedHours ?? 4);
 
-        // Pre-select a compatible machine if the stage requires one
         if (exec.ProductionStage?.RequiresMachineAssignment == true)
         {
             var compatibleMachine = _machines.FirstOrDefault(m =>
@@ -641,95 +534,26 @@ else if (_viewMode == "data")
         {
             var count = await Scheduler.AutoScheduleAllAsync();
 
-            // Also schedule any Ready builds on SLS machines with load balancing
-            var readyBuilds = ReadyBuilds.Where(b => b.Status == BuildPackageStatus.Ready).ToList();
-            var buildCount = 0;
-            var slsMachineList = SlsMachines;
-            foreach (var build in readyBuilds)
+            // Also auto-schedule any Ready programs
+            var readyPrograms = _programs.Where(p => p.ScheduleStatus == ProgramScheduleStatus.Ready).ToList();
+            var programCount = 0;
+            foreach (var prog in readyPrograms)
             {
                 try
                 {
-                    // Find the SLS machine with the earliest available slot
-                    Machine? bestMachine = null;
-                    var bestEnd = DateTime.MaxValue;
-                    foreach (var machine in slsMachineList)
-                    {
-                        var slot = await BuildScheduling.FindEarliestBuildSlotAsync(
-                            machine.Id,
-                            build.EstimatedDurationHours ?? 24,
-                            DateTime.UtcNow);
-                        if (slot.PrintEnd < bestEnd)
-                        {
-                            bestMachine = machine;
-                            bestEnd = slot.PrintEnd;
-                        }
-                    }
-                    if (bestMachine != null)
-                    {
-                        await BuildScheduling.ScheduleBuildAsync(build.Id, bestMachine.Id);
-                        buildCount++;
-                    }
+                    await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(prog.Id);
+                    programCount++;
                 }
-                catch { /* skip builds that can't be scheduled */ }
+                catch { }
             }
 
             var msg = $"Auto-scheduled {count} job(s)";
-            if (buildCount > 0) msg += $" + {buildCount} build(s)";
+            if (programCount > 0) msg += $" + {programCount} program(s)";
             Toast.ShowSuccess(msg);
             await LoadData(isBackgroundRefresh: true);
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
         finally { _scheduling = false; }
-    }
-
-    private async Task HandleBuildAction((BuildPackage Build, string Action) args)
-    {
-        var (build, action) = args;
-        try
-        {
-            switch (action)
-            {
-                case "start-print":
-                {
-                    var ok = await _confirmDialog.ShowAsync(
-                        $"Start print for \"{build.Name}\"?", "Confirm Start Print");
-                    if (!ok) return;
-                    build.Status = BuildPackageStatus.Printing;
-                    build.PrintStartedAt = DateTime.UtcNow;
-                    build.LastModifiedBy = _userName;
-                    build.LastModifiedDate = DateTime.UtcNow;
-                    await BuildPlanning.UpdatePackageAsync(build);
-                    Toast.ShowSuccess($"{build.Name} → Printing");
-                    break;
-                }
-                case "post-print":
-                {
-                    var ok = await _confirmDialog.ShowAsync(
-                        $"Mark \"{build.Name}\" print as complete and move to Post-Print?",
-                        "Confirm Post-Print Transition");
-                    if (!ok) return;
-                    build.Status = BuildPackageStatus.PostPrint;
-                    build.PrintCompletedAt = DateTime.UtcNow;
-                    build.LastModifiedBy = _userName;
-                    build.LastModifiedDate = DateTime.UtcNow;
-                    await BuildPlanning.UpdatePackageAsync(build);
-                    Toast.ShowSuccess($"{build.Name} → Post-Print");
-                    break;
-                }
-                case "release-plate":
-                {
-                    var ok = await _confirmDialog.ShowAsync(
-                        $"Release plate for \"{build.Name}\"? This will create part instances and per-part jobs.",
-                        "Confirm Plate Release");
-                    if (!ok) return;
-                    var result = await BuildScheduling.ReleasePlateAsync(build.Id, _userName);
-                    Toast.ShowSuccess($"Plate released: {result.TotalPartCount} part instance(s) created.");
-                    break;
-                }
-            }
-            await LoadData(isBackgroundRefresh: true);
-        }
-        catch (Exception ex) { Toast.ShowError($"Build action failed: {ex.Message}"); }
     }
 
     public ValueTask DisposeAsync()

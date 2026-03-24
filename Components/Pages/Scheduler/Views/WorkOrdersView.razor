@@ -133,12 +133,12 @@
                     }
                     else
                     {
-                        var additiveLinesNeedingSchedule = wo.Lines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+                        var linesNeedingSchedule = wo.Lines.Where(l => GetOutstanding(l) > 0).ToList();
                         <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
-                            @if (additiveLinesNeedingSchedule.Any())
+                            @if (linesNeedingSchedule.Any())
                             {
-                                <button class="btn btn-sm btn-accent" @onclick="() => OpenProgramWizard(wo)" title="Open the Program Schedule Wizard to select and schedule programs for all SLS parts">
-                                    🖨️ Schedule via Programs (@additiveLinesNeedingSchedule.Count)
+                                <button class="btn btn-sm btn-accent" @onclick="() => OpenWizard(wo)" title="Open unified wizard to schedule all outstanding parts">
+                                    Schedule All (@linesNeedingSchedule.Count lines)
                                 </button>
                             }
                         </div>
@@ -210,36 +210,18 @@
                                             {
                                                 <span class="badge badge-info" style="font-size:0.7rem;">Jobs exist</span>
                                             }
-                                            @if (isAdditive)
+                                            <button class="btn btn-sm btn-primary" @onclick="() => OpenWizardForLine(wo, line)" title="Schedule this part">
+                                                @(isAdditive ? "Schedule Build" : "Schedule Job")
+                                            </button>
+                                            @if (inPrograms > 0)
                                             {
-                                                <button class="btn btn-sm btn-primary" @onclick="() => OpenProgramWizardForLine(wo, line)" title="Open program wizard to select or create programs for this part">
-                                                    🖨️ Schedule via Programs
-                                                </button>
-                                                @if (inPrograms > 0)
-                                                {
-                                                    <span class="badge badge-accent" style="font-size: 0.7rem;">@inPrograms in programs</span>
-                                                }
+                                                <span class="badge badge-accent" style="font-size: 0.7rem;">@inPrograms in programs</span>
                                             }
-                                            else
+                                            @if (HasUnscheduledJobs(line))
                                             {
-                                                @if (!hasJobs)
-                                                {
-                                                    <button class="btn btn-sm btn-accent" @onclick="() => OpenWoJobModal(wo, line)" title="Generate and auto-schedule a job for this part">
-                                                        ⚙️ Schedule Job
-                                                    </button>
-                                                }
-                                                else
-                                                {
-                                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenWoJobModal(wo, line)" title="Create another job for remaining quantity">
-                                                        ⚙️ Add Job
-                                                    </button>
-                                                    @if (HasUnscheduledJobs(line))
-                                                    {
-                                                        <button class="btn btn-sm btn-primary" @onclick="() => AutoScheduleLineJobsAsync(line)" title="Auto-schedule all Draft jobs on this line">
-                                                            📅 Auto-Schedule
-                                                        </button>
-                                                    }
-                                                }
+                                                <button class="btn btn-sm btn-secondary" @onclick="() => AutoScheduleLineJobsAsync(line)" title="Auto-schedule draft jobs">
+                                                    Auto-Schedule
+                                                </button>
                                             }
                                         </div>
                                     }
@@ -253,22 +235,14 @@
     }
 </div>
 
-@* ── WO-specific Modals ── *@
-<WoJobModal
-    IsVisible="_showWoJobModal"
-    WorkOrder="_selectedWo"
-    WorkOrderLine="_selectedWoLine"
-    UserName="@UserName"
-    OnClose="() => { _showWoJobModal = false; }"
-    OnScheduled="OnModalConfirmedAsync" />
-
-<ProgramScheduleWizard
-    IsVisible="_showProgramWizard"
+@* ── Unified Schedule Wizard ── *@
+<UnifiedScheduleWizard
+    IsVisible="_showWizard"
     WorkOrder="_wizardWo"
     Lines="_wizardLines"
-    SlsMachines="SlsMachines"
+    Machines="SlsMachines"
     UserName="@UserName"
-    OnClose="() => { _showProgramWizard = false; }"
+    OnClose="() => { _showWizard = false; }"
     OnScheduled="OnModalConfirmedAsync" />
 
 @code {
@@ -279,15 +253,10 @@
     [Parameter] public bool ShowOverdueOnly { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
-    // Program Schedule Wizard state
-    private bool _showProgramWizard;
+    // Unified wizard state
+    private bool _showWizard;
     private WorkOrder? _wizardWo;
     private List<WorkOrderLine>? _wizardLines;
-
-    // WO Job modal state
-    private bool _showWoJobModal;
-    private WorkOrder? _selectedWo;
-    private WorkOrderLine? _selectedWoLine;
 
     // Stat filter
     private string? _statFilter;
@@ -298,8 +267,7 @@
 
     private async Task OnModalConfirmedAsync()
     {
-        _showWoJobModal = false;
-        _showProgramWizard = false;
+        _showWizard = false;
         await OnRefreshRequested.InvokeAsync();
     }
 
@@ -350,7 +318,7 @@
                 && p.ProgramParts != null
                 && p.ProgramParts.Any(pp => pp.PartId == line.PartId))
             .SelectMany(p => p.ProgramParts!.Where(pp => pp.PartId == line.PartId))
-            .Sum(pp => pp.Quantity);
+            .Sum(pp => pp.Quantity * pp.StackLevel);
     }
 
     private static bool IsAdditiveLine(WorkOrderLine line) =>
@@ -373,25 +341,18 @@
     private static bool HasUnscheduledJobs(WorkOrderLine line) =>
         line.Jobs?.Any(j => j.Status == JobStatus.Draft) == true;
 
-    private void OpenProgramWizard(WorkOrder wo)
+    private void OpenWizard(WorkOrder wo)
     {
         _wizardWo = wo;
-        _wizardLines = wo.Lines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
-        _showProgramWizard = true;
+        _wizardLines = wo.Lines.Where(l => GetOutstanding(l) > 0).ToList();
+        _showWizard = true;
     }
 
-    private void OpenProgramWizardForLine(WorkOrder wo, WorkOrderLine line)
+    private void OpenWizardForLine(WorkOrder wo, WorkOrderLine line)
     {
         _wizardWo = wo;
         _wizardLines = [line];
-        _showProgramWizard = true;
-    }
-
-    private void OpenWoJobModal(WorkOrder wo, WorkOrderLine line)
-    {
-        _selectedWo = wo;
-        _selectedWoLine = line;
-        _showWoJobModal = true;
+        _showWizard = true;
     }
 
     private async Task AutoScheduleLineJobsAsync(WorkOrderLine line)

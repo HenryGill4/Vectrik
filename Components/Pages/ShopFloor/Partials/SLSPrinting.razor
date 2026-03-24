@@ -12,23 +12,22 @@
         <div class="card-header">📦 Build Plate: @_program.Name</div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
             <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? _program.Machine?.Name ?? "—")</div></div>
-            <div><span class="form-label">Material</span><div>@(_program.Material ?? "—")</div></div>
+            <div><span class="form-label">Material</span><div>@(_program.Material?.Name ?? "—")</div></div>
             <div><span class="form-label">Total Parts</span><div>@_program.TotalPartCount (@_program.UniquePartCount unique)</div></div>
             <div><span class="form-label">Est. Duration</span><div>@(_program.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div></div>
-            <div><span class="form-label">Revision</span><div>@(_program.CurrentRevision ?? 0)</div></div>
+            <div><span class="form-label">Revision</span><div>@(_program.Version)</div></div>
         </div>
 
-        @if (_program.BuildFileInfo != null)
+        @if (_program.HasSlicerData)
         {
-            var bfi = _program.BuildFileInfo;
             <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 6px; margin-bottom: 12px;">
                 <div class="form-label" style="margin-bottom: 4px;">Slice File Data</div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
-                    <div>Layers: @(bfi.LayerCount?.ToString("N0") ?? "—")</div>
-                    <div>Height: @(bfi.BuildHeightMm?.ToString("F1") ?? "—") mm</div>
-                    <div>Print Time: @(bfi.EstimatedPrintTimeHours?.ToString("F1") ?? "—") hrs</div>
-                    <div>Powder: @(bfi.EstimatedPowderKg?.ToString("F2") ?? "—") kg</div>
-                    <div>Slicer: @(bfi.SlicerSoftware ?? "—") @bfi.SlicerVersion</div>
+                    <div>Layers: @(_program.LayerCount?.ToString("N0") ?? "—")</div>
+                    <div>Height: @(_program.BuildHeightMm?.ToString("F1") ?? "—") mm</div>
+                    <div>Print Time: @(_program.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div>
+                    <div>Powder: @(_program.EstimatedPowderKg?.ToString("F2") ?? "—") kg</div>
+                    <div>Slicer: @(_program.SlicerSoftware ?? "—") @_program.SlicerVersion</div>
                 </div>
             </div>
         }
@@ -58,19 +57,19 @@
             <div class="form-group">
                 <label class="form-label">Current Layer</label>
                 <input class="form-control" type="number" inputmode="numeric" min="0"
-                       max="@(_program.BuildFileInfo?.LayerCount ?? 99999)"
+                       max="@(_program.LayerCount ?? 99999)"
                        @bind="_currentLayer" />
             </div>
             <div>
                 <span class="form-label">Total Layers</span>
-                <div style="font-size: 1.1rem; font-weight: 600;">@(_program.BuildFileInfo?.LayerCount?.ToString("N0") ?? "—")</div>
+                <div style="font-size: 1.1rem; font-weight: 600;">@(_program.LayerCount?.ToString("N0") ?? "—")</div>
             </div>
             <div>
                 <span class="form-label">Progress</span>
                 <div style="font-size: 1.1rem; font-weight: 600;">@(_progressPercent.ToString("F1"))%</div>
             </div>
         </div>
-        @if (_program.BuildFileInfo?.LayerCount > 0)
+        @if (_program.LayerCount > 0)
         {
             <div style="background: var(--bg-tertiary); border-radius: 4px; height: 20px; overflow: hidden;">
                 <div style="background: var(--accent); height: 100%; width: @(_progressPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%; transition: width 0.3s;"></div>
@@ -112,8 +111,8 @@ else
 
     private MachineProgram? _program;
     private int _currentLayer;
-    private double _progressPercent => _program?.BuildFileInfo?.LayerCount > 0
-        ? Math.Min(100.0, _currentLayer * 100.0 / _program.BuildFileInfo.LayerCount.Value)
+    private double _progressPercent => _program?.LayerCount > 0
+        ? Math.Min(100.0, _currentLayer * 100.0 / _program.LayerCount.Value)
         : 0;
     private string _operatorName => Execution?.OperatorName ?? "Operator";
 

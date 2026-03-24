@@ -1,4 +1,4 @@
-@* ── KPI Strip: at-a-glance production metrics for the scheduler ── *@
+@* ── KPI Strip: at-a-glance production metrics ── *@
 
 <div class="sched-kpi-strip">
     <div class="sched-kpi" title="Stage executions currently in progress">
@@ -28,6 +28,10 @@
             <span class="sched-kpi-label">Conflicts</span>
         </div>
     }
+    <div class="sched-kpi sched-kpi--muted" title="Total scheduled hours in date range">
+        <span class="sched-kpi-value">@TotalHours.ToString("F0")h</span>
+        <span class="sched-kpi-label">Scheduled</span>
+    </div>
 </div>
 
 @code {
@@ -37,6 +41,8 @@
     [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
 
     private int InProgressCount => Executions.Count(e => e.Status == StageExecutionStatus.InProgress);
+
+    private double TotalHours => Executions.Sum(e => e.EstimatedHours ?? 0);
 
     private int DueTodayCount
     {

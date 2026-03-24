@@ -34,7 +34,7 @@
                         <div class="schedule-diag-run-header" @onclick="() => ToggleRun(runIdx)">
                             <strong>Run #@(runIdx + 1)</strong>
                             <span class="schedule-diag-meta">
-                                @report.Operation | Build #@report.BuildPackageId
+                                @report.Operation | @report.TotalExecutionsCreated stage(s)
                                 | @report.TotalExecutionsCreated exec(s)
                                 @if (report.UnassignedCount > 0)
                                 {
@@ -175,7 +175,7 @@
 
         foreach (var (report, idx) in Reports.Select((r, i) => (r, i)))
         {
-            lines.Add($"--- Run #{idx + 1}: {report.Operation} Build#{report.BuildPackageId} ---");
+            lines.Add($"--- Run #{idx + 1}: {report.Operation} ---");
             foreach (var slot in report.BuildSlots)
                 lines.Add($"  Build Slot: {slot.MachineName} {slot.SlotStart:MM/dd HH:mm}→{slot.SlotEnd:MM/dd HH:mm} ({slot.DurationHours:F1}h)");
             foreach (var w in report.Warnings)

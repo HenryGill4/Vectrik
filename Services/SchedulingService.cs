@@ -9,11 +9,13 @@ public class SchedulingService : ISchedulingService
 {
     private readonly TenantDbContext _db;
     private readonly IMachineProgramService _programService;
+    private readonly IShiftManagementService _shiftService;
 
-    public SchedulingService(TenantDbContext db, IMachineProgramService programService)
+    public SchedulingService(TenantDbContext db, IMachineProgramService programService, IShiftManagementService shiftService)
     {
         _db = db;
         _programService = programService;
+        _shiftService = shiftService;
     }
 
     public async Task AutoScheduleJobAsync(int jobId, DateTime? startAfter = null)
@@ -55,11 +57,15 @@ public class SchedulingService : ISchedulingService
         if (diagnostics is not null)
             diagnostics = diagnostics with { ExecutionCount = executions.Count };
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
         var allMachines = await _db.Machines
             .Where(m => m.IsActive && m.IsAvailableForScheduling)
             .ToListAsync();
         var machineNames = allMachines.ToDictionary(m => m.Id, m => m.Name ?? m.MachineId);
+
+        // Load per-machine shift map (falls back to all active shifts for machines without assignments)
+        var machineShiftMap = await _shiftService.GetMachineShiftMapAsync(allMachines.Select(m => m.Id));
+        // Keep a global fallback for unassigned-machine scheduling
+        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
 
         // Load part stage requirements for machine preference resolution (legacy fallback)
         var routing = await _db.PartStageRequirements
@@ -160,8 +166,8 @@ public class SchedulingService : ISchedulingService
             if (!capableMachines.Any())
             {
                 // No machine available — schedule without machine assignment
-                var slotStart = SnapToNextShiftStart(cursor, shifts);
-                var slotEnd = AdvanceByWorkHours(slotStart, totalDuration, shifts);
+                var slotStart = ShiftTimeHelper.SnapToNextShiftStart(cursor, shifts);
+                var slotEnd = ShiftTimeHelper.AdvanceByWorkHours(slotStart, totalDuration, shifts);
                 exec.ScheduledStartAt = slotStart;
                 exec.ScheduledEndAt = slotEnd;
                 exec.MachineId = null;
@@ -188,7 +194,8 @@ public class SchedulingService : ISchedulingService
 
             foreach (var machine in capableMachines)
             {
-                var slot = await FindEarliestSlotOnMachine(machine.Id, totalDuration, cursor, shifts);
+                var mShifts = machineShiftMap.GetValueOrDefault(machine.Id, shifts);
+                var slot = await FindEarliestSlotOnMachine(machine.Id, totalDuration, cursor, mShifts);
                 if (bestSlot == null || slot.End < bestSlot.End)
                 {
                     bestSlot = slot;
@@ -242,8 +249,9 @@ public class SchedulingService : ISchedulingService
 
         if (exec == null) throw new InvalidOperationException("Stage execution not found.");
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
         var allMachines = await _db.Machines.Where(m => m.IsActive && m.IsAvailableForScheduling).ToListAsync();
+        var machineShiftMap = await _shiftService.GetMachineShiftMapAsync(allMachines.Select(m => m.Id));
+        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
 
         var requirement = exec.Job != null
             ? await _db.PartStageRequirements.FirstOrDefaultAsync(r =>
@@ -310,7 +318,8 @@ public class SchedulingService : ISchedulingService
             ScheduleSlot? bestSlot = null;
             foreach (var machine in capableMachines)
             {
-                var slot = await FindEarliestSlotOnMachine(machine.Id, totalDuration, notBefore, shifts);
+                var mShifts = machineShiftMap.GetValueOrDefault(machine.Id, shifts);
+                var slot = await FindEarliestSlotOnMachine(machine.Id, totalDuration, notBefore, mShifts);
                 if (bestSlot == null || slot.End < bestSlot.End)
                     bestSlot = slot;
             }
@@ -321,9 +330,9 @@ public class SchedulingService : ISchedulingService
         }
         else
         {
-            var slotStart = SnapToNextShiftStart(notBefore, shifts);
+            var slotStart = ShiftTimeHelper.SnapToNextShiftStart(notBefore, shifts);
             exec.ScheduledStartAt = slotStart;
-            exec.ScheduledEndAt = AdvanceByWorkHours(slotStart, totalDuration, shifts);
+            exec.ScheduledEndAt = ShiftTimeHelper.AdvanceByWorkHours(slotStart, totalDuration, shifts);
         }
 
         exec.LastModifiedDate = DateTime.UtcNow;
@@ -333,7 +342,7 @@ public class SchedulingService : ISchedulingService
 
     public async Task<ScheduleSlot> FindEarliestSlotAsync(int machineId, double durationHours, DateTime notBefore)
     {
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await _shiftService.GetEffectiveShiftsForMachineAsync(machineId);
         return await FindEarliestSlotOnMachine(machineId, durationHours, notBefore, shifts);
     }
 
@@ -408,21 +417,19 @@ public class SchedulingService : ISchedulingService
             .ToListAsync();
 
         // Snap to next shift start
-        var candidate = SnapToNextShiftStart(notBefore, shifts);
-        var candidateEnd = AdvanceByWorkHours(candidate, durationHours, shifts);
+        var candidate = ShiftTimeHelper.SnapToNextShiftStart(notBefore, shifts);
+        var candidateEnd = ShiftTimeHelper.AdvanceByWorkHours(candidate, durationHours, shifts);
 
         foreach (var block in existing)
         {
             var blockStart = block.ScheduledStartAt!.Value;
             var blockEnd = block.ScheduledEndAt!.Value;
 
-            // If our candidate fits before this block, we're done
             if (candidateEnd <= blockStart)
                 break;
 
-            // Otherwise, try starting after this block
-            candidate = SnapToNextShiftStart(blockEnd, shifts);
-            candidateEnd = AdvanceByWorkHours(candidate, durationHours, shifts);
+            candidate = ShiftTimeHelper.SnapToNextShiftStart(blockEnd, shifts);
+            candidateEnd = ShiftTimeHelper.AdvanceByWorkHours(candidate, durationHours, shifts);
         }
 
         return new ScheduleSlot(candidate, candidateEnd, machineId);
@@ -561,89 +568,7 @@ public class SchedulingService : ISchedulingService
             : "Resolved via unknown path";
     }
 
-    private static DateTime SnapToNextShiftStart(DateTime from, List<OperatingShift> shifts)
-    {
-        if (!shifts.Any()) return from; // 24/7 operation
-
-        for (int dayOffset = 0; dayOffset < 30; dayOffset++)
-        {
-            var checkDate = from.Date.AddDays(dayOffset);
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
-
-            foreach (var shift in dayShifts)
-            {
-                var shiftStart = checkDate + shift.StartTime;
-                var shiftEnd = checkDate + shift.EndTime;
-                if (shift.EndTime <= shift.StartTime)
-                    shiftEnd = shiftEnd.AddDays(1); // overnight shift
-
-                // If we're before this shift ends, we can use it.
-                // Strict < because at exactly shiftEnd there are zero work hours remaining.
-                if (from < shiftEnd)
-                {
-                    return from > shiftStart ? from : shiftStart;
-                }
-            }
-        }
-
-        return from; // fallback: no matching shifts found
-    }
-
-    private static DateTime AdvanceByWorkHours(DateTime from, double hours, List<OperatingShift> shifts)
-    {
-        if (!shifts.Any()) return from.AddHours(hours); // 24/7 operation
-
-        var remaining = hours;
-        var current = from;
-
-        for (int dayOffset = 0; dayOffset < 90 && remaining > 0.001; dayOffset++)
-        {
-            var checkDate = current.Date;
-            if (checkDate < from.Date) checkDate = from.Date;
-
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
-
-            foreach (var shift in dayShifts)
-            {
-                if (remaining <= 0.001) break;
-
-                var shiftStart = checkDate + shift.StartTime;
-                var shiftEnd = checkDate + shift.EndTime;
-                if (shift.EndTime <= shift.StartTime)
-                    shiftEnd = shiftEnd.AddDays(1); // overnight shift
-
-                if (current >= shiftEnd) continue; // past this shift
-
-                var effectiveStart = current > shiftStart ? current : shiftStart;
-                var availableHours = (shiftEnd - effectiveStart).TotalHours;
-
-                if (availableHours <= 0) continue;
-
-                if (remaining <= availableHours)
-                {
-                    return effectiveStart.AddHours(remaining);
-                }
-
-                remaining -= availableHours;
-                current = shiftEnd;
-            }
-
-            // Move to next day
-            current = checkDate.AddDays(1);
-        }
-
-        // Fallback: if shifts don't cover enough time, add remaining as calendar hours
-        return current.AddHours(remaining);
-    }
+    // Shift time helpers are now in ShiftTimeHelper.cs (shared with ProgramSchedulingService)
 
     /// <inheritdoc />
     public async Task<ScheduleClearResult> ClearAllScheduleDataAsync()
@@ -674,9 +599,25 @@ public class SchedulingService : ISchedulingService
             job.Status = JobStatus.Draft;
         }
 
+        // 3. Unlock scheduled programs so they can be re-scheduled
+        var lockedPrograms = await _db.MachinePrograms
+            .Where(p => p.IsLocked
+                && p.ScheduleStatus != ProgramScheduleStatus.Completed
+                && p.ScheduleStatus != ProgramScheduleStatus.Printing)
+            .ToListAsync();
+
+        foreach (var prog in lockedPrograms)
+        {
+            prog.IsLocked = false;
+            prog.ScheduleStatus = ProgramScheduleStatus.Ready;
+            prog.ScheduledDate = null;
+            prog.ScheduledJobId = null;
+            prog.PredecessorProgramId = null;
+        }
+
         await _db.SaveChangesAsync();
 
-        return new ScheduleClearResult(executions.Count, jobs.Count, 0);
+        return new ScheduleClearResult(executions.Count, jobs.Count, lockedPrograms.Count);
     }
 
     /// <inheritdoc />
@@ -684,7 +625,7 @@ public class SchedulingService : ISchedulingService
     {
         // Delete in FK-safe order: children first, parents last
 
-        // 1. Stage executions (references Jobs)
+        // 1. Stage executions (references Jobs and MachinePrograms)
         var execCount = await _db.StageExecutions.CountAsync();
         _db.StageExecutions.RemoveRange(_db.StageExecutions);
         await _db.SaveChangesAsync();
@@ -707,7 +648,33 @@ public class SchedulingService : ISchedulingService
         _db.Jobs.RemoveRange(_db.Jobs);
         await _db.SaveChangesAsync();
 
-        return new DataDeleteResult(execCount, jobCount, 0, instanceCount, batchCount);
+        // 5. Machine Programs and all children (cascade covers ProgramParts,
+        //    Files, ToolingItems, Feedbacks but we clear join tables explicitly)
+        _db.MachineProgramAssignments.RemoveRange(_db.MachineProgramAssignments);
+        _db.ProgramRevisions.RemoveRange(_db.ProgramRevisions);
+        _db.ProgramFeedbacks.RemoveRange(_db.ProgramFeedbacks);
+        _db.ProgramToolingItems.RemoveRange(_db.ProgramToolingItems);
+        _db.MachineProgramFiles.RemoveRange(_db.MachineProgramFiles);
+        _db.ProgramParts.RemoveRange(_db.ProgramParts);
+        var programCount = await _db.MachinePrograms.CountAsync();
+        _db.MachinePrograms.RemoveRange(_db.MachinePrograms);
+        await _db.SaveChangesAsync();
+
+        // 6. Clear any ProcessStage FK references to deleted programs
+        //    and re-flag stages that have machine assignments as needing program setup
+        var linkedStages = await _db.ProcessStages
+            .Where(s => s.MachineProgramId != null)
+            .ToListAsync();
+        foreach (var s in linkedStages)
+        {
+            s.MachineProgramId = null;
+            // Re-flag for program setup if the stage has machines assigned
+            if (!string.IsNullOrWhiteSpace(s.PreferredMachineIds) || s.AssignedMachineId.HasValue)
+                s.ProgramSetupRequired = true;
+        }
+        await _db.SaveChangesAsync();
+
+        return new DataDeleteResult(execCount, jobCount, programCount, instanceCount, batchCount);
     }
 
     /// <inheritdoc />
@@ -738,7 +705,7 @@ public class SchedulingService : ISchedulingService
             Parts: await _db.Parts.CountAsync(),
             Jobs: await _db.Jobs.CountAsync(),
             StageExecutions: await _db.StageExecutions.CountAsync(),
-            BuildPackages: 0,
+            MachinePrograms: await _db.MachinePrograms.CountAsync(),
             ProductionBatches: await _db.ProductionBatches.CountAsync(),
             WorkOrders: await _db.WorkOrders.CountAsync());
     }

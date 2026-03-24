@@ -112,13 +112,13 @@
                                             ProgramScheduleStatus.Scheduled => "builds-bar--scheduled",
                                             _ => "builds-bar--ready"
                                         };
-                                        var tooltip = $"{entry.BuildName}\nStatus: {entry.ScheduleStatus}\n{entry.PrintStart:MM/dd HH:mm} \u2192 {entry.PrintEnd:MM/dd HH:mm}";
+                                        var tooltip = $"{entry.ProgramName}\nStatus: {entry.ScheduleStatus}\n{entry.PrintStart:MM/dd HH:mm} \u2192 {entry.PrintEnd:MM/dd HH:mm}";
                                         if (entry.ChangeoverStart != null && entry.ChangeoverEnd != null)
                                             tooltip += $"\nChangeover: {entry.ChangeoverStart:HH:mm} \u2192 {entry.ChangeoverEnd:HH:mm}";
                                         <div class="gantt-bar @statusClass"
                                              style="left: @(FormatPx(barLeft))px; width: @(FormatPx(barWidth))px;"
                                              title="@tooltip">
-                                            <span class="gantt-bar-text">📦 @entry.BuildName · @entry.ScheduleStatus</span>
+                                            <span class="gantt-bar-text">📦 @entry.ProgramName · @entry.ScheduleStatus</span>
                                         </div>
                                         @if (entry.ChangeoverStart != null && entry.ChangeoverEnd != null)
                                         {
@@ -239,7 +239,7 @@
 @code {
     [Parameter, EditorRequired] public List<MachineProgram> BuildPrograms { get; set; } = [];
     [Parameter, EditorRequired] public List<Machine> SlsMachines { get; set; } = [];
-    [Parameter, EditorRequired] public Dictionary<int, List<MachineTimelineEntry>> MachineTimelines { get; set; } = [];
+    [Parameter, EditorRequired] public Dictionary<int, List<ProgramTimelineEntry>> MachineTimelines { get; set; } = [];
     [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
     [Parameter] public DateTime DataRangeStart { get; set; }
     [Parameter] public DateTime DataRangeEnd { get; set; }

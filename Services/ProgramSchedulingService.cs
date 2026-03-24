@@ -744,7 +744,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
             var progStart = prog.ScheduledDate!.Value;
             var progEnd = isContinuous
                 ? progStart.AddHours(prog.EstimatedPrintHours!.Value)
-                : AdvanceByWorkHours(progStart, prog.EstimatedPrintHours!.Value, shifts);
+                : ShiftTimeHelper.AdvanceByWorkHours(progStart, prog.EstimatedPrintHours!.Value, shifts);
             if (!blocks.Any(b => b.Start == progStart))
                 blocks.Add((progStart, progEnd, prog.Id));
         }
@@ -752,10 +752,10 @@ public class ProgramSchedulingService : IProgramSchedulingService
         blocks = blocks.OrderBy(b => b.Start).ToList();
 
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
-        var candidateStart = isContinuous ? notBefore : SnapToNextShiftStart(notBefore, shifts);
+        var candidateStart = isContinuous ? notBefore : ShiftTimeHelper.SnapToNextShiftStart(notBefore, shifts);
         var candidateEnd = isContinuous
             ? candidateStart.AddHours(durationHours)
-            : AdvanceByWorkHours(candidateStart, durationHours, shifts);
+            : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
 
         foreach (var block in blocks)
         {
@@ -766,10 +766,10 @@ public class ProgramSchedulingService : IProgramSchedulingService
             if (candidateEnd <= block.Start)
                 break;
 
-            candidateStart = isContinuous ? blockEnd : SnapToNextShiftStart(blockEnd, shifts);
+            candidateStart = isContinuous ? blockEnd : ShiftTimeHelper.SnapToNextShiftStart(blockEnd, shifts);
             candidateEnd = isContinuous
                 ? candidateStart.AddHours(durationHours)
-                : AdvanceByWorkHours(candidateStart, durationHours, shifts);
+                : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
         }
 
         var changeoverStart = candidateEnd;
@@ -888,7 +888,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         {
             var printStart = prog.ScheduledDate!.Value;
             var printEnd = prog.EstimatedPrintHours.HasValue
-                ? AdvanceByWorkHours(printStart, prog.EstimatedPrintHours.Value, shifts)
+                ? ShiftTimeHelper.AdvanceByWorkHours(printStart, prog.EstimatedPrintHours.Value, shifts)
                 : printStart;
 
             if (printEnd < from || printStart > to)
@@ -928,7 +928,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         if (!operatorAvailable)
         {
             var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
-            var nextShiftStart = FindNextShiftStart(buildEndTime, shifts);
+            var nextShiftStart = ShiftTimeHelper.FindNextShiftStart(buildEndTime, shifts);
 
             if (nextShiftStart.HasValue)
             {
@@ -964,13 +964,13 @@ public class ProgramSchedulingService : IProgramSchedulingService
             if (current.ChangeoverStart == null || current.ChangeoverEnd == null)
                 continue;
 
-            var precedingOpAvailable = IsWithinShiftWindow(current.ChangeoverStart.Value, current.ChangeoverEnd.Value, shifts);
+            var precedingOpAvailable = ShiftTimeHelper.IsWithinShiftWindow(current.ChangeoverStart.Value, current.ChangeoverEnd.Value, shifts);
             var followingOpAvailable = next.ChangeoverStart.HasValue && next.ChangeoverEnd.HasValue
-                && IsWithinShiftWindow(next.ChangeoverStart.Value, next.ChangeoverEnd.Value, shifts);
+                && ShiftTimeHelper.IsWithinShiftWindow(next.ChangeoverStart.Value, next.ChangeoverEnd.Value, shifts);
 
             if (!precedingOpAvailable)
             {
-                var nextShift = FindNextShiftStart(current.ChangeoverStart.Value, shifts);
+                var nextShift = ShiftTimeHelper.FindNextShiftStart(current.ChangeoverStart.Value, shifts);
                 var operatorArrival = nextShift ?? current.ChangeoverEnd.Value;
 
                 if (next.PrintEnd >= operatorArrival)
@@ -1030,7 +1030,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         return executions;
     }
 
-    public async Task<PlateReleaseResult> ReleasePlateAsync(int machineProgramId, string releasedBy)
+    public async Task<ProgramPlateReleaseResult> ReleasePlateAsync(int machineProgramId, string releasedBy)
     {
         var program = await _db.MachinePrograms
             .Include(p => p.ProgramParts).ThenInclude(pp => pp.Part)
@@ -1096,7 +1096,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
         await _db.SaveChangesAsync();
 
-        return new PlateReleaseResult(machineProgramId, createdInstances, createdJobs, createdInstances.Count);
+        return new ProgramPlateReleaseResult(machineProgramId, createdInstances, createdJobs, createdInstances.Count);
     }
 
     // ══════════════════════════════════════════════════════════
@@ -1375,133 +1375,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
     private async Task<bool> IsOperatorAvailableDuringWindowAsync(DateTime windowStart, DateTime windowEnd)
     {
         var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
-        return IsWithinShiftWindow(windowStart, windowEnd, shifts);
+        return ShiftTimeHelper.IsWithinShiftWindow(windowStart, windowEnd, shifts);
     }
 
-    private static bool IsWithinShiftWindow(DateTime windowStart, DateTime windowEnd, List<OperatingShift> shifts)
-    {
-        if (!shifts.Any()) return true;
-
-        var checkDate = windowStart.Date;
-        var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-        var dayShifts = shifts
-            .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.StartTime)
-            .ToList();
-
-        foreach (var shift in dayShifts)
-        {
-            var shiftStart = checkDate + shift.StartTime;
-            var shiftEnd = checkDate + shift.EndTime;
-            if (shift.EndTime <= shift.StartTime)
-                shiftEnd = shiftEnd.AddDays(1);
-
-            if (windowStart >= shiftStart && windowEnd <= shiftEnd)
-                return true;
-        }
-
-        return false;
-    }
-
-    private static DateTime? FindNextShiftStart(DateTime after, List<OperatingShift> shifts)
-    {
-        if (!shifts.Any()) return null;
-
-        for (int dayOffset = 0; dayOffset < 7; dayOffset++)
-        {
-            var checkDate = after.Date.AddDays(dayOffset);
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
-
-            foreach (var shift in dayShifts)
-            {
-                var shiftStart = checkDate + shift.StartTime;
-                if (shiftStart > after)
-                    return shiftStart;
-            }
-        }
-
-        return null;
-    }
-
-    private static DateTime SnapToNextShiftStart(DateTime from, List<OperatingShift> shifts)
-    {
-        if (!shifts.Any()) return from;
-
-        for (int dayOffset = 0; dayOffset < 30; dayOffset++)
-        {
-            var checkDate = from.Date.AddDays(dayOffset);
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
-
-            foreach (var shift in dayShifts)
-            {
-                var shiftStart = checkDate + shift.StartTime;
-                var shiftEnd = checkDate + shift.EndTime;
-                if (shift.EndTime <= shift.StartTime)
-                    shiftEnd = shiftEnd.AddDays(1);
-
-                if (from < shiftEnd)
-                    return from > shiftStart ? from : shiftStart;
-            }
-        }
-
-        return from;
-    }
-
-    private static DateTime AdvanceByWorkHours(DateTime from, double hours, List<OperatingShift> shifts)
-    {
-        if (!shifts.Any()) return from.AddHours(hours);
-
-        var remaining = hours;
-        var current = from;
-
-        for (int dayOffset = 0; dayOffset < 90 && remaining > 0.001; dayOffset++)
-        {
-            var checkDate = current.Date;
-            if (checkDate < from.Date) checkDate = from.Date;
-
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
-
-            foreach (var shift in dayShifts)
-            {
-                if (remaining <= 0.001) break;
-
-                var shiftStart = checkDate + shift.StartTime;
-                var shiftEnd = checkDate + shift.EndTime;
-                if (shift.EndTime <= shift.StartTime)
-                    shiftEnd = shiftEnd.AddDays(1);
-
-                if (current >= shiftEnd) continue;
-
-                var effectiveStart = current > shiftStart ? current : shiftStart;
-                var availableHours = (shiftEnd - effectiveStart).TotalHours;
-
-                if (availableHours <= 0) continue;
-
-                if (remaining <= availableHours)
-                    return effectiveStart.AddHours(remaining);
-
-                remaining -= availableHours;
-                current = shiftEnd;
-            }
-
-            current = checkDate.AddDays(1);
-        }
-
-        return current.AddHours(remaining);
-    }
+    // Shift time helpers are now in ShiftTimeHelper.cs (shared with SchedulingService)
 }

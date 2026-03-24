@@ -1,0 +1,347 @@
+@page "/admin/shifts"
+@inject IShiftManagementService ShiftService
+@inject IMachineService MachineService
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@inject ToastService Toast
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+
+<PageTitle>Shift Management - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">🕐 Shift Management</h1>
+    <button class="btn btn-primary" @onclick="StartCreate">+ New Shift</button>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading shifts...</div>
+}
+else
+{
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Time</th>
+                    <th>Days</th>
+                    <th>Machines</th>
+                    <th>Operators</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var shift in _shifts)
+                {
+                    <tr>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                @if (!string.IsNullOrEmpty(shift.Color))
+                                {
+                                    <span style="width: 12px; height: 12px; border-radius: 50%; background: @shift.Color; display: inline-block;"></span>
+                                }
+                                <strong>@shift.Name</strong>
+                            </div>
+                            @if (!string.IsNullOrEmpty(shift.Description))
+                            {
+                                <div style="font-size: 0.78rem; color: var(--text-muted);">@shift.Description</div>
+                            }
+                        </td>
+                        <td>@shift.StartTime.ToString(@"hh\:mm") — @shift.EndTime.ToString(@"hh\:mm")</td>
+                        <td>
+                            @foreach (var day in shift.DaysOfWeek.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                            {
+                                <span class="badge badge-secondary" style="margin-right: 2px; font-size: 0.68rem;">@day.Trim()</span>
+                            }
+                        </td>
+                        <td>
+                            @if (shift.MachineAssignments.Any())
+                            {
+                                <span title="@string.Join(", ", shift.MachineAssignments.Select(a => a.Machine.Name))">
+                                    @shift.MachineAssignments.Count machine(s)
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: var(--text-muted);">All (default)</span>
+                            }
+                        </td>
+                        <td>
+                            @if (shift.UserAssignments.Any())
+                            {
+                                <span title="@string.Join(", ", shift.UserAssignments.Select(a => a.User.FullName))">
+                                    @shift.UserAssignments.Count operator(s)
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: var(--text-muted);">None</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge @(shift.IsActive ? "badge-success" : "badge-secondary")">
+                                @(shift.IsActive ? "Active" : "Inactive")
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => StartEdit(shift)">Edit</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@* ── Edit/Create Modal ── *@
+@if (_editing)
+{
+    <div class="modal-overlay" @onclick="CancelEdit">
+        <div class="modal-content modal-lg" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3>@(_editShift.Id == 0 ? "New Shift" : $"Edit: {_editShift.Name}")</h3>
+                <button class="modal-close" @onclick="CancelEdit">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label>Name</label>
+                        <input class="form-control" @bind="_editShift.Name" placeholder="e.g. Day Shift" />
+                    </div>
+                    <div class="form-group">
+                        <label>Color</label>
+                        <input type="color" class="form-control" style="height: 38px; padding: 2px;" @bind="_editColor" />
+                    </div>
+                    <div class="form-group">
+                        <label>Active</label>
+                        <div style="padding-top: 8px;">
+                            <input type="checkbox" @bind="_editShift.IsActive" style="width: 18px; height: 18px;" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Time</label>
+                        <input type="text" class="form-control" @bind="_editStartTime" placeholder="06:00" />
+                    </div>
+                    <div class="form-group">
+                        <label>End Time</label>
+                        <input type="text" class="form-control" @bind="_editEndTime" placeholder="18:00" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Days of Week</label>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        @foreach (var day in _allDays)
+                        {
+                            var isChecked = _editDays.Contains(day);
+                            <label style="display: flex; align-items: center; gap: 4px; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px; cursor: pointer; border: 1px solid @(isChecked ? "var(--accent)" : "var(--border)");">
+                                <input type="checkbox" checked="@isChecked" @onchange="() => ToggleDay(day)" style="accent-color: var(--accent);" />
+                                @day
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea class="form-control" rows="2" @bind="_editShift.Description" placeholder="Optional notes about this shift"></textarea>
+                </div>
+
+                @* ── Machine Assignments ── *@
+                <div class="form-group">
+                    <label>Machines (leave empty = all machines use this shift)</label>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap; max-height: 200px; overflow-y: auto;">
+                        @foreach (var machine in _machines)
+                        {
+                            var isAssigned = _editMachineIds.Contains(machine.Id);
+                            <label style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: 6px; cursor: pointer; border: 1px solid @(isAssigned ? "var(--accent)" : "var(--border)"); min-width: 140px;">
+                                <input type="checkbox" checked="@isAssigned" @onchange="() => ToggleMachine(machine.Id)" style="accent-color: var(--accent);" />
+                                <div>
+                                    <div style="font-weight: 600; font-size: 0.85rem;">@machine.Name</div>
+                                    <div style="font-size: 0.72rem; color: var(--text-muted);">@machine.MachineType</div>
+                                </div>
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                @* ── Operator Assignments ── *@
+                <div class="form-group">
+                    <label>Operators</label>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap; max-height: 200px; overflow-y: auto;">
+                        @foreach (var user in _operators)
+                        {
+                            var isAssigned = _editUserIds.Contains(user.Id);
+                            <label style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: 6px; cursor: pointer; border: 1px solid @(isAssigned ? "var(--accent)" : "var(--border)"); min-width: 140px;">
+                                <input type="checkbox" checked="@isAssigned" @onchange="() => ToggleUser(user.Id)" style="accent-color: var(--accent);" />
+                                <div>
+                                    <div style="font-weight: 600; font-size: 0.85rem;">@user.FullName</div>
+                                    <div style="font-size: 0.72rem; color: var(--text-muted);">@user.Role</div>
+                                </div>
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                @if (_editShift.Id > 0)
+                {
+                    <button class="btn btn-danger" @onclick="DeleteShift" style="margin-right: auto;">Delete</button>
+                }
+                <button class="btn btn-secondary" @onclick="CancelEdit">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveShift" disabled="@_saving">
+                    @if (_saving) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _editing;
+    private bool _saving;
+
+    private List<OperatingShift> _shifts = [];
+    private List<Machine> _machines = [];
+    private List<User> _operators = [];
+
+    private OperatingShift _editShift = new();
+    private string _editColor = "#3b82f6";
+    private string _editStartTime = "06:00";
+    private string _editEndTime = "18:00";
+    private HashSet<string> _editDays = new() { "Mon", "Tue", "Wed", "Thu", "Fri" };
+    private HashSet<int> _editMachineIds = new();
+    private HashSet<int> _editUserIds = new();
+
+    private static readonly string[] _allDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _shifts = await ShiftService.GetAllShiftsAsync();
+        _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
+        _operators = await Db.Users.Where(u => u.IsActive && u.Role != "Admin").OrderBy(u => u.FullName).ToListAsync();
+        _loading = false;
+    }
+
+    private void StartCreate()
+    {
+        _editShift = new OperatingShift { IsActive = true };
+        _editColor = "#3b82f6";
+        _editStartTime = "06:00";
+        _editEndTime = "18:00";
+        _editDays = new HashSet<string> { "Mon", "Tue", "Wed", "Thu", "Fri" };
+        _editMachineIds = new();
+        _editUserIds = new();
+        _editing = true;
+    }
+
+    private void StartEdit(OperatingShift shift)
+    {
+        _editShift = shift;
+        _editColor = shift.Color ?? "#3b82f6";
+        _editStartTime = shift.StartTime.ToString(@"hh\:mm");
+        _editEndTime = shift.EndTime.ToString(@"hh\:mm");
+        _editDays = shift.DaysOfWeek.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(d => d.Trim()).ToHashSet();
+        _editMachineIds = shift.MachineAssignments.Select(a => a.MachineId).ToHashSet();
+        _editUserIds = shift.UserAssignments.Select(a => a.UserId).ToHashSet();
+        _editing = true;
+    }
+
+    private void CancelEdit() => _editing = false;
+
+    private void ToggleDay(string day)
+    {
+        if (!_editDays.Remove(day)) _editDays.Add(day);
+    }
+
+    private void ToggleMachine(int id)
+    {
+        if (!_editMachineIds.Remove(id)) _editMachineIds.Add(id);
+    }
+
+    private void ToggleUser(int id)
+    {
+        if (!_editUserIds.Remove(id)) _editUserIds.Add(id);
+    }
+
+    private async Task SaveShift()
+    {
+        if (string.IsNullOrWhiteSpace(_editShift.Name))
+        {
+            Toast.ShowError("Shift name is required.");
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            _editShift.Color = _editColor;
+            _editShift.DaysOfWeek = string.Join(",", _allDays.Where(d => _editDays.Contains(d)));
+
+            if (TimeSpan.TryParse(_editStartTime, out var start))
+                _editShift.StartTime = start;
+            if (TimeSpan.TryParse(_editEndTime, out var end))
+                _editShift.EndTime = end;
+
+            if (_editShift.Id == 0)
+            {
+                await ShiftService.CreateShiftAsync(_editShift);
+                Toast.ShowSuccess($"Shift '{_editShift.Name}' created.");
+            }
+            else
+            {
+                await ShiftService.UpdateShiftAsync(_editShift);
+                Toast.ShowSuccess($"Shift '{_editShift.Name}' updated.");
+            }
+
+            // Save machine assignments
+            await ShiftService.SetMachineShiftsAsync(_editShift.Id, _editMachineIds.ToList());
+
+            // Save operator assignments
+            foreach (var userId in _editUserIds)
+            {
+                var existing = await ShiftService.GetUserShiftsAsync(userId);
+                var userShiftIds = existing.Select(a => a.OperatingShiftId).ToHashSet();
+                if (!userShiftIds.Contains(_editShift.Id))
+                {
+                    userShiftIds.Add(_editShift.Id);
+                    await ShiftService.SetUserShiftsAsync(userId, userShiftIds.ToList());
+                }
+            }
+
+            _shifts = await ShiftService.GetAllShiftsAsync();
+            _editing = false;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to save shift: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteShift()
+    {
+        try
+        {
+            await ShiftService.DeleteShiftAsync(_editShift.Id);
+            Toast.ShowSuccess($"Shift '{_editShift.Name}' deleted.");
+            _shifts = await ShiftService.GetAllShiftsAsync();
+            _editing = false;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to delete: {ex.Message}");
+        }
+    }
+}

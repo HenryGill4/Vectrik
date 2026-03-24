@@ -5,6 +5,10 @@
     var stageColor = Exec.ProductionStage?.StageColor ?? "";
     var isBatchScope = Exec.Job?.Scope == JobScope.Batch || Exec.ProductionBatchId != null;
     var batchBorder = isBatchScope ? "border-bottom: 3px solid var(--warning);" : "";
+    var jobHue = GetJobHue();
+    var jobColorStyle = jobHue >= 0 && !IsUnassigned
+        ? $"--job-hue: {jobHue}; border-left: 4px solid hsl({jobHue}, 70%, 55%);"
+        : "";
     var scopeIcon = Exec.Job?.Scope switch
     {
         JobScope.Build => "🏗️ ",
@@ -13,7 +17,7 @@
     };
 }
 <div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "")"
-     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
+     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @jobColorStyle @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
      title="@ComputeTooltip()"
      @onclick="HandleClick">
     <span class="gantt-bar-text">@scopeIcon@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
@@ -32,6 +36,19 @@
     private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
 
     private Task HandleClick() => OnClick.InvokeAsync(Exec);
+
+    /// <summary>
+    /// Generates a consistent hue (0-359) for a job based on its PartId.
+    /// All stages of the same part get the same hue, making it easy to
+    /// visually track a part's journey across machines on the Gantt.
+    /// </summary>
+    private int GetJobHue()
+    {
+        var key = Exec.Job?.PartId ?? Exec.JobId ?? -1;
+        if (key <= 0) return -1;
+        // Golden-angle distribution gives visually distinct hues for sequential IDs
+        return (int)((key * 137.508) % 360);
+    }
 
     private string ComputeTooltip()
     {
@@ -65,8 +82,8 @@
         if (wo != null)
             lines.Add($"WO: {wo.OrderNumber} — {wo.CustomerName}");
 
-        if (Exec.BuildPackage != null)
-            lines.Add($"Build: {Exec.BuildPackage.Name}");
+        if (Exec.MachineProgram != null)
+            lines.Add($"Program: {Exec.MachineProgram.Name}");
 
         return string.Join("\n", lines);
     }

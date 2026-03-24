@@ -91,4 +91,5 @@ public class Machine
     // Navigation
     public virtual ICollection<MachineComponent> Components { get; set; } = new List<MachineComponent>();
     public virtual ICollection<MachineProgramAssignment> ProgramAssignments { get; set; } = new List<MachineProgramAssignment>();
+    public virtual ICollection<MachineShiftAssignment> ShiftAssignments { get; set; } = new List<MachineShiftAssignment>();
 }

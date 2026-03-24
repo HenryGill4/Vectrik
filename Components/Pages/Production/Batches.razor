@@ -108,7 +108,6 @@ else
                 <tr>
                     <th>Batch #</th>
                     <th>Container</th>
-                    <th>Origin Build</th>
                     <th>Parts</th>
                     <th>Status</th>
                     <th>Current Stage</th>
@@ -136,7 +135,6 @@ else
                             </strong>
                         </td>
                         <td>@(batch.ContainerLabel ?? "—")</td>
-                        <td>@(batch.OriginMachineProgram?.Name ?? $"Program #{batch.OriginMachineProgramId}")</td>
                         <td>
                             <strong>@batch.CurrentPartCount</strong> / @batch.Capacity
                             @if (batch.CurrentPartCount >= batch.Capacity)
@@ -229,7 +227,7 @@ else
                 </div>
                 <div>
                     <span class="form-label">Origin Build</span>
-                    <div>@(_detailBatch.OriginMachineProgram?.Name ?? $"Program #{_detailBatch.OriginMachineProgramId}")</div>
+                    <div>@(_detailBatch.StageExecution?.Job?.Part?.Name ?? "—")</div>
                 </div>
                 <div>
                     <span class="form-label">Container</span>
@@ -354,8 +352,6 @@ else
             var q = _allBatches.AsEnumerable();
             if (!string.IsNullOrEmpty(_statusFilter) && Enum.TryParse<BatchStatus>(_statusFilter, out var status))
                 q = q.Where(b => b.Status == status);
-            if (_buildFilter > 0)
-                q = q.Where(b => b.OriginMachineProgramId == _buildFilter);
             return q.OrderByDescending(b => b.CreatedDate);
         }
     }
@@ -375,23 +371,7 @@ else
     {
         try
         {
-            if (_buildFilter > 0)
-            {
-                _allBatches = await BatchService.GetBatchesForBuildAsync(_buildFilter);
-            }
-            else
-            {
-                // Load all batches across builds
-                var batches = new List<ProductionBatch>();
-                if (_builds != null)
-                {
-                    foreach (var build in _builds)
-                    {
-                        batches.AddRange(await BatchService.GetBatchesForBuildAsync(build.Id));
-                    }
-                }
-                _allBatches = batches.DistinctBy(b => b.Id).ToList();
-            }
+            _allBatches = await BatchService.GetActiveBatchesAsync();
         }
         catch (Exception ex) { Toast.ShowError($"Failed to load batches: {ex.Message}"); }
     }

@@ -990,9 +990,9 @@ else
 
                     @if (selectedBuild != null)
                     {
-                        var buildPartQty = selectedBuild.Parts?.FirstOrDefault(p => p.PartId == _part.Id)?.Quantity ?? 0;
-                        var printCostPerPart = selectedBuild.EstimatedDurationHours.HasValue && buildPartQty > 0
-                            ? selectedBuild.EstimatedDurationHours.Value / buildPartQty
+                        var buildPartQty = selectedBuild.ProgramParts?.FirstOrDefault(p => p.PartId == _part.Id)?.Quantity ?? 0;
+                        var printCostPerPart = selectedBuild.EstimatedPrintHours.HasValue && buildPartQty > 0
+                            ? selectedBuild.EstimatedPrintHours.Value / buildPartQty
                             : (double?)null;
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -1009,7 +1009,7 @@ else
                             <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
                                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Build Durations</div>
                                 <div class="detail-grid" style="gap: 4px 12px;">
-                                    <div class="detail-label">Print</div><div class="detail-value">@(selectedBuild.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</div>
+                                    <div class="detail-label">Print</div><div class="detail-value">@(selectedBuild.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div>
                                     <div class="detail-label">Print/Part</div><div class="detail-value">@(printCostPerPart?.ToString("F2") ?? "—") hrs</div>
                                 </div>
                             </div>

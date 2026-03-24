@@ -331,4 +331,63 @@ public class BuildTemplateService : IBuildTemplateService
             .OrderByDescending(r => r.RevisionNumber)
             .ToListAsync();
     }
+
+    // ── Instantiation ──────────────────────────────────────────
+
+    public async Task<MachineProgram> InstantiateAsync(int templateId, int machineId, string createdBy, int? workOrderLineId = null)
+    {
+        var template = await _db.BuildTemplates
+            .Include(t => t.Parts)
+            .FirstOrDefaultAsync(t => t.Id == templateId)
+            ?? throw new InvalidOperationException($"BuildTemplate {templateId} not found.");
+
+        var program = new MachineProgram
+        {
+            ProgramType = ProgramType.BuildPlate,
+            MachineId = machineId,
+            ProgramNumber = $"BT-{templateId}-{DateTime.UtcNow:yyyyMMddHHmmss}",
+            Name = template.Name,
+            Description = $"Instantiated from template '{template.Name}' (ID {templateId})",
+            Version = 1,
+            Status = ProgramStatus.Active,
+            MaterialId = template.MaterialId,
+            LayerCount = template.LayerCount,
+            BuildHeightMm = template.BuildHeightMm,
+            EstimatedPrintHours = template.EstimatedDurationHours,
+            EstimatedPowderKg = template.EstimatedPowderKg,
+            SlicerFileName = template.FileName,
+            SlicerSoftware = template.SlicerSoftware,
+            SlicerVersion = template.SlicerVersion,
+            PartPositionsJson = template.PartPositionsJson,
+            ScheduleStatus = ProgramScheduleStatus.Ready,
+            CreatedBy = createdBy,
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+
+        _db.MachinePrograms.Add(program);
+        await _db.SaveChangesAsync();
+
+        // Copy template parts to program parts
+        foreach (var tp in template.Parts)
+        {
+            _db.ProgramParts.Add(new ProgramPart
+            {
+                MachineProgramId = program.Id,
+                PartId = tp.PartId,
+                Quantity = tp.Quantity,
+                StackLevel = tp.StackLevel,
+                PositionNotes = tp.PositionNotes,
+                WorkOrderLineId = workOrderLineId
+            });
+        }
+
+        // Update template usage tracking
+        template.UseCount++;
+        template.LastUsedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        return program;
+    }
 }

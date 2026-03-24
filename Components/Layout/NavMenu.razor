@@ -341,7 +341,7 @@
             }
 
             @* ──────────── USERS & ACCESS (Admin/Manager) ──────────── *@
-            @if (isAdminOrManager && SectionVisible("users", "Users", "Operator Roles"))
+            @if (isAdminOrManager && SectionVisible("users", "Users", "Operator Roles", "Shifts"))
             {
                 <NavSection @ref="_sectionRefs[SectionId.UsersAccess]" Title="Users & Access" SectionKey="users" DefaultOpen="false">
                     @if (ItemVisible("Users"))
@@ -354,6 +354,12 @@
                     {
                         <NavLink class="nav-item" href="admin/operator-roles">
                             <span class="nav-icon">🎭</span> Operator Roles
+                        </NavLink>
+                    }
+                    @if (ItemVisible("Shifts"))
+                    {
+                        <NavLink class="nav-item" href="admin/shifts">
+                            <span class="nav-icon">🕐</span> Shifts
                         </NavLink>
                     }
                 </NavSection>
@@ -400,24 +406,24 @@
             }
 
             @* ──────────── SYSTEM (Admin only) ──────────── *@
-            @if (isAdmin && SectionVisible("system", "Admin Panel", "Debug Tools", "Issue Tracker"))
+            @if (isAdmin && SectionVisible("system", "Debug Tools", "Issue Tracker", "Machines Admin"))
             {
                 <NavSection @ref="_sectionRefs[SectionId.System]" Title="System" SectionKey="system" DefaultOpen="false">
-                    @if (ItemVisible("Admin Panel"))
+                    @if (ItemVisible("Machines Admin"))
                     {
-                        <NavLink class="nav-item" href="admin">
-                            <span class="nav-icon">⚙️</span> Admin Panel
+                        <NavLink class="nav-item nav-item-admin" href="admin/machines">
+                            <span class="nav-icon">🖥️</span> Machines Admin
                         </NavLink>
                     }
                     @if (ItemVisible("Debug Tools"))
                     {
-                        <NavLink class="nav-item" href="admin/debug">
+                        <NavLink class="nav-item nav-item-admin" href="admin/debug">
                             <span class="nav-icon">🛠️</span> Debug Tools
                         </NavLink>
                     }
                     @if (ItemVisible("Issue Tracker"))
                     {
-                        <NavLink class="nav-item" href="admin/issues">
+                        <NavLink class="nav-item nav-item-admin" href="admin/issues">
                             <span class="nav-icon">🎯</span> Issue Tracker
                         </NavLink>
                     }
@@ -493,6 +499,7 @@
         ("quality", SectionId.Quality),
         ("admin/users", SectionId.UsersAccess),
         ("admin/operator-roles", SectionId.UsersAccess),
+        ("admin/shifts", SectionId.UsersAccess),
         ("settings", SectionId.Settings),
         ("admin/settings", SectionId.Settings),
         ("admin/features", SectionId.Settings),

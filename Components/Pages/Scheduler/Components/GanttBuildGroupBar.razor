@@ -4,9 +4,11 @@
     var stageColor = FirstExec.ProductionStage?.StageColor ?? "";
     var pkgName = FirstExec.MachineProgram?.Name ?? $"Program #{FirstExec.MachineProgramId}";
     var stageName = FirstExec.ProductionStage?.Name ?? "Stage";
+    var jobHue = GetJobHue();
+    var hueStyle = jobHue >= 0 ? $"--job-hue: {jobHue}; border-left: 4px solid hsl({jobHue}, 70%, 55%);" : "";
 }
 <div class="gantt-bar gantt-bar-normal"
-     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};") border: 2px solid var(--accent);"
+     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @(string.IsNullOrEmpty(stageColor) ? "" : $"--bar-accent: {stageColor};") border: 2px solid var(--accent); @hueStyle"
      title="📦 @pkgName — @stageName&#10;Parts: @PartList&#10;@Start.ToString("MM/dd HH:mm") → @End.ToString("MM/dd HH:mm")&#10;Est: @(FirstExec.EstimatedHours?.ToString("F1") ?? "?")h"
      @onclick="HandleClick">
     <span class="gantt-bar-text">📦 @pkgName · @stageName</span>
@@ -24,4 +26,11 @@
     private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
 
     private Task HandleClick() => OnClick.InvokeAsync(FirstExec);
+
+    private int GetJobHue()
+    {
+        var key = FirstExec.Job?.PartId ?? FirstExec.JobId ?? -1;
+        if (key <= 0) return -1;
+        return (int)((key * 137.508) % 360);
+    }
 }

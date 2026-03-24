@@ -78,7 +78,9 @@
                     @foreach (var exec in SortedTableExecutions)
                     {
                         var isMissing = exec.MachineId == null || exec.ScheduledStartAt == null;
-                        <tr class="@(isMissing ? "sched-row-warn" : "") @(_selectedIds.Contains(exec.Id) ? "sched-row-selected" : "")">
+                        var jobHue = GetJobHue(exec);
+                        var hueStripe = jobHue >= 0 ? $"border-left: 4px solid hsl({jobHue}, 70%, 55%);" : "";
+                        <tr class="@(isMissing ? "sched-row-warn" : "") @(_selectedIds.Contains(exec.Id) ? "sched-row-selected" : "")" style="@hueStripe">
                             <td>
                                 <input type="checkbox" checked="@_selectedIds.Contains(exec.Id)" @onchange="() => ToggleRow(exec.Id)" />
                             </td>
@@ -355,6 +357,13 @@
 
     private string TableSortIcon(string column) =>
         _tableSortCol != column ? "⇅" : _tableSortAsc ? "↑" : "↓";
+
+    private static int GetJobHue(StageExecution exec)
+    {
+        var key = exec.Job?.PartId ?? exec.JobId ?? -1;
+        if (key <= 0) return -1;
+        return (int)((key * 137.508) % 360);
+    }
 
     private static string ResolveStageIcon(string? icon)
     {

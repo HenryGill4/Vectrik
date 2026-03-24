@@ -139,7 +139,7 @@ public interface IProgramSchedulingService
     /// After all build-level stages complete (post-EDM), create PartInstances
     /// from the plate and schedule per-part stages.
     /// </summary>
-    Task<PlateReleaseResult> ReleasePlateAsync(int machineProgramId, string releasedBy);
+    Task<ProgramPlateReleaseResult> ReleasePlateAsync(int machineProgramId, string releasedBy);
 
     // ══════════════════════════════════════════════════════════
     // Program Locking
@@ -204,6 +204,16 @@ public record ProgramTimelineEntry(
     ProgramScheduleStatus ScheduleStatus,
     int? StageExecutionId = null,
     bool HasChangeoverConflict = false);
+
+/// <summary>
+/// Result of analyzing changeover timing and operator availability.
+/// </summary>
+public record ChangeoverAnalysis(
+    bool OperatorAvailable,
+    DateTime ChangeoverStart,
+    DateTime ChangeoverEnd,
+    string? SuggestedAction,
+    double? SuggestedDurationHours);
 
 /// <summary>
 /// Warning raised when two consecutive programs finish without an operator

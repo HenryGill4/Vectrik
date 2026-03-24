@@ -277,7 +277,7 @@ else
                                 <div class="pw-snapshot-header">📸 Auto-Captured Snapshot</div>
                                 <div class="pw-snapshot-stats">
                                     <span>⏱️ @_editingSnapshot.Executions.Count executions</span>
-                                    <span>🏗️ @_editingSnapshot.Programs.Count programs</span>
+                                    <span>🏗️ @_editingSnapshot.BuildPackages.Count programs</span>
                                     <span>⚠️ @_editingSnapshot.Conflicts.Count conflicts</span>
                                     <span>📋 @_editingSnapshot.UnscheduledCount unscheduled</span>
                                 </div>
@@ -765,13 +765,13 @@ else
         }
 
         // Programs on this machine
-        if (snapshot.Programs.Count > 0)
+        if (snapshot.BuildPackages.Count > 0)
         {
-            sb.AppendLine($"Programs on machine ({snapshot.Programs.Count}):");
-            foreach (var prog in snapshot.Programs)
+            sb.AppendLine($"Programs on machine ({snapshot.BuildPackages.Count}):");
+            foreach (var prog in snapshot.BuildPackages)
             {
                 sb.AppendLine($"  [{prog.Status}] {prog.Name} — scheduled: {prog.ScheduledDate:MM/dd HH:mm}, " +
-                    $"duration: {prog.EstimatedPrintHours:F1}h, material: {prog.Material ?? "—"}, " +
+                    $"duration: {prog.EstimatedDurationHours:F1}h, material: {prog.Material ?? "—"}, " +
                     $"parts: {prog.PartCount}, locked: {prog.IsLocked}");
             }
             sb.AppendLine();

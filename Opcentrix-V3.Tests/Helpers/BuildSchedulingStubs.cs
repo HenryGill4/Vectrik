@@ -14,7 +14,7 @@ internal sealed class StubSerialNumberService : ISerialNumberService
     public Task<string> GenerateSerialNumberAsync() =>
         Task.FromResult($"SN-{Interlocked.Increment(ref _counter):D6}");
 
-    public Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy, int? buildPackageId = null) =>
+    public Task<List<PartInstance>> AssignSerialNumbersAsync(int workOrderLineId, int partId, int quantity, string createdBy) =>
         Task.FromResult(new List<PartInstance>());
 
     public Task<PartInstance?> GetBySerialNumberAsync(string serialNumber) =>
@@ -107,7 +107,7 @@ internal sealed class StubManufacturingProcessService : IManufacturingProcessSer
 /// </summary>
 internal sealed class StubBatchService : IBatchService
 {
-    public Task<List<ProductionBatch>> CreateBatchesFromBuildAsync(int buildPackageId, int batchCapacity, string createdBy) =>
+    public Task<List<ProductionBatch>> CreateBatchesFromPartsAsync(List<int> partInstanceIds, int batchCapacity, string createdBy) =>
         Task.FromResult(new List<ProductionBatch>());
 
     public Task AssignPartToBatchAsync(int partInstanceId, int batchId, string reason, string performedBy, int? atProcessStageId = null) =>
@@ -128,7 +128,7 @@ internal sealed class StubBatchService : IBatchService
     public Task<ProductionBatch?> GetByIdAsync(int id) =>
         Task.FromResult<ProductionBatch?>(null);
 
-    public Task<List<ProductionBatch>> GetBatchesForBuildAsync(int buildPackageId) =>
+    public Task<List<ProductionBatch>> GetActiveBatchesAsync() =>
         Task.FromResult(new List<ProductionBatch>());
 
     public Task SealBatchAsync(int batchId) => Task.CompletedTask;

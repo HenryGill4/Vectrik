@@ -492,9 +492,15 @@ public class ManufacturingProcessService : IManufacturingProcessService
     {
         return await _db.ProcessStages
             .Include(s => s.ProductionStage)
+            .Include(s => s.AssignedMachine)
             .Include(s => s.ManufacturingProcess)
                 .ThenInclude(p => p.Part)
-            .Where(s => s.ProgramSetupRequired)
+                    .ThenInclude(p => p.ManufacturingApproach)
+            .Where(s => s.MachineProgramId == null
+                && s.ManufacturingProcess.IsActive
+                && (s.ProgramSetupRequired
+                    || s.AssignedMachineId != null
+                    || (s.PreferredMachineIds != null && s.PreferredMachineIds != "")))
             .OrderBy(s => s.ManufacturingProcess.Part.PartNumber)
             .ThenBy(s => s.ExecutionOrder)
             .ToListAsync();

@@ -50,4 +50,11 @@ public interface IBuildTemplateService
     // Revision history
     /// <summary>Get all revision snapshots for a template, newest first.</summary>
     Task<List<BuildTemplateRevision>> GetRevisionsAsync(int templateId);
+
+    // Instantiation
+    /// <summary>
+    /// Creates a new MachineProgram from a certified template, copying all part entries,
+    /// slicer metadata, and material settings. Increments the template's UseCount.
+    /// </summary>
+    Task<MachineProgram> InstantiateAsync(int templateId, int machineId, string createdBy, int? workOrderLineId = null);
 }

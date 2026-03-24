@@ -527,6 +527,7 @@ public class StageService : IStageService
             .Include(e => e.ProcessStage)
             .Include(e => e.Operator)
             .Include(e => e.Machine)
+            .Include(e => e.MachineProgram)
 
             .Where(e => e.Status != StageExecutionStatus.Completed
                 && e.Status != StageExecutionStatus.Skipped
@@ -548,6 +549,7 @@ public class StageService : IStageService
             .Include(e => e.ProductionStage)
             .Include(e => e.Machine)
             .Include(e => e.ProcessStage)
+            .Include(e => e.MachineProgram)
             .Where(e => e.Status == StageExecutionStatus.NotStarted
                 && (e.ScheduledStartAt == null || e.MachineId == null))
             .OrderByDescending(e => e.Job != null ? (int)e.Job.Priority : 0)

@@ -32,6 +32,8 @@ public class TenantDbContext : DbContext
     // Scheduling
     public DbSet<Machine> Machines { get; set; }
     public DbSet<OperatingShift> OperatingShifts { get; set; }
+    public DbSet<MachineShiftAssignment> MachineShiftAssignments { get; set; }
+    public DbSet<UserShiftAssignment> UserShiftAssignments { get; set; }
 
     // Production Tracking
     public DbSet<BuildJob> BuildJobs { get; set; }
@@ -974,6 +976,34 @@ public class TenantDbContext : DbContext
                 .HasForeignKey(e => e.StageExecutionId)
                 .OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(e => new { e.MachineProgramId, e.Status });
+        });
+
+        // MachineShiftAssignment (many-to-many join)
+        modelBuilder.Entity<MachineShiftAssignment>(entity =>
+        {
+            entity.HasKey(e => new { e.MachineId, e.OperatingShiftId });
+            entity.HasOne(e => e.Machine)
+                .WithMany(e => e.ShiftAssignments)
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.OperatingShift)
+                .WithMany(e => e.MachineAssignments)
+                .HasForeignKey(e => e.OperatingShiftId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // UserShiftAssignment (many-to-many join)
+        modelBuilder.Entity<UserShiftAssignment>(entity =>
+        {
+            entity.HasKey(e => new { e.UserId, e.OperatingShiftId });
+            entity.HasOne(e => e.User)
+                .WithMany(e => e.ShiftAssignments)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.OperatingShift)
+                .WithMany(e => e.UserAssignments)
+                .HasForeignKey(e => e.OperatingShiftId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // MachineProgramAssignment (many-to-many join)

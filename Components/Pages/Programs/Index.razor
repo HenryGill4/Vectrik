@@ -92,22 +92,31 @@
         </div>
     </div>
 
-    @* ── Auto-detection Banner (new programs only) ── *@
-    @if (isNewProgram && isBuildPlateEditor)
+    @* ── Auto-detection Banner ── *@
+    @if (isBuildPlateEditor)
     {
         <div style="background:rgba(var(--accent-rgb),0.08);border:1px solid rgba(var(--accent-rgb),0.25);border-radius:6px;padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
             <span style="font-size:1.2em;">🖨️</span>
             <div>
                 <strong style="font-size:0.9em;">SLS Build Plate Mode</strong>
-                <div style="font-size:0.8em;color:var(--text-muted);">Auto-detected from machine selection. Add parts to the plate and optionally enter slicer data.</div>
+                <div style="font-size:0.8em;color:var(--text-muted);">
+                    @if (isNewProgram)
+                    {
+                        @("Auto-detected from machine selection. Add parts to the plate and optionally enter slicer data.")
+                    }
+                    else
+                    {
+                        @("SLS machines detected — program will be saved as a build plate. Parts and slicer data will be used for scheduling.")
+                    }
+                </div>
             </div>
         </div>
     }
 
-    @if (isBuildPlateEditor && isNewProgram && !_createBuildPlateParts.Any())
+    @if (isBuildPlateEditor && !_createBuildPlateParts.Any())
     {
         <div style="padding:8px 12px;background:rgba(var(--warning-rgb),0.1);border:1px solid rgba(var(--warning-rgb),0.3);border-radius:6px;margin-bottom:16px;font-size:0.85em;color:var(--warning);">
-            ⚠ Add at least one part before creating
+            ⚠ Add at least one part before saving
         </div>
     }
 
@@ -973,12 +982,16 @@ else
     @* ═══ PENDING PROGRAM SETUP BANNER ═══ *@
     @if (_pendingSetupStages.Count > 0)
     {
+        var pendingParts = _pendingSetupStages
+            .GroupBy(s => s.ManufacturingProcess?.Part?.Id ?? 0)
+            .ToList();
+
         <div class="program-pending-banner">
             <span class="pending-icon">⚠️</span>
             <div>
-                <strong><span class="program-pending-count">@_pendingSetupStages.Count</span> stage(s) need program setup</strong>
+                <strong><span class="program-pending-count">@_pendingSetupStages.Count</span> stage(s) across @pendingParts.Count part(s) need program setup</strong>
                 <span style="color:var(--text-muted);font-size:0.85em;margin-left:8px;">
-                    Parts with machine-based stages require a program to set real durations and feed the learning system.
+                    Create programs to set real durations, enable scheduling, and feed the learning system.
                 </span>
             </div>
             <button class="btn btn-sm @(_showPendingSetup ? "btn-secondary" : "btn-warning")" style="margin-left:auto;"
@@ -989,55 +1002,89 @@ else
 
         @if (_showPendingSetup)
         {
-            <div class="card" style="margin-bottom:16px;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Part</th>
-                            <th>Stage</th>
-                            <th>Processing Level</th>
-                            <th>Assigned Machines</th>
-                            <th style="width:140px;"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var stage in _pendingSetupStages)
+            @foreach (var partGroup in pendingParts)
+            {
+                var firstStage = partGroup.First();
+                var part = firstStage.ManufacturingProcess?.Part;
+                var partNumber = part?.PartNumber ?? "—";
+                var partName = part?.Name ?? "";
+                var approach = part?.ManufacturingApproach;
+                var isAdditive = approach?.RequiresBuildPlate == true;
+
+                <div class="card" style="margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                        <span class="wo-line-type-badge @(isAdditive ? "wo-line-type--sls" : "wo-line-type--cnc")">@(isAdditive ? "SLS" : "CNC")</span>
+                        <div>
+                            <strong style="font-size:1em;">@partNumber</strong>
+                            <span style="color:var(--text-muted);font-size:0.85em;margin-left:6px;">@partName</span>
+                        </div>
+                        @if (approach != null)
                         {
-                            var partNumber = stage.ManufacturingProcess?.Part?.PartNumber ?? "—";
-                            var partName = stage.ManufacturingProcess?.Part?.Name ?? "";
-                            var stageName = stage.ProductionStage?.Name ?? $"Stage #{stage.ProductionStageId}";
-                            var stageIcon = stage.ProductionStage?.StageIcon ?? "❓";
-                            var stageColor = stage.ProductionStage?.StageColor ?? "#666";
-                            var machineNames = GetMachineNamesForStage(stage);
-                            <tr>
-                                <td><strong>@partNumber</strong> <span style="color:var(--text-muted);font-size:0.85em;">@partName</span></td>
-                                <td>
-                                    <span style="color:@stageColor;">@stageIcon</span> @stageName
-                                </td>
-                                <td><span class="badge badge-secondary">@stage.ProcessingLevel</span></td>
-                                <td>
-                                    @if (machineNames.Count > 0)
-                                    {
-                                        @foreach (var mn in machineNames)
-                                        {
-                                            <span class="badge badge-info" style="margin-right:4px;">🖥️ @mn</span>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <span style="color:var(--text-muted);font-style:italic;">None</span>
-                                    }
-                                </td>
-                                <td>
-                                    <button class="btn btn-sm btn-primary" @onclick="() => CreateProgramForStage(stage)">
-                                        + Create Program
-                                    </button>
-                                </td>
-                            </tr>
+                            <span class="badge badge-secondary" style="margin-left:auto;">@(approach.Name ?? "Process")</span>
                         }
-                    </tbody>
-                </table>
-            </div>
+                    </div>
+                    <table class="data-table" style="margin:0;">
+                        <thead>
+                            <tr>
+                                <th style="width:30px;">#</th>
+                                <th>Stage</th>
+                                <th>Level</th>
+                                <th>Default Duration</th>
+                                <th>Machine(s)</th>
+                                <th style="width:150px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var stage in partGroup.OrderBy(s => s.ExecutionOrder))
+                            {
+                                var stageName = stage.ProductionStage?.Name ?? $"Stage #{stage.ProductionStageId}";
+                                var stageIcon = stage.ProductionStage?.StageIcon ?? "❓";
+                                var stageColor = stage.ProductionStage?.StageColor ?? "#666";
+                                var machineNames = GetMachineNamesForStage(stage);
+                                var assignedName = stage.AssignedMachine?.Name;
+                                var defaultDuration = stage.RunTimeMinutes.HasValue
+                                    ? $"{stage.RunTimeMinutes.Value:F0} min ({stage.RunDurationMode})"
+                                    : stage.DurationFromBuildConfig
+                                        ? "From build config"
+                                        : stage.ProductionStage?.DefaultDurationHours > 0
+                                            ? $"{stage.ProductionStage.DefaultDurationHours:F1} hrs (catalog default)"
+                                            : "Not set";
+
+                                <tr>
+                                    <td style="color:var(--text-muted);">@stage.ExecutionOrder</td>
+                                    <td>
+                                        <span style="color:@stageColor;">@stageIcon</span> @stageName
+                                    </td>
+                                    <td><span class="badge badge-secondary">@stage.ProcessingLevel</span></td>
+                                    <td style="font-size:0.85em;">@defaultDuration</td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(assignedName))
+                                        {
+                                            <span class="badge badge-info" style="margin-right:4px;">🖥️ @assignedName</span>
+                                        }
+                                        @if (machineNames.Count > 0)
+                                        {
+                                            @foreach (var mn in machineNames.Where(n => n != assignedName))
+                                            {
+                                                <span class="badge badge-secondary" style="margin-right:4px;">@mn</span>
+                                            }
+                                        }
+                                        @if (string.IsNullOrEmpty(assignedName) && machineNames.Count == 0)
+                                        {
+                                            <span style="color:var(--text-muted);font-style:italic;font-size:0.85em;">No machine</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" @onclick="() => CreateProgramForStage(stage)">
+                                            + Create Program
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
         }
     }
 
@@ -1125,6 +1172,10 @@ else
     <div class="kpi-grid" style="margin-bottom: 16px;">
         <div class="kpi-card"><div class="kpi-label">Total Programs</div><div class="kpi-value">@_programs.Count</div></div>
         <div class="kpi-card"><div class="kpi-label">Active</div><div class="kpi-value" style="color:var(--success)">@_programs.Count(p => p.Status == ProgramStatus.Active)</div></div>
+        <div class="kpi-card" style="cursor:pointer;" @onclick="() => { _showPendingSetup = !_showPendingSetup; }">
+            <div class="kpi-label">Needs Setup</div>
+            <div class="kpi-value" style="color:@(_pendingSetupStages.Count > 0 ? "var(--warning)" : "var(--text-muted)")">@_pendingSetupStages.Count</div>
+        </div>
         <div class="kpi-card">
             <div class="kpi-label">Needing Review</div>
             <div class="kpi-value" style="color:@(_totalUnresolvedFeedback > 0 ? "var(--warning)" : "var(--text-muted)")">@_totalUnresolvedFeedback</div>
@@ -1163,7 +1214,7 @@ else
                                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                     <strong>@program.ProgramNumber</strong>
                                     <span class="badge badge-@program.Status.ToString().ToLower()">@program.Status</span>
-                                    <span class="badge badge-secondary">v@program.Version</span>
+                                    <span class="badge badge-secondary">v@(program.Version)</span>
                                     @if (program.IsBuildPlate)
                                     {
                                         <span class="badge badge-info">🏗️ Build Plate</span>
@@ -2548,10 +2599,23 @@ else
         _createBuildAddPartId = 0;
         _createBuildAddPartQty = 1;
 
-        // Populate unified parts list
-        if (program.IsBuildPlate)
+        // Auto-detect SLS: if all assigned machines are SLS, switch Standard → BuildPlate
+        if (!program.IsBuildPlate && _editSelectedMachineIds.Count > 0 && _machines != null)
         {
-            // Build plates: all parts from ProgramParts
+            var selectedMachines = _machines.Where(m => _editSelectedMachineIds.Contains(m.Id)).ToList();
+            var allSls = selectedMachines.Count > 0
+                && selectedMachines.All(m => string.Equals(m.MachineType, "SLS", StringComparison.OrdinalIgnoreCase));
+            if (allSls)
+            {
+                _editingProgram.ProgramType = ProgramType.BuildPlate;
+                _editingProgram.MachineType = "SLS";
+            }
+        }
+
+        // Populate unified parts list
+        if (_editingProgram.IsBuildPlate)
+        {
+            // Build plates: all parts from ProgramParts (no primary)
             if (program.ProgramParts?.Any() == true)
             {
                 foreach (var pp in program.ProgramParts)
@@ -2563,6 +2627,18 @@ else
                         pp.Quantity,
                         IsPrimary: false));
                 }
+            }
+
+            // If converting from Standard and part was on PartId FK, add it as a plate part
+            if (program.PartId.HasValue && program.Part != null
+                && !_createBuildPlateParts.Any(p => p.PartId == program.PartId.Value))
+            {
+                _createBuildPlateParts.Add(new CreateBuildPartEntry(
+                    program.Part.Id,
+                    program.Part.PartNumber,
+                    program.Part.Name,
+                    Quantity: 1,
+                    IsPrimary: false));
             }
         }
         else
@@ -2616,8 +2692,7 @@ else
         }
 
         // Auto-detect ProgramType: if ALL selected machines are SLS → BuildPlate, otherwise Standard
-        // Only auto-detect for new programs (don't change type on existing ones)
-        if (_editingProgram.Id == 0 && _machines != null)
+        if (_machines != null)
         {
             var selectedMachines = _machines.Where(m => _editSelectedMachineIds.Contains(m.Id)).ToList();
             var allSls = selectedMachines.Count > 0
@@ -2627,7 +2702,7 @@ else
             {
                 _editingProgram.ProgramType = ProgramType.BuildPlate;
                 _editingProgram.MachineType = "SLS";
-                // Clear primary flags when switching to build plate
+                // Clear primary flags when switching to build plate — all parts become plate parts
                 _createBuildPlateParts = _createBuildPlateParts.Select(p => p with { IsPrimary = false }).ToList();
             }
             else if (!allSls && _editingProgram.ProgramType == ProgramType.BuildPlate)
@@ -2688,6 +2763,12 @@ else
         if (isBuildPlate && string.IsNullOrWhiteSpace(_editingProgram.ProgramNumber))
         {
             _editingProgram.ProgramNumber = $"BP-{DateTime.UtcNow:yyMMdd-HHmmss}";
+        }
+
+        if (isBuildPlate && !_createBuildPlateParts.Any())
+        {
+            Toast.ShowError("Add at least one part to the build plate.");
+            return;
         }
 
         _saving = true;
@@ -3069,7 +3150,18 @@ else
             .Where(id => id > 0)
             .ToHashSet() ?? [];
 
+        // Include the assigned machine if set
+        if (stage.AssignedMachineId.HasValue)
+            machineIds.Add(stage.AssignedMachineId.Value);
+
         var stageName = stage.ProductionStage?.Name ?? $"Stage-{stage.ExecutionOrder}";
+        var machineType = stage.AssignedMachine?.MachineType
+            ?? _machines?.FirstOrDefault(m => machineIds.Contains(m.Id))?.MachineType;
+
+        // Pre-fill duration from stage defaults
+        double? defaultRunMinutes = stage.RunTimeMinutes
+            ?? (stage.ProductionStage?.DefaultDurationHours > 0 ? stage.ProductionStage.DefaultDurationHours * 60 : null);
+        double? defaultSetupMinutes = stage.SetupTimeMinutes;
 
         _editingProgram = new MachineProgram
         {
@@ -3077,7 +3169,10 @@ else
             Name = $"{part?.Name ?? "Part"} — {stageName}",
             PartId = part?.Id,
             ProcessStageId = stage.Id,
-            MachineType = _machines?.FirstOrDefault(m => machineIds.Contains(m.Id))?.MachineType,
+            MachineType = machineType,
+            MachineId = stage.AssignedMachineId,
+            RunTimeMinutes = defaultRunMinutes,
+            SetupTimeMinutes = defaultSetupMinutes,
             Status = ProgramStatus.Draft,
             CreatedBy = _currentUser
         };
@@ -3308,7 +3403,7 @@ else
         try
         {
             var result = await ProgramScheduling.ScheduleBuildPlateAsync(plate.Id, preferredMachine.MachineId);
-            var stageCount = result.BuildStageExecutions.Count;
+            var stageCount = result.StageExecutions.Count;
             var msg = $"Scheduled: {result.Slot.PrintStart:g} → {result.Slot.PrintEnd:g} — {stageCount} stage(s)";
             if (result.Diagnostics?.Warnings.Count > 0)
                 msg += $" ({string.Join("; ", result.Diagnostics.Warnings)})";

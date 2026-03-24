@@ -30,11 +30,13 @@
         }
         @* ── Build-level stage execution groups (skip stages already shown by build bars) ── *@
         @{
-            // Use StageExecutionId to precisely identify which executions are
-            // already rendered as timeline bars. Multi-run builds share the same
-            // MachineProgramId, so matching by MachineProgramId would hide ALL runs.
+            // Only exclude executions whose build bars were actually rendered.
+            // Timeline entries for non-BuildPlate programs won't have a match in
+            // BuildPrograms, so their build bar is skipped — they must remain in
+            // remainingExecs to be rendered as individual or group bars.
+            var renderedProgramIds = BuildPrograms.Select(b => b.Id).ToHashSet();
             var timelineExecIds = BuildTimeline
-                .Where(t => t.StageExecutionId.HasValue)
+                .Where(t => t.StageExecutionId.HasValue && renderedProgramIds.Contains(t.MachineProgramId))
                 .Select(t => t.StageExecutionId!.Value)
                 .ToHashSet();
             var remainingExecs = Executions.Where(e => !timelineExecIds.Contains(e.Id)).ToList();
@@ -82,7 +84,7 @@
     [Parameter] public EventCallback<StageExecution> OnBarClick { get; set; }
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
     [Parameter] public List<MachineProgram> BuildPrograms { get; set; } = [];
-    [Parameter] public List<MachineTimelineEntry> BuildTimeline { get; set; } = [];
+    [Parameter] public List<ProgramTimelineEntry> BuildTimeline { get; set; } = [];
 
     private double GetBarLeftPx(DateTime start) =>
         (start - DataRangeStart).TotalHours * PixelsPerHour;
