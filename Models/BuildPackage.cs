@@ -4,6 +4,12 @@ using Opcentrix_V3.Models.Enums;
 
 namespace Opcentrix_V3.Models;
 
+/// <summary>
+/// [OBSOLETE] BuildPackage has been superseded by MachineProgram with ProgramType.BuildPlate.
+/// Use MachineProgram for all build plate operations. MachineProgram now has full scheduling
+/// lifecycle support (ScheduleStatus, ScheduledDate, PrintStartedAt, etc.).
+/// </summary>
+[Obsolete("Use MachineProgram with ProgramType.BuildPlate instead. BuildPackage will be removed in a future release.")]
 public class BuildPackage
 {
     public int Id { get; set; }

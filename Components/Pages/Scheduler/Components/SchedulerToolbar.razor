@@ -50,24 +50,24 @@
                 </button>
             </div>
         }
-        else if (ViewMode == "builds")
+        else if (ViewMode == "programs")
         {
             <div class="sched-quick-filters sched-status-pills">
-                <button class="btn btn-sm @(BuildStatusFilter == null ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetBuildStatusFilter(null)"
-                        title="Show all builds">All</button>
-                <button class="btn btn-sm @(BuildStatusFilter == BuildPackageStatus.Draft ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetBuildStatusFilter(BuildPackageStatus.Draft)"
-                        title="Show Draft builds">Draft</button>
-                <button class="btn btn-sm @(BuildStatusFilter == BuildPackageStatus.Ready ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetBuildStatusFilter(BuildPackageStatus.Ready)"
-                        title="Show Ready builds">Ready</button>
-                <button class="btn btn-sm @(BuildStatusFilter == BuildPackageStatus.Scheduled ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetBuildStatusFilter(BuildPackageStatus.Scheduled)"
-                        title="Show Scheduled builds">Scheduled</button>
-                <button class="btn btn-sm @(BuildStatusFilter == BuildPackageStatus.Printing ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => SetBuildStatusFilter(BuildPackageStatus.Printing)"
-                        title="Show Printing builds">Printing</button>
+                <button class="btn btn-sm @(ProgramStatusFilter == null ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetProgramStatusFilter(null)"
+                        title="Show all programs">All</button>
+                <button class="btn btn-sm @(ProgramStatusFilter == ProgramScheduleStatus.Ready ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Ready)"
+                        title="Show Ready programs">Ready</button>
+                <button class="btn btn-sm @(ProgramStatusFilter == ProgramScheduleStatus.Scheduled ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Scheduled)"
+                        title="Show Scheduled programs">Scheduled</button>
+                <button class="btn btn-sm @(ProgramStatusFilter == ProgramScheduleStatus.Printing ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Printing)"
+                        title="Show Printing programs">Printing</button>
+                <button class="btn btn-sm @(ProgramStatusFilter == ProgramScheduleStatus.PostPrint ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.PostPrint)"
+                        title="Show Post-Print programs">Post-Print</button>
             </div>
         }
         else if (ViewMode == "demand")
@@ -85,7 +85,7 @@
         <div class="sched-view-toggle">
             <button class="btn btn-sm @(ViewMode == "gantt" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("gantt"))'>🏭 Production</button>
             <button class="btn btn-sm @(ViewMode == "demand" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("demand"))'>📋 Demand</button>
-            <button class="btn btn-sm @(ViewMode == "builds" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("builds"))'>📦 Builds</button>
+            <button class="btn btn-sm @(ViewMode == "programs" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("programs"))'>📋 Programs</button>
             <button class="btn btn-sm @(ViewMode == "floor" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("floor"))'>🔧 Floor</button>
             <button class="btn btn-sm @(ViewMode == "data" ? "btn-primary" : "btn-secondary")" @onclick='@(() => OnViewModeChanged.InvokeAsync("data"))'>📊 Data</button>
         </div>
@@ -112,9 +112,10 @@
     // C5: Quick filter state parameters
     [Parameter] public bool ShowConflictsOnly { get; set; }
     [Parameter] public BuildPackageStatus? BuildStatusFilter { get; set; }
+    [Parameter] public ProgramScheduleStatus? ProgramStatusFilter { get; set; }
     [Parameter] public bool ShowOverdueOnly { get; set; }
 
-    private bool HasGanttViewport => ViewMode is "gantt" or "builds" or "data";
+    private bool HasGanttViewport => ViewMode is "gantt" or "programs" or "data";
 
     [Parameter] public EventCallback<string> OnViewModeChanged { get; set; }
     [Parameter] public EventCallback<int> OnShiftViewport { get; set; }
@@ -129,6 +130,7 @@
     // C5: Quick filter EventCallbacks
     [Parameter] public EventCallback<bool> OnShowConflictsOnlyChanged { get; set; }
     [Parameter] public EventCallback<BuildPackageStatus?> OnBuildStatusFilterChanged { get; set; }
+    [Parameter] public EventCallback<ProgramScheduleStatus?> OnProgramStatusFilterChanged { get; set; }
     [Parameter] public EventCallback<bool> OnShowOverdueOnlyChanged { get; set; }
 
     private async Task ToggleConflictsOnly()
@@ -139,6 +141,11 @@
     private async Task SetBuildStatusFilter(BuildPackageStatus? status)
     {
         await OnBuildStatusFilterChanged.InvokeAsync(status);
+    }
+
+    private async Task SetProgramStatusFilter(ProgramScheduleStatus? status)
+    {
+        await OnProgramStatusFilterChanged.InvokeAsync(status);
     }
 
     private async Task ToggleOverdueOnly()

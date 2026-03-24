@@ -1646,6 +1646,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int?>("ActualSampleCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<double?>("BuildHeightMm")
+                        .HasColumnType("REAL");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1657,19 +1660,34 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<double?>("CycleTimeMinutes")
                         .HasColumnType("REAL");
 
+                    b.Property<int?>("DepowderProgramId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("EdmProgramId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("EstimateSource")
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
+
+                    b.Property<double?>("EstimatedPowderKg")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("EstimatedPrintHours")
+                        .HasColumnType("REAL");
 
                     b.Property<string>("FixtureRequired")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsLocked")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("LastModifiedBy")
@@ -1679,12 +1697,18 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<DateTime>("LastModifiedDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("LayerCount")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("MachineId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("MachineType")
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("MaterialId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1701,6 +1725,21 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int?>("PartId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("PartPositionsJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PlateReleasedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PredecessorProgramId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("PrintCompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PrintStartedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("ProcessStageId")
                         .HasColumnType("INTEGER");
 
@@ -1709,11 +1748,38 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("ProgramType")
+                        .HasColumnType("INTEGER");
+
                     b.Property<double?>("RunTimeMinutes")
                         .HasColumnType("REAL");
 
+                    b.Property<int>("ScheduleStatus")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ScheduledDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ScheduledJobId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<double?>("SetupTimeMinutes")
                         .HasColumnType("REAL");
+
+                    b.Property<string>("SlicerFileName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlicerSoftware")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlicerVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("SourceProgramId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
@@ -1728,15 +1794,36 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int>("Version")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("WorkInstructionId")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("DepowderProgramId");
+
+                    b.HasIndex("EdmProgramId");
 
                     b.HasIndex("MachineId");
 
+                    b.HasIndex("MaterialId");
+
                     b.HasIndex("PartId");
+
+                    b.HasIndex("PredecessorProgramId");
 
                     b.HasIndex("ProcessStageId");
 
                     b.HasIndex("ProgramNumber");
+
+                    b.HasIndex("ScheduleStatus");
+
+                    b.HasIndex("ScheduledDate");
+
+                    b.HasIndex("ScheduledJobId");
+
+                    b.HasIndex("SourceProgramId");
+
+                    b.HasIndex("WorkInstructionId");
 
                     b.ToTable("MachinePrograms");
                 });
@@ -3299,6 +3386,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int>("ProductionStageId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("ProgramSetupRequired")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("QualityRequirements")
                         .HasColumnType("TEXT");
 
@@ -3601,6 +3691,80 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("MachineProgramId", "Status");
 
                     b.ToTable("ProgramFeedbacks");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.ProgramPart", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MachineProgramId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PositionNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StackLevel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("WorkOrderLineId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartId");
+
+                    b.HasIndex("WorkOrderLineId");
+
+                    b.HasIndex("MachineProgramId", "PartId");
+
+                    b.ToTable("ProgramParts");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.ProgramRevision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ChangeNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MachineProgramId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ParametersSnapshotJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PartsSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("RevisionDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MachineProgramId", "RevisionNumber");
+
+                    b.ToTable("ProgramRevisions");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.ProgramToolingItem", b =>
@@ -5435,9 +5599,24 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
             modelBuilder.Entity("Opcentrix_V3.Models.MachineProgram", b =>
                 {
+                    b.HasOne("Opcentrix_V3.Models.MachineProgram", "DepowderProgram")
+                        .WithMany()
+                        .HasForeignKey("DepowderProgramId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Opcentrix_V3.Models.MachineProgram", "EdmProgram")
+                        .WithMany()
+                        .HasForeignKey("EdmProgramId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Opcentrix_V3.Models.Machine", "Machine")
                         .WithMany()
                         .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Opcentrix_V3.Models.Material", "Material")
+                        .WithMany()
+                        .HasForeignKey("MaterialId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("Opcentrix_V3.Models.Part", "Part")
@@ -5445,16 +5624,50 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Opcentrix_V3.Models.MachineProgram", "PredecessorProgram")
+                        .WithMany()
+                        .HasForeignKey("PredecessorProgramId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Opcentrix_V3.Models.ProcessStage", "ProcessStage")
                         .WithMany()
                         .HasForeignKey("ProcessStageId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Opcentrix_V3.Models.Job", "ScheduledJob")
+                        .WithMany()
+                        .HasForeignKey("ScheduledJobId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Opcentrix_V3.Models.MachineProgram", "SourceProgram")
+                        .WithMany()
+                        .HasForeignKey("SourceProgramId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Opcentrix_V3.Models.WorkInstruction", "WorkInstruction")
+                        .WithMany()
+                        .HasForeignKey("WorkInstructionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("DepowderProgram");
+
+                    b.Navigation("EdmProgram");
+
                     b.Navigation("Machine");
+
+                    b.Navigation("Material");
 
                     b.Navigation("Part");
 
+                    b.Navigation("PredecessorProgram");
+
                     b.Navigation("ProcessStage");
+
+                    b.Navigation("ScheduledJob");
+
+                    b.Navigation("SourceProgram");
+
+                    b.Navigation("WorkInstruction");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.MachineProgramAssignment", b =>
@@ -5909,6 +6122,43 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("StageExecution");
                 });
 
+            modelBuilder.Entity("Opcentrix_V3.Models.ProgramPart", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.MachineProgram", "MachineProgram")
+                        .WithMany("ProgramParts")
+                        .HasForeignKey("MachineProgramId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Opcentrix_V3.Models.WorkOrderLine", "WorkOrderLine")
+                        .WithMany("ProgramParts")
+                        .HasForeignKey("WorkOrderLineId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("MachineProgram");
+
+                    b.Navigation("Part");
+
+                    b.Navigation("WorkOrderLine");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.ProgramRevision", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.MachineProgram", "MachineProgram")
+                        .WithMany()
+                        .HasForeignKey("MachineProgramId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MachineProgram");
+                });
+
             modelBuilder.Entity("Opcentrix_V3.Models.ProgramToolingItem", b =>
                 {
                     b.HasOne("Opcentrix_V3.Models.Maintenance.MachineComponent", "MachineComponent")
@@ -6325,6 +6575,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
                     b.Navigation("MachineAssignments");
 
+                    b.Navigation("ProgramParts");
+
                     b.Navigation("ToolingItems");
                 });
 
@@ -6446,6 +6698,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Jobs");
 
                     b.Navigation("PartInstances");
+
+                    b.Navigation("ProgramParts");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.WorkflowDefinition", b =>

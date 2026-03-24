@@ -65,6 +65,14 @@ public interface IManufacturingProcessService
     DurationResult CalculateStageDuration(ProcessStage stage, int partCount, int batchCount, double? buildConfigHours);
 
     /// <summary>
+    /// Calculate the total duration for a stage, optionally using a specific program's duration data.
+    /// When machineProgramId is provided, the program's duration fields take priority over stage defaults.
+    /// Falls back to CalculateStageDuration(stage, partCount, batchCount, buildConfigHours) if program has no duration data.
+    /// </summary>
+    Task<DurationResult> CalculateStageDurationWithProgramAsync(
+        ProcessStage stage, int partCount, int batchCount, double? buildConfigHours, int? machineProgramId);
+
+    /// <summary>
     /// Clone a process from one part to another.
     /// </summary>
     Task<ManufacturingProcess> CloneProcessAsync(int sourceProcessId, int targetPartId, string createdBy);
@@ -74,6 +82,17 @@ public interface IManufacturingProcessService
     /// Creates process stages with defaults from the ProductionStage catalog and template hints.
     /// </summary>
     Task<ManufacturingProcess> CreateProcessFromApproachAsync(int partId, int approachId, string createdBy);
+
+    /// <summary>
+    /// Returns all ProcessStages where ProgramSetupRequired is true (machines assigned, no program linked).
+    /// Includes ProductionStage catalog data and the owning ManufacturingProcess/Part.
+    /// </summary>
+    Task<List<ProcessStage>> GetStagesPendingProgramSetupAsync();
+
+    /// <summary>
+    /// Links a MachineProgram to a ProcessStage and clears ProgramSetupRequired.
+    /// </summary>
+    Task LinkProgramToStageAsync(int processStageId, int machineProgramId);
 }
 
 /// <summary>

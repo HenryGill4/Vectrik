@@ -1,10 +1,13 @@
 @page "/admin/manufacturing-approaches"
 @inject IManufacturingApproachService ApproachService
 @inject IStageService StageService
+@inject IMachineService MachineService
 @inject ToastService Toast
 
 <PageTitle>Manufacturing Approaches - Admin - OpCentrix</PageTitle>
 
+@if (!_showForm)
+{
 <div class="page-header">
     <h1 class="page-title">Manufacturing Approaches</h1>
     <button class="btn btn-primary" @onclick="NewApproach">+ New Approach</button>
@@ -50,9 +53,13 @@ else
                                     @foreach (var entry in routingStages)
                                     {
                                         var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
-                                        <span class="routing-chip" style="@(stage != null ? $"background:{stage.StageColor}20;border-color:{stage.StageColor};" : "")">
+                                        <span class="routing-chip" style="@(stage != null ? $"background:{stage.StageColor}20;border-color:{stage.StageColor};" : "")" title="@(entry.MachineIds.Count > 0 ? $"Machines: {string.Join(", ", entry.MachineIds.Select(mid => _machines?.FirstOrDefault(m => m.Id == mid)?.Name ?? mid.ToString()))}" : "No machines")">
                                             @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
                                             <span style="font-size:0.7em;color:var(--text-muted);margin-left:2px;">@entry.Level.ToString()[0]</span>
+                                            @if (entry.MachineIds.Count > 0)
+                                            {
+                                                <span style="font-size:0.65em;color:var(--text-muted);margin-left:2px;">🔧@entry.MachineIds.Count</span>
+                                            }
                                         </span>
                                     }
                                 </div>
@@ -65,47 +72,51 @@ else
             </tbody>
         </table>
     </div>
-}
+} @* end list *@
+} @* end !_showForm *@
 
 @if (_showForm && _edit != null)
 {
-    <div class="modal-overlay" @onclick="() => _showForm = false">
-        <div class="modal-content approach-modal" @onclick:stopPropagation>
-            <div class="modal-header">
-                <span class="modal-title">@(_edit.Id == 0 ? "New Approach" : "Edit Approach")</span>
-                <button class="modal-close" @onclick="() => _showForm = false">&times;</button>
-            </div>
-            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+    <div class="page-header">
+        <h1 class="page-title">@(_edit.Id == 0 ? "New Approach" : "Edit Approach")</h1>
+        <div style="display:flex;gap:8px;">
+            <button class="btn btn-secondary" @onclick="() => _showForm = false">← Back</button>
+            <button class="btn btn-primary" @onclick="Save">💾 Save Approach</button>
+        </div>
+    </div>
 
-            @* ═══ BASIC INFO ═══ *@
-            <div class="approach-section">
-                <h4>📋 Basic Information</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="form-group">
-                        <label class="form-label">Name <span class="required">*</span></label>
-                        <input class="form-control" @bind="_edit.Name" placeholder="e.g. SLS Printing" />
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Slug <span class="required">*</span></label>
-                        <input class="form-control" @bind="_edit.Slug" placeholder="e.g. sls-printing" style="font-family:monospace;" />
-                    </div>
-                    <div class="form-group" style="grid-column: span 2;">
-                        <label class="form-label">Description</label>
-                        <input class="form-control" @bind="_edit.Description" placeholder="Brief description of this manufacturing approach" />
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Icon (emoji)</label>
-                        <input class="form-control" @bind="_edit.IconEmoji" placeholder="🖨️" style="font-size:1.2em;" />
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Display Order</label>
-                        <input class="form-control" type="number" @bind="_edit.DisplayOrder" />
+    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+
+            <div class="approach-form">
+                @* ═══ BASIC INFO ═══ *@
+                <div class="card approach-section">
+                    <h4>📋 Basic Information</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">Name <span class="required">*</span></label>
+                            <input class="form-control" @bind="_edit.Name" placeholder="e.g. SLS Printing" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Slug <span class="required">*</span></label>
+                            <input class="form-control" @bind="_edit.Slug" placeholder="e.g. sls-printing" style="font-family:monospace;" />
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label class="form-label">Description</label>
+                            <input class="form-control" @bind="_edit.Description" placeholder="Brief description of this manufacturing approach" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Icon (emoji)</label>
+                            <input class="form-control" @bind="_edit.IconEmoji" placeholder="🖨️" style="font-size:1.2em;" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Display Order</label>
+                            <input class="form-control" type="number" @bind="_edit.DisplayOrder" />
+                        </div>
                     </div>
                 </div>
-            </div>
 
             @* ═══ BEHAVIOR FLAGS ═══ *@
-            <div class="approach-section">
+            <div class="card approach-section">
                 <h4>⚙️ Behavior Flags</h4>
                 <div class="flag-grid">
                     <label class="flag-item @(_edit.IsAdditive ? "flag-active" : "")">
@@ -149,123 +160,143 @@ else
             </div>
 
             @* ═══ DEFAULT ROUTING TEMPLATE ═══ *@
-            <div class="approach-section">
+            <div class="card approach-section">
                 <h4>🛤️ Default Routing Template</h4>
                 <p class="section-hint">When this approach is selected on a part, these stages will be auto-added to its routing.</p>
 
                 <div class="routing-builder">
-                    @* AVAILABLE STAGES *@
-                    <div class="routing-column">
-                        <div class="routing-header">Available Stages</div>
-                        <div class="routing-list">
-                            @if (_allStages != null)
-                            {
-                                @foreach (var stage in _allStages.Where(s => !_selectedStages.Any(ss => ss.Slug == s.StageSlug)))
-                                {
-                                    <div class="routing-stage-item" @onclick="() => AddStageToTemplate(stage.StageSlug)">
-                                        <span class="stage-icon" style="color:@stage.StageColor">@stage.StageIcon</span>
-                                        <span class="stage-name">@stage.Name</span>
-                                        <span class="add-btn">+</span>
-                                    </div>
-                                }
-                            }
-                        </div>
-                    </div>
-
-                    @* ARROW *@
-                    <div class="routing-arrow">→</div>
-
-                    @* SELECTED STAGES (ORDERED) *@
-                    <div class="routing-column">
-                        <div class="routing-header">Selected Stages (in order)</div>
-                        <div class="routing-list @(_selectedStages.Count == 0 ? "routing-list-empty" : "")">
-                            @if (_selectedStages.Count == 0)
-                            {
-                                <div class="routing-empty">Click stages on the left to add them</div>
-                            }
-                            else
-                            {
-                                @for (int i = 0; i < _selectedStages.Count; i++)
-                                {
-                                    var idx = i;
-                                    var entry = _selectedStages[i];
-                                    var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
-                                    <div class="routing-stage-item routing-stage-selected" style="flex-direction:column;align-items:stretch;">
-                                        <div style="display:flex;align-items:center;gap:6px;">
-                                            <span class="stage-order">@(idx + 1)</span>
-                                            <span class="stage-icon" style="color:@(stage?.StageColor ?? "#666")">@(stage?.StageIcon ?? "❓")</span>
-                                            <span class="stage-name">@(stage?.Name ?? entry.Slug)</span>
-                                            <div class="stage-actions">
-                                                <button class="move-btn" disabled="@(idx == 0)" @onclick="() => MoveStageUp(idx)" title="Move up">▲</button>
-                                                <button class="move-btn" disabled="@(idx == _selectedStages.Count - 1)" @onclick="() => MoveStageDown(idx)" title="Move down">▼</button>
-                                                <button class="remove-btn" @onclick="() => RemoveStageFromTemplate(entry.Slug)" title="Remove">×</button>
+                            @* AVAILABLE STAGES *@
+                            <div class="routing-column">
+                                <div class="routing-header">Available Stages</div>
+                                <div class="routing-list">
+                                    @if (_allStages != null)
+                                    {
+                                        @foreach (var stage in _allStages.Where(s => !_selectedStages.Any(ss => ss.Slug == s.StageSlug)))
+                                        {
+                                            <div class="routing-stage-item" @onclick="() => AddStageToTemplate(stage.StageSlug)">
+                                                <span class="stage-icon" style="color:@stage.StageColor">@stage.StageIcon</span>
+                                                <span class="stage-name">@stage.Name</span>
+                                                <span class="add-btn">+</span>
                                             </div>
-                                        </div>
-                                        <div style="display:flex;gap:6px;margin-top:4px;padding-left:30px;flex-wrap:wrap;">
-                                            <select class="form-control" style="width:100px;height:28px;font-size:0.8em;padding:2px 4px;" value="@entry.Level" @onchange="e => entry.Level = Enum.Parse<ProcessingLevel>(e.Value?.ToString() ?? nameof(ProcessingLevel.Part))">
-                                                <option value="@ProcessingLevel.Build">Build</option>
-                                                <option value="@ProcessingLevel.Batch">Batch</option>
-                                                <option value="@ProcessingLevel.Part">Part</option>
-                                            </select>
-                                            <label style="font-size:0.8em;display:flex;align-items:center;gap:3px;">
-                                                <input type="checkbox" @bind="entry.DurationFromBuildConfig" /> Slicer
-                                            </label>
-                                            <label style="font-size:0.8em;display:flex;align-items:center;gap:3px;">
-                                                <input type="checkbox" @bind="entry.IsPlateReleaseTrigger" /> Plate Release
-                                            </label>
-                                        </div>
-                                    </div>
-                                }
-                            }
+                                        }
+                                    }
+                                </div>
+                            </div>
+
+                            @* ARROW *@
+                            <div class="routing-arrow">→</div>
+
+                            @* SELECTED STAGES (ORDERED) *@
+                            <div class="routing-column">
+                                <div class="routing-header">Selected Stages (in order)</div>
+                                <div class="routing-list @(_selectedStages.Count == 0 ? "routing-list-empty" : "")">
+                                    @if (_selectedStages.Count == 0)
+                                    {
+                                        <div class="routing-empty">Click stages on the left to add them</div>
+                                    }
+                                    else
+                                    {
+                                        @for (int i = 0; i < _selectedStages.Count; i++)
+                                        {
+                                            var idx = i;
+                                            var entry = _selectedStages[i];
+                                            var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                                            <div class="routing-stage-item routing-stage-selected" style="flex-direction:column;align-items:stretch;">
+                                                <div style="display:flex;align-items:center;gap:6px;">
+                                                    <span class="stage-order">@(idx + 1)</span>
+                                                    <span class="stage-icon" style="color:@(stage?.StageColor ?? "#666")">@(stage?.StageIcon ?? "❓")</span>
+                                                    <span class="stage-name">@(stage?.Name ?? entry.Slug)</span>
+                                                    <div class="stage-actions">
+                                                        <button class="move-btn" disabled="@(idx == 0)" @onclick="() => MoveStageUp(idx)" title="Move up">▲</button>
+                                                        <button class="move-btn" disabled="@(idx == _selectedStages.Count - 1)" @onclick="() => MoveStageDown(idx)" title="Move down">▼</button>
+                                                        <button class="remove-btn" @onclick="() => RemoveStageFromTemplate(entry.Slug)" title="Remove">×</button>
+                                                    </div>
+                                                </div>
+                                                <div style="display:flex;gap:6px;margin-top:4px;padding-left:30px;flex-wrap:wrap;">
+                                                    <select class="form-control" style="width:100px;height:28px;font-size:0.8em;padding:2px 4px;" value="@entry.Level" @onchange="e => entry.Level = Enum.Parse<ProcessingLevel>(e.Value?.ToString() ?? nameof(ProcessingLevel.Part))">
+                                                        <option value="@ProcessingLevel.Build">Build</option>
+                                                        <option value="@ProcessingLevel.Batch">Batch</option>
+                                                        <option value="@ProcessingLevel.Part">Part</option>
+                                                    </select>
+                                                    <label style="font-size:0.8em;display:flex;align-items:center;gap:3px;">
+                                                        <input type="checkbox" @bind="entry.DurationFromBuildConfig" /> Slicer
+                                                    </label>
+                                                    <label style="font-size:0.8em;display:flex;align-items:center;gap:3px;">
+                                                        <input type="checkbox" @bind="entry.IsPlateReleaseTrigger" /> Plate Release
+                                                    </label>
+                                                </div>
+                                                @if (_machines != null && _machines.Count > 0)
+                                                {
+                                                    <div class="machine-picker">
+                                                        <span style="font-size:0.75em;color:var(--text-muted);width:100%;margin-bottom:2px;">🔧 Machines:</span>
+                                                        @foreach (var machine in _machines)
+                                                        {
+                                                            var mId = machine.Id;
+                                                            var isSelected = entry.MachineIds.Contains(mId);
+                                                            <span class="machine-chip @(isSelected ? "machine-chip-selected" : "")"
+                                                                  @onclick="() => ToggleMachine(entry, mId)">
+                                                                @machine.Name
+                                                                @if (isSelected) { <span class="machine-chip-remove">✕</span> }
+                                                            </span>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            @* ═══ PREVIEW ═══ *@
-            <div class="approach-section approach-preview">
-                <h4>👁️ Preview</h4>
-                <div class="preview-card">
-                    <div class="preview-name">@(_edit.IconEmoji ?? "📦") @(_edit.Name ?? "Untitled")</div>
-                    <div class="preview-flags">
-                        @if (_edit.IsAdditive) { <span class="badge badge-info">Additive</span> }
-                        @if (_edit.RequiresBuildPlate) { <span class="badge badge-warning">Build Plate</span> }
-                        @if (_edit.DefaultBatchCapacity > 0) { <span class="badge badge-secondary">@(_edit.DefaultBatchCapacity)/batch</span> }
-                        @if (!_edit.IsActive) { <span class="badge badge-cancelled">Inactive</span> }
+                    @* ═══ PREVIEW ═══ *@
+                    <div class="card approach-section approach-preview">
+                        <h4>👁️ Preview</h4>
+                        <div class="preview-card">
+                            <div class="preview-name">@(_edit.IconEmoji ?? "📦") @(_edit.Name ?? "Untitled")</div>
+                            <div class="preview-flags">
+                                @if (_edit.IsAdditive) { <span class="badge badge-info">Additive</span> }
+                                @if (_edit.RequiresBuildPlate) { <span class="badge badge-warning">Build Plate</span> }
+                                @if (_edit.DefaultBatchCapacity > 0) { <span class="badge badge-secondary">@(_edit.DefaultBatchCapacity)/batch</span> }
+                                @if (!_edit.IsActive) { <span class="badge badge-cancelled">Inactive</span> }
+                            </div>
+                            <div class="preview-routing">
+                                @if (_selectedStages.Count == 0)
+                                {
+                                    <span style="color:#999;">No default routing</span>
+                                }
+                                else
+                                {
+                                    @for (int i = 0; i < _selectedStages.Count; i++)
+                                    {
+                                        var entry = _selectedStages[i];
+                                        var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                                        if (i > 0) { <span class="preview-arrow">→</span> }
+                                        <span class="preview-stage" style="border-color:@(stage?.StageColor ?? "#ccc")">
+                                            @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
+                                            <span style="font-size:0.7em;color:var(--text-muted);">(@entry.Level.ToString()[0])</span>
+                                            @if (entry.MachineIds.Count > 0)
+                                            {
+                                                <span style="font-size:0.65em;color:var(--text-muted);">🔧@entry.MachineIds.Count</span>
+                                            }
+                                        </span>
+                                    }
+                                }
+                            </div>
+                        </div>
                     </div>
-                    <div class="preview-routing">
-                        @if (_selectedStages.Count == 0)
-                        {
-                            <span style="color:#999;">No default routing</span>
-                        }
-                        else
-                        {
-                            @for (int i = 0; i < _selectedStages.Count; i++)
-                            {
-                                var entry = _selectedStages[i];
-                                var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
-                                if (i > 0) { <span class="preview-arrow">→</span> }
-                                <span class="preview-stage" style="border-color:@(stage?.StageColor ?? "#ccc")">
-                                    @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
-                                    <span style="font-size:0.7em;color:var(--text-muted);">(@entry.Level.ToString()[0])</span>
-                                </span>
-                            }
-                        }
-                    </div>
-                </div>
-            </div>
 
-            <div class="modal-actions">
-                <button class="btn btn-primary" @onclick="Save">💾 Save Approach</button>
-                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
+                    <div class="form-actions">
+                        <button class="btn btn-primary" @onclick="Save">💾 Save Approach</button>
+                        <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+                    </div>
+                </div> @* end approach-form *@
+            }
 
 @code {
     private List<ManufacturingApproach>? _approaches;
     private List<ProductionStage>? _allStages;
+    private List<Machine>? _machines;
     private ManufacturingApproach? _edit;
     private List<RoutingTemplateStage> _selectedStages = new();
     private bool _showForm;
@@ -277,12 +308,14 @@ else
         {
             _approaches = await ApproachService.GetAllAsync(activeOnly: false);
             _allStages = await StageService.GetAllStagesAsync(activeOnly: true);
+            _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
         }
         catch (Exception ex)
         {
             Toast.ShowError($"Failed to load data: {ex.Message}");
             _approaches = [];
             _allStages = [];
+            _machines = [];
         }
     }
 
@@ -331,6 +364,14 @@ else
         }
     }
 
+    private void ToggleMachine(RoutingTemplateStage entry, int machineId)
+    {
+        if (entry.MachineIds.Contains(machineId))
+            entry.MachineIds.Remove(machineId);
+        else
+            entry.MachineIds.Add(machineId);
+    }
+
     private async Task Save()
     {
         _error = null;
@@ -355,7 +396,12 @@ else
             if (_edit.Id == 0)
                 await ApproachService.CreateAsync(_edit);
             else
+            {
                 await ApproachService.UpdateAsync(_edit);
+                var propagated = await ApproachService.PropagateRoutingChangesAsync(_edit.Id);
+                if (propagated > 0)
+                    Toast.ShowInfo($"Synced {propagated} change(s) across parts using this approach.");
+            }
 
             Toast.ShowSuccess($"Approach '{_edit.Name}' saved.");
             _showForm = false;

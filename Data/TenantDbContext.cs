@@ -141,6 +141,8 @@ public class TenantDbContext : DbContext
     public DbSet<ProgramToolingItem> ProgramToolingItems { get; set; }
     public DbSet<ProgramFeedback> ProgramFeedbacks { get; set; }
     public DbSet<MachineProgramAssignment> MachineProgramAssignments { get; set; }
+    public DbSet<ProgramPart> ProgramParts { get; set; }
+    public DbSet<ProgramRevision> ProgramRevisions { get; set; }
 
     // Operation Cost Profiles
     public DbSet<StageCostProfile> StageCostProfiles { get; set; }
@@ -961,6 +963,57 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.ProcessStageId)
                 .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Material)
+                .WithMany()
+                .HasForeignKey(e => e.MaterialId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.WorkInstruction)
+                .WithMany()
+                .HasForeignKey(e => e.WorkInstructionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.DepowderProgram)
+                .WithMany()
+                .HasForeignKey(e => e.DepowderProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.EdmProgram)
+                .WithMany()
+                .HasForeignKey(e => e.EdmProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Scheduling lifecycle navigation (replaces BuildPackage)
+            entity.HasOne(e => e.PredecessorProgram)
+                .WithMany()
+                .HasForeignKey(e => e.PredecessorProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.SourceProgram)
+                .WithMany()
+                .HasForeignKey(e => e.SourceProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ScheduledJob)
+                .WithMany()
+                .HasForeignKey(e => e.ScheduledJobId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => e.ScheduleStatus);
+            entity.HasIndex(e => e.ScheduledDate);
+        });
+
+        // ProgramPart (multi-part nesting on build plate programs)
+        modelBuilder.Entity<ProgramPart>(entity =>
+        {
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany(e => e.ProgramParts)
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.WorkOrderLine)
+                .WithMany(e => e.ProgramParts)
+                .HasForeignKey(e => e.WorkOrderLineId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => new { e.MachineProgramId, e.PartId });
         });
 
         // MachineProgramFile
@@ -1012,6 +1065,16 @@ public class TenantDbContext : DbContext
                 .HasForeignKey(e => e.MachineId)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(e => new { e.MachineProgramId, e.MachineId }).IsUnique();
+        });
+
+        // ProgramRevision
+        modelBuilder.Entity<ProgramRevision>(entity =>
+        {
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany()
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.MachineProgramId, e.RevisionNumber });
         });
 
         // ProcessStage — MachineProgram FK

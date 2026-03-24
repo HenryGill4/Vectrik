@@ -83,6 +83,12 @@ public class ProcessStage
     /// </summary>
     public int? MachineProgramId { get; set; }
 
+    /// <summary>
+    /// true when this stage has machines assigned but no program has been set up yet.
+    /// The Programs page uses this flag to prompt operators to create a program.
+    /// </summary>
+    public bool ProgramSetupRequired { get; set; }
+
     // ── Cost ─────────────────────────────────────────────────
     [Column(TypeName = "decimal(8,2)")]
     public decimal? HourlyRateOverride { get; set; }

@@ -6,7 +6,6 @@
 @inject IManufacturingApproachService ApproachService
 @inject IManufacturingProcessService ProcessService
 @inject IMachineProgramService MachineProgramService
-@inject IBuildPlanningService BuildPlanningService
 @inject ICustomFieldService CustomFieldService
 @inject ITenantFeatureService Features
 @inject IMachineService MachineService
@@ -294,14 +293,10 @@
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <a href="/parts/@Id" class="btn btn-sm btn-secondary">👁️ Detail</a>
-                    <a href="/builds" class="btn btn-sm btn-secondary">📦 Builds</a>
-                    @if (_buildsForPart?.Any() == true)
-                    {
-                        <span class="badge badge-info" style="font-size: 0.75rem;">@_buildsForPart.Count build@(_buildsForPart.Count != 1 ? "s" : "")</span>
-                    }
+                    <a href="/programs" class="btn btn-sm btn-secondary">📄 Programs</a>
                     @if (ShowAdditiveTabs)
                     {
-                        <a href="/builds?newForPart=@Id" class="btn btn-sm btn-primary">+ New Build</a>
+                        <a href="/builds" class="btn btn-sm btn-secondary">📦 SLS Builds</a>
                     }
                 </div>
             </div>
@@ -331,7 +326,6 @@
                 <button class="tab @(_tab == "process" ? "active" : "")" @onclick='() => _tab = "process"'>Process</button>
                 <button class="tab @(_tab == "pricing" ? "active" : "")" @onclick='() => _tab = "pricing"'>💰 Pricing</button>
                 <button class="tab @(_tab == "programs" ? "active" : "")" @onclick='() => _tab = "programs"'>Programs (@(_partPrograms?.Count ?? 0))</button>
-                <button class="tab @(_tab == "builds" ? "active" : "")" @onclick='() => _tab = "builds"'>Builds (@(_buildsForPart?.Count ?? 0))</button>
                 <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM / Materials (@(_bomItems?.Count ?? 0))</button>
                 @if (ShowAdditiveTabs)
                 {
@@ -386,13 +380,38 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Manufacturing Approach</label>
-                            <select class="form-control" value="@_part!.ManufacturingApproachId" @onchange="OnApproachChanged">
-                                <option value="">Select approach...</option>
-                                @foreach (var a in _approaches)
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <select class="form-control" value="@_part!.ManufacturingApproachId" @onchange="OnApproachChanged" style="flex:1;">
+                                    <option value="">Select approach...</option>
+                                    @foreach (var a in _approaches)
+                                    {
+                                        <option value="@a.Id">@(a.IconEmoji) @a.Name</option>
+                                    }
+                                </select>
+                                <a href="/admin/manufacturing-approaches" class="btn btn-sm btn-secondary" title="Manage Approaches">⚙</a>
+                            </div>
+                            @if (SelectedApproach != null)
+                            {
+                                var template = SelectedApproach.ParsedRoutingTemplate;
+                                @if (template.Count > 0)
                                 {
-                                    <option value="@a.Id">@(a.IconEmoji) @a.Name</option>
+                                    <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:3px; align-items:center; font-size:0.8rem;">
+                                        @for (int i = 0; i < template.Count; i++)
+                                        {
+                                            var entry = template[i];
+                                            var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                                            if (i > 0) { <span style="color:var(--text-muted);">→</span> }
+                                            <span style="padding:2px 6px; border-radius:4px; background:@(stage?.StageColor ?? "#666")20; border:1px solid @(stage?.StageColor ?? "#ccc"); white-space:nowrap;">
+                                                @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
+                                                @if (entry.MachineIds.Count > 0)
+                                                {
+                                                    <span style="font-size:0.7rem; color:var(--text-muted); margin-left:2px;">🔧@entry.MachineIds.Count</span>
+                                                }
+                                            </span>
+                                        }
+                                    </div>
                                 }
-                            </select>
+                            }
                         </div>
                         <div class="form-group">
                             <label class="form-label">Raw Material Spec</label>
@@ -452,218 +471,6 @@
                 <PartPricingEditor PartId="@Id" />
             }
 
-            <!-- Builds Tab -->
-            @if (_tab == "builds")
-            {
-                <div class="card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <h3 class="card-title" style="margin: 0;">Builds</h3>
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <a href="/builds" class="btn btn-sm btn-secondary">📦 All Builds</a>
-                            <a href="/parts/@Id" class="btn btn-sm btn-secondary">👁️ Part Detail</a>
-                            @if (ShowAdditiveTabs)
-                            {
-                                <button class="btn btn-sm btn-primary" @onclick="ShowCreateBuild">+ New Build</button>
-                            }
-                        </div>
-                    </div>
-
-                    @if (_buildsForPart == null || !_buildsForPart.Any())
-                    {
-                        <div class="empty-state">
-                            <div class="empty-state-icon">🏗️</div>
-                            <div class="empty-state-text">No builds contain this part yet.</div>
-                            @if (ShowAdditiveTabs)
-                            {
-                                <div style="margin-top: 12px;">
-                                    <button class="btn btn-primary" @onclick="ShowCreateBuild">+ Create a Build for This Part</button>
-                                    <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 6px;">
-                                        Or go to <a href="/builds" style="color: var(--primary);">Build Planning</a> to add this part to an existing build.
-                                    </div>
-                                </div>
-                            }
-                            else
-                            {
-                                <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 8px;">
-                                    This part's manufacturing approach doesn't use build plates.
-                                </div>
-                            }
-                        </div>
-                    }
-                    else
-                    {
-                        @* Build summary stats *@
-                        var completedBuilds = _buildsForPart.Count(b => b.Status == BuildPackageStatus.Completed);
-                        var activeBuilds = _buildsForPart.Count(b => b.Status != BuildPackageStatus.Completed && b.Status != BuildPackageStatus.Cancelled);
-                        <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-                            <div style="background: var(--bg-secondary); padding: 8px 14px; border-radius: 8px;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Total Builds</div>
-                                <div style="font-weight: 600;">@_buildsForPart.Count</div>
-                            </div>
-                            <div style="background: var(--bg-secondary); padding: 8px 14px; border-radius: 8px;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Active</div>
-                                <div style="font-weight: 600;">@activeBuilds</div>
-                            </div>
-                            <div style="background: var(--bg-secondary); padding: 8px 14px; border-radius: 8px;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">Completed</div>
-                                <div style="font-weight: 600;">@completedBuilds</div>
-                            </div>
-                        </div>
-
-                        @* Build selector dropdown *@
-                        <div style="margin-bottom: 16px;">
-                            <label class="form-label">Select Build</label>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <select class="form-control" style="max-width: 400px;" @bind="_selectedBuildId">
-                                    <option value="0">— Select a build —</option>
-                                    @foreach (var build in _buildsForPart)
-                                    {
-                                        var statusIcon = build.Status switch
-                                        {
-                                            BuildPackageStatus.Draft => "📝",
-                                            BuildPackageStatus.Sliced => "📐",
-                                            BuildPackageStatus.Ready => "✅",
-                                            BuildPackageStatus.Scheduled => "📅",
-                                            BuildPackageStatus.Printing => "🖨️",
-                                            BuildPackageStatus.PostPrint => "🔥",
-                                            BuildPackageStatus.Completed => "✔️",
-                                            BuildPackageStatus.Cancelled => "❌",
-                                            _ => "📦"
-                                        };
-                                        <option value="@build.Id">@statusIcon @build.Name — @build.Status (@(build.Machine?.Name ?? "No machine"))</option>
-                                    }
-                                </select>
-                                @if (_selectedBuildId > 0)
-                                {
-                                    <a href="/builds" class="btn btn-sm btn-primary">Open in Build Planning →</a>
-                                }
-                            </div>
-                        </div>
-
-                        @* Selected build detail *@
-                        @if (_selectedBuildId > 0)
-                        {
-                            var selected = _buildsForPart.FirstOrDefault(b => b.Id == _selectedBuildId);
-                            @if (selected != null)
-                            {
-                                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                        <h4 style="margin: 0; font-size: 1rem;">@selected.Name</h4>
-                                        <span class="badge @(selected.Status switch { BuildPackageStatus.Completed => "badge-active", BuildPackageStatus.Cancelled => "badge-cancelled", BuildPackageStatus.Printing => "badge-warning", _ => "badge-info" })">
-                                            @selected.Status
-                                        </span>
-                                    </div>
-                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; font-size: 0.85rem;">
-                                        <div>
-                                            <span class="form-label">Machine</span>
-                                            <div>@(selected.Machine?.Name ?? "—")</div>
-                                        </div>
-                                        <div>
-                                            <span class="form-label">Total Parts</span>
-                                            <div>@selected.TotalPartCount</div>
-                                        </div>
-                                        <div>
-                                            <span class="form-label">Est. Duration</span>
-                                            <div>@(selected.EstimatedDurationHours.HasValue ? $"{selected.EstimatedDurationHours.Value:F1} hrs" : "—")</div>
-                                        </div>
-                                        @if (selected.ScheduledDate.HasValue)
-                                        {
-                                            <div>
-                                                <span class="form-label">Scheduled</span>
-                                                <div>@selected.ScheduledDate.Value.ToString("yyyy-MM-dd HH:mm")</div>
-                                            </div>
-                                        }
-                                        @if (selected.PrintStartedAt.HasValue)
-                                        {
-                                            <div>
-                                                <span class="form-label">Print Started</span>
-                                                <div>@selected.PrintStartedAt.Value.ToString("yyyy-MM-dd HH:mm")</div>
-                                            </div>
-                                        }
-                                        @if (selected.PrintCompletedAt.HasValue)
-                                        {
-                                            <div>
-                                                <span class="form-label">Print Completed</span>
-                                                <div>@selected.PrintCompletedAt.Value.ToString("yyyy-MM-dd HH:mm")</div>
-                                            </div>
-                                        }
-                                    </div>
-                                    @if (selected.Parts.Any())
-                                    {
-                                        <div style="margin-top: 12px;">
-                                            <span class="form-label" style="display: block; margin-bottom: 6px;">Nested Parts</span>
-                                            <table class="data-table" style="font-size: 0.85rem;">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Part</th>
-                                                        <th style="text-align: right; width: 70px;">Qty</th>
-                                                        <th style="text-align: right; width: 70px;">Stack</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach (var pp in selected.Parts)
-                                                    {
-                                                        var isCurrent = pp.PartId == Id;
-                                                        <tr style="@(isCurrent ? "background: var(--primary-bg); font-weight: 600;" : "")">
-                                                            <td>
-                                                                @if (isCurrent)
-                                                                {
-                                                                    <span>@(pp.Part?.PartNumber ?? $"#{pp.PartId}") — @(pp.Part?.Name ?? "") (this part)</span>
-                                                                }
-                                                                else
-                                                                {
-                                                                    <a href="/parts/@pp.PartId/edit" style="text-decoration: none; color: var(--primary);">@(pp.Part?.PartNumber ?? $"#{pp.PartId}") — @(pp.Part?.Name ?? "")</a>
-                                                                }
-                                                            </td>
-                                                            <td style="text-align: right;">@pp.Quantity</td>
-                                                            <td style="text-align: right;">@(pp.StackLevel)x</td>
-                                                        </tr>
-                                                    }
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        }
-
-                        @* Builds table *@
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Build</th>
-                                    <th>Machine</th>
-                                    <th>Status</th>
-                                    <th style="text-align: right;">Qty in Build</th>
-                                    <th style="text-align: right;">Print Time</th>
-                                    <th>Scheduled</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var build in _buildsForPart)
-                                {
-                                    var partEntry = build.Parts.FirstOrDefault(p => p.PartId == Id);
-                                    <tr style="cursor: pointer; @(_selectedBuildId == build.Id ? "background: var(--primary-bg);" : "")" @onclick="() => _selectedBuildId = build.Id">
-                                        <td>
-                                            <a href="/builds" style="font-weight: 600; text-decoration: none; color: var(--primary);" @onclick:stopPropagation>@build.Name</a>
-                                        </td>
-                                        <td>@(build.Machine?.Name ?? "—")</td>
-                                        <td>
-                                            <span class="badge @(build.Status switch { BuildPackageStatus.Completed => "badge-active", BuildPackageStatus.Cancelled => "badge-cancelled", BuildPackageStatus.Printing => "badge-warning", _ => "badge-info" })">
-                                                @build.Status
-                                            </span>
-                                        </td>
-                                        <td style="text-align: right;">@(partEntry?.Quantity ?? 0)</td>
-                                        <td style="text-align: right;">@(build.EstimatedDurationHours.HasValue ? $"{build.EstimatedDurationHours.Value:F1} hrs" : "—")</td>
-                                        <td>@(build.ScheduledDate?.ToString("yyyy-MM-dd") ?? "—")</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    }
-                </div>
-            }
-
             <!-- Programs Tab -->
             @if (_tab == "programs")
             {
@@ -687,6 +494,7 @@
                                 <tr>
                                     <th>Program #</th>
                                     <th>Name</th>
+                                    <th>Stage</th>
                                     <th>Machine</th>
                                     <th>Status</th>
                                     <th style="text-align: right;">Setup</th>
@@ -698,10 +506,38 @@
                             <tbody>
                                 @foreach (var prog in _partPrograms)
                                 {
+                                    var linkedStage = prog.ProcessStage?.ProductionStage?.Name;
                                     <tr>
-                                        <td><a href="/programs" style="font-weight: 600; text-decoration: none; color: var(--primary);">@prog.ProgramNumber</a></td>
+                                        <td>
+                                            <a href="/programs" style="font-weight: 600; text-decoration: none; color: var(--primary);">@prog.ProgramNumber</a>
+                                        </td>
                                         <td>@prog.Name</td>
-                                        <td>@(prog.Machine?.Name ?? prog.MachineType ?? "—")</td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(linkedStage))
+                                            {
+                                                <span style="display:inline-flex; align-items:center; gap:3px; padding:2px 6px; border-radius:4px; font-size:0.8rem; background:var(--bg-secondary); border:1px solid var(--border);">
+                                                    ⚙ @linkedStage
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span style="color: var(--text-muted); font-size:0.85rem;">—</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (prog.Machine != null)
+                                            {
+                                                <a href="/admin/machines" style="text-decoration:none; color:var(--primary); font-size:0.85rem;">🔧 @prog.Machine.Name</a>
+                                            }
+                                            else if (!string.IsNullOrEmpty(prog.MachineType))
+                                            {
+                                                <span style="font-size:0.85rem;">@prog.MachineType</span>
+                                            }
+                                            else
+                                            {
+                                                <span style="color: var(--text-muted); font-size:0.85rem;">—</span>
+                                            }
+                                        </td>
                                         <td><span class="badge badge-@prog.Status.ToString().ToLower()">@prog.Status</span></td>
                                         <td style="text-align: right;">@(prog.SetupTimeMinutes?.ToString("F0") ?? "—") min</td>
                                         <td style="text-align: right;">@(prog.RunTimeMinutes?.ToString("F1") ?? "—") min</td>
@@ -1009,50 +845,6 @@
     </Authorized>
 </AuthorizeView>
 
-@* ── Create Build Modal ── *@
-@if (_showCreateBuild)
-{
-    <div class="modal-overlay" @onclick="() => _showCreateBuild = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header">
-                <span class="modal-title">New Build for @(_part?.PartNumber ?? "Part")</span>
-                <button class="modal-close" @onclick="() => _showCreateBuild = false">&times;</button>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Build Name *</label>
-                <input class="form-control" @bind="_newBuildName" placeholder="e.g. Build-SUP-TUBE-0115" />
-            </div>
-            <div class="form-group">
-                <label class="form-label">Machine *</label>
-                <select class="form-control" @bind="_newBuildMachineId">
-                    <option value="0">Select machine...</option>
-                    @if (_machines != null)
-                    {
-                        @foreach (var m in _machines)
-                        {
-                            <option value="@m.Id">@m.Name (@m.MachineId)</option>
-                        }
-                    }
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Notes</label>
-                <textarea class="form-control" @bind="_newBuildNotes"></textarea>
-            </div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
-                This will create a new build and add <strong>@(_part?.PartNumber)</strong> to it.
-            </div>
-            <div style="display: flex; gap: 8px;">
-                <button class="btn btn-primary" @onclick="CreateBuildForPart" disabled="@_creatingBuild">
-                    @if (_creatingBuild) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
-                    Create Build
-                </button>
-                <button class="btn btn-secondary" @onclick="() => _showCreateBuild = false">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
-
 <ConfirmDialog @ref="_confirm" />
 
 @code {
@@ -1096,15 +888,6 @@
 
     // Part being edited
     private Part? _part;
-
-    // Builds for this part
-    private List<BuildPackage>? _buildsForPart;
-    private int _selectedBuildId;
-    private bool _showCreateBuild;
-    private string _newBuildName = "";
-    private int _newBuildMachineId;
-    private string? _newBuildNotes;
-    private bool _creatingBuild;
 
     // Programs for this part
     private List<MachineProgram>? _partPrograms;
@@ -1152,16 +935,6 @@
                 {
                     var match = _materials?.FirstOrDefault(m => m.Name == _part.Material);
                     if (match != null) _part.MaterialId = match.Id;
-                }
-
-                // Load builds containing this part
-                try
-                {
-                    _buildsForPart = await BuildPlanningService.GetBuildsForPartAsync(Id);
-                }
-                catch
-                {
-                    _buildsForPart = [];
                 }
 
                 // Load machine programs for this part
@@ -1431,58 +1204,5 @@
     // Navigation
     private void GoBack() => Nav.NavigateTo("/parts");
     private void ViewDetail() => Nav.NavigateTo($"/parts/{Id}");
-
-    // Build management
-    private void ShowCreateBuild()
-    {
-        _newBuildName = $"Build-{_part?.PartNumber ?? "NEW"}-{DateTime.UtcNow:MMdd}";
-        _newBuildMachineId = 0;
-        _newBuildNotes = null;
-        _showCreateBuild = true;
-    }
-
-    private async Task CreateBuildForPart()
-    {
-        if (string.IsNullOrWhiteSpace(_newBuildName))
-        {
-            Toast.ShowError("Build name is required.");
-            return;
-        }
-        if (_newBuildMachineId <= 0)
-        {
-            Toast.ShowError("Machine is required.");
-            return;
-        }
-
-        _creatingBuild = true;
-        try
-        {
-            var package = await BuildPlanningService.CreatePackageAsync(new BuildPackage
-            {
-                Name = _newBuildName,
-                MachineId = _newBuildMachineId,
-                Notes = _newBuildNotes,
-                CreatedBy = _currentUser,
-                LastModifiedBy = _currentUser
-            });
-
-            await BuildPlanningService.AddPartToPackageAsync(package.Id, Id, 1);
-
-            _showCreateBuild = false;
-            Toast.ShowSuccess($"Build '{_newBuildName}' created with this part.");
-
-            // Reload builds list
-            _buildsForPart = await BuildPlanningService.GetBuildsForPartAsync(Id);
-            _selectedBuildId = package.Id;
-            _tab = "builds";
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to create build: {ex.Message}");
-        }
-        finally
-        {
-            _creatingBuild = false;
-        }
     }
 }

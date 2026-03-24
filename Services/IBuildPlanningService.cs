@@ -2,6 +2,11 @@ using Opcentrix_V3.Models;
 
 namespace Opcentrix_V3.Services;
 
+/// <summary>
+/// Legacy build planning service for BuildPackage management.
+/// Use IProgramPlanningService for new program-based planning work.
+/// </summary>
+[Obsolete("Use IProgramPlanningService for program-based planning. BuildPackage is being replaced by MachineProgram with ProgramType.BuildPlate.")]
 public interface IBuildPlanningService
 {
     Task<List<BuildPackage>> GetAllPackagesAsync();

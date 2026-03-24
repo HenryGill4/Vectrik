@@ -13,6 +13,9 @@ public class BuildSchedulingService : IBuildSchedulingService
     private readonly ISchedulingService _scheduling;
     private readonly IManufacturingProcessService _processService;
     private readonly IBatchService _batchService;
+    private readonly INumberSequenceService _numberSeq;
+    private readonly IStageCostService _costService;
+    private readonly IMachineProgramService _programService;
 
     public BuildSchedulingService(
         TenantDbContext db,
@@ -20,7 +23,10 @@ public class BuildSchedulingService : IBuildSchedulingService
         ISerialNumberService serialNumberService,
         ISchedulingService scheduling,
         IManufacturingProcessService processService,
-        IBatchService batchService)
+        IBatchService batchService,
+        INumberSequenceService numberSeq,
+        IStageCostService costService,
+        IMachineProgramService programService)
     {
         _db = db;
         _buildPlanning = buildPlanning;
@@ -28,6 +34,9 @@ public class BuildSchedulingService : IBuildSchedulingService
         _scheduling = scheduling;
         _processService = processService;
         _batchService = batchService;
+        _numberSeq = numberSeq;
+        _costService = costService;
+        _programService = programService;
     }
 
     public async Task<BuildScheduleResult> ScheduleBuildAsync(
@@ -204,9 +213,10 @@ public class BuildSchedulingService : IBuildSchedulingService
         // Query build-level stage executions on this machine for collision detection.
         // Each ScheduleBuildRunAsync call creates a separate Job with its own StageExecution
         // rows, so this correctly detects ALL scheduled runs — not just a single BuildPackage row.
+        // Also includes program-based build executions (MachineProgramId) for unified scheduling.
         var existingBuildExecutions = await _db.StageExecutions
             .Where(e => e.MachineId == machine.Id
-                && e.BuildPackageId != null
+                && (e.BuildPackageId != null || e.MachineProgramId != null)
                 && e.ScheduledStartAt != null
                 && e.ScheduledEndAt != null
                 && e.Status != StageExecutionStatus.Completed
@@ -793,6 +803,461 @@ public class BuildSchedulingService : IBuildSchedulingService
         await _buildPlanning.CreateRevisionAsync(buildPackageId, unlockedBy, $"Build unlocked: {reason}");
     }
 
+    /// <inheritdoc />
+    public async Task<BuildScheduleResult> ScheduleProgramBuildAsync(
+        int machineProgramId, int machineId, DateTime? startAfter = null)
+    {
+        var program = await _db.MachinePrograms
+            .Include(p => p.ProgramParts).ThenInclude(pp => pp.Part)
+            .FirstOrDefaultAsync(p => p.Id == machineProgramId)
+            ?? throw new InvalidOperationException("Machine program not found.");
+
+        if (program.ProgramType != ProgramType.BuildPlate)
+            throw new InvalidOperationException("Only BuildPlate programs can be scheduled as builds.");
+
+        if (!program.EstimatedPrintHours.HasValue || program.EstimatedPrintHours <= 0)
+            throw new InvalidOperationException("Enter slicer data (print duration) before scheduling.");
+
+        if (!program.ProgramParts.Any())
+            throw new InvalidOperationException("Add at least one part to the build plate before scheduling.");
+
+        var machine = await _db.Machines.FindAsync(machineId)
+            ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
+
+        var durationHours = program.EstimatedPrintHours.Value;
+        var notBefore = startAfter ?? DateTime.UtcNow;
+
+        var slot = await FindEarliestBuildSlotAsync(machine.Id, durationHours, notBefore);
+
+        ChangeoverAnalysis? changeoverInfo = null;
+        if (machine.AutoChangeoverEnabled)
+            changeoverInfo = await AnalyzeChangeoverAsync(machine.Id, slot.PrintEnd);
+
+        // Load ManufacturingProcess definitions for all parts on the plate
+        var partIds = program.ProgramParts.Select(pp => pp.PartId).Distinct().ToList();
+        var processes = await _db.ManufacturingProcesses
+            .Include(p => p.Stages.OrderBy(s => s.ExecutionOrder))
+                .ThenInclude(s => s.ProductionStage)
+            .Include(p => p.Stages)
+                .ThenInclude(s => s.MachineProgram)
+            .Where(p => partIds.Contains(p.PartId) && p.IsActive)
+            .ToListAsync();
+
+        var firstProcess = processes.FirstOrDefault();
+
+        // Create a build-level Job for this program run
+        var job = new Job
+        {
+            JobNumber = await _numberSeq.NextAsync("Job"),
+            PartId = program.ProgramParts.First().PartId,
+            Scope = JobScope.Build,
+            ManufacturingProcessId = firstProcess?.Id,
+            Quantity = program.TotalPartCount,
+            Status = JobStatus.Scheduled,
+            Priority = JobPriority.Normal,
+            ScheduledStart = slot.PrintStart,
+            ScheduledEnd = slot.PrintEnd,
+            EstimatedHours = durationHours,
+            Notes = $"Build plate program: {program.Name ?? program.ProgramNumber}",
+            CreatedBy = "Scheduler",
+            LastModifiedBy = "Scheduler",
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+        _db.Jobs.Add(job);
+        await _db.SaveChangesAsync();
+
+        var allExecutions = new List<StageExecution>();
+        var sortOrder = 0;
+
+        // Create the print StageExecution linked to the MachineProgramId
+        var printExecution = new StageExecution
+        {
+            JobId = job.Id,
+            MachineProgramId = machineProgramId,
+            MachineId = machine.Id,
+            Status = StageExecutionStatus.NotStarted,
+            EstimatedHours = durationHours,
+            ScheduledStartAt = slot.PrintStart,
+            ScheduledEndAt = slot.PrintEnd,
+            SortOrder = sortOrder++,
+            CreatedBy = "Scheduler",
+            LastModifiedBy = "Scheduler",
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+        _db.StageExecutions.Add(printExecution);
+        allExecutions.Add(printExecution);
+
+        // ── Downstream build-level stages (depowder, heat-treat, EDM, etc.) ──
+        // Collect Build-level ProcessStages across all parts' processes,
+        // excluding the print stage (DurationFromBuildConfig = true) which is already handled above.
+        // Deduplicate by ProductionStageId so shared stages (e.g. depowder) run once for the whole plate.
+        var downstreamBuildStages = processes
+            .SelectMany(p => p.Stages)
+            .Where(s => s.ProcessingLevel == ProcessingLevel.Build && !s.DurationFromBuildConfig)
+            .GroupBy(s => s.ProductionStageId)
+            .Select(g => g.First())
+            .OrderBy(s => s.ExecutionOrder)
+            .ToList();
+
+        // Build machine lookup for stage machine resolution
+        var machineLookup = await _db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.MachineId, m => m.Id);
+
+        var totalPartCount = program.TotalPartCount;
+        var currentStart = slot.PrintEnd;
+
+        foreach (var processStage in downstreamBuildStages)
+        {
+            var durationResult = _processService.CalculateStageDuration(
+                processStage, totalPartCount, batchCount: 1, buildConfigHours: null);
+
+            var estimatedHours = durationResult.TotalMinutes / 60.0;
+
+            // Resolve machine: assigned → default from ProductionStage
+            int? stageMachineId = null;
+            if (processStage.AssignedMachineId.HasValue)
+            {
+                stageMachineId = processStage.AssignedMachineId.Value;
+            }
+            else if (!string.IsNullOrEmpty(processStage.ProductionStage.DefaultMachineId)
+                     && machineLookup.TryGetValue(processStage.ProductionStage.DefaultMachineId, out var stageIntId))
+            {
+                stageMachineId = stageIntId;
+            }
+
+            // Shared-resource collision avoidance: post-print build stages (depowder,
+            // heat-treat, wire EDM) go on shared machines. When multiple builds finish
+            // printing around the same time, their post-print stages must queue on
+            // the shared machine rather than overlap.
+            if (stageMachineId.HasValue)
+            {
+                var duration = TimeSpan.FromHours(estimatedHours);
+                var existingBlocks = await _db.StageExecutions
+                    .Where(e => e.MachineId == stageMachineId
+                        && e.ScheduledStartAt != null && e.ScheduledEndAt != null
+                        && e.Status != StageExecutionStatus.Completed
+                        && e.Status != StageExecutionStatus.Skipped
+                        && e.Status != StageExecutionStatus.Failed
+                        && e.ScheduledEndAt > currentStart)
+                    .OrderBy(e => e.ScheduledStartAt)
+                    .Select(e => new { e.ScheduledStartAt, e.ScheduledEndAt })
+                    .ToListAsync();
+
+                foreach (var block in existingBlocks)
+                {
+                    if (currentStart + duration <= block.ScheduledStartAt!.Value)
+                        break;
+                    if (block.ScheduledEndAt!.Value > currentStart)
+                        currentStart = block.ScheduledEndAt!.Value;
+                }
+            }
+
+            var scheduledEnd = currentStart.AddHours(estimatedHours);
+
+            var costEstimate = await _costService.EstimateCostAsync(
+                processStage.ProductionStageId, estimatedHours, totalPartCount, batchCount: 1);
+
+            var execution = new StageExecution
+            {
+                JobId = job.Id,
+                ProductionStageId = processStage.ProductionStageId,
+                ProcessStageId = processStage.Id,
+                MachineProgramId = processStage.MachineProgramId,
+                MachineId = stageMachineId,
+                Status = StageExecutionStatus.NotStarted,
+                EstimatedHours = estimatedHours,
+                SetupHours = durationResult.SetupMinutes / 60.0,
+                EstimatedCost = costEstimate.TotalCost,
+                MaterialCost = processStage.MaterialCost,
+                QualityCheckRequired = processStage.RequiresQualityCheck,
+                SortOrder = sortOrder++,
+                ScheduledStartAt = currentStart,
+                ScheduledEndAt = scheduledEnd,
+                CreatedBy = "Scheduler",
+                LastModifiedBy = "Scheduler",
+                CreatedDate = DateTime.UtcNow,
+                LastModifiedDate = DateTime.UtcNow
+            };
+
+            _db.StageExecutions.Add(execution);
+            allExecutions.Add(execution);
+
+            currentStart = scheduledEnd;
+        }
+
+        await _db.SaveChangesAsync();
+
+        // ── Per-part jobs (batch + part-level stages) ──
+        var lastBuildStageEnd = currentStart;
+        var perPartJobIds = await CreateProgramPartJobsAsync(program, processes, lastBuildStageEnd);
+
+        // Auto-schedule each per-part job
+        var autoScheduled = 0;
+        foreach (var jobId in perPartJobIds)
+        {
+            try
+            {
+                await _scheduling.AutoScheduleJobWithDiagnosticsAsync(jobId, lastBuildStageEnd);
+                autoScheduled++;
+            }
+            catch (Exception ex)
+            {
+                // Job could not be auto-scheduled — it will appear unscheduled in the queue
+            }
+        }
+
+        // Update the build job's scheduled end to include downstream stages
+        job.ScheduledEnd = currentStart;
+        job.EstimatedHours = (currentStart - slot.PrintStart).TotalHours;
+        await _db.SaveChangesAsync();
+
+        var report = new ScheduleDiagnosticReport
+        {
+            Operation = "ScheduleProgramBuild",
+            MachineId = machineId,
+            BuildSlots =
+            {
+                new BuildSlotDiagnostic
+                {
+                    JobId = job.Id,
+                    SlotStart = slot.PrintStart,
+                    SlotEnd = slot.PrintEnd,
+                    MachineId = machine.Id,
+                    MachineName = machine.Name ?? machine.MachineId,
+                    DurationHours = durationHours
+                }
+            },
+            Warnings = { }
+        };
+
+        if (downstreamBuildStages.Count > 0)
+            report.Warnings.Add($"{downstreamBuildStages.Count} downstream build stage(s) scheduled (depowder, EDM, etc.)");
+        if (perPartJobIds.Count > 0)
+            report.Warnings.Add($"{perPartJobIds.Count} per-part job(s) created ({autoScheduled} auto-scheduled)");
+
+        // Detect changeover conflicts
+        if (machine.AutoChangeoverEnabled)
+        {
+            var lookAhead = slot.PrintEnd.AddDays(7);
+            var conflicts = await DetectChangeoverConflictsAsync(machine.Id, slot.PrintStart.AddDays(-1), lookAhead);
+            foreach (var conflict in conflicts)
+                report.Warnings.Add(conflict.Warning);
+        }
+
+        return new BuildScheduleResult(slot, changeoverInfo, allExecutions, report);
+    }
+
+    /// <summary>
+    /// Creates per-part jobs (batch + part-level stages) for all parts on a build plate program.
+    /// Mirrors BuildPlanningService.CreatePartStageExecutionsAsync but uses ProgramPart data.
+    /// </summary>
+    private async Task<List<int>> CreateProgramPartJobsAsync(
+        MachineProgram program,
+        List<ManufacturingProcess> processes,
+        DateTime startAfter)
+    {
+        var processLookup = processes.ToDictionary(p => p.PartId, p => p);
+        var createdJobIds = new List<int>();
+
+        var machineLookup = await _db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.Id, m => m);
+        var machineIdLookup = await _db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.MachineId, m => m);
+
+        // Group parts by (PartId, WorkOrderLineId) — one job per part-type per WO line
+        var partGroups = program.ProgramParts
+            .GroupBy(pp => new { pp.PartId, pp.WorkOrderLineId })
+            .ToList();
+
+        foreach (var group in partGroups)
+        {
+            var representative = group.First();
+            var totalQuantity = group.Sum(pp => pp.Quantity);
+
+            if (!processLookup.TryGetValue(group.Key.PartId, out var process))
+                continue;
+
+            var batchStages = process.Stages
+                .Where(s => s.ProcessingLevel == ProcessingLevel.Batch)
+                .OrderBy(s => s.ExecutionOrder)
+                .ToList();
+            var partStages = process.Stages
+                .Where(s => s.ProcessingLevel == ProcessingLevel.Part)
+                .OrderBy(s => s.ExecutionOrder)
+                .ToList();
+
+            if (batchStages.Count == 0 && partStages.Count == 0) continue;
+
+            var batchCapacity = process.DefaultBatchCapacity;
+            var batchCount = (int)Math.Ceiling((double)totalQuantity / batchCapacity);
+
+            // Calculate total estimated hours for the job
+            var totalEstimatedHours = 0.0;
+            foreach (var stage in batchStages)
+            {
+                var dur = _processService.CalculateStageDuration(stage, totalQuantity, batchCount, null);
+                totalEstimatedHours += dur.TotalMinutes / 60.0;
+            }
+            foreach (var stage in partStages)
+            {
+                var dur = _processService.CalculateStageDuration(stage, totalQuantity, batchCount, null);
+                totalEstimatedHours += dur.TotalMinutes / 60.0;
+            }
+
+            var partJob = new Job
+            {
+                JobNumber = await _numberSeq.NextAsync("Job"),
+                PartId = group.Key.PartId,
+                WorkOrderLineId = group.Key.WorkOrderLineId,
+                Scope = JobScope.Part,
+                ManufacturingProcessId = process.Id,
+                Quantity = totalQuantity,
+                Status = JobStatus.Scheduled,
+                Priority = JobPriority.Normal,
+                ScheduledStart = startAfter,
+                ScheduledEnd = startAfter.AddHours(totalEstimatedHours),
+                EstimatedHours = totalEstimatedHours,
+                Notes = $"Post-build processing: {representative.Part.PartNumber} x{totalQuantity} (program {program.ProgramNumber})",
+                CreatedBy = "Scheduler",
+                LastModifiedBy = "Scheduler",
+                CreatedDate = DateTime.UtcNow,
+                LastModifiedDate = DateTime.UtcNow
+            };
+            _db.Jobs.Add(partJob);
+            await _db.SaveChangesAsync();
+
+            var sortOrder = 0;
+            var currentStart = startAfter;
+
+            // Batch-level stages
+            foreach (var stage in batchStages)
+            {
+                var effectiveCapacity = stage.BatchCapacityOverride ?? batchCapacity;
+                var stageBatchCount = (int)Math.Ceiling((double)totalQuantity / effectiveCapacity);
+                var dur = _processService.CalculateStageDuration(stage, totalQuantity, stageBatchCount, null);
+                var estimatedHours = dur.TotalMinutes / 60.0;
+
+                int? stageMachineId = ResolveStageMachineForProgram(stage, machineLookup, machineIdLookup);
+                var scheduledEnd = currentStart.AddHours(estimatedHours);
+
+                var costEstimate = await _costService.EstimateCostAsync(
+                    stage.ProductionStageId, estimatedHours, totalQuantity, stageBatchCount);
+
+                var execution = new StageExecution
+                {
+                    JobId = partJob.Id,
+                    ProductionStageId = stage.ProductionStageId,
+                    ProcessStageId = stage.Id,
+                    MachineProgramId = stage.MachineProgramId,
+                    Status = StageExecutionStatus.NotStarted,
+                    EstimatedHours = estimatedHours,
+                    SetupHours = dur.SetupMinutes / 60.0,
+                    EstimatedCost = costEstimate.TotalCost,
+                    MaterialCost = stage.MaterialCost,
+                    QualityCheckRequired = stage.RequiresQualityCheck,
+                    BatchPartCount = totalQuantity,
+                    MachineId = stageMachineId,
+                    ScheduledStartAt = currentStart,
+                    ScheduledEndAt = scheduledEnd,
+                    SortOrder = sortOrder++,
+                    CreatedBy = "Scheduler",
+                    LastModifiedBy = "Scheduler",
+                    CreatedDate = DateTime.UtcNow,
+                    LastModifiedDate = DateTime.UtcNow
+                };
+                _db.StageExecutions.Add(execution);
+                currentStart = scheduledEnd;
+            }
+
+            // Part-level stages
+            foreach (var stage in partStages)
+            {
+                var dur = _processService.CalculateStageDuration(stage, totalQuantity, batchCount, null);
+                var estimatedHours = dur.TotalMinutes / 60.0;
+
+                int? stageMachineId = ResolveStageMachineForProgram(stage, machineLookup, machineIdLookup);
+                var scheduledEnd = currentStart.AddHours(estimatedHours);
+
+                var costEstimate = await _costService.EstimateCostAsync(
+                    stage.ProductionStageId, estimatedHours, totalQuantity, batchCount);
+
+                var execution = new StageExecution
+                {
+                    JobId = partJob.Id,
+                    ProductionStageId = stage.ProductionStageId,
+                    ProcessStageId = stage.Id,
+                    MachineProgramId = stage.MachineProgramId,
+                    Status = StageExecutionStatus.NotStarted,
+                    EstimatedHours = estimatedHours,
+                    SetupHours = dur.SetupMinutes / 60.0,
+                    EstimatedCost = costEstimate.TotalCost,
+                    MaterialCost = stage.MaterialCost,
+                    QualityCheckRequired = stage.RequiresQualityCheck,
+                    MachineId = stageMachineId,
+                    ScheduledStartAt = currentStart,
+                    ScheduledEndAt = scheduledEnd,
+                    SortOrder = sortOrder++,
+                    CreatedBy = "Scheduler",
+                    LastModifiedBy = "Scheduler",
+                    CreatedDate = DateTime.UtcNow,
+                    LastModifiedDate = DateTime.UtcNow
+                };
+                _db.StageExecutions.Add(execution);
+                currentStart = scheduledEnd;
+            }
+
+            partJob.ScheduledEnd = currentStart;
+            partJob.EstimatedHours = (currentStart - startAfter).TotalHours;
+            createdJobIds.Add(partJob.Id);
+        }
+
+        await _db.SaveChangesAsync();
+        return createdJobIds;
+    }
+
+    /// <summary>
+    /// Resolves the machine for a ProcessStage from its preferences.
+    /// </summary>
+    private static int? ResolveStageMachineForProgram(
+        ProcessStage stage,
+        Dictionary<int, Machine> byIntId,
+        Dictionary<string, Machine> byStringId)
+    {
+        if (stage.AssignedMachineId.HasValue)
+            return stage.AssignedMachineId.Value;
+
+        if (!string.IsNullOrEmpty(stage.ProductionStage.DefaultMachineId)
+            && byStringId.TryGetValue(stage.ProductionStage.DefaultMachineId, out var machine))
+            return machine.Id;
+
+        return null;
+    }
+
+    /// <inheritdoc />
+    public async Task<BuildScheduleResult> ScheduleProgramBuildAutoMachineAsync(
+        int machineProgramId, DateTime? startAfter = null)
+    {
+        var program = await _db.MachinePrograms
+            .FirstOrDefaultAsync(p => p.Id == machineProgramId)
+            ?? throw new InvalidOperationException("Machine program not found.");
+
+        if (program.ProgramType != ProgramType.BuildPlate)
+            throw new InvalidOperationException("Only BuildPlate programs can be scheduled as builds.");
+
+        if (!program.EstimatedPrintHours.HasValue || program.EstimatedPrintHours <= 0)
+            throw new InvalidOperationException("Enter slicer data (print duration) before scheduling.");
+
+        var notBefore = startAfter ?? DateTime.UtcNow;
+        var bestSlot = await FindBestBuildSlotAsync(program.EstimatedPrintHours.Value, notBefore);
+
+        return await ScheduleProgramBuildAsync(machineProgramId, bestSlot.MachineId, startAfter);
+    }
+
     // ── Private Helpers ─────────────────────────────────────────
 
     private async Task<bool> IsOperatorAvailableDuringWindowAsync(DateTime windowStart, DateTime windowEnd)
@@ -928,5 +1393,347 @@ public class BuildSchedulingService : IBuildSchedulingService
         }
 
         return current.AddHours(remaining);
+    }
+
+    // ── Work Order → Job Scheduling ─────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<WorkOrderScheduleResult> ScheduleFromWorkOrderLineAsync(
+        int workOrderLineId, int? preferredMachineId = null, DateTime? startAfter = null)
+    {
+        var line = await _db.WorkOrderLines
+            .Include(l => l.Part)
+                .ThenInclude(p => p!.ManufacturingProcess)
+                    .ThenInclude(mp => mp!.Stages.OrderBy(s => s.ExecutionOrder))
+                        .ThenInclude(s => s.ProductionStage)
+            .Include(l => l.Part)
+                .ThenInclude(p => p!.ManufacturingProcess)
+                    .ThenInclude(mp => mp!.Stages)
+                        .ThenInclude(s => s.MachineProgram)
+            .Include(l => l.Part)
+                .ThenInclude(p => p!.ManufacturingApproach)
+            .Include(l => l.WorkOrder)
+            .FirstOrDefaultAsync(l => l.Id == workOrderLineId)
+            ?? throw new InvalidOperationException($"Work order line {workOrderLineId} not found.");
+
+        var part = line.Part ?? throw new InvalidOperationException("Part not found for work order line.");
+        var process = part.ManufacturingProcess;
+        var warnings = new List<string>();
+
+        if (process == null)
+            throw new InvalidOperationException($"Part {part.PartNumber} has no manufacturing process defined.");
+
+        // Check if this is an additive part requiring a build plate
+        if (part.ManufacturingApproach?.RequiresBuildPlate == true)
+        {
+            // For additive parts, we need an existing BuildPlate program
+            var buildPlateProgram = await _db.MachinePrograms
+                .Include(p => p.ProgramParts)
+                .Where(p => p.ProgramType == ProgramType.BuildPlate
+                    && p.Status == ProgramStatus.Active
+                    && p.ProgramParts.Any(pp => pp.PartId == part.Id))
+                .FirstOrDefaultAsync();
+
+            if (buildPlateProgram != null)
+            {
+                // Schedule using the existing build plate program
+                var machineId = preferredMachineId
+                    ?? buildPlateProgram.MachineAssignments?.FirstOrDefault(a => a.IsPreferred)?.MachineId
+                    ?? buildPlateProgram.MachineAssignments?.FirstOrDefault()?.MachineId
+                    ?? buildPlateProgram.MachineId;
+
+                if (!machineId.HasValue)
+                    throw new InvalidOperationException("No machine assigned to the build plate program.");
+
+                var buildResult = await ScheduleProgramBuildAsync(buildPlateProgram.Id, machineId.Value, startAfter);
+                var buildJob = buildResult.BuildStageExecutions.FirstOrDefault()?.Job;
+
+                return new WorkOrderScheduleResult(
+                    JobId: buildJob?.Id ?? 0,
+                    JobNumber: buildJob?.JobNumber ?? "N/A",
+                    StageExecutions: buildResult.BuildStageExecutions,
+                    ScheduledStart: buildResult.Slot.PrintStart,
+                    ScheduledEnd: buildResult.Slot.PrintEnd,
+                    Warnings: buildResult.Diagnostics?.Warnings ?? []);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Part {part.PartNumber} requires a build plate. Create a BuildPlate program first.");
+            }
+        }
+
+        // Standard (non-additive) part: create a Job with stage executions
+        var notBefore = startAfter ?? DateTime.UtcNow;
+        var quantity = line.Quantity - line.ProducedQuantity;
+        if (quantity <= 0)
+            throw new InvalidOperationException("No remaining quantity to produce.");
+
+        // Create the job
+        var job = new Job
+        {
+            JobNumber = await _numberSeq.NextAsync("Job"),
+            PartId = part.Id,
+            WorkOrderLineId = line.Id,
+            ManufacturingProcessId = process.Id,
+            Scope = JobScope.Part,
+            Quantity = quantity,
+            Status = JobStatus.Scheduled,
+            Priority = line.WorkOrder?.Priority ?? JobPriority.Normal,
+            Notes = $"From WO {line.WorkOrder?.OrderNumber}: {part.PartNumber} × {quantity}",
+            ScheduledStart = notBefore,
+            CreatedBy = "Scheduler",
+            LastModifiedBy = "Scheduler",
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+        _db.Jobs.Add(job);
+        await _db.SaveChangesAsync();
+
+        // Create stage executions from the manufacturing process
+        var stages = process.Stages.OrderBy(s => s.ExecutionOrder).ToList();
+        var executions = new List<StageExecution>();
+        var currentStart = notBefore;
+        var sortOrder = 0;
+
+        var machineLookup = await _db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.Id, m => m);
+        var machineIdLookup = await _db.Machines
+            .Where(m => m.IsActive && m.MachineId != null)
+            .ToDictionaryAsync(m => m.MachineId!, m => m);
+
+        foreach (var stage in stages)
+        {
+            // Resolve program for this stage
+            var programId = stage.MachineProgramId;
+            if (!programId.HasValue)
+            {
+                var bestProgram = await _programService.GetBestProgramForStageAsync(
+                    part.Id, preferredMachineId, stage.ProductionStageId);
+                programId = bestProgram?.Id;
+            }
+
+            // Calculate duration from program or stage defaults
+            var durationResult = await _processService.CalculateStageDurationWithProgramAsync(
+                stage, quantity, batchCount: 1, buildConfigHours: null, programId);
+            var estimatedHours = durationResult.TotalMinutes / 60.0;
+
+            // Resolve machine
+            int? stageMachineId = preferredMachineId;
+            if (!stageMachineId.HasValue)
+                stageMachineId = ResolveStageMachineForProgram(stage, machineLookup, machineIdLookup);
+
+            var costEstimate = await _costService.EstimateCostAsync(
+                stage.ProductionStageId, estimatedHours, quantity, batchCount: 1);
+
+            var scheduledEnd = currentStart.AddHours(estimatedHours);
+
+            var execution = new StageExecution
+            {
+                JobId = job.Id,
+                ProductionStageId = stage.ProductionStageId,
+                ProcessStageId = stage.Id,
+                MachineProgramId = programId,
+                MachineId = stageMachineId,
+                Status = StageExecutionStatus.NotStarted,
+                EstimatedHours = estimatedHours,
+                SetupHours = durationResult.SetupMinutes / 60.0,
+                EstimatedCost = costEstimate.TotalCost,
+                MaterialCost = stage.MaterialCost,
+                QualityCheckRequired = stage.RequiresQualityCheck,
+                ScheduledStartAt = currentStart,
+                ScheduledEndAt = scheduledEnd,
+                SortOrder = sortOrder++,
+                CreatedBy = "Scheduler",
+                LastModifiedBy = "Scheduler",
+                CreatedDate = DateTime.UtcNow,
+                LastModifiedDate = DateTime.UtcNow
+            };
+
+            _db.StageExecutions.Add(execution);
+            executions.Add(execution);
+            currentStart = scheduledEnd;
+
+            if (!programId.HasValue)
+                warnings.Add($"Stage {stage.ProductionStage?.Name}: No program found, using stage defaults");
+        }
+
+        // Update job scheduled end
+        job.ScheduledEnd = currentStart;
+        job.EstimatedHours = (currentStart - notBefore).TotalHours;
+
+        // Link job to work order line
+        line.Jobs.Add(job);
+
+        await _db.SaveChangesAsync();
+
+        return new WorkOrderScheduleResult(
+            JobId: job.Id,
+            JobNumber: job.JobNumber!,
+            StageExecutions: executions,
+            ScheduledStart: notBefore,
+            ScheduledEnd: currentStart,
+            Warnings: warnings);
+    }
+
+    /// <inheritdoc />
+    public async Task<StandardProgramScheduleResult> ScheduleStandardProgramAsync(
+        int machineProgramId, int quantity, int? machineId = null, int? workOrderLineId = null, DateTime? startAfter = null)
+    {
+        var program = await _db.MachinePrograms
+            .Include(p => p.Part)
+                .ThenInclude(pa => pa!.ManufacturingProcess)
+                    .ThenInclude(mp => mp!.Stages.OrderBy(s => s.ExecutionOrder))
+                        .ThenInclude(s => s.ProductionStage)
+            .Include(p => p.MachineAssignments)
+            .FirstOrDefaultAsync(p => p.Id == machineProgramId)
+            ?? throw new InvalidOperationException("Machine program not found.");
+
+        if (program.ProgramType == ProgramType.BuildPlate)
+            throw new InvalidOperationException("Use ScheduleProgramBuildAsync for BuildPlate programs.");
+
+        var part = program.Part ?? throw new InvalidOperationException("Program has no linked part.");
+        var process = part.ManufacturingProcess;
+        var warnings = new List<string>();
+        var notBefore = startAfter ?? DateTime.UtcNow;
+
+        // Resolve machine: parameter → preferred → first assigned → program legacy FK
+        var targetMachineId = machineId
+            ?? program.MachineAssignments?.FirstOrDefault(a => a.IsPreferred)?.MachineId
+            ?? program.MachineAssignments?.FirstOrDefault()?.MachineId
+            ?? program.MachineId;
+
+        // Get program duration
+        var programDuration = await _programService.GetDurationFromProgramAsync(machineProgramId, quantity);
+        if (programDuration == null)
+            warnings.Add("Program has no duration data configured; using stage defaults");
+
+        // Create job
+        var job = new Job
+        {
+            JobNumber = await _numberSeq.NextAsync("Job"),
+            PartId = part.Id,
+            MachineId = targetMachineId,
+            WorkOrderLineId = workOrderLineId,
+            ManufacturingProcessId = process?.Id,
+            Scope = JobScope.Part,
+            Quantity = quantity,
+            Status = JobStatus.Scheduled,
+            Priority = JobPriority.Normal,
+            Notes = $"Scheduled from program {program.ProgramNumber}",
+            ScheduledStart = notBefore,
+            CreatedBy = "Scheduler",
+            LastModifiedBy = "Scheduler",
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+        _db.Jobs.Add(job);
+        await _db.SaveChangesAsync();
+
+        var executions = new List<StageExecution>();
+        var currentStart = notBefore;
+        var sortOrder = 0;
+
+        // If we have a manufacturing process, create stage executions for each stage
+        if (process?.Stages.Any() == true)
+        {
+            var machineLookup = await _db.Machines
+                .Where(m => m.IsActive)
+                .ToDictionaryAsync(m => m.Id, m => m);
+            var machineIdLookup = await _db.Machines
+                .Where(m => m.IsActive && m.MachineId != null)
+                .ToDictionaryAsync(m => m.MachineId!, m => m);
+
+            foreach (var stage in process.Stages.OrderBy(s => s.ExecutionOrder))
+            {
+                // For the stage matching this program's linked stage (or machine type), use program duration
+                var usesProgramDuration = stage.MachineProgramId == machineProgramId
+                    || stage.Id == program.ProcessStageId;
+
+                var durationResult = usesProgramDuration && programDuration != null
+                    ? new DurationResult(programDuration.SetupMinutes, programDuration.RunMinutes, programDuration.TotalMinutes, programDuration.Source)
+                    : await _processService.CalculateStageDurationWithProgramAsync(stage, quantity, 1, null, stage.MachineProgramId);
+
+                var estimatedHours = durationResult.TotalMinutes / 60.0;
+                int? stageMachineId = usesProgramDuration ? targetMachineId : ResolveStageMachineForProgram(stage, machineLookup, machineIdLookup);
+
+                var costEstimate = await _costService.EstimateCostAsync(
+                    stage.ProductionStageId, estimatedHours, quantity, 1);
+
+                var scheduledEnd = currentStart.AddHours(estimatedHours);
+
+                var execution = new StageExecution
+                {
+                    JobId = job.Id,
+                    ProductionStageId = stage.ProductionStageId,
+                    ProcessStageId = stage.Id,
+                    MachineProgramId = usesProgramDuration ? machineProgramId : stage.MachineProgramId,
+                    MachineId = stageMachineId,
+                    Status = StageExecutionStatus.NotStarted,
+                    EstimatedHours = estimatedHours,
+                    SetupHours = durationResult.SetupMinutes / 60.0,
+                    EstimatedCost = costEstimate.TotalCost,
+                    MaterialCost = stage.MaterialCost,
+                    QualityCheckRequired = stage.RequiresQualityCheck,
+                    ScheduledStartAt = currentStart,
+                    ScheduledEndAt = scheduledEnd,
+                    SortOrder = sortOrder++,
+                    CreatedBy = "Scheduler",
+                    LastModifiedBy = "Scheduler",
+                    CreatedDate = DateTime.UtcNow,
+                    LastModifiedDate = DateTime.UtcNow
+                };
+
+                _db.StageExecutions.Add(execution);
+                executions.Add(execution);
+                currentStart = scheduledEnd;
+            }
+        }
+        else
+        {
+            // No process defined: create a single execution for this program
+            var estimatedHours = programDuration != null
+                ? programDuration.TotalMinutes / 60.0
+                : 1.0;
+
+            var scheduledEnd = currentStart.AddHours(estimatedHours);
+
+            var execution = new StageExecution
+            {
+                JobId = job.Id,
+                MachineProgramId = machineProgramId,
+                MachineId = targetMachineId,
+                Status = StageExecutionStatus.NotStarted,
+                EstimatedHours = estimatedHours,
+                SetupHours = programDuration?.SetupMinutes / 60.0 ?? 0,
+                ScheduledStartAt = currentStart,
+                ScheduledEndAt = scheduledEnd,
+                SortOrder = 0,
+                CreatedBy = "Scheduler",
+                LastModifiedBy = "Scheduler",
+                CreatedDate = DateTime.UtcNow,
+                LastModifiedDate = DateTime.UtcNow
+            };
+
+            _db.StageExecutions.Add(execution);
+            executions.Add(execution);
+            currentStart = scheduledEnd;
+            warnings.Add("No manufacturing process defined; created single execution from program");
+        }
+
+        job.ScheduledEnd = currentStart;
+        job.EstimatedHours = (currentStart - notBefore).TotalHours;
+        await _db.SaveChangesAsync();
+
+        return new StandardProgramScheduleResult(
+            JobId: job.Id,
+            JobNumber: job.JobNumber!,
+            MachineProgramId: machineProgramId,
+            StageExecutions: executions,
+            ScheduledStart: notBefore,
+            ScheduledEnd: currentStart,
+            TotalDurationHours: (currentStart - notBefore).TotalHours,
+            Warnings: warnings);
     }
 }

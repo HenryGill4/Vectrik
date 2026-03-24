@@ -2,7 +2,7 @@
 @inject ToastService ToastService
 
 <div class="toast-container">
-    @foreach (var toast in _toasts)
+    @foreach (var toast in _toasts.ToList())
     {
         <div class="toast-item toast-@toast.Level.ToString().ToLower() @(toast.Fading ? "toast-fade-out" : "")">
             <div class="toast-icon">@GetIcon(toast.Level)</div>
@@ -26,17 +26,28 @@
     private async void HandleToast(ToastMessage message)
     {
         var item = new ToastItem(message);
-        _toasts.Add(item);
-        await InvokeAsync(StateHasChanged);
+        await InvokeAsync(() =>
+        {
+            _toasts.Add(item);
+            StateHasChanged();
+        });
 
-        // Auto-dismiss after 4 seconds
-        _ = Task.Delay(4000).ContinueWith(async _ =>
+        _ = DismissAfterDelayAsync(item);
+    }
+
+    private async Task DismissAfterDelayAsync(ToastItem item)
+    {
+        await Task.Delay(4000);
+        await InvokeAsync(() =>
         {
             item.Fading = true;
-            await InvokeAsync(StateHasChanged);
-            await Task.Delay(300);
+            StateHasChanged();
+        });
+        await Task.Delay(300);
+        await InvokeAsync(() =>
+        {
             _toasts.Remove(item);
-            await InvokeAsync(StateHasChanged);
+            StateHasChanged();
         });
     }
 

@@ -51,6 +51,9 @@ public class WorkOrderService : IWorkOrderService
             .Include(w => w.Lines)
                 .ThenInclude(l => l.BuildPackageParts)
                     .ThenInclude(bp => bp.BuildPackage)
+            .Include(w => w.Lines)
+                .ThenInclude(l => l.ProgramParts)
+                    .ThenInclude(pp => pp.MachineProgram)
             .AsQueryable();
 
         if (statuses.Length > 0)

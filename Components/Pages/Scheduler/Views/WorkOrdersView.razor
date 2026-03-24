@@ -1,9 +1,8 @@
-@* ── Work Orders Command Center: demand dashboard + suggestions + WO cards ── *@
+@* ── Work Orders Command Center: demand dashboard + WO cards (Program-based scheduling) ── *@
 @using Opcentrix_V3.Components.Pages.Scheduler.Modals
-@inject IBuildPlanningService BuildPlanning
-@inject IBuildSchedulingService BuildScheduling
-@inject IBuildTemplateService BuildTemplateService
 @inject ISchedulingService SchedulingService
+@inject IProgramSchedulingService ProgramScheduling
+@inject IMachineProgramService ProgramService
 @inject IWorkOrderService WoService
 @inject IJSRuntime JS
 @inject ToastService Toast
@@ -12,12 +11,11 @@
     @{
         var woAllLines = WorkOrders.SelectMany(w => w.Lines).ToList();
         var woTotalOutstanding = woAllLines.Sum(l => GetOutstanding(l));
-        var woTotalInBuilds = woAllLines.Sum(l => GetInBuildQty(l) + GetUnlinkedBuildQty(l));
+        var woTotalInPrograms = woAllLines.Sum(l => GetInProgramQty(l));
         var woTotalInProduction = woAllLines.Sum(l => GetInProductionQty(l));
         var woAddLines = woAllLines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
         var woCncLines = woAllLines.Where(l => !IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
-        var woUnscheduledLines = woAllLines.Where(l => GetOutstanding(l) > 0 && GetInBuildQty(l) + GetUnlinkedBuildQty(l) == 0 && !HasExistingJobs(l)).ToList();
-        var templatesAvailable = BuildTemplates.Count(t => t.IsCertified);
+        var woUnscheduledLines = woAllLines.Where(l => GetOutstanding(l) > 0 && GetInProgramQty(l) == 0 && !HasExistingJobs(l)).ToList();
         var today = DateTime.UtcNow.Date;
         var endOfWeek = today.AddDays(7 - (int)today.DayOfWeek);
         var endOfNextWeek = endOfWeek.AddDays(7);
@@ -49,11 +47,11 @@
                 <span class="wo-demand-stat-count">@woCncLines.Count</span>
                 <span class="wo-demand-stat-label">Need Machining</span>
             </div>
-            @if (woTotalInBuilds > 0)
+            @if (woTotalInPrograms > 0)
             {
-                <div class="wo-demand-stat wo-demand-stat--inbuilds">
-                    <span class="wo-demand-stat-count">@woTotalInBuilds</span>
-                    <span class="wo-demand-stat-label">In Builds</span>
+                <div class="wo-demand-stat wo-demand-stat--inprograms">
+                    <span class="wo-demand-stat-count">@woTotalInPrograms</span>
+                    <span class="wo-demand-stat-label">In Programs</span>
                 </div>
             }
             @if (woTotalInProduction > 0)
@@ -82,97 +80,7 @@
                 <span class="wo-demand-stat-count">@nextWeekWos.Count</span>
                 <span class="wo-demand-stat-label">Due Next Week</span>
             </div>
-            <div class="wo-demand-stat">
-                <span class="wo-demand-stat-count">@templatesAvailable</span>
-                <span class="wo-demand-stat-label">Templates Available</span>
-            </div>
         </div>
-
-        @* ── Build Suggestions (Phase C) ── *@
-        @if (Suggestions != null && (Suggestions.TemplateSuggestions.Any(s => !_dismissedSuggestions.Contains($"t-{s.BuildTemplateId}-{s.PartId}")) || Suggestions.MixedBuildSuggestions.Any(s => !_dismissedSuggestions.Contains($"m-{string.Join(",", s.Parts.Select(p => p.PartId))}"))))
-        {
-            <div class="wo-suggestions-section">
-                <h3 class="wo-suggestions-title">💡 Build Suggestions</h3>
-
-                @foreach (var suggestion in Suggestions.TemplateSuggestions)
-                {
-                    var key = $"t-{suggestion.BuildTemplateId}-{suggestion.PartId}";
-                    if (_dismissedSuggestions.Contains(key)) continue;
-
-                    <div class="wo-suggestion-card">
-                        <div class="wo-suggestion-card-info">
-                            <div class="wo-suggestion-card-header">
-                                <span class="badge badge-success">✅ Template</span>
-                                <strong>@suggestion.TemplateName</strong>
-                            </div>
-                            <div class="wo-suggestion-card-detail">
-                                @suggestion.PartNumber — @suggestion.SuggestedQuantity pc · @suggestion.EstimatedDurationHours.ToString("F1")h · Used @suggestion.UseCount×
-                            </div>
-                            <div class="wo-suggestion-card-rationale">@suggestion.Rationale</div>
-                            @if (suggestion.FulfillsWorkOrders.Any())
-                            {
-                                <div class="wo-suggestion-card-wos">
-                                    Fulfills: @string.Join(", ", suggestion.FulfillsWorkOrders.Select(w => $"{w.OrderNumber} ({w.QuantityFulfilled}pc)"))
-                                </div>
-                            }
-                        </div>
-                        <div class="wo-suggestion-card-actions">
-                            <button class="btn btn-sm btn-primary" @onclick="() => ScheduleFromSuggestion(suggestion)" title="Schedule using this certified template">
-                                📅 Schedule from Template
-                            </button>
-                            <button class="btn btn-sm btn-secondary" @onclick='() => _dismissedSuggestions.Add(key)' title="Dismiss this suggestion">
-                                ✕
-                            </button>
-                        </div>
-                    </div>
-                }
-
-                @foreach (var suggestion in Suggestions.MixedBuildSuggestions)
-                {
-                    var key = $"m-{string.Join(",", suggestion.Parts.Select(p => p.PartId))}";
-                    if (_dismissedSuggestions.Contains(key)) continue;
-
-                    <div class="wo-suggestion-card wo-suggestion-card--mixed">
-                        <div class="wo-suggestion-card-info">
-                            <div class="wo-suggestion-card-header">
-                                <span class="badge badge-info">🔀 Mixed Build</span>
-                                @if (suggestion.MatchingTemplateName != null)
-                                {
-                                    <strong>@suggestion.MatchingTemplateName</strong>
-                                }
-                            </div>
-                            <div class="wo-suggestion-card-detail">
-                                @string.Join(" + ", suggestion.Parts.Select(p => $"{p.PartNumber} ({p.SuggestedQuantity})")) · @suggestion.EstimatedDurationHours.ToString("F1")h
-                            </div>
-                            <div class="wo-suggestion-card-rationale">@suggestion.Rationale</div>
-                            @if (suggestion.FulfillsWorkOrders.Any())
-                            {
-                                <div class="wo-suggestion-card-wos">
-                                    Fulfills: @string.Join(", ", suggestion.FulfillsWorkOrders.Select(w => $"{w.OrderNumber} ({w.QuantityFulfilled}pc)"))
-                                </div>
-                            }
-                        </div>
-                        <div class="wo-suggestion-card-actions">
-                            @if (suggestion.MatchingTemplateId.HasValue)
-                            {
-                                <button class="btn btn-sm btn-primary" @onclick="() => ScheduleFromMixedSuggestion(suggestion)" title="Schedule using the matching template">
-                                    📅 Schedule from Template
-                                </button>
-                            }
-                            else
-                            {
-                                <button class="btn btn-sm btn-accent" @onclick="() => CreateMixedBuild(suggestion)" title="Create a new mixed build plate">
-                                    🆕 Create Mixed Build
-                                </button>
-                            }
-                            <button class="btn btn-sm btn-secondary" @onclick='() => _dismissedSuggestions.Add(key)' title="Dismiss this suggestion">
-                                ✕
-                            </button>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
 
         @* ── Schedule Diagnostic Report ── *@
         <ScheduleIssueReport Reports="_diagnosticReports" Warnings="_diagnosticWarnings"
@@ -225,10 +133,14 @@
                     }
                     else
                     {
-                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
-                            <button class="btn btn-sm btn-primary" @onclick="() => ScheduleAllForWoAsync(wo)" disabled="@_schedulingWoId.HasValue" title="SLS lines: schedule existing builds + create from templates. CNC lines: generate and schedule jobs.">
-                                @if (_schedulingWoId == wo.Id) { <span>Scheduling...</span> } else { <span>⚡ Schedule All Lines</span> }
-                            </button>
+                        var additiveLinesNeedingSchedule = wo.Lines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+                            @if (additiveLinesNeedingSchedule.Any())
+                            {
+                                <button class="btn btn-sm btn-accent" @onclick="() => OpenProgramWizard(wo)" title="Open the Program Schedule Wizard to select and schedule programs for all SLS parts">
+                                    🖨️ Schedule via Programs (@additiveLinesNeedingSchedule.Count)
+                                </button>
+                            }
                         </div>
                         <div class="wo-card-lines">
                             @foreach (var line in wo.Lines.OrderByDescending(l => GetOutstanding(l)))
@@ -236,11 +148,11 @@
                                 var outstanding = GetOutstanding(line);
                                 var isAdditive = IsAdditiveLine(line);
                                 var hasJobs = HasExistingJobs(line);
-                                var inBuilds = GetInBuildQty(line) + GetUnlinkedBuildQty(line);
+                                var inPrograms = GetInProgramQty(line);
                                 var inProduction = GetInProductionQty(line);
                                 var progressPct = line.Quantity > 0 ? Math.Min(100, line.ProducedQuantity * 100.0 / line.Quantity) : 0;
                                 var prodPct = line.Quantity > 0 ? Math.Min(100 - progressPct, inProduction * 100.0 / line.Quantity) : 0;
-                                var buildPct = line.Quantity > 0 ? Math.Min(100 - progressPct - prodPct, inBuilds * 100.0 / line.Quantity) : 0;
+                                var programPct = line.Quantity > 0 ? Math.Min(100 - progressPct - prodPct, inPrograms * 100.0 / line.Quantity) : 0;
 
                                 <div class="wo-line-row @(outstanding <= 0 ? "wo-line-row--done" : "")">
                                     <div class="wo-line-info">
@@ -257,9 +169,9 @@
                                             {
                                                 <span style="color: var(--warning); font-size: 0.75rem;">⚙️ @inProduction in jobs</span>
                                             }
-                                            @if (inBuilds > 0)
+                                            @if (inPrograms > 0)
                                             {
-                                                <span style="color: var(--accent); font-size: 0.75rem;">🖨️ @inBuilds in builds</span>
+                                                <span style="color: var(--accent); font-size: 0.75rem;">🖨️ @inPrograms in programs</span>
                                             }
                                             @if (outstanding > 0)
                                             {
@@ -272,7 +184,7 @@
                                         </div>
                                     </div>
 
-                                    @* Progress bar: produced (green) + in-production (yellow) + in-builds (blue) *@
+                                    @* Progress bar: produced (green) + in-production (yellow) + in-programs (blue) *@
                                     <div class="wo-line-progress">
                                         <div style="display: flex; height: 100%;">
                                             @if (progressPct > 0)
@@ -283,9 +195,9 @@
                                             {
                                                 <div class="wo-line-progress-prod" style="width: @prodPct.ToString("F0")%;"></div>
                                             }
-                                            @if (buildPct > 0)
+                                            @if (programPct > 0)
                                             {
-                                                <div class="wo-line-progress-build" style="width: @buildPct.ToString("F0")%;"></div>
+                                                <div class="wo-line-progress-build" style="width: @programPct.ToString("F0")%;"></div>
                                             }
                                         </div>
                                     </div>
@@ -300,173 +212,12 @@
                                             }
                                             @if (isAdditive)
                                             {
-                                                @* ── Certified Template Cards for SLS Lines ── *@
-                                                var matchingTemplates = GetMatchingTemplates(line.PartId);
-                                                @if (matchingTemplates.Any())
-                                                {
-                                                    @foreach (var template in matchingTemplates)
-                                                    {
-                                                        <div class="wo-template-card">
-                                                            <div class="wo-template-card-info">
-                                                                <span class="wo-template-card-name" title="@template.Name">✅ @template.Name</span>
-                                                                <span class="wo-template-card-detail">@template.TotalPartCount parts · @template.EstimatedDurationHours.ToString("F1")h · Used @template.UseCount×</span>
-                                                            </div>
-                                                            <button class="btn btn-sm btn-primary" @onclick="() => ShowQuickScheduleModal(wo, line, template)" title="Schedule using this certified template">
-                                                                📅 Schedule This Build
-                                                            </button>
-                                                        </div>
-                                                    }
-                                                }
-                                                @if (!matchingTemplates.Any())
-                                                {
-                                                    <button class="btn btn-sm btn-accent" @onclick='() => NavigateToNewBuild(line)' title="Create a new build for this part on the Builds page">
-                                                        🆕 New Build
-                                                    </button>
-                                                }
-                                                <button class="btn btn-sm btn-secondary" @onclick="() => OpenWoBuildModal(wo, line)" title="Create a build plate for this part">
-                                                    🖨️ Create Build
+                                                <button class="btn btn-sm btn-primary" @onclick="() => OpenProgramWizardForLine(wo, line)" title="Open program wizard to select or create programs for this part">
+                                                    🖨️ Schedule via Programs
                                                 </button>
-
-                                                @* ── Existing Build Files (always shown for SLS lines) ── *@
-                                                var sourceBuilds = GetSourceBuildsForPart(line.PartId);
-                                                @if (sourceBuilds.Any())
+                                                @if (inPrograms > 0)
                                                 {
-                                                    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; margin-top: 4px;">
-                                                        <span style="font-size: 0.8rem; color: var(--text-muted);">📦 Build files for this part:</span>
-                                                        @foreach (var src in sourceBuilds)
-                                                        {
-                                                            var srcStatusIcon = GetBuildStatusIcon(src.Status);
-                                                            var srcPartQty = src.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
-                                                            var canScheduleFrom = src.IsSlicerDataEntered && src.Status != BuildPackageStatus.Cancelled;
-                                                            var runs = GetRunsForSourceBuild(src.Id);
-                                                            var scheduledRuns = runs.Count(r => r.Status is BuildPackageStatus.Scheduled or BuildPackageStatus.Printing or BuildPackageStatus.PostPrint);
-                                                            var completedRuns = runs.Count(r => r.Status == BuildPackageStatus.Completed);
-                                                            var partsInRuns = runs
-                                                                .Where(r => r.Status != BuildPackageStatus.Cancelled && r.Status != BuildPackageStatus.Completed)
-                                                                .Sum(r => r.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0);
-
-                                                            <div class="wo-build-file-card" style="display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; width: 100%;">
-                                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                                                    <span style="font-weight: 600; font-size: 0.82rem;">@srcStatusIcon @src.Name</span>
-                                                                    <span class="badge badge-info" style="font-size: 0.7rem;">@srcPartQty pcs/run</span>
-                                                                    <span class="badge badge-@(src.Status.ToString().ToLower())" style="font-size: 0.7rem;">@src.Status</span>
-                                                                </div>
-
-                                                                @if (runs.Count > 0)
-                                                                {
-                                                                    <div style="display: flex; gap: 8px; font-size: 0.75rem; color: var(--text-secondary); flex-wrap: wrap;">
-                                                                        @if (scheduledRuns > 0)
-                                                                        {
-                                                                            <span>📅 @scheduledRuns active run(s) (@partsInRuns pcs)</span>
-                                                                        }
-                                                                        @if (completedRuns > 0)
-                                                                        {
-                                                                            <span>✅ @completedRuns completed</span>
-                                                                        }
-                                                                    </div>
-                                                                }
-
-                                                                @if (canScheduleFrom)
-                                                                {
-                                                                    var remainingForBuild = Math.Max(0, outstanding - partsInRuns);
-                                                                    var runsNeeded = srcPartQty > 0 && remainingForBuild > 0
-                                                                        ? Math.Max(1, (int)Math.Ceiling((double)remainingForBuild / srcPartQty))
-                                                                        : 0;
-                                                                    var runKey = $"{src.Id}-{line.Id}";
-                                                                    if (!_buildRunCounts.ContainsKey(runKey))
-                                                                        _buildRunCounts[runKey] = runsNeeded;
-
-                                                                    @if (runsNeeded > 0)
-                                                                    {
-                                                                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-                                                                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Runs:</span>
-                                                                            <input type="number" min="1" max="100"
-                                                                                   value="@_buildRunCounts[runKey]"
-                                                                                   @onchange="e => UpdateRunCount(runKey, e)"
-                                                                                   class="form-control form-control-sm"
-                                                                                   style="width: 56px; padding: 2px 6px; font-size: 0.75rem;" />
-                                                                            <button class="btn btn-sm btn-primary" style="padding: 2px 8px; font-size: 0.75rem;"
-                                                                                    @onclick="() => ScheduleRunsFromBuildAsync(src, line, _buildRunCounts[runKey])"
-                                                                                    disabled="@_schedulingBuildRuns"
-                                                                                    title="Schedule @(_buildRunCounts[runKey]) run(s) → @(_buildRunCounts[runKey] * srcPartQty) parts">
-                                                                                @if (_schedulingBuildRuns) { <span>...</span> } else { <span>📅 Schedule @(_buildRunCounts[runKey]) Run(s)</span> }
-                                                                            </button>
-                                                                        </div>
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        <div style="font-size: 0.75rem; color: var(--success);">✅ Demand covered by active runs</div>
-                                                                    }
-                                                                }
-                                                                @if (src.Status == BuildPackageStatus.Draft)
-                                                                {
-                                                                    <div style="margin-top: 2px;">
-                                                                        <button class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" @onclick="() => OpenWoBuildModal(wo, line)">
-                                                                            ✏️ Setup Build File
-                                                                        </button>
-                                                                    </div>
-                                                                }
-                                                            </div>
-                                                        }
-                                                    </div>
-                                                }
-
-                                                @* ── Split Build Suggestion or Configuration Warning ── *@
-                                                var config = line.Part?.AdditiveBuildConfig;
-                                                var isConfigured = IsBuildConfigured(config);
-                                                var partsPerBuild = GetPartsPerBuild(config, outstanding);
-                                                var needsSplit = partsPerBuild > 0 && outstanding > partsPerBuild;
-                                                @if (needsSplit)
-                                                {
-                                                    var splitSuggestion = SuggestBuildSplit(outstanding, partsPerBuild);
-                                                    <div class="wo-split-suggestion">
-                                                        <div class="wo-split-info">
-                                                            <span>📊 @outstanding parts → @splitSuggestion.Count builds (@partsPerBuild per build): @string.Join(" + ", splitSuggestion)</span>
-                                                        </div>
-                                                        @if (_splitLineId == line.Id)
-                                                        {
-                                                            <div class="wo-split-editor">
-                                                                @for (var i = 0; i < _splitQuantities.Count; i++)
-                                                                {
-                                                                    var idx = i;
-                                                                    <div class="wo-split-editor-row">
-                                                                        <label>Build @(idx + 1):</label>
-                                                                        <input type="number" min="1" max="@outstanding" value="@_splitQuantities[idx]"
-                                                                               @onchange="e => UpdateSplitQuantity(idx, e)" class="form-control form-control-sm" style="width:80px;" />
-                                                                        @if (_splitQuantities.Count > 1)
-                                                                        {
-                                                                            <button class="btn btn-sm btn-ghost" @onclick="() => RemoveSplitRow(idx)" title="Remove">✕</button>
-                                                                        }
-                                                                    </div>
-                                                                }
-                                                                <div class="wo-split-editor-actions">
-                                                                    <button class="btn btn-sm btn-ghost" @onclick="AddSplitRow" title="Add another build">+ Add Build</button>
-                                                                    <span class="wo-split-total @(SplitTotal != outstanding ? "wo-split-total--mismatch" : "")">Total: @SplitTotal / @outstanding</span>
-                                                                </div>
-                                                                <div class="wo-split-editor-submit">
-                                                                    <button class="btn btn-sm btn-primary" @onclick="() => CreateAllSplitBuildsAsync(wo, line)" disabled="@(_creatingSplitBuilds || SplitTotal != outstanding)">
-                                                                        @if (_creatingSplitBuilds) { <span>Creating...</span> } else { <span>🖨️ Create @_splitQuantities.Count Builds</span> }
-                                                                    </button>
-                                                                    <button class="btn btn-sm btn-ghost" @onclick="() => _splitLineId = null">Cancel</button>
-                                                                </div>
-                                                            </div>
-                                                        }
-                                                        else
-                                                        {
-                                                            <button class="btn btn-sm btn-accent" @onclick="() => OpenSplitEditor(line.Id, outstanding, partsPerBuild)" title="Split into multiple builds">
-                                                                🔀 Split & Create @splitSuggestion.Count Builds
-                                                            </button>
-                                                        }
-                                                    </div>
-                                                }
-                                                else if (!isConfigured && !sourceBuilds.Any() && outstanding > 1)
-                                                {
-                                                    <div class="wo-config-warning">
-                                                        <span>⚠️ Build capacity not configured — </span>
-                                                        <a href="/parts/@line.PartId/edit" target="_blank" title="Configure how many parts fit on a build plate">
-                                                            Edit Part → Stacking tab
-                                                        </a>
-                                                    </div>
+                                                    <span class="badge badge-accent" style="font-size: 0.7rem;">@inPrograms in programs</span>
                                                 }
                                             }
                                             else
@@ -503,19 +254,6 @@
 </div>
 
 @* ── WO-specific Modals ── *@
-<WoBuildModal
-    IsVisible="_showWoBuildModal"
-    WorkOrder="_selectedWo"
-    WorkOrderLine="_selectedWoLine"
-    SlsMachines="SlsMachines"
-    AllMachines="AllMachines"
-    UserName="@UserName"
-    InitialBuildName="@_woBuildName"
-    InitialMachineId="@_woBuildMachineId"
-    InitialQuantity="_woBuildQuantity"
-    OnClose="() => { _showWoBuildModal = false; }"
-    OnCreated="OnModalConfirmedAsync" />
-
 <WoJobModal
     IsVisible="_showWoJobModal"
     WorkOrder="_selectedWo"
@@ -524,83 +262,44 @@
     OnClose="() => { _showWoJobModal = false; }"
     OnScheduled="OnModalConfirmedAsync" />
 
-<QuickScheduleModal
-    IsVisible="_showQuickScheduleModal"
-    Template="_selectedTemplate"
-    WorkOrder="_quickScheduleWo"
-    WorkOrderLine="_quickScheduleWoLine"
+<ProgramScheduleWizard
+    IsVisible="_showProgramWizard"
+    WorkOrder="_wizardWo"
+    Lines="_wizardLines"
     SlsMachines="SlsMachines"
-    AllMachines="AllMachines"
     UserName="@UserName"
-    InitialMachineId="@_quickScheduleMachineId"
-    OnClose="() => { _showQuickScheduleModal = false; }"
+    OnClose="() => { _showProgramWizard = false; }"
     OnScheduled="OnModalConfirmedAsync" />
 
 @code {
     [Parameter, EditorRequired] public List<WorkOrder> WorkOrders { get; set; } = [];
-    [Parameter, EditorRequired] public List<BuildTemplate> BuildTemplates { get; set; } = [];
-    [Parameter] public List<BuildPackage> BuildPackages { get; set; } = [];
-    [Parameter] public BuildSuggestionResult? Suggestions { get; set; }
+    [Parameter] public List<MachineProgram> Programs { get; set; } = [];
     [Parameter, EditorRequired] public List<Machine> SlsMachines { get; set; } = [];
-    [Parameter, EditorRequired] public List<Machine> AllMachines { get; set; } = [];
     [Parameter, EditorRequired] public string UserName { get; set; } = "System";
     [Parameter] public bool ShowOverdueOnly { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
-    // WO Build modal state
-    private bool _showWoBuildModal;
-    private WorkOrder? _selectedWo;
-    private WorkOrderLine? _selectedWoLine;
-    private string _woBuildName = "";
-    private string _woBuildMachineId = "";
-    private int _woBuildQuantity;
+    // Program Schedule Wizard state
+    private bool _showProgramWizard;
+    private WorkOrder? _wizardWo;
+    private List<WorkOrderLine>? _wizardLines;
 
     // WO Job modal state
     private bool _showWoJobModal;
-
-    // Quick Schedule modal state
-    private bool _showQuickScheduleModal;
-    private BuildTemplate? _selectedTemplate;
-    private WorkOrder? _quickScheduleWo;
-    private WorkOrderLine? _quickScheduleWoLine;
-    private string _quickScheduleMachineId = "";
-
-    // Suggestion dismissal
-    private HashSet<string> _dismissedSuggestions = new();
-    private bool _creatingFromWo;
-
-    // Split build state
-    private int? _splitLineId;
-    private List<int> _splitQuantities = new();
-    private bool _creatingSplitBuilds;
-    private int SplitTotal => _splitQuantities.Sum();
+    private WorkOrder? _selectedWo;
+    private WorkOrderLine? _selectedWoLine;
 
     // Stat filter
     private string? _statFilter;
-
-    // Schedule All state
-    private int? _schedulingWoId;
-
-    // Multi-run scheduling state
-    private Dictionary<string, int> _buildRunCounts = new();
-    private bool _schedulingBuildRuns;
 
     // Diagnostic report state
     private List<ScheduleDiagnosticReport> _diagnosticReports = [];
     private List<string> _diagnosticWarnings = [];
 
-    /// <summary>Clear stale run counts when parent refreshes data so the UI recalculates from current demand.</summary>
-    protected override void OnParametersSet()
-    {
-        if (!_schedulingBuildRuns)
-            _buildRunCounts.Clear();
-    }
-
     private async Task OnModalConfirmedAsync()
     {
-        _showWoBuildModal = false;
         _showWoJobModal = false;
-        _showQuickScheduleModal = false;
+        _showProgramWizard = false;
         await OnRefreshRequested.InvokeAsync();
     }
 
@@ -630,38 +329,28 @@
 
     // ── Work Order Demand Helpers ──
 
+    /// <summary>
+    /// Calculates outstanding quantity for a WO line (ordered - produced - in programs).
+    /// </summary>
     private int GetOutstanding(WorkOrderLine line)
     {
         var produced = line.ProducedQuantity;
-        var inBuilds = GetInBuildQty(line);
-        var inUnlinkedBuilds = GetUnlinkedBuildQty(line);
+        var inPrograms = GetInProgramQty(line);
         var ordered = line.Quantity;
-        return Math.Max(0, ordered - produced - inBuilds - inUnlinkedBuilds);
-    }
-
-    private static int GetInBuildQty(WorkOrderLine line)
-    {
-        if (line.BuildPackageParts == null) return 0;
-        return line.BuildPackageParts
-            .Where(bp => bp.BuildPackage != null
-                && bp.BuildPackage.Status != BuildPackageStatus.Cancelled
-                && bp.BuildPackage.Status != BuildPackageStatus.Completed)
-            .Sum(bp => bp.Quantity);
+        return Math.Max(0, ordered - produced - inPrograms);
     }
 
     /// <summary>
-    /// Counts parts in active builds that contain this part but are NOT linked to any WO line.
-    /// These are builds created on the Builds page without a WO line reference.
+    /// Quantity covered by active MachinePrograms (program-based scheduling).
     /// </summary>
-    private int GetUnlinkedBuildQty(WorkOrderLine line)
+    private int GetInProgramQty(WorkOrderLine line)
     {
-        return BuildPackages
-            .Where(bp => bp.Status != BuildPackageStatus.Cancelled
-                && bp.Status != BuildPackageStatus.Completed
-                && bp.Parts != null
-                && bp.Parts.Any(p => p.PartId == line.PartId && p.WorkOrderLineId == null))
-            .SelectMany(bp => bp.Parts.Where(p => p.PartId == line.PartId && p.WorkOrderLineId == null))
-            .Sum(p => p.Quantity);
+        return Programs
+            .Where(p => p.ScheduleStatus is not (ProgramScheduleStatus.Completed or ProgramScheduleStatus.Cancelled)
+                && p.ProgramParts != null
+                && p.ProgramParts.Any(pp => pp.PartId == line.PartId))
+            .SelectMany(p => p.ProgramParts!.Where(pp => pp.PartId == line.PartId))
+            .Sum(pp => pp.Quantity);
     }
 
     private static bool IsAdditiveLine(WorkOrderLine line) =>
@@ -684,14 +373,18 @@
     private static bool HasUnscheduledJobs(WorkOrderLine line) =>
         line.Jobs?.Any(j => j.Status == JobStatus.Draft) == true;
 
-    private void OpenWoBuildModal(WorkOrder wo, WorkOrderLine line)
+    private void OpenProgramWizard(WorkOrder wo)
     {
-        _selectedWo = wo;
-        _selectedWoLine = line;
-        _woBuildName = $"Build-{line.Part?.PartNumber ?? "?"}-{DateTime.UtcNow:MMdd}";
-        _woBuildMachineId = SlsMachines.FirstOrDefault()?.Id.ToString() ?? "";
-        _woBuildQuantity = GetOutstanding(line);
-        _showWoBuildModal = true;
+        _wizardWo = wo;
+        _wizardLines = wo.Lines.Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0).ToList();
+        _showProgramWizard = true;
+    }
+
+    private void OpenProgramWizardForLine(WorkOrder wo, WorkOrderLine line)
+    {
+        _wizardWo = wo;
+        _wizardLines = [line];
+        _showProgramWizard = true;
     }
 
     private void OpenWoJobModal(WorkOrder wo, WorkOrderLine line)
@@ -724,443 +417,5 @@
         {
             Toast.ShowWarning("No jobs could be scheduled (no capable machines found)");
         }
-    }
-
-    /// <summary>
-    /// Schedule all unfulfilled lines on a WO: for SLS lines, schedule existing Ready/Sliced
-    /// builds and create new builds from certified templates; for CNC lines, generate and
-    /// auto-schedule jobs.
-    /// </summary>
-    private async Task ScheduleAllForWoAsync(WorkOrder wo)
-    {
-        _schedulingWoId = wo.Id;
-        StateHasChanged();
-        try
-        {
-            var jobsCreated = 0;
-            var jobsScheduled = 0;
-            var buildsScheduled = 0;
-            var buildsCreated = 0;
-            var slsNoTemplate = 0;
-
-            foreach (var line in wo.Lines)
-            {
-                if (GetOutstanding(line) <= 0) continue;
-
-                if (IsAdditiveLine(line))
-                {
-                    var outstanding = GetOutstanding(line);
-
-                    // Schedule runs from source build files (not copies) to fill demand
-                    var sourceBuilds = GetSourceBuildsForPart(line.PartId)
-                        .Where(b => b.IsSlicerDataEntered)
-                        .ToList();
-                    foreach (var build in sourceBuilds)
-                    {
-                        if (outstanding <= 0) break;
-                        var buildPartQty = build.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
-                        if (buildPartQty <= 0) continue;
-                        var runsNeeded = (int)Math.Ceiling((double)outstanding / buildPartQty);
-                        for (var i = 0; i < runsNeeded; i++)
-                        {
-                            try
-                            {
-                                var runResult = await BuildScheduling.ScheduleBuildRunAutoMachineAsync(build.Id);
-                                if (runResult.Diagnostics is not null)
-                                    _diagnosticReports.Add(runResult.Diagnostics);
-                                buildsScheduled++;
-                                outstanding -= buildPartQty;
-                            }
-                            catch { /* skip runs that fail */ }
-                        }
-                    }
-
-                    // If still outstanding, create and schedule from certified templates
-                    if (outstanding > 0)
-                    {
-                        var templates = GetMatchingTemplates(line.PartId);
-                        if (templates.Count > 0)
-                        {
-                            var template = templates.First();
-                            var templateQty = template.Parts
-                                .Where(p => p.PartId == line.PartId)
-                                .Sum(p => p.Quantity);
-
-                            if (templateQty > 0)
-                            {
-                                var buildsNeeded = (int)Math.Ceiling((double)outstanding / templateQty);
-                                for (var i = 0; i < buildsNeeded; i++)
-                                {
-                                    try
-                                    {
-                                        // Find best machine for this build, then instantiate and schedule on it
-                                        var bestSlot = await BuildScheduling.FindBestBuildSlotAsync(
-                                            template.EstimatedDurationHours, DateTime.UtcNow);
-                                        var package = await BuildTemplateService.InstantiateAsync(
-                                                    template.Id, bestSlot.MachineId, UserName, line.Id);
-                                                buildsCreated++;
-                                                var buildResult = await BuildScheduling.ScheduleBuildAsync(package.Id, bestSlot.MachineId);
-                                                if (buildResult.Diagnostics is not null)
-                                                    _diagnosticReports.Add(buildResult.Diagnostics);
-                                                buildsScheduled++;
-                                    }
-                                    catch { /* skip failed instantiation/scheduling */ }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            slsNoTemplate++;
-                        }
-                    }
-
-                    continue;
-                }
-
-                // CNC: generate a job if none exist
-                if (!HasExistingJobs(line))
-                {
-                    try
-                    {
-                        var job = await WoService.GenerateJobForLineAsync(line.Id, UserName);
-                        jobsCreated++;
-                        try
-                        {
-                            await SchedulingService.AutoScheduleJobAsync(job.Id);
-                            jobsScheduled++;
-                        }
-                        catch { /* job created but couldn't schedule */ }
-                    }
-                    catch { /* skip lines that fail */ }
-                }
-                else if (HasUnscheduledJobs(line))
-                {
-                    // Auto-schedule existing Draft jobs
-                    foreach (var job in line.Jobs!.Where(j => j.Status == JobStatus.Draft))
-                    {
-                        try
-                        {
-                            await SchedulingService.AutoScheduleJobAsync(job.Id);
-                            jobsScheduled++;
-                        }
-                        catch { /* skip */ }
-                    }
-                }
-            }
-
-            var unassignedTotal = _diagnosticReports.Sum(r => r.UnassignedCount);
-            var parts = new List<string>();
-            if (buildsCreated > 0) parts.Add($"{buildsCreated} build(s) created from templates");
-            if (buildsScheduled > 0) parts.Add($"{buildsScheduled} run(s) scheduled");
-            if (jobsCreated > 0) parts.Add($"{jobsCreated} job(s) created");
-            if (jobsScheduled > 0) parts.Add($"{jobsScheduled} job(s) scheduled");
-            if (slsNoTemplate > 0) parts.Add($"{slsNoTemplate} SLS line(s) need certified templates");
-            if (unassignedTotal > 0) parts.Add($"{unassignedTotal} stage(s) unassigned — check diagnostic report");
-            Toast.ShowSuccess(parts.Count > 0 ? string.Join(", ", parts) : "Nothing to schedule");
-            await OnRefreshRequested.InvokeAsync();
-        }
-        catch (Exception ex) { Toast.ShowError($"Schedule All failed: {ex.Message}"); }
-        finally { _schedulingWoId = null; }
-    }
-
-    // ── Build Lookup Helpers ──
-
-    /// <summary>
-    /// Returns active (non-completed, non-cancelled) builds that contain the specified part.
-    /// </summary>
-    private List<BuildPackage> GetBuildsForPart(int partId) =>
-        BuildPackages
-            .Where(bp => bp.Parts != null && bp.Parts.Any(p => p.PartId == partId)
-                && bp.Status != BuildPackageStatus.Cancelled)
-            .OrderByDescending(bp => bp.CreatedDate)
-            .ToList();
-
-    /// <summary>
-    /// Returns only source/original build files (not scheduled copies) for a part.
-    /// </summary>
-    private List<BuildPackage> GetSourceBuildsForPart(int partId) =>
-        BuildPackages
-            .Where(bp => bp.Parts != null && bp.Parts.Any(p => p.PartId == partId)
-                && bp.Status != BuildPackageStatus.Cancelled
-                && !bp.IsScheduledCopy)
-            .OrderByDescending(bp => bp.CreatedDate)
-            .ToList();
-
-    /// <summary>
-    /// Returns all scheduled run copies created from a source build.
-    /// </summary>
-    private List<BuildPackage> GetRunsForSourceBuild(int sourceBuildId) =>
-        BuildPackages
-            .Where(bp => bp.SourceBuildPackageId == sourceBuildId
-                && bp.Status != BuildPackageStatus.Cancelled)
-            .OrderBy(bp => bp.CreatedDate)
-            .ToList();
-
-    private static string GetBuildStatusIcon(BuildPackageStatus status) => status switch
-    {
-        BuildPackageStatus.Completed => "✅",
-        BuildPackageStatus.PostPrint => "📦",
-        BuildPackageStatus.Printing => "🖨️",
-        BuildPackageStatus.Scheduled => "📅",
-        BuildPackageStatus.Ready => "🟢",
-        BuildPackageStatus.Sliced => "📐",
-        _ => "📝"
-    };
-
-    /// <summary>
-    /// Schedule a single run from an existing build — auto-selects the SLS machine
-    /// with the earliest available slot.
-    /// </summary>
-    private async Task ScheduleExistingBuildAsync(BuildPackage build)
-    {
-        try
-        {
-            var result = await BuildScheduling.ScheduleBuildRunAutoMachineAsync(build.Id);
-            if (result.Diagnostics is not null)
-                _diagnosticReports.Add(result.Diagnostics);
-            Toast.ShowSuccess($"Run scheduled from build '{build.Name}'.");
-            await OnRefreshRequested.InvokeAsync();
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to schedule build: {ex.Message}");
-        }
-    }
-
-    private void UpdateRunCount(string runKey, ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var count) && count >= 1)
-            _buildRunCounts[runKey] = count;
-    }
-
-    /// <summary>
-    /// Schedule N runs from an existing build file. Each run is auto-assigned to the
-    /// SLS machine with the earliest available slot, distributing work across all machines.
-    /// </summary>
-    private async Task ScheduleRunsFromBuildAsync(BuildPackage build, WorkOrderLine line, int runCount)
-    {
-        if (runCount < 1) return;
-        _schedulingBuildRuns = true;
-        StateHasChanged();
-        try
-        {
-            var scheduled = 0;
-            for (var i = 0; i < runCount; i++)
-            {
-                try
-                {
-                    var runResult = await BuildScheduling.ScheduleBuildRunAutoMachineAsync(build.Id);
-                    if (runResult.Diagnostics is not null)
-                        _diagnosticReports.Add(runResult.Diagnostics);
-                    scheduled++;
-                }
-                catch { /* skip runs that fail to schedule */ }
-            }
-
-            if (scheduled > 0)
-            {
-                var partQty = build.Parts?.FirstOrDefault(p => p.PartId == line.PartId)?.Quantity ?? 0;
-                var totalParts = partQty * scheduled;
-                Toast.ShowSuccess($"Scheduled {scheduled} run(s) from '{build.Name}' ({totalParts} parts total).");
-                _buildRunCounts.Remove($"{build.Id}-{line.Id}");
-                await OnRefreshRequested.InvokeAsync();
-            }
-            else
-            {
-                Toast.ShowError("Failed to schedule any runs.");
-            }
-        }
-        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
-        finally { _schedulingBuildRuns = false; }
-    }
-
-    // ── Template Matching Helpers ──
-
-    private List<BuildTemplate> GetMatchingTemplates(int partId) =>
-        BuildTemplates
-            .Where(t => t.IsCertified && t.Parts.Any(p => p.PartId == partId))
-            .ToList();
-
-    // ── Quick Schedule from Template ──
-
-    private void ShowQuickScheduleModal(WorkOrder wo, WorkOrderLine line, BuildTemplate template)
-    {
-        _quickScheduleWo = wo;
-        _quickScheduleWoLine = line;
-        _selectedTemplate = template;
-        _quickScheduleMachineId = SlsMachines.FirstOrDefault()?.Id.ToString() ?? "";
-        _showQuickScheduleModal = true;
-    }
-
-    // ── Navigate to New Build ──
-
-    private void NavigateToNewBuild(WorkOrderLine line)
-    {
-        var url = $"/builds?newForPart={line.PartId}&woLineId={line.Id}&returnTo=/scheduler?view=orders";
-        JS.InvokeVoidAsync("open", url, "_self");
-    }
-
-    // ── Build Split Helpers ──
-
-    /// <summary>
-    /// Returns the planned parts-per-build for the optimal stack level, or 0 if not meaningfully configured.
-    /// A value of 1 is treated as "unconfigured" since it's the default and creates unusable 1-part-per-build splits.
-    /// </summary>
-    private static int GetPartsPerBuild(PartAdditiveBuildConfig? config, int quantity)
-    {
-        if (config == null) return 0;
-        var level = config.GetRecommendedStackLevel(quantity);
-        var partsPerBuild = config.GetPartsPerBuild(level) ?? 0;
-
-        // Treat 1 as "unconfigured" — avoids showing "100 builds for 100 parts" nonsense
-        return partsPerBuild > 1 ? partsPerBuild : 0;
-    }
-
-    /// <summary>
-    /// Returns true if the part's additive build config is meaningfully configured for build planning.
-    /// </summary>
-    private static bool IsBuildConfigured(PartAdditiveBuildConfig? config)
-    {
-        if (config == null) return false;
-        // Must have PlannedPartsPerBuildSingle > 1 (not the default)
-        return config.PlannedPartsPerBuildSingle > 1;
-    }
-
-    /// <summary>
-    /// Splits an outstanding quantity into build-sized batches.
-    /// </summary>
-    private static List<int> SuggestBuildSplit(int outstandingQty, int partsPerBuild)
-    {
-        if (partsPerBuild <= 0) return [outstandingQty];
-        var splits = new List<int>();
-        var remaining = outstandingQty;
-        while (remaining > 0)
-        {
-            var batch = Math.Min(remaining, partsPerBuild);
-            splits.Add(batch);
-            remaining -= batch;
-        }
-        return splits;
-    }
-
-    private void OpenSplitEditor(int lineId, int outstanding, int partsPerBuild)
-    {
-        _splitLineId = lineId;
-        _splitQuantities = SuggestBuildSplit(outstanding, partsPerBuild);
-    }
-
-    private void UpdateSplitQuantity(int index, ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var val) && val > 0)
-            _splitQuantities[index] = val;
-    }
-
-    private void AddSplitRow() => _splitQuantities.Add(1);
-
-    private void RemoveSplitRow(int index)
-    {
-        if (_splitQuantities.Count > 1)
-            _splitQuantities.RemoveAt(index);
-    }
-
-    private async Task CreateAllSplitBuildsAsync(WorkOrder wo, WorkOrderLine line)
-    {
-        if (SplitTotal != line.Quantity - line.ProducedQuantity - GetInBuildQty(line)) return;
-        _creatingSplitBuilds = true;
-        StateHasChanged();
-        try
-        {
-            var machineId = SlsMachines.FirstOrDefault()?.Id;
-            var created = 0;
-            for (var i = 0; i < _splitQuantities.Count; i++)
-            {
-                var qty = _splitQuantities[i];
-                var buildName = $"Build-{line.Part?.PartNumber ?? "?"}-{DateTime.UtcNow:MMdd}-{(char)('A' + i)}";
-                var package = await BuildPlanning.CreatePackageAsync(new BuildPackage
-                {
-                    Name = buildName,
-                    MachineId = machineId,
-                    Status = BuildPackageStatus.Draft,
-                    CreatedBy = UserName,
-                    LastModifiedBy = UserName
-                });
-                await BuildPlanning.AddPartToPackageAsync(package.Id, line.PartId, qty, line.Id);
-                created++;
-            }
-            Toast.ShowSuccess($"Created {created} builds for {line.Part?.PartNumber ?? "?"}. Enter slicer data, then schedule.");
-            _splitLineId = null;
-            _splitQuantities.Clear();
-            await OnRefreshRequested.InvokeAsync();
-        }
-        catch (Exception ex) { Toast.ShowError($"Failed to create split builds: {ex.Message}"); }
-        finally { _creatingSplitBuilds = false; }
-    }
-
-    // ── Build Suggestion Actions (Phase C) ──
-
-    private void ScheduleFromSuggestion(TemplateSuggestion suggestion)
-    {
-        var woRef = suggestion.FulfillsWorkOrders.FirstOrDefault();
-        if (woRef == null) return;
-
-        var wo = WorkOrders.FirstOrDefault(w => w.Id == woRef.WorkOrderId);
-        var line = wo?.Lines.FirstOrDefault(l => l.Id == woRef.WorkOrderLineId);
-        var template = BuildTemplates.FirstOrDefault(t => t.Id == suggestion.BuildTemplateId);
-        if (wo == null || line == null || template == null) return;
-
-        ShowQuickScheduleModal(wo, line, template);
-    }
-
-    private void ScheduleFromMixedSuggestion(MixedBuildSuggestion suggestion)
-    {
-        if (!suggestion.MatchingTemplateId.HasValue) return;
-
-        var woRef = suggestion.FulfillsWorkOrders.FirstOrDefault();
-        if (woRef == null) return;
-
-        var wo = WorkOrders.FirstOrDefault(w => w.Id == woRef.WorkOrderId);
-        var line = wo?.Lines.FirstOrDefault(l => l.Id == woRef.WorkOrderLineId);
-        var template = BuildTemplates.FirstOrDefault(t => t.Id == suggestion.MatchingTemplateId.Value);
-        if (wo == null || line == null || template == null) return;
-
-        ShowQuickScheduleModal(wo, line, template);
-    }
-
-    private async Task CreateMixedBuild(MixedBuildSuggestion suggestion)
-    {
-        _creatingFromWo = true;
-        StateHasChanged();
-        try
-        {
-            var partNames = string.Join("+", suggestion.Parts.Select(p => p.PartNumber));
-            var package = await BuildPlanning.CreatePackageAsync(new BuildPackage
-            {
-                Name = $"Mixed-{partNames}-{DateTime.UtcNow:MMdd}",
-                Status = BuildPackageStatus.Draft,
-                EstimatedDurationHours = suggestion.EstimatedDurationHours,
-                CreatedBy = UserName,
-                LastModifiedBy = UserName
-            });
-
-            foreach (var part in suggestion.Parts)
-            {
-                var woRef = suggestion.FulfillsWorkOrders.FirstOrDefault(w =>
-                {
-                    var wo = WorkOrders.FirstOrDefault(o => o.Id == w.WorkOrderId);
-                    return wo?.Lines.Any(l => l.Id == w.WorkOrderLineId && l.PartId == part.PartId) == true;
-                });
-
-                await BuildPlanning.AddPartToPackageAsync(
-                    package.Id,
-                    part.PartId,
-                    part.SuggestedQuantity,
-                    woRef?.WorkOrderLineId);
-            }
-
-            Toast.ShowSuccess($"Mixed build '{package.Name}' created with {suggestion.Parts.Count} parts. Enter slicer data on the Builds page.");
-            await OnRefreshRequested.InvokeAsync();
-        }
-        catch (Exception ex) { Toast.ShowError(ex.Message); }
-        finally { _creatingFromWo = false; }
     }
 }

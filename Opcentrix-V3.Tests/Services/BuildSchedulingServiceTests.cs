@@ -25,7 +25,10 @@ public class BuildSchedulingServiceTests : IDisposable
             new StubSerialNumberService(),
             new StubSchedulingService(),
             new StubManufacturingProcessService(),
-            new StubBatchService());
+            new StubBatchService(),
+            new StubNumberSequenceService(),
+            new StubStageCostService(),
+            new StubMachineProgramService());
     }
 
     public void Dispose() => _db.Dispose();

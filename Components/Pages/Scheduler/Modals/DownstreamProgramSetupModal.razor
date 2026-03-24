@@ -1,0 +1,264 @@
+@* ═══════════════════════════════════════════════════════════════════════════
+   DownstreamProgramSetupModal — Shows downstream stage status after scheduling.
+   Allows users to create placeholder programs or skip optional stages.
+   ═══════════════════════════════════════════════════════════════════════════ *@
+@inject IDownstreamProgramService DownstreamService
+@inject ToastService Toast
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal-content modal-lg" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 class="modal-title">🔧 Downstream Program Setup</h3>
+                <button class="btn-icon" @onclick="Close">✕</button>
+            </div>
+
+            <div class="modal-body">
+                @if (_loading)
+                {
+                    <div class="wizard-loading">
+                        <span class="spinner"></span>
+                        <span>Loading downstream requirements...</span>
+                    </div>
+                }
+                else if (_error != null)
+                {
+                    <div class="wizard-error">
+                        <strong>⚠️ Error</strong>
+                        <p style="margin: 8px 0 0;">@_error</p>
+                    </div>
+                }
+                else
+                {
+                    <p class="wizard-hint">
+                        Review downstream processing stages for this build plate program.
+                        Required stages must have a program assigned before scheduling can proceed.
+                    </p>
+
+                    @if (!_requirements.Any())
+                    {
+                        <div class="empty-state">
+                            <div class="empty-state-icon">✅</div>
+                            <div class="empty-state-text">No downstream stages required — ready to schedule.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="program-wizard-parts">
+                            @foreach (var req in _requirements.OrderBy(r => r.ExecutionOrder))
+                            {
+                                var statusClass = req.AssignedProgramId.HasValue
+                                    ? "downstream-stage--ready"
+                                    : req.HasDefaultParameters
+                                        ? "downstream-stage--default"
+                                        : "downstream-stage--missing";
+                                var statusIcon = req.AssignedProgramId.HasValue ? "🟢" : req.HasDefaultParameters ? "🟡" : "🔴";
+
+                                <div class="downstream-stage @statusClass">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <span style="font-size: 1.2rem;">@statusIcon</span>
+                                        <div style="flex: 1;">
+                                            <div style="font-weight: 600;">@req.StageName</div>
+                                            <div style="font-size: 0.8rem; color: var(--text-muted);">
+                                                @req.MachineType · @(req.IsRequired ? "Required" : "Optional")
+                                            </div>
+                                        </div>
+
+                                        @if (req.AssignedProgramId.HasValue)
+                                        {
+                                            <span class="badge badge-success">@req.AssignedProgramName</span>
+                                        }
+                                        else if (req.HasDefaultParameters)
+                                        {
+                                            <div style="display: flex; gap: 6px;">
+                                                <button class="btn btn-sm btn-warning"
+                                                        @onclick="() => CreatePlaceholderAsync(req)"
+                                                        disabled="@_processing">
+                                                    ⚡ Create with Defaults
+                                                </button>
+                                                @if (!req.IsRequired)
+                                                {
+                                                    <button class="btn btn-sm btn-secondary"
+                                                            @onclick="() => SkipStage(req)"
+                                                            disabled="@_processing">
+                                                        Skip
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                        else if (req.IsRequired)
+                                        {
+                                            <span class="badge badge-danger">⚠️ Program needed</span>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-secondary"
+                                                    @onclick="() => SkipStage(req)"
+                                                    disabled="@_processing">
+                                                Skip (Optional)
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        @if (_validation != null && _validation.Warnings.Any())
+                        {
+                            <div style="margin-top: 12px;">
+                                @foreach (var warn in _validation.Warnings)
+                                {
+                                    <div style="font-size: 0.85rem; color: var(--warning); margin-bottom: 4px;">
+                                        ⚠️ @warn
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                }
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="Close" disabled="@_processing">Cancel</button>
+                <div style="flex:1;"></div>
+                @if (CanCreateAll)
+                {
+                    <button class="btn btn-warning" @onclick="CreateAllPlaceholdersAsync" disabled="@_processing">
+                        ⚡ Create All with Defaults
+                    </button>
+                }
+                <button class="btn btn-primary" @onclick="Continue" disabled="@(!IsReady || _processing)">
+                    @if (IsReady)
+                    {
+                        <span>✅ Continue to Schedule</span>
+                    }
+                    else
+                    {
+                        <span>Resolve required stages first</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public int BuildPlateProgramId { get; set; }
+    [Parameter] public string UserName { get; set; } = "System";
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnContinue { get; set; }
+
+    private List<DownstreamProgramRequirement> _requirements = [];
+    private DownstreamValidationResult? _validation;
+    private HashSet<int> _skippedStages = [];
+    private bool _loading;
+    private bool _processing;
+    private string? _error;
+
+    /// <summary>All required stages have programs or have been skipped (optional only).</summary>
+    private bool IsReady => _requirements
+        .Where(r => r.IsRequired && !_skippedStages.Contains(r.ProcessStageId))
+        .All(r => r.AssignedProgramId.HasValue);
+
+    /// <summary>At least one unassigned stage has default parameters available.</summary>
+    private bool CanCreateAll => _requirements
+        .Any(r => !r.AssignedProgramId.HasValue && r.HasDefaultParameters && !_skippedStages.Contains(r.ProcessStageId));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible && BuildPlateProgramId > 0 && !_requirements.Any())
+        {
+            await LoadRequirementsAsync();
+        }
+    }
+
+    private async Task LoadRequirementsAsync()
+    {
+        _loading = true;
+        _error = null;
+        _skippedStages.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _requirements = await DownstreamService.GetRequiredProgramsAsync(BuildPlateProgramId);
+            _validation = await DownstreamService.ValidateDownstreamReadinessAsync(BuildPlateProgramId);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load downstream requirements: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CreatePlaceholderAsync(DownstreamProgramRequirement req)
+    {
+        _processing = true;
+        StateHasChanged();
+        try
+        {
+            await DownstreamService.CreatePlaceholderProgramsAsync(
+                BuildPlateProgramId, [req.ProcessStageId], UserName);
+            Toast.ShowSuccess($"Created placeholder program for {req.StageName}");
+            await LoadRequirementsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed: {ex.Message}");
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    private async Task CreateAllPlaceholdersAsync()
+    {
+        _processing = true;
+        StateHasChanged();
+        try
+        {
+            var stageIds = _requirements
+                .Where(r => !r.AssignedProgramId.HasValue && r.HasDefaultParameters && !_skippedStages.Contains(r.ProcessStageId))
+                .Select(r => r.ProcessStageId)
+                .ToList();
+            await DownstreamService.CreatePlaceholderProgramsAsync(BuildPlateProgramId, stageIds, UserName);
+            Toast.ShowSuccess($"Created {stageIds.Count} placeholder program(s)");
+            await LoadRequirementsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed: {ex.Message}");
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    private void SkipStage(DownstreamProgramRequirement req)
+    {
+        _skippedStages.Add(req.ProcessStageId);
+    }
+
+    private void Close()
+    {
+        _requirements.Clear();
+        _validation = null;
+        _skippedStages.Clear();
+        _error = null;
+        OnClose.InvokeAsync();
+    }
+
+    private void Continue()
+    {
+        if (!IsReady) return;
+        OnContinue.InvokeAsync();
+    }
+}

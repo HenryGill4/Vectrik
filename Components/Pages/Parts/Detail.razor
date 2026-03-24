@@ -5,6 +5,8 @@
 @inject ITenantFeatureService Features
 @inject IBuildPlanningService BuildPlanningService
 @inject IManufacturingProcessService ProcessService
+@inject IMachineService MachineService
+@inject IMachineProgramService MachineProgramService
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using System.Security.Claims
@@ -57,7 +59,6 @@ else
         <button class="tab @(_tab == "process" ? "active" : "")" @onclick='() => _tab = "process"'>Process (@_processStages.Count)</button>
         <button class="tab @(_tab == "costing" ? "active" : "")" @onclick='() => _tab = "costing"'>💰 Cost Calc</button>
         <button class="tab @(_tab == "bom" ? "active" : "")" @onclick='() => _tab = "bom"'>BOM (@(_bomItems?.Count ?? 0))</button>
-        <button class="tab @(_tab == "builds" ? "active" : "")" @onclick='() => _tab = "builds"'>Builds (@(_buildsForPart?.Count ?? 0))</button>
         <button class="tab @(_tab == "drawings" ? "active" : "")" @onclick='() => _tab = "drawings"'>Drawings (@(_drawings?.Count ?? 0))</button>
         @if (HasAdditiveConfig())
         {
@@ -80,7 +81,19 @@ else
                     <div class="detail-label">Description</div><div class="detail-value">@(_part.Description ?? "—")</div>
                     <div class="detail-label">Material</div><div class="detail-value">@_part.Material</div>
                     <div class="detail-label">Raw Material Spec</div><div class="detail-value">@(_part.RawMaterialSpec ?? "—")</div>
-                    <div class="detail-label">Approach</div><div class="detail-value">@(_part.ManufacturingApproach?.IconEmoji) @(_part.ManufacturingApproach?.Name ?? "—")</div>
+                    <div class="detail-label">Approach</div>
+                    <div class="detail-value">
+                        @if (_part.ManufacturingApproach != null)
+                        {
+                            <a href="/admin/manufacturing-approaches" style="text-decoration:none; color:var(--primary);">
+                                @(_part.ManufacturingApproach.IconEmoji) @_part.ManufacturingApproach.Name
+                            </a>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </div>
                     <div class="detail-label">Est. Weight (kg)</div><div class="detail-value">@(_part.EstimatedWeightKg?.ToString("F2") ?? "—")</div>
                     @if (_showDlms)
                     {
@@ -145,8 +158,22 @@ else
                         <div style="margin-top: 12px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 0.8rem;">
                             @foreach (var stage in _processStages)
                             {
+                                var flowMachineIds = ParseMachineIds(stage.PreferredMachineIds);
+                                var flowMachineCount = flowMachineIds.Count;
                                 <span style="display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; background: var(--bg-secondary); border-left: 3px solid @(stage.ProductionStage?.StageColor ?? "var(--accent)"); border-radius: 4px;">
                                     @(stage.ProductionStage?.Name ?? $"#{stage.ProductionStageId}")
+                                    @if (flowMachineCount > 0)
+                                    {
+                                        <span style="font-size:0.7rem; color:var(--text-muted); margin-left:2px;" title="@flowMachineCount machine(s)">🔧@flowMachineCount</span>
+                                    }
+                                    @if (stage.MachineProgram != null || _partPrograms.Any(p => p.ProcessStageId == stage.Id))
+                                    {
+                                        <span style="font-size:0.7rem; color:var(--text-muted);" title="Program linked">📄</span>
+                                    }
+                                    else if (stage.ProgramSetupRequired)
+                                    {
+                                        <span style="font-size:0.7rem; color:var(--warning);" title="Program setup needed">⚠</span>
+                                    }
                                 </span>
                                 if (stage != _processStages.Last())
                                 {
@@ -281,7 +308,8 @@ else
                                 <th>Department</th>
                                 <th>Setup</th>
                                 <th>Run</th>
-                                <th>Machine</th>
+                                <th>Machines</th>
+                                <th>Program</th>
                                 <th>Rate/hr</th>
                                 <th>Flags</th>
                             </tr>
@@ -298,6 +326,9 @@ else
                                     _ => "var(--success)"
                                 };
                                 var isPlateRelease = _process.PlateReleaseStageId == s.Id;
+                                var preferredIds = ParseMachineIds(s.PreferredMachineIds);
+                                var preferredMachines = _machines.Where(m => preferredIds.Contains(m.Id)).ToList();
+                                var stageProgram = s.MachineProgram ?? _partPrograms.FirstOrDefault(p => p.ProcessStageId == s.Id);
 
                                 <tr style="@(level == ProcessingLevel.Build ? "background: color-mix(in srgb, var(--accent) 6%, transparent);" : "")">
                                     <td>@s.ExecutionOrder</td>
@@ -337,7 +368,45 @@ else
                                             <span style="color: var(--text-muted);">—</span>
                                         }
                                     </td>
-                                    <td>@(s.AssignedMachine?.Name ?? "Any")</td>
+                                    <td>
+                                        @if (preferredMachines.Any())
+                                        {
+                                            <div style="display:flex; flex-wrap:wrap; gap:3px;">
+                                                @foreach (var m in preferredMachines)
+                                                {
+                                                    <a href="/admin/machines" title="@m.MachineType — @m.MachineId"
+                                                       style="display:inline-block; padding:2px 6px; border-radius:4px; font-size:0.75rem; background:var(--bg-secondary); border:1px solid var(--border); text-decoration:none; color:var(--text); white-space:nowrap;">
+                                                        🔧 @m.Name
+                                                    </a>
+                                                }
+                                            </div>
+                                        }
+                                        else if (s.AssignedMachine != null)
+                                        {
+                                            <a href="/admin/machines" style="text-decoration:none; color:var(--primary); font-size:0.85rem;">🔧 @s.AssignedMachine.Name</a>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--text-muted); font-size:0.85rem;">Any</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (stageProgram != null)
+                                        {
+                                            <a href="/programs" title="@stageProgram.Name"
+                                               style="text-decoration:none; color:var(--primary); font-size:0.85rem; white-space:nowrap;">
+                                                📄 @stageProgram.ProgramNumber
+                                            </a>
+                                        }
+                                        else if (s.ProgramSetupRequired)
+                                        {
+                                            <a href="/programs" style="text-decoration:none; font-size:0.8rem; color:var(--warning);">⚠ Setup needed</a>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--text-muted); font-size:0.85rem;">—</span>
+                                        }
+                                    </td>
                                     <td>@((s.HourlyRateOverride ?? s.ProductionStage?.DefaultHourlyRate ?? 85m).ToString("C2"))</td>
                                     <td style="font-size: 0.8rem; white-space: nowrap;">
                                         @if (s.IsRequired) { <span title="Required">✓</span> }
@@ -353,12 +422,57 @@ else
                                 @if (isPlateRelease && i < _processStages.Count - 1)
                                 {
                                     <tr>
-                                        <td colspan="9" style="padding: 0; height: 2px; background: linear-gradient(90deg, var(--warning), transparent); border: none;"></td>
+                                        <td colspan="10" style="padding: 0; height: 2px; background: linear-gradient(90deg, var(--warning), transparent); border: none;"></td>
                                     </tr>
                                 }
                             }
                         </tbody>
                     </table>
+
+                    @* ── Machine Programs Summary ── *@
+                    @if (_partPrograms.Any())
+                    {
+                        <div style="margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-weight: 600; font-size: 0.9rem;">📄 Machine Programs</span>
+                                    <span class="badge badge-info">@_partPrograms.Count</span>
+                                </div>
+                                <a href="/programs" class="btn btn-sm btn-secondary">Manage Programs →</a>
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                @foreach (var prog in _partPrograms)
+                                {
+                                    var linkedStage = prog.ProcessStage?.ProductionStage?.Name
+                                        ?? _processStages.FirstOrDefault(s => s.Id == prog.ProcessStageId)?.ProductionStage?.Name;
+                                    <div style="display:flex; align-items:center; gap:6px; padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
+                                        <a href="/programs" style="font-weight:600; text-decoration:none; color:var(--primary);">@prog.ProgramNumber</a>
+                                        <span style="color:var(--text-muted);">@prog.Name</span>
+                                        @if (prog.Machine != null)
+                                        {
+                                            <span style="padding:1px 5px; border-radius:3px; font-size:0.75rem; background:var(--bg-secondary); border:1px solid var(--border);">🔧 @prog.Machine.Name</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(linkedStage))
+                                        {
+                                            <span style="padding:1px 5px; border-radius:3px; font-size:0.75rem; background:var(--bg-secondary); border:1px solid var(--border);">⚙ @linkedStage</span>
+                                        }
+                                        <span class="badge badge-@prog.Status.ToString().ToLower()" style="font-size:0.7rem;">@prog.Status</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        var stagesNeedingPrograms = _processStages.Count(s => s.ProgramSetupRequired);
+                        @if (stagesNeedingPrograms > 0)
+                        {
+                            <div style="margin-top: 16px; padding: 12px 16px; background: color-mix(in srgb, var(--warning) 8%, var(--bg-secondary)); border: 1px solid var(--warning); border-radius: 8px; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:0.85rem;">⚠ @stagesNeedingPrograms stage(s) need program setup</span>
+                                <a href="/programs" class="btn btn-sm btn-primary">Set Up Programs →</a>
+                            </div>
+                        }
+                    }
 
                     @* ── Build Info Panel (shown when process has build stages) ── *@
                     @if (_process.RequiresBuildPlate)
@@ -444,6 +558,49 @@ else
                                     </div>
                                 </div>
                             </div>
+
+                            @* ── Build History (compact) ── *@
+                            @if (_buildsForPart?.Any() == true)
+                            {
+                                <div style="margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+                                    <table class="data-table" style="font-size: 0.82rem;">
+                                        <thead>
+                                            <tr>
+                                                <th>Build</th>
+                                                <th>Machine</th>
+                                                <th>Status</th>
+                                                <th style="text-align: right;">Qty</th>
+                                                <th style="text-align: right;">Print Time</th>
+                                                <th>Scheduled</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var build in _buildsForPart.Take(5))
+                                            {
+                                                var partEntry = build.Parts.FirstOrDefault(p => p.PartId == Id);
+                                                <tr>
+                                                    <td><a href="/builds" style="font-weight: 600; text-decoration: none; color: var(--primary);">@build.Name</a></td>
+                                                    <td>@(build.Machine?.Name ?? "—")</td>
+                                                    <td>
+                                                        <span class="badge @(build.Status switch { BuildPackageStatus.Completed => "badge-active", BuildPackageStatus.Cancelled => "badge-cancelled", BuildPackageStatus.Printing => "badge-warning", _ => "badge-info" })">
+                                                            @build.Status
+                                                        </span>
+                                                    </td>
+                                                    <td style="text-align: right;">@(partEntry?.Quantity ?? 0)</td>
+                                                    <td style="text-align: right;">@(build.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</td>
+                                                    <td>@(build.ScheduledDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                    @if (_buildsForPart.Count > 5)
+                                    {
+                                        <div style="text-align: center; margin-top: 6px;">
+                                            <a href="/builds" style="font-size: 0.8rem; color: var(--primary);">View all @_buildsForPart.Count builds →</a>
+                                        </div>
+                                    }
+                                </div>
+                            }
                         </div>
                     }
 
@@ -772,140 +929,6 @@ else
                         </div>
                     </div>
                 </div>
-            }
-        </div>
-    }
-
-    <!-- Builds Tab -->
-    @if (_tab == "builds")
-    {
-        <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <h3 class="card-title" style="margin: 0;">Build History</h3>
-                @if (HasAdditiveConfig())
-                {
-                    <a href="/builds?newForPart=@Id" class="btn btn-sm btn-primary">+ New Build</a>
-                }
-            </div>
-
-            @if (_buildsForPart == null || !_buildsForPart.Any())
-            {
-                <div class="empty-state">
-                    <div class="empty-state-icon">🏗️</div>
-                    <div class="empty-state-text">No builds contain this part yet.@(HasAdditiveConfig() ? " Create a build to start planning." : "")</div>
-                </div>
-            }
-            else
-            {
-                @* Build summary stats *@
-                var completedBuilds = _buildsForPart.Count(b => b.Status == BuildPackageStatus.Completed);
-                var activeBuilds = _buildsForPart.Count(b => b.Status != BuildPackageStatus.Completed && b.Status != BuildPackageStatus.Cancelled);
-                var totalPartsBuilt = _buildsForPart
-                    .Where(b => b.Status == BuildPackageStatus.Completed)
-                    .SelectMany(b => b.Parts.Where(p => p.PartId == Id))
-                    .Sum(p => p.Quantity);
-                <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-                    <div style="background: var(--bg-secondary); padding: 8px 14px; border-radius: 8px;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">Total Builds</div>
-                        <div style="font-weight: 600;">@_buildsForPart.Count</div>
-                    </div>
-                    <div style="background: var(--bg-secondary); padding: 8px 14px; border-radius: 8px;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">Active</div>
-                        <div style="font-weight: 600;">@activeBuilds</div>
-                    </div>
-                    <div style="background: var(--bg-secondary); padding: 8px 14px; border-radius: 8px;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">Completed</div>
-                        <div style="font-weight: 600;">@completedBuilds</div>
-                    </div>
-                    @if (totalPartsBuilt > 0)
-                    {
-                        <div style="background: var(--bg-secondary); padding: 8px 14px; border-radius: 8px;">
-                            <div style="font-size: 0.7rem; color: var(--text-muted);">Parts Produced</div>
-                            <div style="font-weight: 600;">@totalPartsBuilt</div>
-                        </div>
-                    }
-                    @if (_process != null)
-                    {
-                        var avgBatchCap = _process.DefaultBatchCapacity;
-                        <div style="background: var(--bg-secondary); padding: 8px 14px; border-radius: 8px;">
-                            <div style="font-size: 0.7rem; color: var(--text-muted);">Process</div>
-                            <div style="font-weight: 600;">@_process.Name (v@_process.Version)</div>
-                        </div>
-                    }
-                </div>
-
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Build</th>
-                            <th>Machine</th>
-                            <th>Status</th>
-                            <th style="text-align: right;">Qty</th>
-                            <th style="text-align: right;">Print Time</th>
-                            <th style="text-align: right;">Hrs/Part</th>
-                            <th>Scheduled</th>
-                            <th>Completed</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var build in _buildsForPart)
-                        {
-                            var partEntry = build.Parts.FirstOrDefault(p => p.PartId == Id);
-                            var partQty = partEntry?.Quantity ?? 0;
-                            var hrsPerPart = build.EstimatedDurationHours.HasValue && partQty > 0
-                                ? build.EstimatedDurationHours.Value / partQty
-                                : (double?)null;
-                            <tr>
-                                <td>
-                                    <a href="/builds" style="font-weight: 600; text-decoration: none; color: var(--primary);">@build.Name</a>
-                                </td>
-                                <td>@(build.Machine?.Name ?? "—")</td>
-                                <td>
-                                    @{
-                                        var badgeClass = build.Status switch
-                                        {
-                                            BuildPackageStatus.Completed => "badge-active",
-                                            BuildPackageStatus.Cancelled => "badge-cancelled",
-                                            BuildPackageStatus.Printing => "badge-warning",
-                                            _ => "badge-info"
-                                        };
-                                    }
-                                    <span class="badge @badgeClass">@build.Status</span>
-                                </td>
-                                <td style="text-align: right;">@partQty</td>
-                                <td style="text-align: right;">@(build.EstimatedDurationHours?.ToString("F1") ?? "—") hrs</td>
-                                <td style="text-align: right;">@(hrsPerPart?.ToString("F2") ?? "—")</td>
-                                <td>@(build.ScheduledDate?.ToString("yyyy-MM-dd") ?? "—")</td>
-                                <td>@(build.PlateReleasedAt?.ToString("yyyy-MM-dd") ?? "—")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-
-                @* Actual vs Estimated comparison for completed builds *@
-                @if (completedBuilds > 0 && _process != null)
-                {
-                    <div style="margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;">
-                        <h4 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 8px;">📊 Actual vs Estimated (Completed Builds)</h4>
-                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            @foreach (var build in _buildsForPart.Where(b => b.Status == BuildPackageStatus.Completed && b.EstimatedDurationHours.HasValue))
-                            {
-                                var bPartQty = build.Parts.FirstOrDefault(p => p.PartId == Id)?.Quantity ?? 0;
-                                if (bPartQty <= 0) continue;
-                                var actualHrsPerPart = build.EstimatedDurationHours!.Value / bPartQty;
-                                var estCostSummary = CalculateProcessCostSummary();
-                                var estHrsPerPart = estCostSummary.totalMinutes / 60.0;
-                                <div style="background: var(--bg-tertiary); padding: 10px 14px; border-radius: 6px; min-width: 180px;">
-                                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">@build.Name</div>
-                                    <div style="font-size: 0.85rem;">
-                                        <span style="color: var(--text-muted);">Actual:</span>
-                                        <span style="font-weight: 600;">@actualHrsPerPart.ToString("F2") hrs/part</span>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
             }
         </div>
     }
@@ -1421,6 +1444,10 @@ else
     private ManufacturingProcess? _process;
     private List<ProcessStage> _processStages = [];
 
+    // Machines & Programs
+    private List<Machine> _machines = [];
+    private List<MachineProgram> _partPrograms = [];
+
     // Cost calculator
     private int _costQuantity = 1;
     private int _costBatchCapacity;
@@ -1460,6 +1487,13 @@ else
             {
                 _buildsForPart = [];
             }
+
+            // Load machines for resolving PreferredMachineIds
+            _machines = await MachineService.GetAllMachinesAsync(true);
+
+            // Load machine programs for this part
+            try { _partPrograms = await MachineProgramService.GetProgramsForPartAsync(Id); }
+            catch { _partPrograms = []; }
 
             // Load manufacturing process
             _process = await ProcessService.GetByPartIdAsync(Id);
@@ -1688,6 +1722,18 @@ else
     private void GoToEdit()
     {
         Nav.NavigateTo($"/parts/{Id}/edit");
+    }
+
+    /// <summary>
+    /// Parses a comma-separated string of machine IDs into a list of ints.
+    /// </summary>
+    private static List<int> ParseMachineIds(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return [];
+        return csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var id) ? id : 0)
+            .Where(id => id > 0)
+            .ToList();
     }
 
     /// <summary>

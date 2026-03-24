@@ -19,6 +19,10 @@ public class ManufacturingProcessService : IManufacturingProcessService
         return await _db.ManufacturingProcesses
             .Include(p => p.Stages.OrderBy(s => s.ExecutionOrder))
                 .ThenInclude(s => s.ProductionStage)
+            .Include(p => p.Stages)
+                .ThenInclude(s => s.AssignedMachine)
+            .Include(p => p.Stages)
+                .ThenInclude(s => s.MachineProgram)
             .Include(p => p.PlateReleaseStage)
             .FirstOrDefaultAsync(p => p.PartId == partId);
     }
@@ -239,6 +243,59 @@ public class ManufacturingProcessService : IManufacturingProcessService
         return new DurationResult(setupMinutes, runMinutes, total2, breakdown);
     }
 
+    public async Task<DurationResult> CalculateStageDurationWithProgramAsync(
+        ProcessStage stage, int partCount, int batchCount, double? buildConfigHours, int? machineProgramId)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+
+        // If no program ID provided, use existing synchronous logic
+        if (!machineProgramId.HasValue)
+            return CalculateStageDuration(stage, partCount, batchCount, buildConfigHours);
+
+        // Query the program for duration data
+        var program = await _db.MachinePrograms.FindAsync(machineProgramId.Value);
+
+        // If program not found or inactive, fall back to stage defaults
+        if (program == null || program.Status != ProgramStatus.Active)
+            return CalculateStageDuration(stage, partCount, batchCount, buildConfigHours);
+
+        // BuildPlate programs use EstimatedPrintHours
+        if (program.ProgramType == ProgramType.BuildPlate)
+        {
+            if (program.EstimatedPrintHours.HasValue && program.EstimatedPrintHours > 0)
+            {
+                var totalFromSlicer = program.EstimatedPrintHours.Value * 60.0;
+                return new DurationResult(0, totalFromSlicer, totalFromSlicer,
+                    $"{program.EstimatedPrintHours.Value:F1}h from {program.ProgramNumber} slicer data");
+            }
+        }
+
+        // Prefer program's EMA-learned data
+        if (program.EstimateSource == "Auto" && program.ActualAverageDurationMinutes.HasValue)
+        {
+            var ema = program.ActualAverageDurationMinutes.Value;
+            var progSetup = program.SetupTimeMinutes ?? 0;
+            return new DurationResult(
+                progSetup, ema, progSetup + ema,
+                $"{ema:F0}min from {program.ProgramNumber} EMA ({program.ActualSampleCount} runs)");
+        }
+
+        // Fall back to program's configured durations
+        var runTime = program.CycleTimeMinutes ?? program.RunTimeMinutes;
+        if (runTime.HasValue)
+        {
+            // Scale by part count for standard programs
+            var setupMin = program.SetupTimeMinutes ?? 0;
+            var runTotal = runTime.Value * partCount;
+            var total = setupMin + runTotal;
+            return new DurationResult(setupMin, runTotal, total,
+                $"Program {program.ProgramNumber}: {setupMin:F0}m setup + {runTime.Value:F0}m/part × {partCount}");
+        }
+
+        // Program has no duration data — fall back to stage defaults
+        return CalculateStageDuration(stage, partCount, batchCount, buildConfigHours);
+    }
+
     public async Task<ManufacturingProcess> CloneProcessAsync(int sourceProcessId, int targetPartId, string createdBy)
     {
         if (string.IsNullOrWhiteSpace(createdBy))
@@ -388,6 +445,10 @@ public class ManufacturingProcessService : IManufacturingProcessService
                 },
                 RunTimeMinutes = !entry.DurationFromBuildConfig ? catalogStage.DefaultDurationHours * 60 : null,
                 BatchCapacityOverride = entry.BatchCapacityOverride,
+                PreferredMachineIds = entry.MachineIds.Count > 0
+                    ? string.Join(",", entry.MachineIds)
+                    : null,
+                ProgramSetupRequired = entry.MachineIds.Count > 0,
                 IsRequired = true,
                 IsBlocking = true,
                 RequiresQualityCheck = catalogStage.StageSlug == "qc",
@@ -424,6 +485,31 @@ public class ManufacturingProcessService : IManufacturingProcessService
 
         await _db.SaveChangesAsync();
         return process;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<ProcessStage>> GetStagesPendingProgramSetupAsync()
+    {
+        return await _db.ProcessStages
+            .Include(s => s.ProductionStage)
+            .Include(s => s.ManufacturingProcess)
+                .ThenInclude(p => p.Part)
+            .Where(s => s.ProgramSetupRequired)
+            .OrderBy(s => s.ManufacturingProcess.Part.PartNumber)
+            .ThenBy(s => s.ExecutionOrder)
+            .ToListAsync();
+    }
+
+    /// <inheritdoc />
+    public async Task LinkProgramToStageAsync(int processStageId, int machineProgramId)
+    {
+        var stage = await _db.ProcessStages.FindAsync(processStageId)
+            ?? throw new InvalidOperationException($"Process stage {processStageId} not found.");
+
+        stage.MachineProgramId = machineProgramId;
+        stage.ProgramSetupRequired = false;
+        stage.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
     }
 
     private static double CalculateModeMinutes(DurationMode mode, double timeMinutes, int partCount, int batchCount)

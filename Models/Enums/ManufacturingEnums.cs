@@ -199,6 +199,34 @@ public enum JobScope { Build, Batch, Part }
 // Machine Programs
 public enum ProgramStatus { Draft, Active, Superseded, Archived }
 
+/// <summary>
+/// Schedule lifecycle status for BuildPlate programs.
+/// Replaces BuildPackageStatus for program-based SLS scheduling.
+/// </summary>
+public enum ProgramScheduleStatus
+{
+    /// <summary>Not scheduled — program is a template/source file.</summary>
+    None,
+    /// <summary>Ready for scheduling — has parts, slicer data entered.</summary>
+    Ready,
+    /// <summary>Assigned to machine + time slot.</summary>
+    Scheduled,
+    /// <summary>Actively printing on machine.</summary>
+    Printing,
+    /// <summary>Plate off printer, going through post-print stages (depowder, EDM).</summary>
+    PostPrint,
+    /// <summary>All parts released as PartInstances.</summary>
+    Completed,
+    /// <summary>Schedule cancelled.</summary>
+    Cancelled
+}
+
+/// <summary>
+/// Distinguishes standard machine programs (CNC, EDM, etc.) from
+/// SLS build plate programs that manage multi-part plate nesting and scheduling.
+/// </summary>
+public enum ProgramType { Standard, BuildPlate }
+
 // Program Feedback (from operators on machine programs)
 public enum ProgramFeedbackCategory
 {

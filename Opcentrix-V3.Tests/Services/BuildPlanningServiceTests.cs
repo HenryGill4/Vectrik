@@ -51,6 +51,8 @@ public class BuildPlanningServiceTests : IDisposable
         public Task<List<string>> ValidateProcessAsync(int processId) => Task.FromResult(new List<string>());
         public Task<ManufacturingProcess> CloneProcessAsync(int sourceProcessId, int targetPartId, string createdBy) => Task.FromResult(new ManufacturingProcess());
         public Task<ManufacturingProcess> CreateProcessFromApproachAsync(int partId, int approachId, string createdBy) => Task.FromResult(new ManufacturingProcess());
+        public Task<List<ProcessStage>> GetStagesPendingProgramSetupAsync() => Task.FromResult(new List<ProcessStage>());
+        public Task LinkProgramToStageAsync(int processStageId, int machineProgramId) => Task.CompletedTask;
 
         public DurationResult CalculateStageDuration(ProcessStage stage, int partCount, int batchCount, double? buildConfigHours)
         {
@@ -64,6 +66,10 @@ public class BuildPlanningServiceTests : IDisposable
             double run = stage.RunTimeMinutes ?? 0;
             return new DurationResult(setup, run, setup + run, "stub duration");
         }
+
+        public Task<DurationResult> CalculateStageDurationWithProgramAsync(
+            ProcessStage stage, int partCount, int batchCount, double? buildConfigHours, int? machineProgramId) =>
+            Task.FromResult(CalculateStageDuration(stage, partCount, batchCount, buildConfigHours));
     }
 
     /// <summary>

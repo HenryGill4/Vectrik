@@ -49,6 +49,9 @@ public class DataSeedingService : IDataSeedingService
 
         // Work instructions & sign-off checklists (depends on parts + production stages)
         await SeedWorkInstructionsAsync(tenantDb);
+
+        // Scheduler demo data (depends on parts + approaches + stages + machines)
+        await SeedSchedulerDemoDataAsync(tenantDb);
     }
 
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
@@ -2241,6 +2244,284 @@ public class DataSeedingService : IDataSeedingService
             await db.SaveChangesAsync();
 
             templates.Add(t3);
+        }
+    }
+
+    /// <summary>
+    /// Seeds a PSA suppressor part with manufacturing approach, additive build config,
+    /// a released work order, and a 20.2h BuildPlate program ready for scheduling.
+    /// Also backfills ManufacturingApproachId on existing additive parts.
+    /// </summary>
+    private static async Task SeedSchedulerDemoDataAsync(TenantDbContext db)
+    {
+        // ── Backfill ManufacturingApproachId on parts that have a ManufacturingProcess ──
+        // The original SeedManufacturingProcessesAsync didn't set the approach FK on the Part,
+        // so the wizard's RequiresBuildPlate check fails for all existing parts.
+        var slsApproach = await db.ManufacturingApproaches
+            .FirstOrDefaultAsync(a => a.Slug == "sls-based");
+        var suppressorApproach = await db.ManufacturingApproaches
+            .FirstOrDefaultAsync(a => a.Slug == "suppressor-no-ht");
+
+        if (slsApproach != null)
+        {
+            var partsWithoutApproach = await db.Parts
+                .Where(p => p.ManufacturingApproachId == null && p.IsActive)
+                .ToListAsync();
+            foreach (var part in partsWithoutApproach)
+            {
+                part.ManufacturingApproachId = slsApproach.Id;
+            }
+            if (partsWithoutApproach.Count > 0)
+                await db.SaveChangesAsync();
+        }
+
+        // ── Ensure PSA Suppressor part exists ──
+        var suppressorPart = await db.Parts
+            .Include(p => p.AdditiveBuildConfig)
+            .FirstOrDefaultAsync(p => p.PartNumber == "PSA-SUPP-001");
+
+        var tiMaterial = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("Ti-6Al-4V"));
+
+        if (suppressorPart == null)
+        {
+            suppressorPart = new Part
+            {
+                PartNumber = "PSA-SUPP-001",
+                Name = "PSA Suppressor Body",
+                Description = "Titanium PSA suppressor body — SLS printed, EDM cut, CNC finished",
+                Material = "Ti-6Al-4V Grade 5",
+                MaterialId = tiMaterial?.Id,
+                ManufacturingApproachId = suppressorApproach?.Id ?? slsApproach?.Id,
+                IsActive = true,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.Parts.Add(suppressorPart);
+            await db.SaveChangesAsync();
+        }
+        else if (suppressorPart.ManufacturingApproachId == null)
+        {
+            suppressorPart.ManufacturingApproachId = suppressorApproach?.Id ?? slsApproach?.Id;
+            await db.SaveChangesAsync();
+        }
+
+        // ── Ensure PartAdditiveBuildConfig exists (72 per build) ──
+        if (suppressorPart.AdditiveBuildConfig == null)
+        {
+            var buildConfig = new PartAdditiveBuildConfig
+            {
+                PartId = suppressorPart.Id,
+                AllowStacking = false,
+                MaxStackCount = 1,
+                PlannedPartsPerBuildSingle = 72,
+                SingleStackDurationHours = 20.2,
+                EnableDoubleStack = false,
+                EnableTripleStack = false
+            };
+            db.Set<PartAdditiveBuildConfig>().Add(buildConfig);
+            await db.SaveChangesAsync();
+        }
+
+        // ── Ensure ManufacturingProcess exists for suppressor ──
+        var existingProcess = await db.ManufacturingProcesses
+            .FirstOrDefaultAsync(p => p.PartId == suppressorPart.Id && p.IsActive);
+        if (existingProcess == null)
+        {
+            var stages = await db.ProductionStages.ToDictionaryAsync(s => s.StageSlug, s => s);
+            var machineIdLookup = await db.Machines
+                .Where(m => m.IsActive)
+                .ToDictionaryAsync(m => m.MachineId, m => m.Id);
+            int? MachineIntId(string mid) => machineIdLookup.TryGetValue(mid, out var id) ? id : null;
+
+            var process = new ManufacturingProcess
+            {
+                PartId = suppressorPart.Id,
+                ManufacturingApproachId = suppressorApproach?.Id ?? slsApproach?.Id,
+                Name = $"{suppressorPart.PartNumber} — Suppressor (No HT)",
+                Description = "SLS-based suppressor manufacturing without heat treatment",
+                DefaultBatchCapacity = 60,
+                IsActive = true,
+                Version = 1,
+                CreatedBy = "System",
+                LastModifiedBy = "System",
+                CreatedDate = DateTime.UtcNow,
+                LastModifiedDate = DateTime.UtcNow
+            };
+            db.ManufacturingProcesses.Add(process);
+            await db.SaveChangesAsync();
+
+            var order = 1;
+            var processStages = new List<ProcessStage>();
+
+            if (stages.TryGetValue("sls-printing", out var slsStage))
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id, ProductionStageId = slsStage.Id,
+                    ExecutionOrder = order++, ProcessingLevel = ProcessingLevel.Build,
+                    DurationFromBuildConfig = true, AssignedMachineId = MachineIntId("M4-1"),
+                    IsRequired = true, IsBlocking = true, CreatedBy = "System", LastModifiedBy = "System"
+                });
+            if (stages.TryGetValue("depowdering", out var depowStage))
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id, ProductionStageId = depowStage.Id,
+                    ExecutionOrder = order++, ProcessingLevel = ProcessingLevel.Build,
+                    SetupTimeMinutes = 15, RunTimeMinutes = 45,
+                    AssignedMachineId = MachineIntId("INC1"),
+                    IsRequired = true, IsBlocking = true, CreatedBy = "System", LastModifiedBy = "System"
+                });
+            if (stages.TryGetValue("wire-edm", out var edmStage))
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id, ProductionStageId = edmStage.Id,
+                    ExecutionOrder = order++, ProcessingLevel = ProcessingLevel.Build,
+                    SetupTimeMinutes = 25, RunTimeMinutes = 90,
+                    AssignedMachineId = MachineIntId("EDM1"),
+                    IsRequired = true, IsBlocking = true,
+                    CreatedBy = "System", LastModifiedBy = "System"
+                });
+            if (stages.TryGetValue("sandblasting", out var blastStage))
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id, ProductionStageId = blastStage.Id,
+                    ExecutionOrder = order++, ProcessingLevel = ProcessingLevel.Batch,
+                    RunTimeMinutes = 15, BatchCapacityOverride = 20,
+                    AssignedMachineId = MachineIntId("BLAST1"),
+                    IsRequired = true, CreatedBy = "System", LastModifiedBy = "System"
+                });
+            if (stages.TryGetValue("cnc-machining", out var cncStage))
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id, ProductionStageId = cncStage.Id,
+                    ExecutionOrder = order++, ProcessingLevel = ProcessingLevel.Part,
+                    SetupTimeMinutes = 30, RunTimeMinutes = 18,
+                    AssignedMachineId = MachineIntId("CNC1"),
+                    IsRequired = true, CreatedBy = "System", LastModifiedBy = "System"
+                });
+            if (stages.TryGetValue("laser-engraving", out var engStage))
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id, ProductionStageId = engStage.Id,
+                    ExecutionOrder = order++, ProcessingLevel = ProcessingLevel.Batch,
+                    RunTimeMinutes = 5, BatchCapacityOverride = 36,
+                    AssignedMachineId = MachineIntId("ENGRAVE1"),
+                    IsRequired = true, CreatedBy = "System", LastModifiedBy = "System"
+                });
+            if (stages.TryGetValue("qc", out var qcStage))
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id, ProductionStageId = qcStage.Id,
+                    ExecutionOrder = order++, ProcessingLevel = ProcessingLevel.Part,
+                    RunTimeMinutes = 5, AssignedMachineId = MachineIntId("QC1"),
+                    IsRequired = true, CreatedBy = "System", LastModifiedBy = "System"
+                });
+            if (stages.TryGetValue("packaging", out var packStage))
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id, ProductionStageId = packStage.Id,
+                    ExecutionOrder = order++, ProcessingLevel = ProcessingLevel.Batch,
+                    RunTimeMinutes = 3, BatchCapacityOverride = 50,
+                    AssignedMachineId = MachineIntId("PACK1"),
+                    IsRequired = true, CreatedBy = "System", LastModifiedBy = "System"
+                });
+
+            db.ProcessStages.AddRange(processStages);
+            await db.SaveChangesAsync();
+        }
+
+        // ── Ensure Released WorkOrder with 72 suppressors ──
+        var existingWo = await db.WorkOrders
+            .Include(w => w.Lines)
+            .FirstOrDefaultAsync(w => w.Lines.Any(l => l.PartId == suppressorPart.Id)
+                && w.Status == WorkOrderStatus.Released);
+
+        if (existingWo == null)
+        {
+            var wo = new WorkOrder
+            {
+                OrderNumber = "WO-PSA-001",
+                CustomerName = "PSA Defense",
+                CustomerPO = "PO-2025-1472",
+                OrderDate = DateTime.UtcNow.AddDays(-3),
+                DueDate = DateTime.UtcNow.AddDays(21),
+                ShipByDate = DateTime.UtcNow.AddDays(19),
+                Status = WorkOrderStatus.Released,
+                Priority = JobPriority.High,
+                Notes = "72x PSA Suppressor Bodies — Ti-6Al-4V, SLS printed",
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.WorkOrders.Add(wo);
+            await db.SaveChangesAsync();
+
+            var woLine = new WorkOrderLine
+            {
+                WorkOrderId = wo.Id,
+                PartId = suppressorPart.Id,
+                Quantity = 72,
+                Status = WorkOrderStatus.Released
+            };
+            db.Set<WorkOrderLine>().Add(woLine);
+            await db.SaveChangesAsync();
+
+            existingWo = wo;
+        }
+
+        // ── Ensure 20.2h BuildPlate program with slicer data ──
+        var existingProgram = await db.MachinePrograms
+            .FirstOrDefaultAsync(p => p.ProgramType == ProgramType.BuildPlate
+                && p.ProgramParts.Any(pp => pp.PartId == suppressorPart.Id)
+                && p.Status == ProgramStatus.Active);
+
+        if (existingProgram == null)
+        {
+            var m4Machine = await db.Machines.FirstOrDefaultAsync(m => m.MachineId == "M4-1");
+
+            var program = new MachineProgram
+            {
+                ProgramNumber = "SLS-PSA-001",
+                Name = "PSA Suppressor 72x Build",
+                Description = "Full plate of 72 PSA suppressor bodies — single stack, Ti-6Al-4V",
+                ProgramType = ProgramType.BuildPlate,
+                Status = ProgramStatus.Active,
+                ScheduleStatus = ProgramScheduleStatus.Ready,
+                MachineType = "SLS",
+                MaterialId = tiMaterial?.Id,
+                EstimatedPrintHours = 20.2,
+                LayerCount = 3100,
+                BuildHeightMm = 95.0,
+                EstimatedPowderKg = 14.8,
+                SlicerFileName = "PSA_Supp_72x_v2.sli",
+                SlicerSoftware = "EOSPRINT 2",
+                SlicerVersion = "2.12.1",
+                Parameters = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    laserPower = 370,
+                    scanSpeed = 1200,
+                    layerThickness = 0.03,
+                    hatchSpacing = 0.12,
+                    contourCount = 2
+                }),
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.MachinePrograms.Add(program);
+            await db.SaveChangesAsync();
+
+            // Link the WO line to the program part
+            var woLine = existingWo.Lines.FirstOrDefault(l => l.PartId == suppressorPart.Id)
+                ?? await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrder.Id == existingWo.Id && l.PartId == suppressorPart.Id);
+
+            db.ProgramParts.Add(new ProgramPart
+            {
+                MachineProgramId = program.Id,
+                PartId = suppressorPart.Id,
+                Quantity = 72,
+                StackLevel = 1,
+                PositionNotes = "Full plate — 72 suppressors arranged in 6×12 grid",
+                WorkOrderLineId = woLine?.Id
+            });
+            await db.SaveChangesAsync();
         }
     }
 

@@ -36,6 +36,11 @@ public class MachineProgramService : IMachineProgramService
             .Include(p => p.Feedbacks.OrderByDescending(f => f.SubmittedAt).Take(10))
             .Include(p => p.MachineAssignments)
                 .ThenInclude(a => a.Machine)
+            .Include(p => p.ProgramParts)
+                .ThenInclude(pp => pp.Part)
+            .Include(p => p.Material)
+            .Include(p => p.DepowderProgram)
+            .Include(p => p.EdmProgram)
             .FirstOrDefaultAsync(p => p.Id == id);
     }
 
@@ -47,6 +52,9 @@ public class MachineProgramService : IMachineProgramService
             .Include(p => p.Files)
             .Include(p => p.MachineAssignments)
                 .ThenInclude(a => a.Machine)
+            .Include(p => p.ProgramParts)
+                .ThenInclude(pp => pp.Part)
+            .Include(p => p.Material)
             .OrderBy(p => p.ProgramNumber)
             .ToListAsync();
     }
@@ -186,6 +194,18 @@ public class MachineProgramService : IMachineProgramService
             FixtureRequired = source.FixtureRequired,
             Parameters = source.Parameters,
             Notes = source.Notes,
+            ProgramType = source.ProgramType,
+            MaterialId = source.MaterialId,
+            DepowderProgramId = source.DepowderProgramId,
+            EdmProgramId = source.EdmProgramId,
+            EstimatedPrintHours = source.EstimatedPrintHours,
+            LayerCount = source.LayerCount,
+            BuildHeightMm = source.BuildHeightMm,
+            EstimatedPowderKg = source.EstimatedPowderKg,
+            SlicerFileName = source.SlicerFileName,
+            SlicerSoftware = source.SlicerSoftware,
+            SlicerVersion = source.SlicerVersion,
+            PartPositionsJson = source.PartPositionsJson,
             IsActive = true,
             CreatedBy = createdBy,
             LastModifiedBy = createdBy,
@@ -347,6 +367,18 @@ public class MachineProgramService : IMachineProgramService
             FixtureRequired = source.FixtureRequired,
             Parameters = source.Parameters,
             Notes = source.Notes,
+            ProgramType = source.ProgramType,
+            MaterialId = source.MaterialId,
+            DepowderProgramId = source.DepowderProgramId,
+            EdmProgramId = source.EdmProgramId,
+            EstimatedPrintHours = source.EstimatedPrintHours,
+            LayerCount = source.LayerCount,
+            BuildHeightMm = source.BuildHeightMm,
+            EstimatedPowderKg = source.EstimatedPowderKg,
+            SlicerFileName = source.SlicerFileName,
+            SlicerSoftware = source.SlicerSoftware,
+            SlicerVersion = source.SlicerVersion,
+            PartPositionsJson = source.PartPositionsJson,
             IsActive = true,
             CreatedBy = createdBy,
             LastModifiedBy = createdBy,
@@ -415,7 +447,7 @@ public class MachineProgramService : IMachineProgramService
                   "passCount": 1
                 }
                 """,
-            "SLS" or "ADDITIVE" or "3D PRINTING" => """
+            "SLS" or "ADDITIVE" or "3D PRINTING" or "DMLS" or "SLM" or "MJF" or "EBM" => """
                 {
                   "layerThicknessMm": 0.1,
                   "laserPowerWatts": 0,
@@ -751,6 +783,275 @@ public class MachineProgramService : IMachineProgramService
             remaining.First().IsPreferred = true;
             await _db.SaveChangesAsync();
         }
+    }
+
+    // ── Build Plate Operations (SLS programs) ────────────────
+
+    public async Task<List<MachineProgram>> GetBuildPlateProgramsAsync(ProgramStatus? statusFilter = null)
+    {
+        var query = _db.MachinePrograms
+            .Include(p => p.ProgramParts).ThenInclude(pp => pp.Part)
+            .Include(p => p.MachineAssignments).ThenInclude(a => a.Machine)
+            .Include(p => p.Material)
+            .Where(p => p.ProgramType == ProgramType.BuildPlate);
+
+        if (statusFilter.HasValue)
+            query = query.Where(p => p.Status == statusFilter.Value);
+
+        return await query
+            .OrderByDescending(p => p.LastModifiedDate)
+            .ToListAsync();
+    }
+
+    public async Task<List<ProgramPart>> GetProgramPartsAsync(int programId)
+    {
+        return await _db.ProgramParts
+            .Include(pp => pp.Part)
+            .Include(pp => pp.WorkOrderLine)
+            .Where(pp => pp.MachineProgramId == programId)
+            .OrderBy(pp => pp.Part.PartNumber)
+            .ToListAsync();
+    }
+
+    public async Task<ProgramPart> AddProgramPartAsync(int programId, int partId, int quantity, int stackLevel = 1, int? workOrderLineId = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(stackLevel, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(stackLevel, 3);
+
+        var program = await _db.MachinePrograms.FindAsync(programId)
+            ?? throw new InvalidOperationException($"Program {programId} not found.");
+
+        var entry = new ProgramPart
+        {
+            MachineProgramId = programId,
+            PartId = partId,
+            Quantity = quantity,
+            StackLevel = stackLevel,
+            WorkOrderLineId = workOrderLineId
+        };
+
+        _db.ProgramParts.Add(entry);
+
+        program.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return entry;
+    }
+
+    public async Task<ProgramPart> UpdateProgramPartAsync(int programPartId, int quantity, int stackLevel, string? positionNotes = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(stackLevel, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(stackLevel, 3);
+
+        var entry = await _db.ProgramParts.FindAsync(programPartId)
+            ?? throw new InvalidOperationException("Program part entry not found.");
+
+        entry.Quantity = quantity;
+        entry.StackLevel = stackLevel;
+        entry.PositionNotes = positionNotes;
+
+        var program = await _db.MachinePrograms.FindAsync(entry.MachineProgramId);
+        if (program != null) program.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        return entry;
+    }
+
+    public async Task RemoveProgramPartAsync(int programPartId)
+    {
+        var entry = await _db.ProgramParts.FindAsync(programPartId)
+            ?? throw new InvalidOperationException("Program part entry not found.");
+
+        var programId = entry.MachineProgramId;
+        _db.ProgramParts.Remove(entry);
+
+        var program = await _db.MachinePrograms.FindAsync(programId);
+        if (program != null) program.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task UpdateSlicerDataAsync(int programId, double? estimatedPrintHours, int? layerCount = null,
+        double? buildHeightMm = null, double? estimatedPowderKg = null,
+        string? slicerFileName = null, string? slicerSoftware = null, string? slicerVersion = null,
+        string? partPositionsJson = null)
+    {
+        var program = await _db.MachinePrograms.FindAsync(programId)
+            ?? throw new InvalidOperationException($"Program {programId} not found.");
+
+        if (program.ProgramType != ProgramType.BuildPlate)
+            throw new InvalidOperationException("Slicer data only applies to BuildPlate programs.");
+
+        program.EstimatedPrintHours = estimatedPrintHours;
+        program.LayerCount = layerCount;
+        program.BuildHeightMm = buildHeightMm;
+        program.EstimatedPowderKg = estimatedPowderKg;
+        program.SlicerFileName = slicerFileName;
+        program.SlicerSoftware = slicerSoftware;
+        program.SlicerVersion = slicerVersion;
+        program.PartPositionsJson = partPositionsJson;
+        program.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task UpdatePostProcessingLinksAsync(int buildPlateProgramId, int? depowderProgramId, int? edmProgramId, string modifiedBy)
+    {
+        var program = await _db.MachinePrograms.FindAsync(buildPlateProgramId)
+            ?? throw new InvalidOperationException($"Program {buildPlateProgramId} not found.");
+
+        if (program.ProgramType != ProgramType.BuildPlate)
+            throw new InvalidOperationException("Post-processing links only apply to BuildPlate programs.");
+
+        program.DepowderProgramId = depowderProgramId;
+        program.EdmProgramId = edmProgramId;
+        program.LastModifiedBy = modifiedBy;
+        program.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task<List<MachineProgram>> GetPostProcessingCandidatesAsync(string machineType)
+    {
+        var normalised = (machineType ?? "").ToUpperInvariant().Replace("-", "").Replace(" ", "");
+
+        return await _db.MachinePrograms
+            .Include(p => p.MachineAssignments).ThenInclude(a => a.Machine)
+            .Where(p => p.ProgramType == ProgramType.Standard
+                        && (p.Status == ProgramStatus.Active || p.Status == ProgramStatus.Draft))
+            .Where(p => p.MachineType != null
+                        && p.MachineType.ToUpper().Replace("-", "").Replace(" ", "") == normalised)
+            .OrderBy(p => p.ProgramNumber)
+            .ToListAsync();
+    }
+
+    // ── Duration & Program Selection ─────────────────────────
+
+    public async Task<ProgramDurationResult?> GetDurationFromProgramAsync(int programId, int quantity = 1)
+    {
+        var program = await _db.MachinePrograms.FindAsync(programId);
+        if (program == null) return null;
+
+        // For BuildPlate programs, use EstimatedPrintHours (slicer data)
+        if (program.ProgramType == ProgramType.BuildPlate)
+        {
+            if (!program.EstimatedPrintHours.HasValue || program.EstimatedPrintHours <= 0)
+                return null;
+
+            var printMinutes = program.EstimatedPrintHours.Value * 60;
+            return new ProgramDurationResult(
+                TotalMinutes: printMinutes,
+                SetupMinutes: 0,
+                RunMinutes: printMinutes,
+                CycleMinutes: 0,
+                Source: "BuildPlate.Slicer",
+                IsLearned: false);
+        }
+
+        // For Standard programs, check for learned EMA data first
+        if (program.EstimateSource == "Auto" && program.ActualAverageDurationMinutes.HasValue)
+        {
+            // Learned duration — scale by quantity
+            var learnedPerPart = program.ActualAverageDurationMinutes.Value;
+            var setupMin = program.SetupTimeMinutes ?? 0;
+            // If we have learned data, the ActualAverageDurationMinutes is per-part including setup share
+            // So for multiple parts: setup once + (learned per-part - setup share) * quantity
+            // Approximation: assume learned value is inclusive of amortized setup
+            var totalMinutes = learnedPerPart * quantity;
+            return new ProgramDurationResult(
+                TotalMinutes: totalMinutes,
+                SetupMinutes: setupMin,
+                RunMinutes: totalMinutes - setupMin,
+                CycleMinutes: program.CycleTimeMinutes ?? 0,
+                Source: $"Learned (EMA from {program.ActualSampleCount ?? 0} runs)",
+                IsLearned: true);
+        }
+
+        // Fall back to configured duration fields
+        var setup = program.SetupTimeMinutes ?? 0;
+        var run = (program.RunTimeMinutes ?? 0) * quantity;
+        var cycle = (program.CycleTimeMinutes ?? 0) * quantity;
+
+        // If no duration data at all, return null
+        if (setup == 0 && run == 0 && cycle == 0)
+            return null;
+
+        // RunTimeMinutes is typically the cutting/processing time per part
+        // CycleTimeMinutes is total time from part-in to part-out
+        // If both are set, use CycleTimeMinutes; if only RunTimeMinutes, use that
+        var perPartTime = (program.CycleTimeMinutes ?? program.RunTimeMinutes ?? 0) * quantity;
+        var total = setup + perPartTime;
+
+        return new ProgramDurationResult(
+            TotalMinutes: total,
+            SetupMinutes: setup,
+            RunMinutes: run,
+            CycleMinutes: cycle,
+            Source: "Program.Configured",
+            IsLearned: false);
+    }
+
+    public async Task<MachineProgram?> GetBestProgramForStageAsync(int partId, int? machineId = null, int? productionStageId = null)
+    {
+        // Build query for active programs matching the part
+        var query = _db.MachinePrograms
+            .Include(p => p.MachineAssignments)
+            .Where(p => p.Status == ProgramStatus.Active);
+
+        // Filter by part: either PartId FK match or in ProgramParts
+        query = query.Where(p => 
+            p.PartId == partId 
+            || p.ProgramParts.Any(pp => pp.PartId == partId));
+
+        // Filter by machine if specified (via MachineAssignments or legacy MachineId)
+        if (machineId.HasValue)
+        {
+            query = query.Where(p => 
+                p.MachineAssignments.Any(a => a.MachineId == machineId.Value)
+                || p.MachineId == machineId.Value);
+        }
+
+        // Filter by linked ProcessStage if specified
+        if (productionStageId.HasValue)
+        {
+            query = query.Where(p => 
+                p.ProcessStageId != null && _db.ProcessStages
+                    .Any(ps => ps.Id == p.ProcessStageId && ps.ProductionStageId == productionStageId.Value));
+        }
+
+        var candidates = await query.ToListAsync();
+
+        if (candidates.Count == 0)
+            return null;
+
+        // Selection priority:
+        // 1. Programs with learned data (EstimateSource == "Auto") and higher sample counts
+        // 2. Programs that are preferred on the target machine
+        // 3. First active match
+
+        var withLearning = candidates
+            .Where(p => p.EstimateSource == "Auto" && p.ActualSampleCount > 0)
+            .OrderByDescending(p => p.ActualSampleCount)
+            .FirstOrDefault();
+
+        if (withLearning != null)
+            return withLearning;
+
+        // Check for preferred machine assignment if machineId is specified
+        if (machineId.HasValue)
+        {
+            var preferredOnMachine = candidates
+                .FirstOrDefault(p => p.MachineAssignments
+                    .Any(a => a.MachineId == machineId.Value && a.IsPreferred));
+
+            if (preferredOnMachine != null)
+                return preferredOnMachine;
+        }
+
+        // Return first active program
+        return candidates.FirstOrDefault();
     }
 
     // ── Private Helpers ──────────────────────────────────────

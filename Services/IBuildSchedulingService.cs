@@ -7,6 +7,11 @@ namespace Opcentrix_V3.Services;
 /// Build-centric scheduling for additive (SLS) machines.
 /// BuildPackage is the schedulable entity — duration comes from the slicer, not computed.
 /// </summary>
+/// <remarks>
+/// Use IProgramSchedulingService for new scheduling work. This interface is being superseded
+/// by program-based scheduling where MachineProgram.BuildPlate replaces BuildPackage.
+/// </remarks>
+[Obsolete("Use IProgramSchedulingService for program-based scheduling. BuildPackage is being replaced by MachineProgram.BuildPlate.")]
 public interface IBuildSchedulingService
 {
     /// <summary>
@@ -81,7 +86,59 @@ public interface IBuildSchedulingService
     /// Unlock a build back to Draft. Creates revision note with reason.
     /// </summary>
     Task UnlockBuildAsync(int buildPackageId, string unlockedBy, string reason);
+
+    /// <summary>
+    /// Schedule a build plate program on an SLS machine.
+    /// Uses the program's EstimatedPrintHours for duration, finds the earliest slot,
+    /// and creates build-level StageExecutions linked to the MachineProgramId.
+    /// Also creates downstream build stages (depowder, EDM, etc.) and per-part jobs.
+    /// </summary>
+    Task<BuildScheduleResult> ScheduleProgramBuildAsync(int machineProgramId, int machineId, DateTime? startAfter = null);
+
+    /// <summary>
+    /// Schedule a build plate program, automatically choosing the SLS machine
+    /// with the earliest available slot to maximize utilization across all machines.
+    /// </summary>
+    Task<BuildScheduleResult> ScheduleProgramBuildAutoMachineAsync(int machineProgramId, DateTime? startAfter = null);
+
+    /// <summary>
+    /// Creates and schedules a job for a work order line using the part's manufacturing process.
+    /// For additive parts: requires an existing BuildPlate program or creates a suggestion.
+    /// For standard parts: creates a Job with stage executions linked to available programs.
+    /// Returns the created job and its stage executions.
+    /// </summary>
+    Task<WorkOrderScheduleResult> ScheduleFromWorkOrderLineAsync(int workOrderLineId, int? preferredMachineId = null, DateTime? startAfter = null);
+
+    /// <summary>
+    /// Schedules a standard (non-BuildPlate) program. Creates a Job with stage executions
+    /// using the program's duration data and linked to the MachineProgramId.
+    /// </summary>
+    Task<StandardProgramScheduleResult> ScheduleStandardProgramAsync(int machineProgramId, int quantity, int? machineId = null, int? workOrderLineId = null, DateTime? startAfter = null);
 }
+
+/// <summary>
+/// Result of scheduling from a work order line.
+/// </summary>
+public record WorkOrderScheduleResult(
+    int JobId,
+    string JobNumber,
+    List<StageExecution> StageExecutions,
+    DateTime ScheduledStart,
+    DateTime ScheduledEnd,
+    List<string> Warnings);
+
+/// <summary>
+/// Result of scheduling a standard (non-BuildPlate) program.
+/// </summary>
+public record StandardProgramScheduleResult(
+    int JobId,
+    string JobNumber,
+    int MachineProgramId,
+    List<StageExecution> StageExecutions,
+    DateTime ScheduledStart,
+    DateTime ScheduledEnd,
+    double TotalDurationHours,
+    List<string> Warnings);
 
 public record BuildScheduleSlot(
     DateTime PrintStart,

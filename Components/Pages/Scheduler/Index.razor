@@ -5,9 +5,11 @@
 @inject ISchedulingService Scheduler
 @inject IBuildPlanningService BuildPlanning
 @inject IBuildSchedulingService BuildScheduling
+@inject IProgramSchedulingService ProgramScheduling
 @inject IWorkOrderService WorkOrderService
 @inject IBuildTemplateService BuildTemplateService
 @inject IBuildSuggestionService BuildSuggestionService
+@inject IMachineProgramService ProgramService
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @inject ToastService Toast
 @implements IAsyncDisposable
@@ -15,6 +17,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Opcentrix_V3.Components.Pages.Scheduler.Components
 @using Opcentrix_V3.Components.Pages.Scheduler.Views
+@using Opcentrix_V3.Models.Enums
 
 <PageTitle>Production Scheduler - OpCentrix</PageTitle>
 
@@ -30,6 +33,7 @@
                  AutoScheduleCount="@(_unscheduled.Count + ReadyBuilds.Count(b => b.Status == BuildPackageStatus.Ready))"
                  ShowConflictsOnly="_showConflictsOnly"
                  BuildStatusFilter="_buildStatusFilter"
+                 ProgramStatusFilter="_programStatusFilter"
                  ShowOverdueOnly="_showOverdueOnly"
                  OnViewModeChanged="OnViewModeChangedAsync"
                  OnShiftViewport="ShiftViewportAsync"
@@ -42,6 +46,7 @@
                  OnNewJob="() => _showCreate = true"
                  OnShowConflictsOnlyChanged="v => _showConflictsOnly = v"
                  OnBuildStatusFilterChanged="v => _buildStatusFilter = v"
+                 OnProgramStatusFilterChanged="v => _programStatusFilter = v"
                  OnShowOverdueOnlyChanged="v => _showOverdueOnly = v" />
 
 <div>
@@ -81,18 +86,16 @@ else if (_viewMode == "gantt")
                OnViewportBoundsChanged="HandleViewportBoundsChanged"
                OnDataRangeExtensionNeeded="ExtendDataRangeAsync" />
 }
-else if (_viewMode == "builds")
+else if (_viewMode == "programs")
 {
-    <BuildsView @ref="_buildsView"
-                BuildPackages="_buildPackages"
+    <ProgramsView @ref="_programsView"
+                Programs="_programs"
                 SlsMachines="SlsMachines"
-                MachineTimelines="_machineTimelines"
-                Unscheduled="_unscheduled"
+                ProgramTimelines="_programTimelines"
                 DataRangeStart="_dataRangeStart"
                 DataRangeEnd="_dataRangeEnd"
                 PixelsPerHour="_pixelsPerHour"
-                BuildStatusFilter="_buildStatusFilter"
-                OnAutoSchedule="AutoScheduleSingle"
+                ProgramStatusFilter="_programStatusFilter"
                 OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)"
                 UserName="@_userName"
                 OnPixelsPerHourChanged="HandlePixelsPerHourChanged"
@@ -102,11 +105,8 @@ else if (_viewMode == "builds")
 else if (_viewMode == "demand")
 {
     <WorkOrdersView WorkOrders="_workOrders"
-                     BuildTemplates="_buildTemplates"
-                     BuildPackages="_buildPackages"
-                     Suggestions="_suggestions"
+                     Programs="_programs"
                      SlsMachines="SlsMachines"
-                     AllMachines="_machines"
                      UserName="@_userName"
                      ShowOverdueOnly="_showOverdueOnly"
                      OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
@@ -197,12 +197,14 @@ else if (_viewMode == "data")
     private List<ProductionStage> _stages = new();
     private List<BuildPackage> _buildPackages = new();
     private Dictionary<int, List<MachineTimelineEntry>> _machineTimelines = new();
+    private Dictionary<int, List<ProgramTimelineEntry>> _programTimelines = new();
     private List<WorkOrder> _workOrders = new();
     private List<BuildTemplate> _buildTemplates = new();
+    private List<MachineProgram> _programs = new();
     private BuildSuggestionResult? _suggestions;
 
     private GanttView? _ganttView;
-    private BuildsView? _buildsView;
+    private ProgramsView? _programsView;
     private PartPathView? _partPathView;
     private string _dataSubView = "table";
     private double _pixelsPerHour = 6.0;
@@ -228,6 +230,7 @@ else if (_viewMode == "data")
     // C5: Quick filter state
     private bool _showConflictsOnly;
     private BuildPackageStatus? _buildStatusFilter;
+    private ProgramScheduleStatus? _programStatusFilter;
     private bool _showOverdueOnly;
 
     protected override async Task OnInitializedAsync()
@@ -240,6 +243,7 @@ else if (_viewMode == "data")
                 "orders" => "demand",
                 "stages" => "floor",
                 "table" or "path" => "data",
+                "builds" => "programs",
                 _ => ViewParam
             };
         }
@@ -288,7 +292,7 @@ else if (_viewMode == "data")
             await LoadActiveTabDataAsync();
 
             _ganttView?.Viewport?.RequestReinit();
-            _buildsView?.Viewport?.RequestReinit();
+            _programsView?.Viewport?.RequestReinit();
             _partPathView?.Viewport?.RequestReinit();
         }
         catch (Exception ex)
@@ -361,8 +365,8 @@ else if (_viewMode == "data")
             case "gantt":
                 await LoadProductionDataAsync();
                 break;
-            case "builds":
-                await LoadBuildsDataAsync();
+            case "programs":
+                await LoadProgramsDataAsync();
                 break;
             case "demand":
                 await LoadDemandDataAsync();
@@ -387,14 +391,13 @@ else if (_viewMode == "data")
     private async Task LoadDemandDataAsync()
     {
         _workOrders = await WorkOrderService.GetWorkOrdersByStatusesAsync(WorkOrderStatus.Released, WorkOrderStatus.InProgress);
-        _buildTemplates = await BuildTemplateService.GetAllAsync(BuildTemplateStatus.Certified);
-        _suggestions = await BuildSuggestionService.GetSuggestionsAsync();
+        _programs = await ProgramService.GetBuildPlateProgramsAsync();
     }
 
-    private async Task LoadBuildsDataAsync()
+    private async Task LoadProgramsDataAsync()
     {
-        _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
-        await LoadMachineTimelinesAsync();
+        _programs = await ProgramService.GetBuildPlateProgramsAsync();
+        await LoadProgramTimelinesAsync();
     }
 
     private async Task LoadFloorDataAsync()
@@ -441,7 +444,15 @@ else if (_viewMode == "data")
             .Distinct()
             .ToHashSet();
 
-        // Always include SLS machines (they may have scheduled packages without executions yet)
+        // Also include machines with program-based executions
+        var programMachineIds = _executions
+            .Where(e => e.MachineProgramId != null && e.MachineId.HasValue)
+            .Select(e => e.MachineId!.Value)
+            .Distinct();
+        foreach (var mid in programMachineIds)
+            buildMachineIds.Add(mid);
+
+        // Always include SLS machines (they may have scheduled packages/programs without executions yet)
         foreach (var m in SlsMachines)
             buildMachineIds.Add(m.Id);
 
@@ -449,8 +460,29 @@ else if (_viewMode == "data")
         {
             try
             {
-                var timeline = await BuildScheduling.GetMachineTimelineAsync(machineId, _dataRangeStart, _dataRangeEnd);
-                return (machineId, Timeline: timeline);
+                // Get legacy build timeline
+                var buildTimeline = await BuildScheduling.GetMachineTimelineAsync(machineId, _dataRangeStart, _dataRangeEnd);
+
+                // Get program timeline and convert to MachineTimelineEntry for UI compatibility
+                var programTimeline = await ProgramScheduling.GetMachineTimelineAsync(machineId, _dataRangeStart, _dataRangeEnd);
+                var convertedPrograms = programTimeline.Select(p => new MachineTimelineEntry(
+                    BuildPackageId: -p.MachineProgramId, // Negative ID to distinguish from builds
+                    BuildName: p.ProgramName,
+                    PrintStart: p.PrintStart,
+                    PrintEnd: p.PrintEnd,
+                    ChangeoverStart: p.ChangeoverStart,
+                    ChangeoverEnd: p.ChangeoverEnd,
+                    Status: ConvertProgramStatusToBuildStatus(p.ScheduleStatus),
+                    StageExecutionId: p.StageExecutionId,
+                    HasChangeoverConflict: p.HasChangeoverConflict
+                )).ToList();
+
+                // Merge both timelines, avoiding duplicates (program entries may already exist in build timeline)
+                var existingBuildIds = buildTimeline.Select(b => b.BuildPackageId).ToHashSet();
+                var merged = buildTimeline.ToList();
+                merged.AddRange(convertedPrograms.Where(p => !existingBuildIds.Contains(p.BuildPackageId)));
+
+                return (machineId, Timeline: merged.OrderBy(e => e.PrintStart).ToList());
             }
             catch
             {
@@ -466,6 +498,43 @@ else if (_viewMode == "data")
 
         _machineTimelines = timelines;
     }
+
+    /// <summary>Loads ProgramTimelineEntry per SLS machine for ProgramsView.</summary>
+    private async Task LoadProgramTimelinesAsync()
+    {
+        var timelines = new Dictionary<int, List<ProgramTimelineEntry>>();
+        var tasks = SlsMachines.Select(async machine =>
+        {
+            try
+            {
+                var timeline = await ProgramScheduling.GetMachineTimelineAsync(machine.Id, _dataRangeStart, _dataRangeEnd);
+                return (machine.Id, Timeline: timeline);
+            }
+            catch
+            {
+                return (machine.Id, Timeline: new List<ProgramTimelineEntry>());
+            }
+        });
+        var results = await Task.WhenAll(tasks);
+        foreach (var (machineId, timeline) in results)
+        {
+            timelines[machineId] = timeline;
+        }
+        _programTimelines = timelines;
+    }
+
+    private static BuildPackageStatus ConvertProgramStatusToBuildStatus(ProgramScheduleStatus programStatus) =>
+        programStatus switch
+        {
+            ProgramScheduleStatus.None => BuildPackageStatus.Draft,
+            ProgramScheduleStatus.Ready => BuildPackageStatus.Sliced,
+            ProgramScheduleStatus.Scheduled => BuildPackageStatus.Scheduled,
+            ProgramScheduleStatus.Printing => BuildPackageStatus.Printing,
+            ProgramScheduleStatus.PostPrint => BuildPackageStatus.PostPrint,
+            ProgramScheduleStatus.Completed => BuildPackageStatus.Completed,
+            ProgramScheduleStatus.Cancelled => BuildPackageStatus.Cancelled,
+            _ => BuildPackageStatus.Draft
+        };
 
     private void HandlePixelsPerHourChanged(double newPph) => _pixelsPerHour = newPph;
 
@@ -493,8 +562,8 @@ else if (_viewMode == "data")
             // Update JS module with the new data range
             if (_ganttView?.Viewport != null)
                 await _ganttView.Viewport.UpdateDataRangeInJsAsync();
-            if (_buildsView?.Viewport != null)
-                await _buildsView.Viewport.UpdateDataRangeInJsAsync();
+            if (_programsView?.Viewport != null)
+                await _programsView.Viewport.UpdateDataRangeInJsAsync();
             if (_partPathView?.Viewport != null)
                 await _partPathView.Viewport.UpdateDataRangeInJsAsync();
         }
@@ -507,7 +576,7 @@ else if (_viewMode == "data")
     private GanttViewport? ActiveViewport => _viewMode switch
     {
         "gantt" => _ganttView?.Viewport,
-        "builds" => _buildsView?.Viewport,
+        "programs" => _programsView?.Viewport,
         "data" => _dataSubView == "path" ? _partPathView?.Viewport : null,
         _ => null
     };

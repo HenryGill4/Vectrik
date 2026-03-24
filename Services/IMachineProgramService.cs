@@ -128,7 +128,84 @@ public interface IMachineProgramService
     /// Returns the count of unresolved feedback items for display in program cards.
     /// </summary>
     Task<Dictionary<int, int>> GetUnresolvedFeedbackCountsAsync(List<int> programIds);
+
+    // ── Program Part Operations ────────────────────────────────
+
+    /// <summary>
+    /// Returns all BuildPlate-type programs, optionally filtered by status.
+    /// </summary>
+    Task<List<MachineProgram>> GetBuildPlateProgramsAsync(ProgramStatus? statusFilter = null);
+
+    /// <summary>
+    /// Returns ProgramPart entries for a program, with Part navigation loaded.
+    /// </summary>
+    Task<List<ProgramPart>> GetProgramPartsAsync(int programId);
+
+    /// <summary>
+    /// Adds a part to a program with quantity and optional stack level.
+    /// </summary>
+    Task<ProgramPart> AddProgramPartAsync(int programId, int partId, int quantity, int stackLevel = 1, int? workOrderLineId = null);
+
+    /// <summary>
+    /// Updates quantity, stack level, or position notes on an existing program part entry.
+    /// </summary>
+    Task<ProgramPart> UpdateProgramPartAsync(int programPartId, int quantity, int stackLevel, string? positionNotes = null);
+
+    /// <summary>
+    /// Removes a part entry from a program.
+    /// </summary>
+    Task RemoveProgramPartAsync(int programPartId);
+
+    /// <summary>
+    /// Saves slicer metadata (layer count, build height, estimated print hours, powder, slicer info)
+    /// on a BuildPlate program after the slicer import.
+    /// </summary>
+    Task UpdateSlicerDataAsync(int programId, double? estimatedPrintHours, int? layerCount = null,
+        double? buildHeightMm = null, double? estimatedPowderKg = null,
+        string? slicerFileName = null, string? slicerSoftware = null, string? slicerVersion = null,
+        string? partPositionsJson = null);
+
+    /// <summary>
+    /// Links post-processing programs (depowder and/or EDM) to a BuildPlate program.
+    /// Pass null for either FK to leave it unchanged.
+    /// </summary>
+    Task UpdatePostProcessingLinksAsync(int buildPlateProgramId, int? depowderProgramId, int? edmProgramId, string modifiedBy);
+
+    /// <summary>
+    /// Returns candidate programs that can serve as post-processing steps for a build plate.
+    /// Filters to Depowder or EDM machine-type programs (or generic programs).
+    /// </summary>
+    Task<List<MachineProgram>> GetPostProcessingCandidatesAsync(string machineType);
+
+    // ── Duration & Program Selection ───────────────────────────
+
+    /// <summary>
+    /// Calculates the estimated duration in minutes for a program execution.
+    /// For BuildPlate programs: uses EstimatedPrintHours * 60.
+    /// For Standard programs: uses SetupTimeMinutes + (RunTimeMinutes * quantity) + CycleTimeMinutes.
+    /// Returns null if the program has no duration data configured.
+    /// </summary>
+    Task<ProgramDurationResult?> GetDurationFromProgramAsync(int programId, int quantity = 1);
+
+    /// <summary>
+    /// Finds the best matching active program for a part/machine/stage combination.
+    /// Selection criteria: PartId match → MachineId match (via assignments) → Status Active
+    /// Prefers programs with learned EMA data (ActualAverageDurationMinutes) and higher sample counts.
+    /// Returns null if no matching program is found.
+    /// </summary>
+    Task<MachineProgram?> GetBestProgramForStageAsync(int partId, int? machineId = null, int? productionStageId = null);
 }
+
+/// <summary>
+/// Result of duration calculation from a program.
+/// </summary>
+public record ProgramDurationResult(
+    double TotalMinutes,
+    double SetupMinutes,
+    double RunMinutes,
+    double CycleMinutes,
+    string Source,
+    bool IsLearned);
 
 /// <summary>
 /// Alert returned by tooling readiness checks, indicating a component linked to

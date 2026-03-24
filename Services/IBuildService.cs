@@ -3,6 +3,10 @@ using Opcentrix_V3.Models.Enums;
 
 namespace Opcentrix_V3.Services;
 
+/// <summary>
+/// Legacy build job service. Use IProgramSchedulingService for new scheduling work.
+/// </summary>
+[Obsolete("Use IProgramSchedulingService for program-based scheduling. BuildJob is being replaced by program-linked StageExecution.")]
 public interface IBuildService
 {
     Task<List<BuildJob>> GetAllBuildJobsAsync(BuildJobStatus? statusFilter = null);

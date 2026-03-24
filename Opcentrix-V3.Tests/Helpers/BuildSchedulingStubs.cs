@@ -40,6 +40,16 @@ internal sealed class StubSerialNumberService : ISerialNumberService
 }
 
 /// <summary>
+/// Stub for INumberSequenceService used in BuildSchedulingService tests.
+/// </summary>
+internal sealed class StubNumberSequenceService : INumberSequenceService
+{
+    private int _counter;
+    public Task<string> NextAsync(string entityType) =>
+        Task.FromResult($"{entityType}-{Interlocked.Increment(ref _counter):D4}");
+}
+
+/// <summary>
 /// No-op stub for IManufacturingProcessService used in BuildSchedulingService tests.
 /// </summary>
 internal sealed class StubManufacturingProcessService : IManufacturingProcessService
@@ -75,11 +85,21 @@ internal sealed class StubManufacturingProcessService : IManufacturingProcessSer
     public DurationResult CalculateStageDuration(ProcessStage stage, int partCount, int batchCount, double? buildConfigHours) =>
         new(0, 0, 0, "stub");
 
+    public Task<DurationResult> CalculateStageDurationWithProgramAsync(
+        ProcessStage stage, int partCount, int batchCount, double? buildConfigHours, int? machineProgramId) =>
+        Task.FromResult(new DurationResult(0, 0, 0, "stub"));
+
     public Task<ManufacturingProcess> CloneProcessAsync(int sourceProcessId, int targetPartId, string createdBy) =>
         Task.FromResult(new ManufacturingProcess());
 
     public Task<ManufacturingProcess> CreateProcessFromApproachAsync(int partId, int approachId, string createdBy) =>
         Task.FromResult(new ManufacturingProcess());
+
+    public Task<List<ProcessStage>> GetStagesPendingProgramSetupAsync() =>
+        Task.FromResult(new List<ProcessStage>());
+
+    public Task LinkProgramToStageAsync(int processStageId, int machineProgramId) =>
+        Task.CompletedTask;
 }
 
 /// <summary>
@@ -153,4 +173,89 @@ internal sealed class StubSchedulingService : ISchedulingService
 
     public Task<DatabaseStats> GetDatabaseStatsAsync() =>
         Task.FromResult(new DatabaseStats(0, 0, 0, 0, 0, 0, 0, 0, 0));
+}
+
+/// <summary>
+/// No-op stub for IStageCostService used in BuildSchedulingService tests.
+/// </summary>
+internal sealed class StubStageCostService : IStageCostService
+{
+    public Task<List<StageCostProfile>> GetAllAsync() =>
+        Task.FromResult(new List<StageCostProfile>());
+
+    public Task<StageCostProfile?> GetByStageIdAsync(int productionStageId) =>
+        Task.FromResult<StageCostProfile?>(null);
+
+    public Task<StageCostProfile> SaveAsync(StageCostProfile profile) =>
+        Task.FromResult(profile);
+
+    public Task DeleteAsync(int profileId) => Task.CompletedTask;
+
+    public Task<StageCostEstimate> EstimateCostAsync(int productionStageId, double durationHours, int partCount, int batchCount = 1) =>
+        Task.FromResult(new StageCostEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0, false));
+}
+
+/// <summary>
+/// No-op stub for IMachineProgramService used in scheduling tests.
+/// Returns null/empty for all queries - scheduling falls back to stage defaults.
+/// </summary>
+internal sealed class StubMachineProgramService : IMachineProgramService
+{
+    public Task<MachineProgram?> GetByIdAsync(int id) => Task.FromResult<MachineProgram?>(null);
+    public Task<List<MachineProgram>> GetAllAsync() => Task.FromResult(new List<MachineProgram>());
+    public Task<List<MachineProgram>> GetProgramsForPartAsync(int partId) => Task.FromResult(new List<MachineProgram>());
+    public Task<List<MachineProgram>> GetProgramsForMachineAsync(int machineId) => Task.FromResult(new List<MachineProgram>());
+    public Task<MachineProgram?> GetProgramForStageAsync(int processStageId) => Task.FromResult<MachineProgram?>(null);
+    public Task<List<MachineProgram>> GetActiveProgramsAsync(int? partId = null, int? machineId = null, int? processStageId = null) => Task.FromResult(new List<MachineProgram>());
+    public Task<MachineProgram> CreateAsync(MachineProgram program, string createdBy) => Task.FromResult(program);
+    public Task UpdateAsync(MachineProgram program, string modifiedBy) => Task.CompletedTask;
+    public Task DeleteAsync(int id) => Task.CompletedTask;
+    public Task<List<MachineProgramAssignment>> GetMachineAssignmentsAsync(int programId) => Task.FromResult(new List<MachineProgramAssignment>());
+    public Task<MachineProgramAssignment> AssignMachineAsync(int programId, int machineId, string assignedBy, bool isPreferred = false, string? notes = null) => Task.FromResult(new MachineProgramAssignment());
+    public Task UnassignMachineAsync(int programId, int machineId) => Task.CompletedTask;
+    public Task SetPreferredMachineAsync(int programId, int machineId) => Task.CompletedTask;
+    public Task SyncMachineAssignmentsAsync(int programId, List<int> machineIds, string assignedBy) => Task.CompletedTask;
+    public Task<MachineProgram> CreateNewVersionAsync(int programId, string createdBy) => Task.FromResult(new MachineProgram());
+    public Task<MachineProgramFile> UploadFileAsync(int programId, string fileName, Stream fileStream, long fileSize, string uploadedBy, string? description = null) => Task.FromResult(new MachineProgramFile());
+    public Task<List<MachineProgramFile>> GetFilesAsync(int programId) => Task.FromResult(new List<MachineProgramFile>());
+    public Task<MachineProgramFile?> GetFileByIdAsync(int fileId) => Task.FromResult<MachineProgramFile?>(null);
+    public Task DeleteFileAsync(int fileId) => Task.CompletedTask;
+    public Task SetPrimaryFileAsync(int programId, int fileId) => Task.CompletedTask;
+    public Task<MachineProgram> CloneProgramAsync(int sourceProgramId, int? targetPartId, int? targetMachineId, string createdBy) => Task.FromResult(new MachineProgram());
+    public string GetDefaultParametersForMachineType(string machineType) => "{}";
+    public Task<List<ProgramToolingItem>> GetToolingItemsAsync(int programId) => Task.FromResult(new List<ProgramToolingItem>());
+    public Task<ProgramToolingItem> SaveToolingItemAsync(ProgramToolingItem item, string modifiedBy) => Task.FromResult(item);
+    public Task DeleteToolingItemAsync(int toolingItemId) => Task.CompletedTask;
+    public Task<List<ToolingReadinessAlert>> CheckToolingReadinessAsync(int programId) => Task.FromResult(new List<ToolingReadinessAlert>());
+    public Task<List<ProgramFeedback>> GetFeedbackAsync(int programId, ProgramFeedbackStatus? statusFilter = null) => Task.FromResult(new List<ProgramFeedback>());
+    public Task<ProgramFeedback> SubmitFeedbackAsync(ProgramFeedback feedback) => Task.FromResult(feedback);
+    public Task<ProgramFeedback> ReviewFeedbackAsync(int feedbackId, ProgramFeedbackStatus newStatus, string reviewedBy, string? resolution = null) => Task.FromResult(new ProgramFeedback());
+    public Task<List<StageExecution>> GetExecutionHistoryAsync(int programId, int maxResults = 20) => Task.FromResult(new List<StageExecution>());
+    public Task<Dictionary<int, int>> GetUnresolvedFeedbackCountsAsync(List<int> programIds) => Task.FromResult(new Dictionary<int, int>());
+    public Task<List<MachineProgram>> GetBuildPlateProgramsAsync(ProgramStatus? statusFilter = null) => Task.FromResult(new List<MachineProgram>());
+    public Task<List<ProgramPart>> GetProgramPartsAsync(int programId) => Task.FromResult(new List<ProgramPart>());
+    public Task<ProgramPart> AddProgramPartAsync(int programId, int partId, int quantity, int stackLevel = 1, int? workOrderLineId = null) => Task.FromResult(new ProgramPart());
+    public Task<ProgramPart> UpdateProgramPartAsync(int programPartId, int quantity, int stackLevel, string? positionNotes = null) => Task.FromResult(new ProgramPart());
+    public Task RemoveProgramPartAsync(int programPartId) => Task.CompletedTask;
+    public Task UpdateSlicerDataAsync(int programId, double? estimatedPrintHours, int? layerCount = null, double? buildHeightMm = null, double? estimatedPowderKg = null, string? slicerFileName = null, string? slicerSoftware = null, string? slicerVersion = null, string? partPositionsJson = null) => Task.CompletedTask;
+    public Task UpdatePostProcessingLinksAsync(int buildPlateProgramId, int? depowderProgramId, int? edmProgramId, string modifiedBy) => Task.CompletedTask;
+    public Task<List<MachineProgram>> GetPostProcessingCandidatesAsync(string machineType) => Task.FromResult(new List<MachineProgram>());
+    public Task<ProgramDurationResult?> GetDurationFromProgramAsync(int programId, int quantity = 1) => Task.FromResult<ProgramDurationResult?>(null);
+    public Task<MachineProgram?> GetBestProgramForStageAsync(int partId, int? machineId = null, int? productionStageId = null) => Task.FromResult<MachineProgram?>(null);
+}
+
+/// <summary>
+/// No-op stub for IDownstreamProgramService used in scheduling tests.
+/// Always returns valid (no missing programs) so scheduling can proceed.
+/// </summary>
+internal sealed class StubDownstreamProgramService : IDownstreamProgramService
+{
+    public Task<List<DownstreamProgramRequirement>> GetRequiredProgramsAsync(int buildPlateProgramId)
+        => Task.FromResult(new List<DownstreamProgramRequirement>());
+
+    public Task<DownstreamValidationResult> ValidateDownstreamReadinessAsync(int buildPlateProgramId)
+        => Task.FromResult(new DownstreamValidationResult(true, [], []));
+
+    public Task<List<MachineProgram>> CreatePlaceholderProgramsAsync(int buildPlateProgramId, List<int> stageIdsNeedingPrograms, string createdBy)
+        => Task.FromResult(new List<MachineProgram>());
 }

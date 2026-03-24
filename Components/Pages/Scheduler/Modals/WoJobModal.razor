@@ -1,4 +1,5 @@
 @inject IWorkOrderService WorkOrderService
+@inject IBuildSchedulingService BuildScheduling
 @inject ToastService Toast
 
 @if (IsVisible && WorkOrderLine != null)
@@ -23,8 +24,8 @@
                 </div>
             </div>
             <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">
-                A job will be created from the part's routing and <strong>auto-scheduled</strong> to the earliest available machine slots.
-                Stage executions will be created for each step in the routing.
+                A job will be created from the part's manufacturing process and <strong>auto-scheduled</strong> to the earliest available machine slots.
+                Program durations will be used when available for accurate scheduling.
             </div>
             <div style="display: flex; gap: 8px;">
                 <button class="btn btn-accent" @onclick="ScheduleJobAsync" disabled="@_creating">
@@ -33,6 +34,12 @@
                 </button>
                 <button class="btn btn-secondary" @onclick="Close">Cancel</button>
             </div>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div style="margin-top: 10px; padding: 8px; background: rgba(var(--danger-rgb),0.1); border: 1px solid var(--danger); border-radius: 6px; font-size: 0.85rem; color: var(--danger);">
+                    @_errorMessage
+                </div>
+            }
         </div>
     </div>
 }
@@ -46,11 +53,13 @@
     [Parameter] public EventCallback OnScheduled { get; set; }
 
     private bool _creating;
+    private string? _errorMessage;
 
     private int Outstanding => WorkOrderLine != null ? GetOutstanding(WorkOrderLine) : 0;
 
     private async Task Close()
     {
+        _errorMessage = null;
         await OnClose.InvokeAsync();
     }
 
@@ -58,14 +67,25 @@
     {
         if (WorkOrderLine == null) return;
         _creating = true;
+        _errorMessage = null;
         StateHasChanged();
         try
         {
-            var job = await WorkOrderService.GenerateJobForLineAsync(WorkOrderLine.Id, UserName);
-            Toast.ShowSuccess($"Job {job.JobNumber} created and auto-scheduled for {WorkOrderLine.Part?.PartNumber}");
+            // Use the new program-aware scheduling method
+            var result = await BuildScheduling.ScheduleFromWorkOrderLineAsync(WorkOrderLine.Id);
+
+            var msg = $"Job {result.JobNumber} created and scheduled ({result.StageExecutions.Count} stages)";
+            if (result.Warnings.Count > 0)
+                msg += $". Notes: {string.Join("; ", result.Warnings)}";
+
+            Toast.ShowSuccess(msg);
             await OnScheduled.InvokeAsync();
         }
-        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            Toast.ShowError(ex.Message);
+        }
         finally { _creating = false; }
     }
 

@@ -8,10 +8,12 @@ namespace Opcentrix_V3.Services;
 public class SchedulingService : ISchedulingService
 {
     private readonly TenantDbContext _db;
+    private readonly IMachineProgramService _programService;
 
-    public SchedulingService(TenantDbContext db)
+    public SchedulingService(TenantDbContext db, IMachineProgramService programService)
     {
         _db = db;
+        _programService = programService;
     }
 
     public async Task AutoScheduleJobAsync(int jobId, DateTime? startAfter = null)
@@ -102,7 +104,39 @@ public class SchedulingService : ISchedulingService
         {
             if (exec.ProductionStage == null) continue;
 
-            var duration = exec.EstimatedHours ?? exec.ProductionStage.DefaultDurationHours;
+            // ── Resolve MachineProgramId and Duration from Program ──
+            // Priority: ProcessStage.MachineProgramId → auto-select best program → stage defaults
+            int? programIdToUse = exec.MachineProgramId ?? exec.ProcessStage?.MachineProgramId;
+            double? programDurationHours = null;
+            string? durationSource = null;
+
+            // If no program linked, try to auto-select one for this part/stage
+            if (!programIdToUse.HasValue && job.PartId > 0)
+            {
+                var bestProgram = await _programService.GetBestProgramForStageAsync(
+                    job.PartId, machineId: null, exec.ProductionStageId);
+                if (bestProgram != null)
+                    programIdToUse = bestProgram.Id;
+            }
+
+            // Query program duration if we have a program
+            if (programIdToUse.HasValue)
+            {
+                var programDuration = await _programService.GetDurationFromProgramAsync(
+                    programIdToUse.Value, job.Quantity);
+
+                if (programDuration != null)
+                {
+                    programDurationHours = programDuration.TotalMinutes / 60.0;
+                    durationSource = programDuration.Source;
+
+                    // Link program to execution for tracking and learning
+                    exec.MachineProgramId = programIdToUse;
+                }
+            }
+
+            // Calculate duration: program duration → existing EstimatedHours → stage default
+            var duration = programDurationHours ?? exec.EstimatedHours ?? exec.ProductionStage.DefaultDurationHours;
             var setupHours = exec.SetupHours ?? 0;
             var totalDuration = duration + setupHours;
 
@@ -238,7 +272,34 @@ public class SchedulingService : ISchedulingService
                 notBefore = prevExec.ScheduledEndAt.Value;
         }
 
-        var duration = exec.EstimatedHours ?? exec.ProductionStage?.DefaultDurationHours ?? 1.0;
+        // ── Resolve MachineProgramId and Duration from Program ──
+        int? programIdToUse = exec.MachineProgramId ?? exec.ProcessStage?.MachineProgramId;
+        double? programDurationHours = null;
+
+        // If no program linked and we have a part, try to auto-select one
+        if (!programIdToUse.HasValue && exec.Job?.PartId > 0)
+        {
+            var bestProgram = await _programService.GetBestProgramForStageAsync(
+                exec.Job.PartId, machineId: null, exec.ProductionStageId);
+            if (bestProgram != null)
+                programIdToUse = bestProgram.Id;
+        }
+
+        // Query program duration if we have a program
+        if (programIdToUse.HasValue)
+        {
+            var quantity = exec.Job?.Quantity ?? 1;
+            var programDuration = await _programService.GetDurationFromProgramAsync(
+                programIdToUse.Value, quantity);
+
+            if (programDuration != null)
+            {
+                programDurationHours = programDuration.TotalMinutes / 60.0;
+                exec.MachineProgramId = programIdToUse;
+            }
+        }
+
+        var duration = programDurationHours ?? exec.EstimatedHours ?? exec.ProductionStage?.DefaultDurationHours ?? 1.0;
         var setupHours = exec.SetupHours ?? 0;
         var totalDuration = duration + setupHours;
 

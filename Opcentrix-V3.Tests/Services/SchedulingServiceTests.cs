@@ -16,7 +16,7 @@ public class SchedulingServiceTests : IDisposable
     public SchedulingServiceTests()
     {
         _db = TestDbContextFactory.Create();
-        _sut = new SchedulingService(_db);
+        _sut = new SchedulingService(_db, new StubMachineProgramService());
     }
 
     public void Dispose() => _db.Dispose();

@@ -93,10 +93,15 @@ public class RoutingTemplateStage
     public bool IsPlateReleaseTrigger { get; set; }
     public int? BatchCapacityOverride { get; set; }
 
+    /// <summary>
+    /// Machine DB Ids assigned to this stage. Supports multi-machine assignment.
+    /// </summary>
+    public List<int> MachineIds { get; set; } = [];
+
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() },
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 }
