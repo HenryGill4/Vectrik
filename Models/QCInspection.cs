@@ -8,7 +8,6 @@ public class QCInspection
     public int Id { get; set; }
 
     public int? JobId { get; set; }
-    public int? BuildJobId { get; set; }
     public int? PartId { get; set; }
     public int? PartInstanceId { get; set; }
 
@@ -36,7 +35,6 @@ public class QCInspection
 
     // Navigation
     public virtual Job? Job { get; set; }
-    public virtual BuildJob? BuildJob { get; set; }
     public virtual Part? Part { get; set; }
     public virtual PartInstance? PartInstance { get; set; }
     public virtual User Inspector { get; set; } = null!;

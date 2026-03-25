@@ -69,7 +69,6 @@ builder.Services.AddScoped<IPartService, PartService>();
 builder.Services.AddScoped<IJobService, JobService>();
 builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
 builder.Services.AddScoped<IQuoteService, QuoteService>();
-builder.Services.AddScoped<IBuildService, BuildService>();
 builder.Services.AddScoped<IStageService, StageService>();
 builder.Services.AddScoped<ISerialNumberService, SerialNumberService>();
 builder.Services.AddScoped<IPartTrackerService, PartTrackerService>();

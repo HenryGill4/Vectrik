@@ -218,6 +218,12 @@ public class MachineProgram
     [MaxLength(50)]
     public string? BuildPurpose { get; set; }
 
+    /// <summary>
+    /// FK to the BuildTemplate this program was instantiated from.
+    /// Null for manually created programs or programs not derived from a template.
+    /// </summary>
+    public int? SourceTemplateId { get; set; }
+
     // ── Navigation ───────────────────────────────────────────
     public virtual Part? Part { get; set; }
     public virtual Machine? Machine { get; set; }
@@ -228,6 +234,7 @@ public class MachineProgram
     public virtual MachineProgram? EdmProgram { get; set; }
     public virtual MachineProgram? PredecessorProgram { get; set; }
     public virtual MachineProgram? SourceProgram { get; set; }
+    public virtual BuildTemplate? SourceTemplate { get; set; }
     public virtual Job? ScheduledJob { get; set; }
     public virtual ICollection<MachineProgramFile> Files { get; set; } = new List<MachineProgramFile>();
     public virtual ICollection<ProgramToolingItem> ToolingItems { get; set; } = new List<ProgramToolingItem>();

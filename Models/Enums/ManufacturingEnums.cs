@@ -20,11 +20,6 @@ public enum QuoteStatus
     Draft, Sent, Accepted, Rejected, Expired
 }
 
-public enum BuildJobStatus
-{
-    Pending, Preheating, Building, Cooling, Completed, Failed, Cancelled
-}
-
 public enum StageExecutionStatus
 {
     NotStarted, InProgress, Paused, Completed, Skipped, Failed
