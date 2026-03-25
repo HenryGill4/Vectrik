@@ -1,0 +1,116 @@
+@using Opcentrix_V3.Components.Pages.Scheduler.Models
+@using Opcentrix_V3.Models
+@using Opcentrix_V3.Services
+
+<div class="plate-composer @(ReadOnly ? "plate-composer--readonly" : "")">
+    @{
+        var totalParts = Allocations.Sum(a => a.TotalParts);
+        var durationDisplay = EstimatedDurationHours > 0 ? $"~{EstimatedDurationHours:F1}h print" : "Duration TBD";
+    }
+    <div class="plate-composer-header">
+        <span class="plate-composer-title">Plate Composition — @totalParts @(totalParts == 1 ? "part" : "parts"), @durationDisplay</span>
+        @if (!ReadOnly)
+        {
+            <button class="btn btn-sm btn-ghost" @onclick="() => OnResetToRecommendation.InvokeAsync()" title="Reset to system recommendation">
+                Reset
+            </button>
+        }
+    </div>
+
+    @* ── Visual plate grid + demand sidebar ── *@
+    <div class="plate-layout">
+        <PlateQuadrantGrid Allocations="Allocations"
+                           MaxParts="MaxPartsPerPlate"
+                           PlateDimensionLabel="@PlateDimensionLabel"
+                           OnAddPartClicked="() => _showSidebar = true" />
+
+        @if (_showSidebar && !ReadOnly)
+        {
+            <PlateDemandSidebar AvailableParts="AvailablePartsForPlate"
+                                OnAddPart="HandleAddPart" />
+        }
+    </div>
+
+    @* ── Part detail rows ── *@
+    <div class="plate-part-entries">
+        @foreach (var (alloc, idx) in Allocations.Select((a, i) => (a, i)))
+        {
+            var config = Demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
+            <PlatePartEntry Allocation="alloc"
+                            Index="idx"
+                            BuildConfig="config"
+                            CanRemove="@(!ReadOnly && Allocations.Count > 1)"
+                            OnStackLevelChanged="HandleStackLevelChanged"
+                            OnPositionsChanged="HandlePositionsChanged"
+                            OnRemove="HandleRemovePart" />
+        }
+    </div>
+
+    @* ── Add Part (inline, when sidebar is hidden) ── *@
+    @if (!ReadOnly && !_showSidebar && Allocations.Count < MaxPartsPerPlate && AvailablePartsForPlate.Any())
+    {
+        <button class="btn btn-sm btn-secondary plate-add-btn" @onclick="() => _showSidebar = true">
+            + Add Part
+        </button>
+    }
+
+    @* ── Demand Coverage Summary ── *@
+    @if (Allocations.Any())
+    {
+        <div class="plate-coverage-section">
+            <div class="plate-coverage-title">Demand Coverage</div>
+            @foreach (var alloc in Allocations)
+            {
+                var remaining = Demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.NetRemaining ?? alloc.DemandRemaining;
+                var pct = remaining > 0 ? Math.Min(100, alloc.TotalParts * 100.0 / remaining) : 100;
+                <div class="plate-coverage-row">
+                    <span class="plate-coverage-part">@alloc.PartNumber</span>
+                    <div class="plate-coverage-bar-track" style="flex: 1;">
+                        <div class="plate-coverage-bar-fill @(pct >= 100 ? "plate-coverage-full" : "")"
+                             style="width: @pct.ToString("F0")%"></div>
+                    </div>
+                    <span class="plate-coverage-value @(pct >= 100 ? "text-success" : pct > 0 ? "text-warning" : "text-danger")">
+                        @alloc.TotalParts / @remaining (@pct.ToString("F0")%)
+                    </span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<DemandSummary> Demand { get; set; } = [];
+    [Parameter] public List<EditablePlateAllocation> Allocations { get; set; } = [];
+    [Parameter] public double EstimatedDurationHours { get; set; }
+    [Parameter] public int MaxPartsPerPlate { get; set; } = 4;
+    [Parameter] public string PlateDimensionLabel { get; set; } = "450 × 450 mm";
+    [Parameter] public bool ReadOnly { get; set; }
+
+    [Parameter] public EventCallback<(int Index, int NewLevel)> OnStackLevelChanged { get; set; }
+    [Parameter] public EventCallback<(int Index, int NewPositions)> OnPositionsChanged { get; set; }
+    [Parameter] public EventCallback<int> OnRemovePart { get; set; }
+    [Parameter] public EventCallback<int> OnAddPart { get; set; }
+    [Parameter] public EventCallback OnResetToRecommendation { get; set; }
+
+    private bool _showSidebar;
+
+    private List<DemandSummary> AvailablePartsForPlate => Demand
+        .Where(d => d.IsAdditive && d.NetRemaining > 0 && d.BuildConfig != null
+            && !Allocations.Any(a => a.PartId == d.PartId))
+        .ToList();
+
+    private Task HandleStackLevelChanged((int Index, int NewLevel) args) =>
+        OnStackLevelChanged.InvokeAsync(args);
+
+    private Task HandlePositionsChanged((int Index, int NewPositions) args) =>
+        OnPositionsChanged.InvokeAsync(args);
+
+    private Task HandleRemovePart(int index) =>
+        OnRemovePart.InvokeAsync(index);
+
+    private Task HandleAddPart(int partId)
+    {
+        _showSidebar = false;
+        return OnAddPart.InvokeAsync(partId);
+    }
+}

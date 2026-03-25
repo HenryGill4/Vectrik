@@ -1,0 +1,78 @@
+@using Microsoft.AspNetCore.Components.Forms
+
+@* ── TAB: Files ── *@
+<div class="card">
+    <h4 style="margin: 0 0 12px 0;">📁 Files (@(Program.Files?.Count ?? 0))</h4>
+
+    @if (Program.Files?.Any() == true)
+    {
+        <table class="data-table" style="font-size: 0.85rem; margin-bottom: 12px;">
+            <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Primary</th><th>Uploaded</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var file in Program.Files.OrderByDescending(f => f.IsPrimary).ThenByDescending(f => f.UploadedDate))
+                {
+                    <tr>
+                        <td>
+                            <a href="@file.FilePath" target="_blank">@file.FileName</a>
+                            @if (!string.IsNullOrEmpty(file.Description)) { <div style="font-size:0.8em;color:var(--text-muted);">@file.Description</div> }
+                        </td>
+                        <td><span class="badge badge-secondary">@file.FileType</span></td>
+                        <td>@FormatFileSize(file.FileSizeBytes)</td>
+                        <td>
+                            @if (file.IsPrimary) { <span class="badge badge-success">Primary</span> }
+                            else { <button class="btn btn-sm btn-secondary" @onclick="() => OnSetPrimary.InvokeAsync(file)">Set Primary</button> }
+                        </td>
+                        <td>@file.UploadedDate.ToString("MMM dd, yyyy")</td>
+                        <td><button class="btn btn-sm btn-danger" @onclick="() => OnDeleteFile.InvokeAsync(file)">🗑</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else
+    {
+        <div class="empty-state" style="padding: 16px;"><div class="empty-state-text">No files attached yet.</div></div>
+    }
+
+    <div style="display: flex; gap: 8px; align-items: end;">
+        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label class="form-label">Upload File</label>
+            <InputFile OnChange="HandleFileUpload" accept=".nc,.tap,.mpf,.dxf,.pdf,.step,.stp,.txt,.csv,.gcode,.ngc" style="display:block;" />
+        </div>
+        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label class="form-label">Description (optional)</label>
+            <input class="form-control" value="@UploadDescription" @onchange="HandleDescriptionChange" placeholder="Setup sheet, G-code…" />
+        </div>
+    </div>
+    @if (Uploading)
+    {
+        <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 4px;"><span class="spinner" style="width:12px;height:12px;margin-right:4px;"></span> Uploading…</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = default!;
+    [Parameter] public string? UploadDescription { get; set; }
+    [Parameter] public bool Uploading { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnFileUpload { get; set; }
+    [Parameter] public EventCallback<MachineProgramFile> OnDeleteFile { get; set; }
+    [Parameter] public EventCallback<MachineProgramFile> OnSetPrimary { get; set; }
+    [Parameter] public EventCallback<string?> OnUploadDescriptionChanged { get; set; }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        await OnFileUpload.InvokeAsync(e);
+    }
+
+    private async Task HandleDescriptionChange(ChangeEventArgs e)
+    {
+        await OnUploadDescriptionChanged.InvokeAsync(e.Value?.ToString());
+    }
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1048576 => $"{bytes / 1024.0:F1} KB",
+        _ => $"{bytes / 1048576.0:F1} MB"
+    };
+}

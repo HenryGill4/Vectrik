@@ -1,0 +1,77 @@
+@* MachineSetupView.razor — Machine Setup view showing programs grouped by machine *@
+@using Opcentrix_V3.Models.Enums
+
+<div class="kpi-grid" style="margin-bottom: 16px;">
+    <div class="kpi-card"><div class="kpi-label">Active Machines</div><div class="kpi-value">@(Machines.Count(m => m.IsActive))</div></div>
+    <div class="kpi-card"><div class="kpi-label">With Programs</div><div class="kpi-value" style="color:var(--success)">@(Machines.Count(m => m.IsActive && Programs.Any(p => p.MachineAssignments?.Any(a => a.MachineId == m.Id) == true || p.MachineId == m.Id)))</div></div>
+    <div class="kpi-card"><div class="kpi-label">No Programs</div><div class="kpi-value" style="color:var(--warning)">@(Machines.Count(m => m.IsActive && !Programs.Any(p => p.MachineAssignments?.Any(a => a.MachineId == m.Id) == true || p.MachineId == m.Id)))</div></div>
+    <div class="kpi-card"><div class="kpi-label">Active Programs</div><div class="kpi-value">@Programs.Count(p => p.Status == ProgramStatus.Active)</div></div>
+</div>
+
+@foreach (var typeGroup in Machines.Where(m => m.IsActive).GroupBy(m => m.MachineType).OrderBy(g => g.Key))
+{
+    <div style="margin-bottom: 20px;">
+        <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+            <span class="badge badge-info">@typeGroup.Key</span>
+            <span style="font-size: 0.7em; color: var(--text-muted);">@typeGroup.Count() machines</span>
+        </h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px;">
+            @foreach (var machine in typeGroup.OrderBy(m => m.Name))
+            {
+                var machinePrograms = Programs.Where(p =>
+                    p.MachineAssignments?.Any(a => a.MachineId == machine.Id) == true
+                    || p.MachineId == machine.Id).ToList();
+                var activePrograms = machinePrograms.Where(p => p.Status == ProgramStatus.Active).ToList();
+
+                <div class="card" style="margin: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <div>
+                            <strong>@machine.Name</strong>
+                            <span class="badge badge-@machine.Status.ToString().ToLower()" style="margin-left: 4px;">@machine.Status</span>
+                            <div style="font-size: 0.8em; color: var(--text-muted);">@machine.MachineId @(!string.IsNullOrEmpty(machine.Location) ? $"• {machine.Location}" : "")</div>
+                        </div>
+                        <div style="text-align: right; font-size: 0.85em;">
+                            <div><strong>@activePrograms.Count</strong> <span style="color: var(--text-muted);">active</span></div>
+                            @if (machinePrograms.Count > activePrograms.Count)
+                            {
+                                <div style="color: var(--text-muted); font-size: 0.85em;">@machinePrograms.Count total</div>
+                            }
+                        </div>
+                    </div>
+
+                    @if (machinePrograms.Count == 0)
+                    {
+                        <div style="padding: 8px; color: var(--text-muted); font-size: 0.85em; font-style: italic;">No programs assigned</div>
+                    }
+                    else
+                    {
+                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                            @foreach (var prog in machinePrograms.OrderBy(p => p.Status).ThenBy(p => p.ProgramNumber))
+                            {
+                                var isPreferred = prog.MachineAssignments?.FirstOrDefault(a => a.MachineId == machine.Id)?.IsPreferred == true;
+                                <span class="badge @(prog.Status == ProgramStatus.Active ? "badge-success" : "badge-secondary")"
+                                      style="cursor: pointer; @(isPreferred ? "border: 2px solid var(--success);" : "")"
+                                      title="@prog.Name — v@(prog.Version) @(prog.Status) @(isPreferred ? "(Preferred)" : "")"
+                                      @onclick="() => OnNavigateToProgram.InvokeAsync(prog)">
+                                    @prog.ProgramNumber
+                                    @if (isPreferred) { <span>★</span> }
+                                </span>
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(machine.CurrentMaterial))
+                    {
+                        <div style="margin-top: 6px; font-size: 0.8em; color: var(--text-muted);">Material: @machine.CurrentMaterial</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public List<MachineProgram> Programs { get; set; } = [];
+    [Parameter] public EventCallback<MachineProgram> OnNavigateToProgram { get; set; }
+}

@@ -1,0 +1,97 @@
+@using Opcentrix_V3.Components.Pages.Scheduler.Models
+@using Opcentrix_V3.Models
+@using Opcentrix_V3.Services
+
+@{
+    var config = BuildConfig;
+    var levels = config?.AvailableStackLevels ?? [1];
+    var maxPositions = config?.GetPositionsPerBuild(Allocation.StackLevel) ?? 500;
+    var demandTotal = Allocation.DemandRemaining;
+    var coveragePct = demandTotal > 0 ? Math.Min(100, Allocation.TotalParts * 100.0 / demandTotal) : 100;
+}
+
+<div class="plate-part-entry">
+    <div class="plate-part-role">
+        @if (Index == 0) { <span class="plate-role-primary">PRIMARY</span> }
+        else { <span class="plate-role-fill">FILL</span> }
+    </div>
+
+    <div class="plate-part-info">
+        <div class="plate-part-name">@Allocation.PartNumber</div>
+        <div class="plate-part-demand">
+            @Allocation.DemandRemaining needed
+            @if (Allocation.Surplus > 0)
+            {
+                <span class="plate-part-surplus">(@Allocation.Surplus surplus)</span>
+            }
+            @if (Allocation.WoDueDate.HasValue)
+            {
+                <span class="plate-part-due">Due @Allocation.WoDueDate.Value.ToLocalTime().ToString("MMM d")</span>
+            }
+        </div>
+    </div>
+
+    <div class="plate-part-controls">
+        <div class="plate-control-group">
+            <label>Stack</label>
+            <select class="form-control form-control-sm"
+                    value="@Allocation.StackLevel"
+                    @onchange="HandleStackChange">
+                @foreach (var lvl in levels)
+                {
+                    <option value="@lvl">@(lvl)x @(lvl == 1 ? "Single" : lvl == 2 ? "Double" : "Triple")</option>
+                }
+            </select>
+        </div>
+        <div class="plate-control-group">
+            <label>Pos (max @maxPositions)</label>
+            <input type="number" class="form-control form-control-sm"
+                   min="1" max="@maxPositions"
+                   value="@Allocation.Positions"
+                   @onchange="HandlePositionsChange" />
+        </div>
+        <div class="plate-control-group">
+            <label>Total</label>
+            <span class="plate-part-total">= @Allocation.TotalParts</span>
+        </div>
+    </div>
+
+    <div class="plate-part-coverage">
+        <div class="plate-coverage-bar-track">
+            <div class="plate-coverage-bar-fill @(coveragePct >= 100 ? "plate-coverage-full" : "")"
+                 style="width: @coveragePct.ToString("F0")%"></div>
+        </div>
+        <span class="plate-coverage-label">@coveragePct.ToString("F0")%</span>
+    </div>
+
+    @if (CanRemove)
+    {
+        <button class="btn btn-sm btn-ghost plate-part-remove" @onclick="() => OnRemove.InvokeAsync(Index)" title="Remove">
+            &#x2715;
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EditablePlateAllocation Allocation { get; set; } = default!;
+    [Parameter, EditorRequired] public int Index { get; set; }
+    [Parameter] public PartAdditiveBuildConfig? BuildConfig { get; set; }
+    [Parameter] public bool CanRemove { get; set; }
+    [Parameter] public EventCallback<(int Index, int NewLevel)> OnStackLevelChanged { get; set; }
+    [Parameter] public EventCallback<(int Index, int NewPositions)> OnPositionsChanged { get; set; }
+    [Parameter] public EventCallback<int> OnRemove { get; set; }
+
+    private Task HandleStackChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var level))
+            return OnStackLevelChanged.InvokeAsync((Index, level));
+        return Task.CompletedTask;
+    }
+
+    private Task HandlePositionsChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var pos))
+            return OnPositionsChanged.InvokeAsync((Index, pos));
+        return Task.CompletedTask;
+    }
+}

@@ -1,0 +1,292 @@
+@* ── TAB: Build Plate (nested parts, slicer, scheduling) ── *@
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="margin: 0;">🏗️ Build Plate Details</h4>
+        <div style="display: flex; gap: 6px;">
+            <button class="btn btn-sm btn-info" @onclick="OnShowSlicerEntry" disabled="@Processing">
+                📐 @(Program.HasSlicerData ? "Edit Slicer" : "Add Slicer Data")
+            </button>
+            @if (Program.Status == ProgramStatus.Draft && Program.HasSlicerData && Program.ProgramParts.Any())
+            {
+                <button class="btn btn-sm btn-success" @onclick="OnActivate" disabled="@Processing">✓ Activate</button>
+            }
+            @if (Program.Status == ProgramStatus.Active)
+            {
+                <button class="btn btn-sm btn-primary" @onclick="OnSchedule" disabled="@Processing">📅 Schedule</button>
+            }
+            @if (Program.Status is ProgramStatus.Draft or ProgramStatus.Active)
+            {
+                <button class="btn btn-sm btn-danger" @onclick="OnArchive" disabled="@Processing">🗑️ Archive</button>
+            }
+        </div>
+    </div>
+
+    @* ── Slicer Data Summary ── *@
+    @if (Program.HasSlicerData)
+    {
+        <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;margin-bottom:12px;">
+            <div class="form-label">Build File Info</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;font-size:0.85rem;">
+                @if (Program.LayerCount.HasValue) { <div>Layers: @Program.LayerCount</div> }
+                @if (Program.BuildHeightMm.HasValue) { <div>Height: @Program.BuildHeightMm.Value.ToString("F1") mm</div> }
+                @if (Program.EstimatedPrintHours.HasValue) { <div>Print Time: @Program.EstimatedPrintHours.Value.ToString("F1") hrs</div> }
+                @if (Program.EstimatedPowderKg.HasValue) { <div>Powder: @Program.EstimatedPowderKg.Value.ToString("F1") kg</div> }
+                @if (!string.IsNullOrEmpty(Program.SlicerSoftware)) { <div>Slicer: @Program.SlicerSoftware @Program.SlicerVersion</div> }
+            </div>
+        </div>
+    }
+
+    @* ── Nested Parts Table ── *@
+    @if (Program.ProgramParts.Any())
+    {
+        <div style="margin-bottom:12px">
+            <div class="form-label" style="margin-bottom:6px">Nested Parts</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th style="width:90px">Qty</th>
+                        <th style="width:90px">Stack</th>
+                        <th>Notes</th>
+                        @if (Program.Status == ProgramStatus.Draft)
+                        {
+                            <th style="width:100px"></th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var pp in Program.ProgramParts)
+                    {
+                        var isEditing = _buildEditingPartId == pp.Id;
+                        <tr>
+                            <td>
+                                <div>
+                                    <strong>@(pp.Part?.PartNumber ?? $"#{pp.PartId}")</strong>
+                                    @if (!string.IsNullOrEmpty(pp.Part?.Name)) { <span style="color:var(--text-secondary)"> — @pp.Part.Name</span> }
+                                </div>
+                                <div style="font-size:0.75rem;color:var(--text-secondary);display:flex;gap:8px;flex-wrap:wrap;">
+                                    @if (!string.IsNullOrEmpty(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material))
+                                    {
+                                        <span>🧪 @(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material)</span>
+                                    }
+                                </div>
+                            </td>
+                            @if (isEditing && Program.Status == ProgramStatus.Draft)
+                            {
+                                <td><input class="form-control form-control-sm" type="number" min="1" max="500" @bind="_buildEditQty" style="width:70px" /></td>
+                                <td>
+                                    <select class="form-control form-control-sm" @bind="_buildEditStackLevel" style="width:70px">
+                                        <option value="1">1x</option>
+                                        <option value="2">2x</option>
+                                        <option value="3">3x</option>
+                                    </select>
+                                </td>
+                                <td><input class="form-control form-control-sm" @bind="_buildEditNotes" placeholder="Position / orientation" /></td>
+                                <td>
+                                    <div style="display:flex;gap:4px">
+                                        <button class="btn btn-sm btn-success" @onclick="() => SaveBuildPartEdit(pp)" title="Save">✓</button>
+                                        <button class="btn btn-sm btn-secondary" @onclick="CancelBuildPartEdit" title="Cancel">✕</button>
+                                    </div>
+                                </td>
+                            }
+                            else
+                            {
+                                <td>@pp.Quantity</td>
+                                <td>@(pp.StackLevel)x</td>
+                                <td style="font-size:0.85rem;color:var(--text-secondary);">@(pp.PositionNotes ?? "—")</td>
+                                @if (Program.Status == ProgramStatus.Draft)
+                                {
+                                    <td>
+                                        <div style="display:flex;gap:4px">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => StartBuildPartEdit(pp)" title="Edit">✏️</button>
+                                            <button class="btn btn-sm btn-danger" @onclick="() => OnRemovePart.InvokeAsync(pp)" title="Remove">🗑️</button>
+                                        </div>
+                                    </td>
+                                }
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state" style="padding: 12px;"><div class="empty-state-text">No parts nested on this plate yet. Add parts below.</div></div>
+    }
+
+    @* ── Add Part (Draft only) ── *@
+    @if (Program.Status == ProgramStatus.Draft)
+    {
+        <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;">
+            <div class="form-label" style="margin-bottom:6px">Add Part to Plate</div>
+            <div style="display:flex;gap:0.5rem;align-items:end;flex-wrap:wrap;">
+                <div style="flex:2;min-width:200px;">
+                    <input class="form-control" placeholder="Search parts..." @bind="_buildPartSearch" @bind:event="oninput" />
+                </div>
+                <div style="flex:3;min-width:220px;">
+                     <select class="form-control" @bind="_buildAddPartId">
+                        <option value="0">Select part...</option>
+                        @if (AdditiveParts != null)
+                        {
+                            @foreach (var p in FilteredBuildAdditiveParts)
+                            {
+                                <option value="@p.Id">@(p.ManufacturingApproach?.RequiresBuildPlate == true ? "★ " : "")@p.PartNumber — @p.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div style="width:80px;">
+                    <input class="form-control" type="number" min="1" max="500" @bind="_buildAddPartQty" placeholder="Qty" />
+                </div>
+                <button class="btn btn-primary" style="height:36px;white-space:nowrap" @onclick="HandleAddPart" disabled="@(_buildAddPartId <= 0)">+ Add</button>
+            </div>
+        </div>
+    }
+
+    @* ── Post-Processing Programs ── *@
+    <div style="margin-top:12px;">
+        <div class="form-label" style="margin-bottom:6px">🔗 Post-Processing Programs</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <strong style="font-size:0.85em;">🧹 Depowder</strong>
+                    @if (Program.DepowderProgram != null)
+                    {
+                        <span class="badge badge-@Program.DepowderProgram.Status.ToString().ToLower()">@Program.DepowderProgram.Status</span>
+                    }
+                </div>
+                @if (Program.DepowderProgram != null)
+                {
+                    <div style="font-size:0.88em;">
+                        <a href="javascript:void(0)" @onclick="() => OnNavigateToProgram.InvokeAsync(Program.DepowderProgram.Id)" style="font-weight:600;">
+                            @Program.DepowderProgram.ProgramNumber
+                        </a>
+                        <span style="color:var(--text-muted);"> — @Program.DepowderProgram.Name</span>
+                    </div>
+                    @if (Program.DepowderProgram.SetupTimeMinutes.HasValue || Program.DepowderProgram.RunTimeMinutes.HasValue)
+                    {
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-top:4px;">
+                            @if (Program.DepowderProgram.SetupTimeMinutes.HasValue) { <span>Setup: @Program.DepowderProgram.SetupTimeMinutes.Value.ToString("F0")m</span> }
+                            @if (Program.DepowderProgram.RunTimeMinutes.HasValue) { <span> · Run: @Program.DepowderProgram.RunTimeMinutes.Value.ToString("F0")m</span> }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div style="font-size:0.85em;color:var(--text-muted);font-style:italic;">Not linked</div>
+                }
+            </div>
+            <div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <strong style="font-size:0.85em;">⚡ EDM / Wire-Cut</strong>
+                    @if (Program.EdmProgram != null)
+                    {
+                        <span class="badge badge-@Program.EdmProgram.Status.ToString().ToLower()">@Program.EdmProgram.Status</span>
+                    }
+                </div>
+                @if (Program.EdmProgram != null)
+                {
+                    <div style="font-size:0.88em;">
+                        <a href="javascript:void(0)" @onclick="() => OnNavigateToProgram.InvokeAsync(Program.EdmProgram.Id)" style="font-weight:600;">
+                            @Program.EdmProgram.ProgramNumber
+                        </a>
+                        <span style="color:var(--text-muted);"> — @Program.EdmProgram.Name</span>
+                    </div>
+                    @if (Program.EdmProgram.SetupTimeMinutes.HasValue || Program.EdmProgram.RunTimeMinutes.HasValue)
+                    {
+                        <div style="font-size:0.78em;color:var(--text-muted);margin-top:4px;">
+                            @if (Program.EdmProgram.SetupTimeMinutes.HasValue) { <span>Setup: @Program.EdmProgram.SetupTimeMinutes.Value.ToString("F0")m</span> }
+                            @if (Program.EdmProgram.RunTimeMinutes.HasValue) { <span> · Run: @Program.EdmProgram.RunTimeMinutes.Value.ToString("F0")m</span> }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div style="font-size:0.85em;color:var(--text-muted);font-style:italic;">Not linked</div>
+                }
+            </div>
+        </div>
+        @if (!Program.DepowderProgramId.HasValue && !Program.EdmProgramId.HasValue)
+        {
+            <div style="font-size:0.78em;color:var(--text-muted);margin-top:6px;">
+                💡 Edit this build plate to link post-processing programs (depowder, EDM).
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = default!;
+    [Parameter] public List<Part>? AdditiveParts { get; set; }
+    [Parameter] public bool Processing { get; set; }
+    [Parameter] public string CurrentUser { get; set; } = "System";
+    [Parameter] public EventCallback OnShowSlicerEntry { get; set; }
+    [Parameter] public EventCallback OnActivate { get; set; }
+    [Parameter] public EventCallback OnArchive { get; set; }
+    [Parameter] public EventCallback OnSchedule { get; set; }
+    [Parameter] public EventCallback<(int PartId, int Quantity)> OnAddPart { get; set; }
+    [Parameter] public EventCallback<ProgramPart> OnRemovePart { get; set; }
+    [Parameter] public EventCallback<(ProgramPart Part, int NewQty, int NewStack, string? Notes)> OnEditPart { get; set; }
+    [Parameter] public EventCallback<int> OnNavigateToProgram { get; set; }
+
+    // Internal state for inline editing
+    private int? _buildEditingPartId;
+    private int _buildEditQty;
+    private int _buildEditStackLevel;
+    private string? _buildEditNotes;
+
+    // Part search / add
+    private string _buildPartSearch = "";
+    private int _buildAddPartId;
+    private int _buildAddPartQty = 1;
+
+    private IEnumerable<Part> FilteredBuildAdditiveParts
+    {
+        get
+        {
+            if (AdditiveParts == null) return [];
+            // Exclude parts already on the plate
+            var alreadyOnPlate = Program.ProgramParts.Select(pp => pp.PartId).ToHashSet();
+            var parts = AdditiveParts.Where(p => !alreadyOnPlate.Contains(p.Id));
+            if (!string.IsNullOrWhiteSpace(_buildPartSearch))
+            {
+                var search = _buildPartSearch.Trim();
+                parts = parts.Where(p =>
+                    p.PartNumber.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || p.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+            // Additive-approach parts sort first
+            return parts.OrderByDescending(p => p.ManufacturingApproach?.RequiresBuildPlate == true)
+                        .ThenBy(p => p.PartNumber);
+        }
+    }
+
+    private void StartBuildPartEdit(ProgramPart pp)
+    {
+        _buildEditingPartId = pp.Id;
+        _buildEditQty = pp.Quantity;
+        _buildEditStackLevel = pp.StackLevel;
+        _buildEditNotes = pp.PositionNotes;
+    }
+
+    private void CancelBuildPartEdit()
+    {
+        _buildEditingPartId = null;
+    }
+
+    private async Task SaveBuildPartEdit(ProgramPart pp)
+    {
+        await OnEditPart.InvokeAsync((pp, _buildEditQty, _buildEditStackLevel, _buildEditNotes));
+        _buildEditingPartId = null;
+    }
+
+    private async Task HandleAddPart()
+    {
+        if (_buildAddPartId <= 0) return;
+        await OnAddPart.InvokeAsync((_buildAddPartId, _buildAddPartQty));
+        _buildAddPartId = 0;
+        _buildAddPartQty = 1;
+        _buildPartSearch = "";
+    }
+}

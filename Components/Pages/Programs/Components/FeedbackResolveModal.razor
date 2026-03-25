@@ -1,0 +1,49 @@
+@* FeedbackResolveModal.razor — Feedback resolution modal *@
+
+@if (IsVisible && Feedback != null)
+{
+    <div class="modal-overlay" @onclick="OnClose">
+        <div class="modal-content" style="max-width: 500px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Resolve Feedback</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="OnClose">✕</button>
+            </div>
+
+            <div style="margin-bottom: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 6px;">
+                <div style="display: flex; gap: 6px; margin-bottom: 4px;">
+                    <span class="badge badge-secondary">@Feedback.Category</span>
+                    <span class="badge" style="background: @GetFeedbackSeverityColor(Feedback.Severity); color: white;">@Feedback.Severity</span>
+                </div>
+                <div>@Feedback.Comment</div>
+                <div style="font-size: 0.8em; color: var(--text-muted);">By @Feedback.OperatorName</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Resolution Notes <span style="color:var(--danger)">*</span></label>
+                <textarea class="form-control" rows="3" @bind="ResolutionText" placeholder="Describe what was changed or why no action is needed…"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="OnClose">Cancel</button>
+                <button class="btn btn-primary" @onclick="OnSubmit" disabled="@string.IsNullOrWhiteSpace(ResolutionText)">✅ Resolve</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public bool IsVisible { get; set; }
+    [Parameter] public ProgramFeedback? Feedback { get; set; }
+    [Parameter] public string ResolutionText { get; set; } = "";
+    [Parameter] public EventCallback<string> ResolutionTextChanged { get; set; }
+    [Parameter] public EventCallback OnSubmit { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private static string GetFeedbackSeverityColor(ProgramFeedbackSeverity severity) => severity switch
+    {
+        ProgramFeedbackSeverity.Critical => "var(--danger)",
+        ProgramFeedbackSeverity.High => "#e67700",
+        ProgramFeedbackSeverity.Medium => "var(--warning)",
+        _ => "var(--text-muted)"
+    };
+}

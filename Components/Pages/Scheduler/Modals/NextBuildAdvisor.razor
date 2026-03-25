@@ -5,6 +5,8 @@
    Changeover-aware: suggests start times that land changeover during operator hours.
    ═══════════════════════════════════════════════════════════════════════════ *@
 @using Microsoft.AspNetCore.Components.Forms
+@using Opcentrix_V3.Components.Pages.Scheduler.Models
+@using Opcentrix_V3.Components.Pages.Scheduler.Components
 @inject IBuildAdvisorService Advisor
 @inject IProgramSchedulingService ProgramScheduling
 @inject IProgramPlanningService ProgramPlanning
@@ -326,105 +328,15 @@
                             <div class="advisor-warning">@warn</div>
                         }
 
-                        @* ── Editable Plate Composition ── *@
-                        <div class="advisor-plate">
-                            <div class="advisor-plate-header">
-                                @{ var _totalParts = _plateAllocations.Sum(a => a.TotalParts); }
-                                <span>Plate Composition — @_totalParts total @(_totalParts == 1 ? "part" : "parts")</span>
-                            </div>
-
-                            @foreach (var (alloc, idx) in _plateAllocations.Select((a, i) => (a, i)))
-                            {
-                                var allocIdx = idx;
-                                var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
-                                var levels = config?.AvailableStackLevels ?? [1];
-                                var maxPositions = config?.GetPositionsPerBuild(alloc.StackLevel) ?? 500;
-
-                                <div class="advisor-plate-row">
-                                    <div class="advisor-plate-role">
-                                        @if (idx == 0) { <span class="advisor-role-primary">PRIMARY</span> }
-                                        else { <span class="advisor-role-fill">FILL</span> }
-                                    </div>
-                                    <div class="advisor-plate-part">
-                                        <div style="font-weight: 600;">@alloc.PartNumber</div>
-                                        <div class="advisor-plate-detail">
-                                            @alloc.DemandRemaining needed
-                                            @if (alloc.Surplus > 0)
-                                            {
-                                                <span style="color: var(--warning);">(@alloc.Surplus surplus)</span>
-                                            }
-                                            @if (alloc.WoDueDate.HasValue)
-                                            {
-                                                <span style="color: var(--text-muted);">Due: @alloc.WoDueDate.Value.ToString("MMM d")</span>
-                                            }
-                                            @if (!string.IsNullOrEmpty(alloc.WoNumbers))
-                                            {
-                                                <span style="color: var(--text-muted);">WO: @alloc.WoNumbers</span>
-                                            }
-                                        </div>
-                                    </div>
-                                    <div class="advisor-plate-controls">
-                                        <div class="advisor-control-group">
-                                            <label>Stack Height</label>
-                                            <select class="form-control form-control-sm" style="width: 120px;"
-                                                    value="@alloc.StackLevel"
-                                                    @onchange="@(e => OnStackLevelChanged(allocIdx, int.Parse(e.Value?.ToString() ?? "1")))">
-                                                @foreach (var lvl in levels)
-                                                {
-                                                    <option value="@lvl">@(lvl == 1 ? "Single (1 high)" : lvl == 2 ? "Double (2 high)" : "Triple (3 high)")</option>
-                                                }
-                                            </select>
-                                        </div>
-                                        <div class="advisor-control-group">
-                                            <label>Positions (max @maxPositions)</label>
-                                            <input type="number" class="form-control form-control-sm" style="width: 70px;"
-                                                   min="1" max="@maxPositions"
-                                                   value="@alloc.Positions"
-                                                   @onchange="@(e => OnPositionsChanged(allocIdx, int.Parse(e.Value?.ToString() ?? "1")))" />
-                                        </div>
-                                        <div class="advisor-control-group">
-                                            <label>Total</label>
-                                            <span class="advisor-total">= @alloc.TotalParts</span>
-                                        </div>
-                                    </div>
-                                    <div class="advisor-plate-actions">
-                                        @if (_plateAllocations.Count > 1)
-                                        {
-                                            <button class="btn btn-sm btn-ghost" style="color: var(--danger);"
-                                                    @onclick="() => RemoveFromPlate(allocIdx)" title="Remove this part from the plate">
-                                                &#x2715;
-                                            </button>
-                                        }
-                                    </div>
-                                </div>
-                            }
-
-                            @* ── Add Part ── *@
-                            @if (_plateAllocations.Count < 4)
-                            {
-                                <div class="advisor-plate-add">
-                                    @if (_showPartPicker)
-                                    {
-                                        <select class="form-control form-control-sm" style="flex: 1;"
-                                                @onchange="OnAddPartSelected">
-                                            <option value="">— Select a part to add —</option>
-                                            @foreach (var d in AvailablePartsForPlate)
-                                            {
-                                                <option value="@d.PartId">@d.PartNumber — @d.NetRemaining remaining (due @d.EarliestDueDate.ToString("MMM d"))</option>
-                                            }
-                                        </select>
-                                        <button class="btn btn-sm btn-ghost" @onclick="() => _showPartPicker = false">Cancel</button>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn btn-sm btn-secondary" @onclick="() => _showPartPicker = true"
-                                                disabled="@(!AvailablePartsForPlate.Any())">
-                                            + Add Part
-                                        </button>
-                                    }
-                                </div>
-                            }
-                        </div>
+                        @* ── Editable Plate Composition (PlateComposer) ── *@
+                        <PlateComposer Allocations="_plateAllocations"
+                                       Demand="_demand"
+                                       EstimatedDurationHours="@EstimatedPrintHours"
+                                       OnStackLevelChanged="args => OnStackLevelChanged(args.Index, args.NewLevel)"
+                                       OnPositionsChanged="args => OnPositionsChanged(args.Index, args.NewPositions)"
+                                       OnRemovePart="RemoveFromPlate"
+                                       OnAddPart="OnAddPartById"
+                                       OnResetToRecommendation="ResetToRecommendation" />
 
                         @* ── Slicer / Print Data ── *@
                         <div style="margin-top: 16px;">
@@ -492,25 +404,7 @@
                             }
                         </div>
 
-                        @* ── Demand Coverage Bars ── *@
-                        <div class="advisor-coverage" style="margin-top: 16px;">
-                            <div style="font-weight: 500; font-size: 0.82rem; margin-bottom: 6px;">Demand Coverage</div>
-                            @foreach (var alloc in _plateAllocations)
-                            {
-                                var demandInfo = _demand.FirstOrDefault(d => d.PartId == alloc.PartId);
-                                var remaining = demandInfo?.NetRemaining ?? alloc.DemandRemaining;
-                                var pct = remaining > 0 ? Math.Min(100, alloc.TotalParts * 100.0 / remaining) : 100;
-                                <div class="advisor-coverage-row">
-                                    <span class="advisor-coverage-label">@alloc.PartNumber</span>
-                                    <div class="wo-line-progress" style="flex: 1; height: 8px;">
-                                        <div class="wo-line-progress-fill" style="width: @pct.ToString("F0")%;"></div>
-                                    </div>
-                                    <span class="advisor-coverage-value @(pct >= 100 ? "text-success" : pct > 0 ? "text-warning" : "text-danger")">
-                                        @alloc.TotalParts / @remaining (@pct.ToString("F0")%)
-                                    </span>
-                                </div>
-                            }
-                        </div>
+                        @* Demand coverage is now rendered inside PlateComposer *@
 
                         @* ── All Demand (expandable) ── *@
                         @if (_demand.Any(d => d.IsAdditive && d.NetRemaining > 0))
@@ -1177,6 +1071,12 @@
         if (d != null) AddPartToPlate(d);
     }
 
+    private void OnAddPartById(int partId)
+    {
+        var d = _demand.FirstOrDefault(x => x.PartId == partId);
+        if (d != null) AddPartToPlate(d);
+    }
+
     private void RecalculateWarnings()
     {
         _activeWarnings.Clear();
@@ -1442,21 +1342,4 @@
 
     // ── Editable allocation model ──
 
-    private class EditablePlateAllocation
-    {
-        public int PartId { get; set; }
-        public string PartNumber { get; set; } = "";
-        public int Positions { get; set; }
-        public int StackLevel { get; set; } = 1;
-        public int DemandRemaining { get; set; }
-        public int? WorkOrderLineId { get; set; }
-        public DateTime? WoDueDate { get; set; }
-        public List<DemandSourceLine> SourceLines { get; set; } = [];
-
-        public int TotalParts => Positions * StackLevel;
-        public int Surplus => Math.Max(0, TotalParts - DemandRemaining);
-        public string WoNumbers => SourceLines.Any()
-            ? string.Join(", ", SourceLines.Select(s => s.WorkOrderNumber).Distinct())
-            : "";
-    }
 }

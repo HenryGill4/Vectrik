@@ -1,0 +1,120 @@
+@using Opcentrix_V3.Services
+
+@* ── TAB: Tooling & Components ── *@
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="margin: 0;">🔧 Tooling & Components</h4>
+        <button class="btn btn-sm btn-primary" @onclick="OnAddTooling">+ Add Tooling</button>
+    </div>
+
+    @if (ToolingAlerts.Count > 0)
+    {
+        <div style="background: var(--danger-bg, #ffeaea); border: 1px solid var(--danger); border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+            <strong style="color: var(--danger);">⚠️ Tooling Alerts — Operators will be blocked from starting jobs</strong>
+            @foreach (var alert in ToolingAlerts)
+            {
+                <div style="font-size: 0.85em; margin-top: 4px; color: @(alert.IsBlocking ? "var(--danger)" : "var(--warning)");">
+                    @(alert.IsBlocking ? "🛑" : "⚠️") @alert.Message
+                </div>
+            }
+        </div>
+    }
+
+    @if (ToolingItems.Count == 0)
+    {
+        <div class="empty-state" style="padding: 16px;">
+            <div class="empty-state-text">No tooling items defined. Add tools and fixtures to track wear life and connect to maintenance.</div>
+        </div>
+    }
+    else
+    {
+        <table class="data-table" style="font-size: 0.85rem;">
+            <thead>
+                <tr>
+                    <th>Position</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Component</th>
+                    <th>Wear %</th>
+                    <th>Wear Life</th>
+                    <th>Spare P/N</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in ToolingItems)
+                {
+                    var wearPct = item.WearPercent;
+                    <tr>
+                        <td><strong>@item.ToolPosition</strong></td>
+                        <td>@item.Name</td>
+                        <td><span class="badge badge-secondary">@(item.IsFixture ? "Fixture" : "Tool")</span></td>
+                        <td>
+                            @if (item.MachineComponent != null)
+                            {
+                                <span>@item.MachineComponent.Name</span>
+                            }
+                            else
+                            {
+                                <span style="color: var(--text-muted);">Not linked</span>
+                            }
+                        </td>
+                        <td>
+                            @if (wearPct.HasValue)
+                            {
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <div style="width: 50px; height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                                        <div style="width: @Math.Min(wearPct.Value, 100)%; height: 100%; background: @GetWearColor(wearPct.Value); border-radius: 3px;"></div>
+                                    </div>
+                                    <span style="font-size: 0.8em; color: @GetWearColor(wearPct.Value);">@wearPct.Value.ToString("F0")%</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <span style="color: var(--text-muted);">—</span>
+                            }
+                        </td>
+                        <td style="font-size: 0.85em;">
+                            @if (item.WearLifeHours.HasValue) { <span>@item.WearLifeHours.Value.ToString("F0")h</span> }
+                            @if (item.WearLifeBuilds.HasValue) { <span>@item.WearLifeBuilds.Value builds</span> }
+                            @if (!item.WearLifeHours.HasValue && !item.WearLifeBuilds.HasValue) { <span style="color: var(--text-muted);">—</span> }
+                        </td>
+                        <td style="font-size: 0.85em; color: var(--text-muted);">@(item.SparePartNumber ?? "—")</td>
+                        <td>
+                            <div style="display: flex; gap: 4px;">
+                                <button class="btn btn-sm btn-secondary" @onclick="() => OnEditTooling.InvokeAsync(item)">✏️</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => OnDeleteTooling.InvokeAsync(item)">🗑</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @* Legacy text fields *@
+    @if (!string.IsNullOrEmpty(Program.ToolingRequired) || !string.IsNullOrEmpty(Program.FixtureRequired))
+    {
+        <div style="margin-top: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.85em;">
+            <span class="form-label">Legacy Tooling Notes</span>
+            @if (!string.IsNullOrEmpty(Program.ToolingRequired)) { <div>Tools: @Program.ToolingRequired</div> }
+            @if (!string.IsNullOrEmpty(Program.FixtureRequired)) { <div>Fixture: @Program.FixtureRequired</div> }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = default!;
+    [Parameter] public List<ProgramToolingItem> ToolingItems { get; set; } = [];
+    [Parameter] public List<ToolingReadinessAlert> ToolingAlerts { get; set; } = [];
+    [Parameter] public EventCallback OnAddTooling { get; set; }
+    [Parameter] public EventCallback<ProgramToolingItem> OnEditTooling { get; set; }
+    [Parameter] public EventCallback<ProgramToolingItem> OnDeleteTooling { get; set; }
+
+    private static string GetWearColor(double pct) => pct switch
+    {
+        > 90 => "var(--danger)",
+        > 70 => "var(--warning)",
+        _ => "var(--success)"
+    };
+}

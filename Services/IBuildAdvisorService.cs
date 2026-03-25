@@ -29,6 +29,12 @@ public interface IBuildAdvisorService
     /// Detects downstream capacity bottlenecks across a planning horizon.
     /// </summary>
     Task<BottleneckReport> AnalyzeBottlenecksAsync(DateTime horizonStart, DateTime horizonEnd);
+
+    /// <summary>
+    /// Returns a summary of next-available-slot + current activity for each SLS machine.
+    /// Used by the Dispatch view to show machine availability at a glance.
+    /// </summary>
+    Task<List<MachineAvailabilitySummary>> GetMachineAvailabilitySummaryAsync();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -118,3 +124,15 @@ public record BottleneckItem(
     double QueueHours,
     double CapacityHours,
     string Severity);
+
+/// <summary>
+/// Snapshot of a single SLS machine's availability for the Dispatch view.
+/// </summary>
+public record MachineAvailabilitySummary(
+    int MachineId,
+    string MachineName,
+    MachineStatus Status,
+    DateTime NextSlotStart,
+    string? CurrentBuildName,
+    DateTime? CurrentBuildEnd,
+    int QueuedBuildCount);

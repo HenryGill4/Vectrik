@@ -152,6 +152,36 @@
             }
         </div>
 
+        @* ── Draft Programs — Awaiting Schedule ── *@
+        @if (none.Any())
+        {
+            <div class="builds-ready-section">
+                <h3 class="builds-ready-title">📝 Awaiting Schedule (@none.Count)</h3>
+                <div class="builds-ready-grid">
+                    @foreach (var prog in none)
+                    {
+                        <div class="builds-ready-card">
+                            <div class="builds-ready-card-header">
+                                <span class="builds-ready-card-name">📋 @(prog.Name ?? $"Program #{prog.Id}")</span>
+                                <span class="handoff-badge handoff-badge--awaiting">Awaiting Schedule</span>
+                            </div>
+                            <div class="builds-ready-card-meta">
+                                <span>@prog.TotalPartCount parts</span>
+                                <span>@(prog.EstimatedPrintHours?.ToString("F1") ?? "?")h print</span>
+                                <span>by @prog.CreatedBy</span>
+                            </div>
+                            @if (prog.ProgramParts?.Any() == true)
+                            {
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                                    Parts: @string.Join(", ", prog.ProgramParts.Select(pp => pp.Part?.PartNumber ?? $"#{pp.PartId}").Distinct())
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
         @* ── Ready Programs — Set to schedule ── *@
         @if (ready.Any())
         {

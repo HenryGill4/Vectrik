@@ -1,0 +1,117 @@
+@* MachineTypeSettingsSection.razor — Machine-type-specific settings cards (tooling, fixtures, etc.) *@
+
+@{
+    var isCncType = NormalizedMachineType is "CNC" or "CNCMILL" or "CNCTURNING" or "TURNING";
+    var isEdmType = NormalizedMachineType is "EDM" or "WIREEDM";
+    var isLaserType = NormalizedMachineType is "LASER" or "LASERENGRAVING" or "LASERCUTTING" or "ENGRAVING";
+    var isHeatTreat = NormalizedMachineType is "HEATTREAT";
+    var isQcType = NormalizedMachineType is "QC";
+    var isFinishing = NormalizedMachineType is "FINISHING";
+}
+
+@* ═══ CNC / Turning ═══ *@
+@if (isCncType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px 0;">🔧 CNC Settings</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Tooling Required</label>
+                <input class="form-control" @bind="Program.ToolingRequired" placeholder="T1: 6mm End Mill, T2: M6 Tap…" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Fixture Required</label>
+                <input class="form-control" @bind="Program.FixtureRequired" placeholder="Fixture-A-07" />
+            </div>
+        </div>
+    </div>
+}
+
+@* ═══ EDM / Wire EDM ═══ *@
+@if (isEdmType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px 0;">⚡ EDM Settings</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Tooling Required</label>
+                <input class="form-control" @bind="Program.ToolingRequired" placeholder="Electrode type, wire type…" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Fixture Required</label>
+                <input class="form-control" @bind="Program.FixtureRequired" placeholder="EDM fixture ID" />
+            </div>
+        </div>
+    </div>
+}
+
+@* ═══ Laser / Engraving ═══ *@
+@if (isLaserType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px 0;">🔦 Laser Settings</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Tooling / Lens</label>
+                <input class="form-control" @bind="Program.ToolingRequired" placeholder="Lens type, focal length…" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Fixture Required</label>
+                <input class="form-control" @bind="Program.FixtureRequired" placeholder="Jig, nest fixture…" />
+            </div>
+        </div>
+    </div>
+}
+
+@* ═══ Heat Treat ═══ *@
+@if (isHeatTreat)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px 0;">🌡️ Heat Treatment Settings</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Tooling / Fixtures</label>
+                <input class="form-control" @bind="Program.ToolingRequired" placeholder="Basket, rack, thermocouple…" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Fixture</label>
+                <input class="form-control" @bind="Program.FixtureRequired" placeholder="Furnace tray ID" />
+            </div>
+        </div>
+    </div>
+}
+
+@* ═══ QC / Inspection ═══ *@
+@if (isQcType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px 0;">📏 QC / Inspection Settings</h4>
+        <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Inspection Fixtures / Gauges</label>
+            <input class="form-control" @bind="Program.FixtureRequired" placeholder="CMM fixture, go/no-go gauge…" />
+        </div>
+    </div>
+}
+
+@* ═══ Finishing ═══ *@
+@if (isFinishing)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px 0;">✨ Finishing Settings</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Tooling / Media</label>
+                <input class="form-control" @bind="Program.ToolingRequired" placeholder="Blast media, grit, compound…" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Fixture</label>
+                <input class="form-control" @bind="Program.FixtureRequired" placeholder="Masking jig, tumble basket…" />
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = default!;
+    [Parameter, EditorRequired] public string NormalizedMachineType { get; set; } = "";
+}

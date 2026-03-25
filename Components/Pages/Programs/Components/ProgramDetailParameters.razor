@@ -1,0 +1,28 @@
+@* ── TAB: Parameters ── *@
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="margin: 0;">⚙️ Parameters</h4>
+        <button class="btn btn-sm btn-accent" @onclick="OnCopyForAI">🤖 Copy for AI</button>
+    </div>
+    @if (!string.IsNullOrEmpty(Program.Parameters))
+    {
+        <pre style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; font-size: 0.85em; overflow-x: auto; margin: 0;">@Program.Parameters</pre>
+    }
+    else
+    {
+        <div class="empty-state" style="padding: 12px;"><div class="empty-state-text">No parameters configured.</div></div>
+    }
+
+    @if (!string.IsNullOrEmpty(Program.Notes))
+    {
+        <div style="margin-top: 12px;">
+            <span class="form-label">Operator Notes</span>
+            <div style="white-space: pre-wrap; padding: 8px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.9em;">@Program.Notes</div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = default!;
+    [Parameter] public EventCallback OnCopyForAI { get; set; }
+}

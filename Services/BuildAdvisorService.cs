@@ -351,6 +351,61 @@ public class BuildAdvisorService : IBuildAdvisorService
     }
 
     // ══════════════════════════════════════════════════════════
+    // Machine Availability Summary (Dispatch View)
+    // ══════════════════════════════════════════════════════════
+
+    public async Task<List<MachineAvailabilitySummary>> GetMachineAvailabilitySummaryAsync()
+    {
+        var machines = await _db.Machines
+            .Where(m => m.IsActive && m.IsAvailableForScheduling && m.IsAdditiveMachine)
+            .OrderBy(m => m.Priority).ThenBy(m => m.Name)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        var summaries = new List<MachineAvailabilitySummary>();
+
+        foreach (var machine in machines)
+        {
+            // Find currently printing build (if any)
+            var currentBuild = await _db.MachinePrograms
+                .Where(p => p.MachineId == machine.Id
+                    && p.ProgramType == ProgramType.BuildPlate
+                    && p.ScheduleStatus == ProgramScheduleStatus.Printing)
+                .Select(p => new { p.Name, p.ScheduledDate, p.EstimatedPrintHours })
+                .FirstOrDefaultAsync();
+
+            string? currentBuildName = currentBuild?.Name;
+            DateTime? currentBuildEnd = currentBuild?.ScheduledDate != null && currentBuild.EstimatedPrintHours.HasValue
+                ? currentBuild.ScheduledDate.Value.AddHours(currentBuild.EstimatedPrintHours.Value)
+                : null;
+
+            // Count queued builds (Scheduled but not yet printing)
+            var queuedCount = await _db.MachinePrograms
+                .CountAsync(p => p.MachineId == machine.Id
+                    && p.ProgramType == ProgramType.BuildPlate
+                    && p.ScheduleStatus == ProgramScheduleStatus.Scheduled);
+
+            // Find next available slot
+            DateTime nextSlotStart;
+            try
+            {
+                var slot = await _programScheduling.FindEarliestSlotAsync(machine.Id, 1, now);
+                nextSlotStart = slot.PrintStart;
+            }
+            catch
+            {
+                nextSlotStart = now; // Fallback if slot finding fails
+            }
+
+            summaries.Add(new MachineAvailabilitySummary(
+                machine.Id, machine.Name, machine.Status,
+                nextSlotStart, currentBuildName, currentBuildEnd, queuedCount));
+        }
+
+        return summaries;
+    }
+
+    // ══════════════════════════════════════════════════════════
     // Private Helpers
     // ══════════════════════════════════════════════════════════
 

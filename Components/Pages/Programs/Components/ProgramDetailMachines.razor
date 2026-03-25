@@ -1,0 +1,73 @@
+@* ── TAB: Machines ── *@
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="margin: 0;">🖥️ Assigned Machines</h4>
+        <button class="btn btn-sm btn-primary" @onclick="OnAssignMachines">+ Assign Machines</button>
+    </div>
+
+    @if (Program.MachineAssignments?.Any() != true)
+    {
+        <div class="empty-state" style="padding: 16px;">
+            <div class="empty-state-text">No machines assigned. Assign machines to define where this program can run.</div>
+        </div>
+    }
+    else
+    {
+        <table class="data-table" style="font-size: 0.85rem;">
+            <thead>
+                <tr>
+                    <th>Machine</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Preferred</th>
+                    <th>Notes</th>
+                    <th>Assigned</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var assign in Program.MachineAssignments.OrderByDescending(a => a.IsPreferred).ThenBy(a => a.Machine.Name))
+                {
+                    <tr>
+                        <td><strong>@assign.Machine.Name</strong><div style="font-size:0.8em;color:var(--text-muted);">@assign.Machine.MachineId</div></td>
+                        <td><span class="badge badge-info">@assign.Machine.MachineType</span></td>
+                        <td><span class="badge badge-@assign.Machine.Status.ToString().ToLower()">@assign.Machine.Status</span></td>
+                        <td>
+                            @if (assign.IsPreferred)
+                            {
+                                <span class="badge badge-success">★ Preferred</span>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="() => OnSetPreferred.InvokeAsync(assign)">Set Preferred</button>
+                            }
+                        </td>
+                        <td style="font-size: 0.85em; color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis;">@(assign.Notes ?? "—")</td>
+                        <td style="font-size: 0.82em; color: var(--text-muted);">@assign.AssignedDate.ToString("MMM dd, yyyy")</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" @onclick="() => OnUnassign.InvokeAsync(assign)">✕</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @* Legacy single machine reference *@
+    @if (Program.MachineId.HasValue && Program.Machine != null
+        && (Program.MachineAssignments?.Any(a => a.MachineId == Program.MachineId.Value) != true))
+    {
+        <div style="margin-top: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 6px; font-size: 0.85em;">
+            <span class="form-label">Legacy Machine (single FK)</span>
+            <div>@Program.Machine.Name — <button class="btn btn-sm btn-secondary" @onclick="OnMigrateLegacy">Migrate to Assignment</button></div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = default!;
+    [Parameter] public EventCallback OnAssignMachines { get; set; }
+    [Parameter] public EventCallback<MachineProgramAssignment> OnSetPreferred { get; set; }
+    [Parameter] public EventCallback<MachineProgramAssignment> OnUnassign { get; set; }
+    [Parameter] public EventCallback OnMigrateLegacy { get; set; }
+}

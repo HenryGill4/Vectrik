@@ -1,0 +1,84 @@
+@* MachineAssignmentEditor.razor — Machine checkbox grid for the editor form *@
+
+@{
+    var editorMachines = Machines != null
+        ? Machines.Where(m => m.IsActive).ToList()
+        : new List<Machine>();
+    var filteredEditorMachines = string.IsNullOrWhiteSpace(MachineFilter)
+        ? editorMachines
+        : editorMachines.Where(m =>
+            m.Name.Contains(MachineFilter, StringComparison.OrdinalIgnoreCase)
+            || m.MachineType.Contains(MachineFilter, StringComparison.OrdinalIgnoreCase)
+            || (m.MachineId?.Contains(MachineFilter, StringComparison.OrdinalIgnoreCase) ?? false))
+        .ToList();
+    var editorMachineGroups = filteredEditorMachines
+        .OrderBy(m => m.MachineType).ThenBy(m => m.Name)
+        .GroupBy(m => m.MachineType);
+    var selectedMachineCount = SelectedMachineIds.Count;
+}
+
+<div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+            <h4 style="margin:0;">🖥️ Assigned Machines</h4>
+            @if (selectedMachineCount > 0)
+            {
+                <span class="badge badge-success" style="font-size:0.75em;">@selectedMachineCount selected</span>
+            }
+        </div>
+        <input class="form-control" style="width:200px;height:34px;font-size:0.85em;" placeholder="Filter machines…"
+               value="@MachineFilter" @oninput="HandleFilterInput" />
+    </div>
+    <div style="max-height:350px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;padding:10px 14px;">
+        @if (!filteredEditorMachines.Any())
+        {
+            <div style="color:var(--text-muted);padding:8px;font-style:italic;font-size:0.85em;">
+                @(editorMachines.Any() ? "No machines match filter." : "No active machines available.")
+            </div>
+        }
+        else
+        {
+            @foreach (var typeGroup in editorMachineGroups)
+            {
+                var groupSelectedCount = typeGroup.Count(m => SelectedMachineIds.Contains(m.Id));
+                <div style="display:flex;align-items:center;gap:6px;margin:8px 0 4px 0;">
+                    <span style="font-weight:600;font-size:0.8em;color:var(--text-muted);">@typeGroup.Key</span>
+                    @if (groupSelectedCount > 0)
+                    {
+                        <span class="badge badge-info" style="font-size:0.65em;">@groupSelectedCount</span>
+                    }
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:2px 12px;">
+                    @foreach (var machine in typeGroup)
+                    {
+                        var isChecked = SelectedMachineIds.Contains(machine.Id);
+                        <label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer;font-size:0.88em;">
+                            <input type="checkbox" checked="@isChecked" @onchange="() => OnToggleMachine.InvokeAsync(machine.Id)" />
+                            <span>
+                                <strong>@machine.Name</strong>
+                                @if (!string.IsNullOrEmpty(machine.Location))
+                                {
+                                    <span style="font-size:0.8em;color:var(--text-muted);"> · @machine.Location</span>
+                                }
+                            </span>
+                        </label>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<Machine>? Machines { get; set; }
+    [Parameter, EditorRequired] public HashSet<int> SelectedMachineIds { get; set; } = new();
+    [Parameter] public string MachineFilter { get; set; } = "";
+    [Parameter] public EventCallback<string> MachineFilterChanged { get; set; }
+    [Parameter] public EventCallback<int> OnToggleMachine { get; set; }
+
+    private async Task HandleFilterInput(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        await MachineFilterChanged.InvokeAsync(value);
+    }
+}

@@ -1771,4 +1771,18 @@ public class ProgramSchedulingService : IProgramSchedulingService
     }
 
     // Shift time helpers are now in ShiftTimeHelper.cs (shared with SchedulingService)
+
+    // ── Draft Programs (Engineer → Scheduler Handoff) ────────
+
+    public async Task<List<MachineProgram>> GetDraftProgramsAwaitingScheduleAsync()
+    {
+        return await _db.MachinePrograms
+            .Include(p => p.ProgramParts).ThenInclude(pp => pp.Part)
+            .Include(p => p.Machine)
+            .Where(p => p.ProgramType == ProgramType.BuildPlate
+                && p.ScheduleStatus == ProgramScheduleStatus.None
+                && p.Status == ProgramStatus.Draft)
+            .OrderByDescending(p => p.CreatedDate)
+            .ToListAsync();
+    }
 }

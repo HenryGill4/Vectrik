@@ -1,0 +1,101 @@
+@* ToolingEditorModal.razor — Tooling item editor modal *@
+@using Opcentrix_V3.Models.Maintenance
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" @onclick="OnClose">
+        <div class="modal-content" style="max-width: 600px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@(ToolingItem.Id == 0 ? "Add Tooling Item" : "Edit Tooling Item")</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="OnClose">✕</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Position <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="ToolingItem.ToolPosition" placeholder="T1, T2, FIX-01…" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="ToolingItem.Name" placeholder="6mm End Mill" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type</label>
+                    <select class="form-control" @bind="ToolingItem.IsFixture">
+                        <option value="false">Cutting Tool</option>
+                        <option value="true">Fixture</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Linked Component</label>
+                    <select class="form-control" value="@ComponentId" @onchange="HandleComponentChange">
+                        <option value="">— Not tracked —</option>
+                        @if (AvailableComponents != null)
+                        {
+                            @foreach (var c in AvailableComponents)
+                            {
+                                <option value="@c.Id">@c.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="card-header" style="margin-top: 12px; margin-bottom: 8px;">📊 Wear Life Configuration</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Wear Life (hours)</label>
+                    <input class="form-control" type="number" step="0.5" min="0" @bind="ToolingItem.WearLifeHours" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Wear Life (builds)</label>
+                    <input class="form-control" type="number" min="0" @bind="ToolingItem.WearLifeBuilds" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Warning at %</label>
+                    <input class="form-control" type="number" min="0" max="100" @bind="ToolingItem.WarningThresholdPercent" />
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Spare Part Number</label>
+                    <input class="form-control" @bind="ToolingItem.SparePartNumber" placeholder="SP-12345" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Sort Order</label>
+                    <input class="form-control" type="number" @bind="ToolingItem.SortOrder" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" rows="2" @bind="ToolingItem.Notes" placeholder="Special handling instructions…"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="OnClose">Cancel</button>
+                <button class="btn btn-primary" @onclick="OnSave" disabled="@Saving">
+                    @if (Saving) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                    @(ToolingItem.Id == 0 ? "Add Item" : "Save Changes")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public bool IsVisible { get; set; }
+    [Parameter, EditorRequired] public ProgramToolingItem ToolingItem { get; set; } = new();
+    [Parameter] public string ComponentId { get; set; } = "";
+    [Parameter] public EventCallback<string> ComponentIdChanged { get; set; }
+    [Parameter] public List<MachineComponent>? AvailableComponents { get; set; }
+    [Parameter] public bool Saving { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private async Task HandleComponentChange(ChangeEventArgs e)
+    {
+        await ComponentIdChanged.InvokeAsync(e.Value?.ToString() ?? "");
+    }
+}

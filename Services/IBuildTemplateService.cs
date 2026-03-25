@@ -57,4 +57,10 @@ public interface IBuildTemplateService
     /// slicer metadata, and material settings. Increments the template's UseCount.
     /// </summary>
     Task<MachineProgram> InstantiateAsync(int templateId, int machineId, string createdBy, int? workOrderLineId = null);
+
+    /// <summary>
+    /// Returns templates whose parts overlap with the given demand part IDs,
+    /// sorted by match percentage (most relevant first).
+    /// </summary>
+    Task<List<BuildTemplate>> GetTemplatesWithDemandMatchAsync(List<int> demandPartIds);
 }

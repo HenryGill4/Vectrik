@@ -1,0 +1,99 @@
+@using Opcentrix_V3.Models
+@using Opcentrix_V3.Models.Enums
+
+<div class="template-library">
+    <div class="template-library-header">
+        <strong>Saved Plates</strong>
+        <span class="template-library-count">@Templates.Count</span>
+    </div>
+
+    @if (Templates.Any())
+    {
+        <input type="text" class="form-control form-control-sm template-library-search"
+               placeholder="Search templates..."
+               @bind="_search" @bind:event="oninput" />
+
+        <div class="template-library-grid">
+            @foreach (var template in FilteredTemplates)
+            {
+                var statusClass = template.IsCertified ? "template-card--certified"
+                    : template.NeedsRecertification ? "template-card--recert"
+                    : "template-card--draft";
+                var statusBadge = template.IsCertified ? "Certified"
+                    : template.NeedsRecertification ? "Needs Recert"
+                    : "Draft";
+                var badgeClass = template.IsCertified ? "badge-success"
+                    : template.NeedsRecertification ? "badge-warning"
+                    : "badge-sm";
+
+                <div class="template-card @statusClass">
+                    <div class="template-card-header">
+                        <span class="template-card-name">@template.Name</span>
+                        <span class="badge @badgeClass badge-sm">@statusBadge</span>
+                    </div>
+                    <div class="template-card-meta">
+                        @if (template.Material != null)
+                        {
+                            <span>@template.Material.Name</span>
+                        }
+                        <span>@template.TotalPartCount parts (@template.UniquePartCount types)</span>
+                        <span>~@template.EstimatedDurationHours.ToString("F1")h</span>
+                    </div>
+                    @if (template.Parts.Any())
+                    {
+                        <div class="template-card-parts">
+                            @foreach (var part in template.Parts)
+                            {
+                                <span class="template-card-part-tag">
+                                    @(part.Part?.PartNumber ?? $"#{part.PartId}") ×@part.Quantity
+                                    @if (part.StackLevel > 1) { <span class="dispatch-stack-indicator">@(part.StackLevel)x</span> }
+                                </span>
+                            }
+                        </div>
+                    }
+                    <div class="template-card-footer">
+                        <span class="template-card-usage">Used @template.UseCount time@(template.UseCount != 1 ? "s" : "")</span>
+                        @if (template.IsCertified)
+                        {
+                            <button class="btn btn-sm btn-accent" @onclick="() => OnInstantiate.InvokeAsync(template.Id)">
+                                Use This Plate
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-secondary" @onclick="() => OnTemplateSelected.InvokeAsync(template)">
+                                View / Edit
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (Templates.Any(t => t.NeedsRecertification))
+        {
+            var recertCount = Templates.Count(t => t.NeedsRecertification);
+            <div class="template-recert-warning">
+                ⚠️ @recertCount template@(recertCount != 1 ? "s" : "") need@(recertCount == 1 ? "s" : "") recertification
+            </div>
+        }
+    }
+    else
+    {
+        <div class="template-library-empty">No saved plate templates yet</div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<BuildTemplate> Templates { get; set; } = [];
+    [Parameter] public EventCallback<BuildTemplate> OnTemplateSelected { get; set; }
+    [Parameter] public EventCallback<int> OnInstantiate { get; set; }
+
+    private string _search = "";
+
+    private IEnumerable<BuildTemplate> FilteredTemplates => string.IsNullOrWhiteSpace(_search)
+        ? Templates
+        : Templates.Where(t =>
+            t.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || t.Parts.Any(p => p.Part?.PartNumber?.Contains(_search, StringComparison.OrdinalIgnoreCase) == true));
+}

@@ -56,6 +56,8 @@ function detachListeners() {
         _container.removeEventListener('wheel', onWheel, { capture: true });
         _container.removeEventListener('touchstart', onTouchStart);
         _container.removeEventListener('touchmove', onTouchMove);
+        _container.removeEventListener('touchend', onTouchEnd);
+        _container.removeEventListener('touchcancel', onTouchEnd);
         _container.removeEventListener('mousedown', onMouseDown);
         _container.removeEventListener('mousemove', onMouseMove);
         _container.removeEventListener('mouseup', onMouseUp);
@@ -70,10 +72,12 @@ function attachListeners() {
     if (!_container) return;
     _container.addEventListener('scroll', onScroll, { passive: true });
     _container.addEventListener('wheel', onWheel, { passive: false, capture: true });
-    _container.addEventListener('touchstart', onTouchStart, { passive: true });
+    _container.addEventListener('touchstart', onTouchStart, { passive: false });
     _container.addEventListener('touchmove', onTouchMove, { passive: false });
+    _container.addEventListener('touchend', onTouchEnd, { passive: true });
+    _container.addEventListener('touchcancel', onTouchEnd, { passive: true });
     _container.addEventListener('mousedown', onMouseDown, { passive: false });
-    _container.addEventListener('mousemove', onMouseMove, { passive: true });
+    _container.addEventListener('mousemove', onMouseMove, { passive: false });
     _container.addEventListener('mouseup', onMouseUp, { passive: true });
     _container.addEventListener('mouseleave', onMouseUp, { passive: true });
     _container.addEventListener('contextmenu', onContextMenu, { passive: false });
@@ -350,32 +354,119 @@ function onWheel(e) {
 }
 
 let _pinchDist = 0;
+let _touchBarMode = false;      // true = single-finger touch on a bar (potential drag)
+let _touchBarLongPress = null;   // timeout ID for long-press detection
 
 function onTouchStart(e) {
+    if (_disposed || !isAlive()) return;
+
+    // Two-finger: pinch zoom
     if (e.touches.length === 2) {
+        // Cancel any pending bar drag
+        cancelTouchBarDrag();
         _pinchDist = touchDist(e.touches);
+        return;
+    }
+
+    // Single-finger: check if touching a draggable bar
+    if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const bar = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-bar-type]');
+        if (bar) {
+            // Start potential bar drag — use a short delay to distinguish from scroll
+            const wrapper = bar.closest('.gantt-build-bar-wrapper') || bar;
+            _barDragEl = wrapper;
+            _barDragType = bar.dataset.barType;
+            _barDragEntityId = bar.dataset.execId || bar.dataset.programId;
+            _barDragOrigLeft = parseFloat(wrapper.style.left) || 0;
+            _barDragStartX = touch.clientX;
+            _barDragStartY = touch.clientY;
+            _barDragSourceMachineId = wrapper.dataset.machineId || null;
+            _barDragTargetMachineId = _barDragSourceMachineId;
+            _barDragActive = false;
+            _touchBarMode = true;
+
+            // Long-press activates drag immediately (300ms)
+            _touchBarLongPress = setTimeout(() => {
+                _touchBarLongPress = null;
+                if (_barDragEl && !_barDragActive) {
+                    activateBarDrag();
+                }
+            }, 300);
+            return;
+        }
     }
 }
 
 function onTouchMove(e) {
-    if (_disposed || !isAlive() || !_inner || e.touches.length !== 2) return;
+    if (_disposed || !isAlive() || !_inner) return;
 
-    const cur = touchDist(e.touches);
-    const delta = cur - _pinchDist;
-    if (Math.abs(delta) < 20) return;
+    // Two-finger pinch zoom
+    if (e.touches.length === 2) {
+        const cur = touchDist(e.touches);
+        const delta = cur - _pinchDist;
+        if (Math.abs(delta) < 20) return;
 
-    e.preventDefault();
-    _pinchDist = cur;
+        e.preventDefault();
+        _pinchDist = cur;
 
-    // Delegate zoom to C# so tick/bar positions re-render at the correct scale
-    const direction = delta > 0 ? 1 : -1;
-    const rect = _container.getBoundingClientRect();
-    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    const anchorViewportX = midX - rect.left;
-    const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
+        const direction = delta > 0 ? 1 : -1;
+        const rect = _container.getBoundingClientRect();
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const anchorViewportX = midX - rect.left;
+        const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
 
-    if (_dotNetRef) {
-        _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, anchorTimeHours, anchorViewportX);
+        if (_dotNetRef) {
+            _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, anchorTimeHours, anchorViewportX);
+        }
+        return;
+    }
+
+    // Single-finger bar drag
+    if (e.touches.length === 1 && _touchBarMode && _barDragEl) {
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - _barDragStartX;
+        const deltaY = touch.clientY - _barDragStartY;
+        const totalDelta = Math.abs(deltaX) + Math.abs(deltaY);
+
+        if (!_barDragActive && totalDelta > BAR_DRAG_THRESHOLD) {
+            // Cancel long-press timer — movement activated drag
+            if (_touchBarLongPress) { clearTimeout(_touchBarLongPress); _touchBarLongPress = null; }
+
+            // If mostly vertical movement, let browser scroll instead
+            if (Math.abs(deltaY) > Math.abs(deltaX) * 2 && _barDragType !== 'build') {
+                cancelTouchBarDrag();
+                return;
+            }
+            activateBarDrag();
+        }
+
+        if (_barDragActive) {
+            e.preventDefault(); // Prevent scrolling while dragging bar
+            moveBarDrag(touch.clientX, touch.clientY);
+        }
+    }
+}
+
+function onTouchEnd(e) {
+    if (!_touchBarMode) return;
+
+    if (_touchBarLongPress) { clearTimeout(_touchBarLongPress); _touchBarLongPress = null; }
+
+    if (_barDragEl && _barDragActive) {
+        completeBarDrag();
+    }
+
+    // Reset touch bar state
+    _touchBarMode = false;
+    resetBarDragState();
+}
+
+function cancelTouchBarDrag() {
+    if (_touchBarLongPress) { clearTimeout(_touchBarLongPress); _touchBarLongPress = null; }
+    _touchBarMode = false;
+    if (_barDragEl && !_barDragActive) {
+        resetBarDragState();
     }
 }
 
@@ -387,7 +478,120 @@ function onContextMenu(e) {
 
 // ── Bar Drag-to-Reschedule ──────────────────────────────────────────────────
 
-const BAR_DRAG_THRESHOLD = 5; // px before drag activates
+const BAR_DRAG_THRESHOLD = 8; // px before drag activates (higher to avoid accidental drag on click)
+
+/** Shared: activate drag visuals (called from both mouse and touch paths) */
+function activateBarDrag() {
+    _barDragActive = true;
+    _barDragEl.style.opacity = '0.7';
+    _barDragEl.style.zIndex = '100';
+    _barDragEl.classList.add('gantt-bar-dragging');
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+
+    // Create ghost tooltip — fixed position so it follows the cursor cleanly
+    _barDragGhost = document.createElement('div');
+    _barDragGhost.className = 'gantt-drag-ghost';
+    document.body.appendChild(_barDragGhost);
+}
+
+/** Shared: update bar position during drag */
+function moveBarDrag(clientX, clientY) {
+    if (!_barDragEl || !_barDragActive) return;
+
+    const deltaX = clientX - _barDragStartX;
+    const deltaY = clientY - _barDragStartY;
+    const newLeft = _barDragOrigLeft + deltaX;
+    _barDragEl.style.left = newLeft + 'px';
+
+    // Allow vertical movement for cross-machine drag (build bars only)
+    if (_barDragType === 'build') {
+        _barDragEl.style.transform = `translateY(${deltaY}px)`;
+        detectTargetMachineRow(clientY);
+    }
+
+    // Update ghost tooltip with proposed time
+    if (_barDragGhost) {
+        const containerRect = _container.getBoundingClientRect();
+        const cursorXInContainer = clientX - containerRect.left + _container.scrollLeft;
+        const timeMs = _dataStartMs + (cursorXInContainer / _pixelsPerHour) * 3600000;
+        const dt = new Date(timeMs);
+        let ghostText = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+        // Show target machine name if different from source
+        if (_barDragTargetMachineId && _barDragTargetMachineId !== _barDragSourceMachineId && _barDragHighlightedRow) {
+            const machineName = _barDragHighlightedRow.querySelector('.gantt-machine-name')?.textContent?.trim();
+            if (machineName) ghostText += '\n→ ' + machineName;
+        }
+
+        _barDragGhost.textContent = ghostText;
+        _barDragGhost.style.left = (clientX + 12) + 'px';
+        _barDragGhost.style.top = (clientY - 28) + 'px';
+    }
+}
+
+/** Shared: complete the drag and notify Blazor */
+function completeBarDrag() {
+    if (!_barDragEl || !_barDragActive) return;
+
+    const finalLeft = parseFloat(_barDragEl.style.left) || 0;
+    const newTimeMs = _dataStartMs + (finalLeft / _pixelsPerHour) * 3600000;
+    const newTimeIso = new Date(newTimeMs).toISOString();
+
+    // Cleanup visual state
+    _barDragEl.style.opacity = '';
+    _barDragEl.style.zIndex = '';
+    _barDragEl.style.transform = '';
+    _barDragEl.classList.remove('gantt-bar-dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if (_barDragGhost) {
+        _barDragGhost.remove();
+        _barDragGhost = null;
+    }
+    if (_barDragHighlightedRow) {
+        _barDragHighlightedRow.classList.remove('gantt-drop-target');
+        _barDragHighlightedRow = null;
+    }
+
+    // Restore original position (Blazor will re-render at the correct position after reschedule)
+    _barDragEl.style.left = _barDragOrigLeft + 'px';
+
+    // Notify Blazor with target machine ID
+    if (_dotNetRef && _barDragEntityId) {
+        _dotNetRef.invokeMethodAsync('OnBarDragCompleted', _barDragType, _barDragEntityId, newTimeIso, _barDragTargetMachineId || '0');
+    }
+}
+
+/** Shared: reset all bar drag state variables */
+function resetBarDragState() {
+    _barDragEl = null;
+    _barDragType = null;
+    _barDragEntityId = null;
+    _barDragActive = false;
+    _barDragSourceMachineId = null;
+    _barDragTargetMachineId = null;
+}
+
+function detectTargetMachineRow(clientY) {
+    // Remove highlight from previous row
+    if (_barDragHighlightedRow) {
+        _barDragHighlightedRow.classList.remove('gantt-drop-target');
+        _barDragHighlightedRow = null;
+    }
+
+    const rows = _container.querySelectorAll('.gantt-row[data-machine-id]');
+    for (const row of rows) {
+        const rect = row.getBoundingClientRect();
+        if (clientY >= rect.top && clientY <= rect.bottom) {
+            _barDragTargetMachineId = row.dataset.machineId;
+            row.classList.add('gantt-drop-target');
+            _barDragHighlightedRow = row;
+            return;
+        }
+    }
+    // If cursor outside all rows, keep current target
+}
 
 function onMouseDown(e) {
     if (_disposed || !isAlive()) return;
@@ -396,7 +600,8 @@ function onMouseDown(e) {
     if (e.button === 0) {
         const bar = e.target.closest('[data-bar-type]');
         if (bar) {
-            e.preventDefault();
+            // Don't preventDefault here — let Blazor's @onclick fire if user just clicks.
+            // We only block default once drag threshold is exceeded (in onMouseMove).
             const wrapper = bar.closest('.gantt-build-bar-wrapper') || bar;
             _barDragEl = wrapper;
             _barDragType = bar.dataset.barType;
@@ -431,45 +636,13 @@ function onMouseMove(e) {
 
         // Activate drag after threshold
         if (!_barDragActive && totalDelta > BAR_DRAG_THRESHOLD) {
-            _barDragActive = true;
-            _barDragEl.style.opacity = '0.7';
-            _barDragEl.style.zIndex = '100';
-            _barDragEl.classList.add('gantt-bar-dragging');
-            document.body.style.cursor = 'grabbing';
-
-            // Create ghost tooltip
-            _barDragGhost = document.createElement('div');
-            _barDragGhost.className = 'gantt-drag-ghost';
-            _barDragEl.parentElement.appendChild(_barDragGhost);
+            e.preventDefault();
+            activateBarDrag();
         }
 
         if (_barDragActive) {
-            const newLeft = _barDragOrigLeft + deltaX;
-            _barDragEl.style.left = newLeft + 'px';
-
-            // Allow vertical movement for cross-machine drag (build bars only)
-            if (_barDragType === 'build') {
-                _barDragEl.style.transform = `translateY(${deltaY}px)`;
-                detectTargetMachineRow(e.clientY);
-            }
-
-            // Update ghost with proposed time
-            if (_barDragGhost) {
-                const timeMs = _dataStartMs + ((_container.scrollLeft + (e.clientX - _container.getBoundingClientRect().left)) / _pixelsPerHour) * 3600000;
-                const dt = new Date(timeMs);
-                let ghostText = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-
-                // Show target machine name if different from source
-                if (_barDragTargetMachineId && _barDragTargetMachineId !== _barDragSourceMachineId && _barDragHighlightedRow) {
-                    const machineName = _barDragHighlightedRow.querySelector('.gantt-machine-name')?.textContent?.trim();
-                    if (machineName) ghostText += '\n→ ' + machineName;
-                }
-
-                _barDragGhost.textContent = ghostText;
-                _barDragGhost.style.whiteSpace = 'pre';
-                _barDragGhost.style.left = newLeft + 'px';
-                _barDragGhost.style.top = (deltaY - 24) + 'px';
-            }
+            e.preventDefault();
+            moveBarDrag(e.clientX, e.clientY);
         }
         return;
     }
@@ -480,64 +653,14 @@ function onMouseMove(e) {
     _container.scrollLeft = _dragStartScrollLeft - deltaX;
 }
 
-function detectTargetMachineRow(clientY) {
-    // Remove highlight from previous row
-    if (_barDragHighlightedRow) {
-        _barDragHighlightedRow.classList.remove('gantt-drop-target');
-        _barDragHighlightedRow = null;
-    }
-
-    const rows = _container.querySelectorAll('.gantt-row[data-machine-id]');
-    for (const row of rows) {
-        const rect = row.getBoundingClientRect();
-        if (clientY >= rect.top && clientY <= rect.bottom) {
-            _barDragTargetMachineId = row.dataset.machineId;
-            row.classList.add('gantt-drop-target');
-            _barDragHighlightedRow = row;
-            return;
-        }
-    }
-    // If cursor outside all rows, keep current target
-}
-
 function onMouseUp(e) {
     // Complete bar drag
     if (_barDragEl && _barDragActive) {
-        const finalLeft = parseFloat(_barDragEl.style.left) || 0;
-        const newTimeMs = _dataStartMs + (finalLeft / _pixelsPerHour) * 3600000;
-        const newTimeIso = new Date(newTimeMs).toISOString();
-
-        // Cleanup visual state
-        _barDragEl.style.opacity = '';
-        _barDragEl.style.zIndex = '';
-        _barDragEl.style.transform = '';
-        _barDragEl.classList.remove('gantt-bar-dragging');
-        document.body.style.cursor = '';
-        if (_barDragGhost) {
-            _barDragGhost.remove();
-            _barDragGhost = null;
-        }
-        if (_barDragHighlightedRow) {
-            _barDragHighlightedRow.classList.remove('gantt-drop-target');
-            _barDragHighlightedRow = null;
-        }
-
-        // Restore original position (Blazor will re-render at the correct position after reschedule)
-        _barDragEl.style.left = _barDragOrigLeft + 'px';
-
-        // Notify Blazor with target machine ID
-        if (_dotNetRef && _barDragEntityId) {
-            _dotNetRef.invokeMethodAsync('OnBarDragCompleted', _barDragType, _barDragEntityId, newTimeIso, _barDragTargetMachineId || '0');
-        }
+        completeBarDrag();
     }
 
     // Reset bar drag state
-    _barDragEl = null;
-    _barDragType = null;
-    _barDragEntityId = null;
-    _barDragActive = false;
-    _barDragSourceMachineId = null;
-    _barDragTargetMachineId = null;
+    resetBarDragState();
 
     // Complete viewport pan
     if (_isDragging) {

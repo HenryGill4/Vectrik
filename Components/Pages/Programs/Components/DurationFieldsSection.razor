@@ -1,0 +1,287 @@
+@* DurationFieldsSection.razor — Machine-type-specific duration input fields for the editor form *@
+
+@{
+    var isCncType = NormalizedMachineType is "CNC" or "CNCMILL" or "CNCTURNING" or "TURNING";
+    var isEdmType = NormalizedMachineType is "EDM" or "WIREEDM";
+    var isLaserType = NormalizedMachineType is "LASER" or "LASERENGRAVING" or "LASERCUTTING" or "ENGRAVING";
+    var isSlsType = NormalizedMachineType is "SLS" or "ADDITIVE" or "3DPRINTING" or "DMLS" or "SLM" or "MJF" or "EBM";
+    var isHeatTreat = NormalizedMachineType is "HEATTREAT";
+    var isQcType = NormalizedMachineType is "QC";
+    var isFinishing = NormalizedMachineType is "FINISHING";
+    var isAssembly = NormalizedMachineType is "ASSEMBLY";
+    var isDepowder = NormalizedMachineType is "DEPOWDER";
+    var isShipping = NormalizedMachineType is "SHIPPING";
+    var isExternal = NormalizedMachineType is "EXTERNAL";
+    var hasKnownType = isCncType || isEdmType || isLaserType || isSlsType || isHeatTreat
+        || isQcType || isFinishing || isAssembly || isDepowder || isShipping || isExternal;
+}
+
+@if (isCncType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ CNC Duration Estimates</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Times per single part cycle including tool changes and rapids.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Setup / Workholding (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 15" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Cycle Time / Part (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.CycleTimeMinutes" placeholder="e.g. 4.5" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Run Time / Part (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 3.2" />
+                <span style="font-size:0.72em;color:var(--text-muted);">Spindle cut time only</span>
+            </div>
+        </div>
+    </div>
+}
+else if (isEdmType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ EDM Duration Estimates</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Includes electrode/wire threading, flush, and spark erosion time.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Setup / Threading (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 20" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Cut / Burn Time (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 45" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Flush / Finish Pass (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.CycleTimeMinutes" placeholder="e.g. 12" />
+            </div>
+        </div>
+    </div>
+}
+else if (isLaserType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ Laser Duration Estimates</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Mark/cut time per part including focus and alignment.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Setup / Alignment (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 5" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Mark / Cut Time (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 1.5" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Cycle Time / Part (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.CycleTimeMinutes" placeholder="e.g. 2.0" />
+            </div>
+        </div>
+    </div>
+}
+else if (isHeatTreat)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ Heat Treatment Duration</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Full thermal cycle: load → ramp → soak → cool.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Load / Prep (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 10" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Soak / Hold (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 120" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Cooling Time (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.CycleTimeMinutes" placeholder="e.g. 60" />
+            </div>
+        </div>
+    </div>
+}
+else if (isQcType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ Inspection Duration</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Includes calibration, fixture setup, and measurement time.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Setup / Calibration (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 10" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Inspection Time / Part (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 8" />
+            </div>
+        </div>
+    </div>
+}
+else if (isFinishing)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ Finishing Duration</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Blast, tumble, polish, or coating process times.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Setup / Masking (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 5" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Process Time / Part (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 3" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Cycle Time (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.CycleTimeMinutes" placeholder="e.g. 6" />
+            </div>
+        </div>
+    </div>
+}
+else if (isAssembly)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ Assembly Duration</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Workstation prep and hands-on assembly time.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Workstation Setup (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 5" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Assembly Time / Unit (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 12" />
+            </div>
+        </div>
+    </div>
+}
+else if (isDepowder)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ Depowder Duration</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Powder removal and initial clean time per build.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Setup / Cool-down (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 30" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Depowder Time (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 45" />
+            </div>
+        </div>
+    </div>
+}
+else if (isShipping)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ Shipping Duration</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Packing, labelling, and dispatch preparation.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Prep / Packing (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 10" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Processing Time (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 15" />
+            </div>
+        </div>
+    </div>
+}
+else if (isExternal)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ External Process Duration</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Outsourced operation — track dispatch prep and expected turnaround.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Dispatch Prep (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 15" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Expected Turnaround (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" placeholder="e.g. 2880 (2 days)" />
+                <span style="font-size:0.72em;color:var(--text-muted);">Tip: 1 day = 1440 min</span>
+            </div>
+        </div>
+    </div>
+}
+else if (isSlsType)
+{
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">🖨️ Additive Build Estimates</h4>
+        <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Slicer output and material estimates — from Magics, Materialise, Netfabb, etc.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Print Duration (hrs)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.EstimatedPrintHours" placeholder="e.g. 18.5" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Layer Count</label>
+                <input class="form-control" type="number" min="0" @bind="Program.LayerCount" placeholder="e.g. 3200" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Build Height (mm)</label>
+                <input class="form-control" type="number" step="0.01" min="0" @bind="Program.BuildHeightMm" placeholder="e.g. 320.0" />
+            </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Est. Powder / Material (kg)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.EstimatedPowderKg" placeholder="e.g. 6.2" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Slicer Software</label>
+                <input class="form-control" @bind="Program.SlicerSoftware" placeholder="e.g. Magics, Netfabb" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Slicer Version</label>
+                <input class="form-control" @bind="Program.SlicerVersion" placeholder="e.g. 27.03" />
+            </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Machine Prep / Setup (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" placeholder="e.g. 45" />
+                <span style="font-size:0.72em;color:var(--text-muted);">Warm-up, powder load, levelling</span>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Cool-down / Depowder (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.CycleTimeMinutes" placeholder="e.g. 120" />
+                <span style="font-size:0.72em;color:var(--text-muted);">Post-build before removal</span>
+            </div>
+        </div>
+    </div>
+}
+else if (!hasKnownType)
+{
+    @* Fallback: show generic fields when no machine type selected yet *@
+    <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 4px 0;">⏱️ Duration Estimates</h4>
+        @if (string.IsNullOrEmpty(Program.MachineType))
+        {
+            <div style="font-size:0.78em;color:var(--text-muted);margin-bottom:12px;">Select a machine type above for tailored duration fields.</div>
+        }
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Setup Time (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.SetupTimeMinutes" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Run Time / Part (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.RunTimeMinutes" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Cycle Time (min)</label>
+                <input class="form-control" type="number" step="0.1" min="0" @bind="Program.CycleTimeMinutes" />
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = default!;
+    [Parameter, EditorRequired] public string NormalizedMachineType { get; set; } = "";
+}
