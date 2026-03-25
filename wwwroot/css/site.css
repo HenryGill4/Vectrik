@@ -1221,16 +1221,17 @@ select.form-control {
         transform: translateX(-100%);
     }
 
+    /* On mobile, sidebar-collapsed toggles open (reversed from desktop) */
     .app-container:not(.sidebar-collapsed) .sidebar {
-        transform: translateX(0);
-    }
-
-    .sidebar-collapsed .sidebar {
         transform: translateX(-100%);
     }
 
+    .sidebar-collapsed .sidebar {
+        transform: translateX(0);
+    }
+
     .main-area {
-        margin-left: 0;
+        margin-left: 0 !important;
     }
 
     .mobile-toggle { display: flex; }
@@ -1242,7 +1243,11 @@ select.form-control {
     .tab-item { max-width: 120px; padding: 0 8px; font-size: 0.75rem; }
     .tab-overflow-dropdown { min-width: 200px; max-width: 280px; }
 
-    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .kpi-card { padding: 10px; }
+    .kpi-value { font-size: 1.3rem; }
+
+    .card { padding: 12px; margin-bottom: 8px; }
 }
 
 @media (min-width: 769px) {
@@ -1667,7 +1672,7 @@ select.form-control {
 .gantt-container.gantt-viewport {
     overflow-x: auto;
     overflow-y: auto;
-    max-height: 70vh;
+    max-height: calc(100vh - 340px);
     position: relative;
     cursor: grab;
 }
@@ -2276,12 +2281,23 @@ select.form-control {
 }
 
 /* ── Gantt Legend ── */
+.gantt-legend-details {
+    padding: 4px 12px 8px;
+}
+.gantt-legend-toggle {
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 4px 0;
+    user-select: none;
+}
 .gantt-legend {
     display: flex;
     gap: 16px;
     flex-wrap: wrap;
-    margin-top: 12px;
-    padding: 8px 0;
+    margin-top: 6px;
+    padding: 4px 0;
     font-size: 0.78rem;
     color: var(--text-muted);
 }
@@ -3075,7 +3091,6 @@ select.form-control {
 .sched-gantt-card {
     overflow-x: auto;
     padding: 0;
-    min-height: calc(100vh - 260px);
     cursor: grab;
     scroll-behavior: auto;
 }
@@ -4332,6 +4347,88 @@ select.form-control {
 
 /* ── Scheduler Responsive ── */
 @media (max-width: 1024px) {
+    /* ── Global: Top bar compact ── */
+    .top-bar {
+        padding: 0 12px;
+        height: 48px;
+    }
+    .top-bar-user {
+        font-size: 0.8rem;
+        margin-right: 8px;
+    }
+    .btn-topbar {
+        font-size: 1rem;
+        min-width: 40px;
+        min-height: 40px;
+    }
+
+    /* ── Global: Content area tighter ── */
+    .content-area {
+        padding: 16px;
+    }
+
+    /* ── Global: Page header stacks ── */
+    .page-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+    .page-title {
+        font-size: 1.2rem;
+    }
+    .page-actions {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .page-actions select,
+    .page-actions input[type="text"],
+    .page-actions input[type="search"] {
+        max-width: 140px;
+        font-size: 0.82rem;
+    }
+    .page-actions .btn {
+        font-size: 0.82rem;
+        padding: 6px 12px;
+    }
+
+    /* ── Global: KPI grid 3-col ── */
+    .kpi-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+    .kpi-card {
+        padding: 12px;
+    }
+    .kpi-value {
+        font-size: 1.4rem;
+    }
+    .kpi-label {
+        font-size: 0.7rem;
+    }
+
+    /* ── Global: Cards compact ── */
+    .card {
+        padding: 14px;
+        margin-bottom: 10px;
+    }
+
+    /* ── Global: Tab strip compact ── */
+    .tab-item {
+        padding: 0 10px;
+        font-size: 0.8rem;
+    }
+
+    /* ── Global: Modals fit tablet ── */
+    .modal-content {
+        max-width: 90vw;
+    }
+    .modal-lg {
+        max-width: 95vw;
+    }
+
+    /* ── Scheduler-specific ── */
     .sched-layout,
     .sched-layout--3col {
         grid-template-columns: 1fr;
