@@ -18,7 +18,7 @@
                 ⚡ Auto-Schedule (@AutoScheduleCount)
             </button>
         }
-        <div class="sched-new-dropdown" @onfocusout="() => _newDropdownOpen = false">
+        <div class="sched-new-dropdown" @onfocusout="HandleDropdownFocusOut">
             <button class="btn btn-primary btn-sm" @onclick="() => _newDropdownOpen = !_newDropdownOpen">+ New ▾</button>
             @if (_newDropdownOpen)
             {
@@ -150,10 +150,24 @@
     [Parameter] public EventCallback OnNewCncJob { get; set; }
 
     private bool _newDropdownOpen;
+    private CancellationTokenSource? _focusOutCts;
 
     [Parameter] public EventCallback<bool> OnShowConflictsOnlyChanged { get; set; }
     [Parameter] public EventCallback<ProgramScheduleStatus?> OnProgramStatusFilterChanged { get; set; }
     [Parameter] public EventCallback<bool> OnShowOverdueOnlyChanged { get; set; }
+
+    private async Task HandleDropdownFocusOut()
+    {
+        _focusOutCts?.Cancel();
+        _focusOutCts = new CancellationTokenSource();
+        var token = _focusOutCts.Token;
+        try
+        {
+            await Task.Delay(150, token);
+            _newDropdownOpen = false;
+        }
+        catch (TaskCanceledException) { /* click arrived before delay — keep open */ }
+    }
 
     private async Task ToggleConflictsOnly()
     {
