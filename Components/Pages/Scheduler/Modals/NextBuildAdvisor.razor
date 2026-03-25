@@ -49,7 +49,7 @@
                     <div class="wizard-loading"><span class="spinner"></span> Analyzing demand and scheduling options...</div>
                 }
 
-                @* ══════════ Step 0: Schedule Options ══════════ *@
+                @* ══════════ Step 0: Machine & Timing ══════════ *@
                 @if (!_loading && _step == 0)
                 {
                     <div class="wizard-content">
@@ -63,17 +63,69 @@
                             </select>
                         </div>
 
-                        <div class="form-group" style="margin-top: 8px;">
-                            <label>Override Start After (optional)</label>
-                            <input type="datetime-local" class="form-control" style="max-width: 250px;"
-                                   @bind="_startAfterOverride" @bind:after="OnMachineChanged" />
-                        </div>
+                        @* ── Machine Status ── *@
+                        @if (_selectedMachine != null)
+                        {
+                            <div class="card" style="padding: 12px; margin-top: 12px;">
+                                <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Machine Status</div>
+                                @if (_currentBuild != null)
+                                {
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.85rem;">
+                                        <div>
+                                            <span style="color: var(--text-muted);">Current Build:</span>
+                                            <span style="font-weight: 600;">@_currentBuild.ProgramName</span>
+                                        </div>
+                                        <div>
+                                            <span style="color: var(--text-muted);">Status:</span>
+                                            @if (_currentBuild.ScheduleStatus == ProgramScheduleStatus.Printing)
+                                            {
+                                                <span style="color: var(--success); font-weight: 600;">Printing</span>
+                                                @if ((_currentBuild.PrintEnd - DateTime.UtcNow).TotalHours > 0)
+                                                {
+                                                    <span style="color: var(--text-muted);"> (@((_currentBuild.PrintEnd - DateTime.UtcNow).TotalHours.ToString("F1"))h remaining)</span>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span>Scheduled</span>
+                                            }
+                                        </div>
+                                        <div><span style="color: var(--text-muted);">Est. Completion:</span> @_currentBuild.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")</div>
+                                        @if (_scheduledBuildCount > 0)
+                                        {
+                                            <div><span style="color: var(--text-muted);">Queued Builds:</span> @_scheduledBuildCount</div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                        Machine is <strong>idle</strong> — no builds currently printing or scheduled.
+                                        Next build can start immediately.
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @* ── Top Demand Context ── *@
+                        @{
+                            var topDemand = _demand.Where(d => d.IsAdditive && d.NetRemaining > 0).OrderByDescending(d => d.HighestPriority).ThenBy(d => d.EarliestDueDate).FirstOrDefault();
+                        }
+                        @if (topDemand != null)
+                        {
+                            <div style="margin-top: 8px; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.82rem;">
+                                <strong>Top demand:</strong> @topDemand.PartNumber — @topDemand.NetRemaining remaining, due @topDemand.EarliestDueDate.ToString("MMM d")
+                            </div>
+                        }
 
                         @if (_selectedMachine?.AutoChangeoverEnabled == true && _scheduleOptions.Any())
                         {
-                            @* ── Changeover-first schedule option cards ── *@
+                            @* ── Timing Options ── *@
                             <div style="margin-top: 12px;">
-                                <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Schedule Options</div>
+                                <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;">When should this build run?</div>
+                                <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
+                                    Choose when to start. The changeover time is when an operator must remove the previous build from the cooldown chamber.
+                                </div>
                                 @foreach (var opt in _scheduleOptions)
                                 {
                                     var isSelected = _selectedOption == opt;
@@ -83,33 +135,36 @@
                                         {
                                             <span class="advisor-option-badge">Recommended</span>
                                         }
-                                        <div class="advisor-option-changeover">
-                                            Changeover: @opt.Slot.ChangeoverStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")
+                                        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                            <div style="font-weight: 600; font-size: 0.88rem;">
+                                                @opt.Label
+                                            </div>
+                                            <div style="font-size: 0.82rem; color: var(--text-muted);">
+                                                @opt.DurationHours.ToString("F1")h &middot; @opt.PartsPerBuild @(opt.PartsPerBuild == 1 ? "part" : "parts")
+                                            </div>
+                                        </div>
+                                        <div class="advisor-option-detail" style="margin-top: 4px;">
+                                            <strong>Print:</strong> @opt.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt") &rarr; @opt.Slot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")
+                                        </div>
+                                        <div class="advisor-option-detail">
+                                            <strong>Changeover needed:</strong> @opt.Slot.ChangeoverStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")
                                             @if (opt.ChangeoverAligned)
                                             {
-                                                <span style="color: var(--success); margin-left: 6px;">&#x2713; Operator available</span>
+                                                <span style="color: var(--success); margin-left: 6px;">&#x2713; During operator shift</span>
                                             }
                                             else
                                             {
-                                                <span style="color: var(--danger); margin-left: 6px;">&#x2717; NO operator</span>
+                                                <span style="color: var(--danger); margin-left: 6px;">&#x2717; No operator on shift</span>
                                             }
                                         </div>
-                                        <div class="advisor-option-detail">
-                                            @(opt.StackLevel == 1 ? "Single (1 high)" : opt.StackLevel == 2 ? "Double Stack (2 high)" : "Triple Stack (3 high)")
-                                            &middot; @opt.DurationHours.ToString("F1")h
-                                            &middot; @opt.PartsPerBuild @(opt.PartsPerBuild == 1 ? "part" : "parts")
-                                        </div>
-                                        <div class="advisor-option-detail">
-                                            @opt.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt") &rarr; @opt.Slot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")
-                                        </div>
-                                        <div class="advisor-option-tags">
+                                        <div class="advisor-option-tags" style="margin-top: 4px;">
                                             @if (opt.ChangeoverAligned)
                                             {
                                                 <span class="advisor-option-tag advisor-option-tag--safe">Safe changeover</span>
                                             }
                                             else
                                             {
-                                                <span class="advisor-option-tag advisor-option-tag--danger">Machine DOWN until shift</span>
+                                                <span class="advisor-option-tag advisor-option-tag--danger">Machine stops until operator arrives</span>
                                             }
                                             @if (opt.IsWeekendOptimal)
                                             {
@@ -131,6 +186,18 @@
                                 </div>
                             </div>
                         }
+
+                        @* ── Override start (moved below options as it's an override) ── *@
+                        <details style="margin-top: 12px;">
+                            <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 500; color: var(--text-secondary);">
+                                Override start time
+                            </summary>
+                            <div class="form-group" style="margin-top: 8px;">
+                                <label>Start after (optional)</label>
+                                <input type="datetime-local" class="form-control" style="max-width: 250px;"
+                                       @bind="_startAfterOverride" @bind:after="OnMachineChanged" />
+                            </div>
+                        </details>
                     </div>
                 }
 
@@ -514,6 +581,8 @@
     // Schedule options (Step 0)
     private List<ScheduleOption> _scheduleOptions = [];
     private ScheduleOption? _selectedOption;
+    private ProgramTimelineEntry? _currentBuild;
+    private int _scheduledBuildCount;
 
     // Mutable plate state (editable copy of the recommendation)
     private List<EditablePlateAllocation> _plateAllocations = [];
@@ -646,6 +715,17 @@
         try
         {
             _demand = await Advisor.GetAggregateDemandAsync();
+
+            // Load machine timeline to show current status
+            var timeline = await ProgramScheduling.GetMachineTimelineAsync(
+                _selectedMachineId, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddDays(14));
+            _currentBuild = timeline
+                .Where(t => t.ScheduleStatus == ProgramScheduleStatus.Printing
+                    || (t.ScheduleStatus == ProgramScheduleStatus.Scheduled && t.PrintEnd > DateTime.UtcNow))
+                .OrderBy(t => t.PrintStart)
+                .FirstOrDefault();
+            _scheduledBuildCount = timeline.Count(t =>
+                t.ScheduleStatus == ProgramScheduleStatus.Scheduled && t.PrintStart > DateTime.UtcNow);
 
             var slot = await ProgramScheduling.FindEarliestSlotAsync(
                 _selectedMachineId, 1, _startAfterOverride ?? DateTime.UtcNow);
