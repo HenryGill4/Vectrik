@@ -1,0 +1,46 @@
+@using Opcentrix_V3.Components.Pages.Scheduler.Models
+
+@{
+    // Generate quadrant slots: show allocated parts + empty slots up to MaxParts
+    var quadrants = new List<(EditablePlateAllocation? Alloc, int QuadIndex)>();
+    for (int i = 0; i < MaxParts; i++)
+    {
+        var alloc = i < Allocations.Count ? Allocations[i] : null;
+        quadrants.Add((alloc, i));
+    }
+    // Grid columns: 2x2 for up to 4 parts
+    var cols = Allocations.Count <= 1 ? 1 : 2;
+}
+
+<div class="plate-grid-container">
+    <div class="plate-grid-label">@PlateDimensionLabel</div>
+    <div class="plate-grid" style="grid-template-columns: repeat(@cols, 1fr);">
+        @foreach (var (alloc, qi) in quadrants)
+        {
+            if (alloc != null)
+            {
+                var stackIcon = alloc.StackLevel switch { 2 => "▮▮", 3 => "▮▮▮", _ => "▮" };
+                var hue = (alloc.PartId * 137) % 360;
+                <div class="plate-quadrant plate-quadrant--occupied" style="--part-hue: @hue;">
+                    <div class="plate-quadrant-stack">@stackIcon @(alloc.StackLevel)x</div>
+                    <div class="plate-quadrant-part">@alloc.PartNumber</div>
+                    <div class="plate-quadrant-count">@alloc.Positions pos &times; @alloc.StackLevel = @alloc.TotalParts</div>
+                </div>
+            }
+            else if (Allocations.Count < MaxParts)
+            {
+                <div class="plate-quadrant plate-quadrant--empty" @onclick="() => OnAddPartClicked.InvokeAsync()">
+                    <span class="plate-quadrant-add">+</span>
+                    <span class="plate-quadrant-hint">Add part</span>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<EditablePlateAllocation> Allocations { get; set; } = [];
+    [Parameter] public int MaxParts { get; set; } = 4;
+    [Parameter] public string PlateDimensionLabel { get; set; } = "450 × 450 mm";
+    [Parameter] public EventCallback OnAddPartClicked { get; set; }
+}

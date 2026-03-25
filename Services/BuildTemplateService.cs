@@ -390,4 +390,27 @@ public class BuildTemplateService : IBuildTemplateService
 
         return program;
     }
+
+    // ── Demand-Matched Template Search ────────────────────────
+
+    public async Task<List<BuildTemplate>> GetTemplatesWithDemandMatchAsync(List<int> demandPartIds)
+    {
+        if (!demandPartIds.Any()) return [];
+
+        var demandSet = demandPartIds.ToHashSet();
+
+        var templates = await _db.BuildTemplates
+            .Include(t => t.Parts).ThenInclude(p => p.Part)
+            .Include(t => t.Material)
+            .Where(t => t.Status != BuildTemplateStatus.Archived)
+            .Where(t => t.Parts.Any(p => demandSet.Contains(p.PartId)))
+            .ToListAsync();
+
+        // Sort by match percentage (how many of the template's parts are in demand)
+        return templates
+            .OrderByDescending(t => t.Parts.Count(p => demandSet.Contains(p.PartId)) * 100.0 / Math.Max(1, t.Parts.Count))
+            .ThenByDescending(t => t.IsCertified)
+            .ThenByDescending(t => t.UseCount)
+            .ToList();
+    }
 }

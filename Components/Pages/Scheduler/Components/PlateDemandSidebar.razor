@@ -1,0 +1,43 @@
+@using Opcentrix_V3.Services
+
+<div class="plate-sidebar">
+    <div class="plate-sidebar-header">
+        <strong>Available Parts</strong>
+        <span class="plate-sidebar-count">@FilteredParts.Count</span>
+    </div>
+    <input type="text" class="form-control form-control-sm plate-sidebar-search"
+           placeholder="Search parts..."
+           @bind="_searchTerm" @bind:event="oninput" />
+
+    <div class="plate-sidebar-list">
+        @foreach (var d in FilteredParts)
+        {
+            <div class="plate-sidebar-item" @onclick="() => OnAddPart.InvokeAsync(d.PartId)">
+                <div class="plate-sidebar-item-name">@d.PartNumber</div>
+                <div class="plate-sidebar-item-detail">
+                    <span>@d.NetRemaining remaining</span>
+                    <span>Due @d.EarliestDueDate.ToLocalTime().ToString("MMM d")</span>
+                </div>
+                @if (d.IsOverdue)
+                {
+                    <span class="badge badge-danger badge-sm">OVERDUE</span>
+                }
+            </div>
+        }
+        @if (!FilteredParts.Any())
+        {
+            <div class="plate-sidebar-empty">No parts available</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<DemandSummary> AvailableParts { get; set; } = [];
+    [Parameter] public EventCallback<int> OnAddPart { get; set; }
+
+    private string _searchTerm = "";
+
+    private List<DemandSummary> FilteredParts => string.IsNullOrWhiteSpace(_searchTerm)
+        ? AvailableParts
+        : AvailableParts.Where(p => p.PartNumber.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+}

@@ -1,0 +1,144 @@
+@using Opcentrix_V3.Services
+@using Opcentrix_V3.Models.Enums
+
+@{
+    var priorityClass = Demand.HighestPriority switch
+    {
+        JobPriority.Emergency => "badge-danger",
+        JobPriority.Rush => "badge-danger",
+        JobPriority.High => "badge-warning",
+        _ => "badge-sm"
+    };
+    var config = Demand.BuildConfig;
+    var hasStacking = config != null && config.AllowStacking;
+}
+
+<div class="dispatch-demand-card @(Demand.IsOverdue ? "dispatch-demand-card--overdue" : "")">
+    <div class="dispatch-demand-header">
+        <strong class="dispatch-demand-part">@Demand.PartNumber</strong>
+        <div class="dispatch-demand-badges">
+            @if (Demand.IsOverdue)
+            {
+                <span class="badge badge-danger badge-sm">OVERDUE</span>
+            }
+            @if (Demand.HighestPriority >= JobPriority.High)
+            {
+                <span class="badge @priorityClass badge-sm">@Demand.HighestPriority</span>
+            }
+        </div>
+    </div>
+
+    <div class="dispatch-demand-stats">
+        <div class="dispatch-demand-stat">
+            <span class="dispatch-demand-stat-label">Remaining</span>
+            <span class="dispatch-demand-stat-value">@Demand.NetRemaining</span>
+        </div>
+        <div class="dispatch-demand-stat">
+            <span class="dispatch-demand-stat-label">Due</span>
+            <span class="dispatch-demand-stat-value">@Demand.EarliestDueDate.ToLocalTime().ToString("MMM d")</span>
+        </div>
+        <div class="dispatch-demand-stat">
+            <span class="dispatch-demand-stat-label">In Programs</span>
+            <span class="dispatch-demand-stat-value">@Demand.InPrograms</span>
+        </div>
+        <div class="dispatch-demand-stat">
+            <span class="dispatch-demand-stat-label">Ordered</span>
+            <span class="dispatch-demand-stat-value">@Demand.TotalOrdered</span>
+        </div>
+    </div>
+
+    @* ── Fulfillment Progress ── *@
+    @{
+        var total = Demand.TotalOrdered > 0 ? Demand.TotalOrdered : 1;
+        var producedPct = Math.Min(100, (double)Demand.TotalProduced / total * 100);
+        var inProgPct = Math.Min(100 - producedPct, (double)Demand.InPrograms / total * 100);
+    }
+    <div class="dispatch-demand-progress" title="@Demand.TotalProduced produced + @Demand.InPrograms in programs / @Demand.TotalOrdered ordered">
+        <div class="dispatch-demand-progress-bar dispatch-demand-progress-produced" style="width: @($"{producedPct:F1}")%"></div>
+        <div class="dispatch-demand-progress-bar dispatch-demand-progress-inprog" style="width: @($"{inProgPct:F1}")%"></div>
+    </div>
+
+    @* ── Stacking Variations Table ── *@
+    @if (hasStacking && config != null)
+    {
+        var levels = config.AvailableStackLevels;
+        var recommended = config.GetRecommendedStackLevel(Demand.NetRemaining);
+
+        <table class="dispatch-stack-table">
+            <thead>
+                <tr>
+                    <th>Stack</th>
+                    <th>Duration</th>
+                    <th>Parts/Build</th>
+                    <th>Builds Needed</th>
+                    <th>Efficiency</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var level in levels)
+                {
+                    var duration = config.GetStackDuration(level);
+                    var partsPerBuild = config.GetPartsPerBuild(level);
+                    var efficiency = config.CalculateStackEfficiency(level, Demand.NetRemaining);
+                    var buildsNeeded = partsPerBuild.HasValue && partsPerBuild.Value > 0
+                        ? (int)Math.Ceiling((double)Demand.NetRemaining / partsPerBuild.Value)
+                        : 0;
+                    var isRecommended = level == recommended;
+
+                    <tr class="dispatch-stack-row @(isRecommended ? "dispatch-stack-row--recommended" : "")">
+                        <td>
+                            @(level)x
+                            @if (isRecommended) { <span class="dispatch-stack-badge">Best</span> }
+                        </td>
+                        <td>@(duration?.ToString("F1") ?? "—")h</td>
+                        <td>@(partsPerBuild ?? 0)</td>
+                        <td>@buildsNeeded</td>
+                        <td>@(efficiency?.ToString("F2") ?? "—") h/part</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else if (config != null)
+    {
+        @* Single stack only — show simple info *@
+        <div class="dispatch-demand-simple">
+            <span>@(config.SingleStackDurationHours?.ToString("F1") ?? "?")h per build</span>
+            <span>@(config.PlannedPartsPerBuildSingle) parts/build</span>
+            @{
+                var builds = config.PlannedPartsPerBuildSingle > 0
+                    ? (int)Math.Ceiling((double)Demand.NetRemaining / config.PlannedPartsPerBuildSingle)
+                    : 0;
+            }
+            <span>@builds build@(builds != 1 ? "s" : "") needed</span>
+        </div>
+    }
+
+    @* ── WO Source Lines (collapsed) ── *@
+    @if (Demand.SourceLines.Count > 1)
+    {
+        <details class="dispatch-demand-sources">
+            <summary>@Demand.SourceLines.Count work orders</summary>
+            @foreach (var line in Demand.SourceLines.OrderBy(l => l.DueDate))
+            {
+                <div class="dispatch-demand-source-line">
+                    <span>@line.WorkOrderNumber</span>
+                    <span>@line.CustomerName</span>
+                    <span>@line.Quantity qty</span>
+                    <span>Due @line.DueDate.ToLocalTime().ToString("MMM d")</span>
+                </div>
+            }
+        </details>
+    }
+
+    <div class="dispatch-demand-actions">
+        <button class="btn btn-sm btn-accent" @onclick="() => OnComposeBuild.InvokeAsync(Demand.PartId)">
+            Compose Build
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DemandSummary Demand { get; set; } = default!;
+    [Parameter] public EventCallback<int> OnComposeBuild { get; set; }
+}

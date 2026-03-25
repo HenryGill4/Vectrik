@@ -185,6 +185,15 @@ public interface IProgramSchedulingService
     /// Unlock a program back to Ready. Clears IsLocked, resets ScheduleStatus.
     /// </summary>
     Task UnlockProgramAsync(int machineProgramId, string unlockedBy, string reason);
+    // ══════════════════════════════════════════════════════════
+    // Draft Programs (Engineer → Scheduler Handoff)
+    // ══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Returns BuildPlate programs in Draft status awaiting scheduling by a scheduler.
+    /// These are plates composed by engineers but not yet assigned a time slot.
+    /// </summary>
+    Task<List<MachineProgram>> GetDraftProgramsAwaitingScheduleAsync();
 }
 
 // ══════════════════════════════════════════════════════════

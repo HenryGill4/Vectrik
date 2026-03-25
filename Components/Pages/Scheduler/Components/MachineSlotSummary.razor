@@ -1,0 +1,67 @@
+@using Opcentrix_V3.Services
+@using Opcentrix_V3.Models.Enums
+
+@{
+    var statusClass = Summary.Status switch
+    {
+        MachineStatus.Running or MachineStatus.Building or MachineStatus.Preheating => "dispatch-machine-card--running",
+        MachineStatus.Error or MachineStatus.Offline => "dispatch-machine-card--down",
+        MachineStatus.Maintenance => "dispatch-machine-card--maintenance",
+        _ => "dispatch-machine-card--idle"
+    };
+    var statusIcon = Summary.Status switch
+    {
+        MachineStatus.Running or MachineStatus.Building => "🖨️",
+        MachineStatus.Preheating => "🔥",
+        MachineStatus.Cooling => "❄️",
+        MachineStatus.Error or MachineStatus.Offline => "🔴",
+        MachineStatus.Maintenance => "🔧",
+        MachineStatus.Setup => "⚙️",
+        _ => "⏸️"
+    };
+}
+
+<div class="dispatch-machine-card @statusClass" @onclick="() => OnComposeBuild.InvokeAsync(Summary.MachineId)">
+    <div class="dispatch-machine-header">
+        <span class="dispatch-machine-status">@statusIcon</span>
+        <strong class="dispatch-machine-name">@Summary.MachineName</strong>
+    </div>
+
+    @if (Summary.CurrentBuildName != null)
+    {
+        <div class="dispatch-machine-current">
+            <span class="dispatch-machine-label">Printing</span>
+            <span class="dispatch-machine-value" title="@Summary.CurrentBuildName">@TruncateName(Summary.CurrentBuildName)</span>
+            @if (Summary.CurrentBuildEnd.HasValue)
+            {
+                var remaining = Summary.CurrentBuildEnd.Value - DateTime.UtcNow;
+                <span class="dispatch-machine-eta">
+                    @if (remaining.TotalHours > 0) { @($"~{remaining.TotalHours:F1}h left") }
+                    else { <span style="color: var(--warning);">Overdue</span> }
+                </span>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="dispatch-machine-current">
+            <span class="dispatch-machine-label">@(Summary.Status is MachineStatus.Error or MachineStatus.Offline ? "DOWN" : Summary.Status.ToString())</span>
+        </div>
+    }
+
+    <div class="dispatch-machine-footer">
+        <span class="dispatch-machine-slot">Next slot: @Summary.NextSlotStart.ToLocalTime().ToString("MMM d, HH:mm")</span>
+        @if (Summary.QueuedBuildCount > 0)
+        {
+            <span class="dispatch-machine-queue badge badge-sm">@Summary.QueuedBuildCount queued</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineAvailabilitySummary Summary { get; set; } = default!;
+    [Parameter] public EventCallback<int> OnComposeBuild { get; set; }
+
+    private static string TruncateName(string name) =>
+        name.Length > 24 ? name[..21] + "..." : name;
+}

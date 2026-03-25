@@ -9,6 +9,7 @@
 @inject IShiftManagementService ShiftService
 @inject IBuildAdvisorService BuildAdvisor
 @inject IProgramPlanningService ProgramPlanning
+@inject IBuildTemplateService TemplateService
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @inject ToastService Toast
 @implements IAsyncDisposable
@@ -110,6 +111,18 @@ else if (_viewMode == "demand")
                      ShowOverdueOnly="_showOverdueOnly"
                      OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
 }
+else if (_viewMode == "dispatch")
+{
+    <DispatchView DemandSummaries="_dispatchDemand"
+                  MachineAvailability="_machineAvailability"
+                  Recommendations="_dispatchRecommendations"
+                  Templates="_dispatchTemplates"
+                  DraftPrograms="_draftPrograms"
+                  OnOpenAdvisorForMachine="OpenBuildAdvisorForMachine"
+                  OnOpenAdvisorForPart="OpenBuildAdvisorForPart"
+                  OnInstantiateTemplate="HandleInstantiateTemplateAsync"
+                  OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
+}
 else if (_viewMode == "floor")
 {
     <StagesView Executions="_executions"
@@ -178,6 +191,7 @@ else if (_viewMode == "data")
     IsVisible="_showBuildAdvisor"
     Machines="_machines"
     InitialMachineId="_advisorMachineId"
+    InitialPartId="_advisorPartId"
     UserName="@_userName"
     OnClose="() => { _showBuildAdvisor = false; }"
     OnScheduled="OnModalConfirmedAsync" />
@@ -209,6 +223,13 @@ else if (_viewMode == "data")
     private List<OperatingShift> _shifts = new();
     private BottleneckReport? _bottleneckReport;
 
+    // Dispatch view data
+    private List<DemandSummary> _dispatchDemand = new();
+    private List<MachineAvailabilitySummary> _machineAvailability = new();
+    private List<BuildRecommendation> _dispatchRecommendations = new();
+    private List<BuildTemplate> _dispatchTemplates = new();
+    private List<MachineProgram> _draftPrograms = new();
+
     private GanttView? _ganttView;
     private ProgramsView? _programsView;
     private PartPathView? _partPathView;
@@ -225,6 +246,7 @@ else if (_viewMode == "data")
     private bool _showScheduleWizard;
     private bool _showBuildAdvisor;
     private int? _advisorMachineId;
+    private int? _advisorPartId;
     private bool _showReschedule;
     private ConfirmDialog _confirmDialog = null!;
     private StageExecution? _rescheduleExec;
@@ -246,6 +268,7 @@ else if (_viewMode == "data")
                 "stages" => "floor",
                 "table" or "path" => "data",
                 "builds" => "programs",
+                "dispatch" => "dispatch",
                 _ => ViewParam
             };
         }
@@ -368,6 +391,9 @@ else if (_viewMode == "data")
             case "floor":
                 await LoadFloorDataAsync();
                 break;
+            case "dispatch":
+                await LoadDispatchDataAsync();
+                break;
             case "data":
                 await LoadDataViewAsync();
                 break;
@@ -406,6 +432,27 @@ else if (_viewMode == "data")
     private async Task LoadDataViewAsync()
     {
         _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
+    }
+
+    private async Task LoadDispatchDataAsync()
+    {
+        _dispatchDemand = await BuildAdvisor.GetAggregateDemandAsync();
+        _machineAvailability = await BuildAdvisor.GetMachineAvailabilitySummaryAsync();
+        _draftPrograms = await ProgramScheduling.GetDraftProgramsAwaitingScheduleAsync();
+
+        // Load templates matched to current demand
+        var demandPartIds = _dispatchDemand.Where(d => d.IsAdditive && d.NetRemaining > 0).Select(d => d.PartId).ToList();
+        _dispatchTemplates = await TemplateService.GetTemplatesWithDemandMatchAsync(demandPartIds);
+
+        // Get recommendations for each SLS machine (in parallel)
+        var recTasks = SlsMachines.Select(async m =>
+        {
+            try { return await BuildAdvisor.RecommendNextBuildAsync(m.Id); }
+            catch { return null; }
+        });
+        _dispatchRecommendations = (await Task.WhenAll(recTasks))
+            .Where(r => r != null && r.Plate.Parts.Any())
+            .ToList()!;
     }
 
     private async Task OnViewModeChangedAsync(string newMode)
@@ -544,6 +591,33 @@ else if (_viewMode == "data")
     private void OpenBuildAdvisor()
     {
         _advisorMachineId = null;
+        _advisorPartId = null;
+        _showBuildAdvisor = true;
+    }
+
+    private async Task HandleInstantiateTemplateAsync(int templateId)
+    {
+        try
+        {
+            var firstMachine = SlsMachines.FirstOrDefault();
+            if (firstMachine == null) { Toast.ShowError("No SLS machines available."); return; }
+            var program = await TemplateService.InstantiateAsync(templateId, firstMachine.Id, _userName);
+            Toast.ShowSuccess($"Created program '{program.Name}' from template. Opening scheduler...");
+            _advisorMachineId = firstMachine.Id;
+            _advisorPartId = null;
+            _showBuildAdvisor = true;
+            await LoadData(isBackgroundRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to instantiate template: {ex.Message}");
+        }
+    }
+
+    private void OpenBuildAdvisorForPart(int partId)
+    {
+        _advisorMachineId = null;
+        _advisorPartId = partId;
         _showBuildAdvisor = true;
     }
 
@@ -555,6 +629,7 @@ else if (_viewMode == "data")
     private void OpenBuildAdvisorForMachine(int machineId)
     {
         _advisorMachineId = machineId;
+        _advisorPartId = null;
         _showBuildAdvisor = true;
     }
 
