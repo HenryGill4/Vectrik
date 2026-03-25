@@ -75,3 +75,34 @@ dotnet ef migrations add <Name> --context TenantDbContext --output-dir Data/Migr
 The scheduler has 5 views (Production/Gantt, Demand, Programs, Floor, Data). Gantt supports drag-and-drop rescheduling via JS. Work order panel shows demand alongside the Gantt. Shift-period shading shows off-hours on the Gantt. Changeover segments show on build bars.
 
 Active development: "Next Build Advisor" — see `docs/PLAN-scheduler-advisor.md`.
+
+## Machine Context — EOS M4 Onyx DMLS Printers
+
+The shop runs **two EOS M4 Onyx** (also referred to as EOS M 400-4) DMLS/SLS 3D printers.
+
+### Machine Specs (as configured in seed data)
+- **Build Volume**: 450mm x 450mm x 400mm
+- **Lasers**: 6 lasers, 1000W max each
+- **Build Plate Capacity**: 2 (can hold 2 builds in the cooldown chamber before a manual changeover is needed)
+- **Auto-Changeover**: Enabled, ~30 minutes
+- **Hourly Rate**: $200/hr
+
+### Operational Reality
+- Machines run **continuously 24/7** if managed properly
+- The auto-changeover system starts the next build automatically after the current build finishes
+- The cooldown chamber holds **2 builds**. An operator must remove the cooled plate from the cooldown chamber **daily** (at minimum once per day during shift hours) to prevent the machine from going DOWN
+- If a build finishes and the cooldown chamber is full (both slots occupied) and no operator is present, the machine **stops and goes DOWN** until an operator removes a plate
+- Changeovers must be scheduled during **operator shift windows** to keep machines running continuously
+- Typical print durations range from ~20-30 hours per build depending on part geometry and stacking
+
+### Scheduling Logic
+The scheduler should:
+1. Find the earliest available slot after the current/last build ends
+2. Calculate when the changeover would occur (build end = when operator needs to remove previous build from cooldown)
+3. Check if that changeover time falls within an operator's shift
+4. If yes → "Safe changeover" (recommended)
+5. If no → "Machine DOWN until shift" (risky, but sometimes unavoidable)
+6. Stack levels (single/double/triple) affect print duration and thus when changeover lands
+
+## Known Bugs & Issues
+See `docs/FEEDBACK-scheduler-wizard.md` for detailed bug reports and UX recommendations.
