@@ -20,6 +20,9 @@ internal sealed class StubProgramSchedulingService : IProgramSchedulingService
     public Task<ProgramScheduleResult> ScheduleBuildPlateAutoMachineAsync(int machineProgramId, DateTime? startAfter = null)
         => ScheduleBuildPlateAsync(machineProgramId, 1, startAfter);
 
+    public Task<CascadeResult> CascadeRescheduleAsync(int machineId, int insertedProgramId)
+        => Task.FromResult(new CascadeResult(0, new List<string>()));
+
     public Task<ProgramScheduleResult> ScheduleBuildPlateRunAsync(int machineProgramId, int machineId, DateTime? startAfter = null)
         => ScheduleBuildPlateAsync(machineProgramId, machineId, startAfter);
 

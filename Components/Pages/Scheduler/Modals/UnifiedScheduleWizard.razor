@@ -426,9 +426,14 @@
     {
         var produced = line.ProducedQuantity;
         var inPrograms = line.ProgramParts?
-            .Where(pp => pp.MachineProgram?.ScheduleStatus is not (ProgramScheduleStatus.Completed or ProgramScheduleStatus.Cancelled))
+            .Where(pp => pp.MachineProgram?.ScheduleStatus is ProgramScheduleStatus.Scheduled
+                or ProgramScheduleStatus.Printing or ProgramScheduleStatus.PostPrint)
             .Sum(pp => pp.Quantity * pp.StackLevel) ?? 0;
-        return Math.Max(0, line.Quantity - produced - inPrograms);
+        var inProduction = line.Jobs?
+            .Where(j => j.Status is not (JobStatus.Completed or JobStatus.Cancelled))
+            .Sum(j => j.Quantity) ?? 0;
+        var scheduled = Math.Max(inPrograms, inProduction);
+        return Math.Max(0, line.Quantity - produced - scheduled);
     }
 
     private void Close()

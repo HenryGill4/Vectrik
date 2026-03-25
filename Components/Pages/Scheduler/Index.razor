@@ -569,9 +569,25 @@ else if (_viewMode == "data")
             }
             else if (drag.BarType == "build")
             {
-                // Find the machine this build is on; pass 0 for auto-detect
-                await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(drag.EntityId, drag.NewStart);
-                Toast.ShowSuccess($"Build rescheduled to {drag.NewStart:MMM d HH:mm}");
+                int targetMachineId;
+                if (drag.TargetMachineId.HasValue && drag.TargetMachineId.Value > 0)
+                {
+                    targetMachineId = drag.TargetMachineId.Value;
+                    await ProgramScheduling.ScheduleBuildPlateAsync(drag.EntityId, targetMachineId, drag.NewStart);
+                }
+                else
+                {
+                    var result = await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(drag.EntityId, drag.NewStart);
+                    targetMachineId = result.Slot.MachineId;
+                }
+
+                // Auto-cascade: shift downstream builds that now overlap
+                var cascade = await ProgramScheduling.CascadeRescheduleAsync(targetMachineId, drag.EntityId);
+
+                var msg = $"Build rescheduled to {drag.NewStart:MMM d HH:mm}";
+                if (cascade.ShiftedCount > 0)
+                    msg += $" — {cascade.ShiftedCount} build(s) shifted";
+                Toast.ShowSuccess(msg);
             }
 
             await LoadData(isBackgroundRefresh: true);

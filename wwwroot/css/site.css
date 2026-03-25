@@ -209,9 +209,7 @@ body.modal-open { overflow: hidden; }
     top: 0; left: 0; bottom: 0;
     z-index: 100;
     transition: width var(--transition-normal), transform var(--transition-normal);
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
+    overflow: hidden;
 }
 
 .sidebar-header {
@@ -256,6 +254,9 @@ body.modal-open { overflow: hidden; }
 .sidebar-nav {
     padding: 8px 0;
     flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
 }
 
 .nav-section {
@@ -450,46 +451,66 @@ body.modal-open { overflow: hidden; }
     transition: margin-left var(--transition-normal);
 }
 
-/* Top Bar */
-.top-bar {
-    height: var(--topbar-height);
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
+/* Sidebar Footer (user controls) */
+.sidebar-footer {
     display: flex;
     align-items: center;
-    padding: 0 20px;
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    box-shadow: var(--shadow-sm);
+    gap: 4px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
-.top-bar-spacer { flex: 1; }
-
-.top-bar-user {
+.sidebar-user {
+    flex: 1;
     color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-right: 12px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
-.btn-topbar {
+.sidebar-footer-btn {
     background: none; border: none;
     color: var(--text-secondary);
-    font-size: 1.25rem;
+    font-size: 1.1rem;
     cursor: pointer;
-    min-width: var(--tap-target);
-    min-height: var(--tap-target);
+    width: 32px; height: 32px;
     display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
     text-decoration: none;
-    padding: 0 8px;
+    transition: background var(--transition-fast), color var(--transition-fast);
 }
-.btn-topbar:hover { color: var(--text-primary); }
+.sidebar-footer-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
 
-.mobile-toggle {
+/* Tab bar wrapper (holds mobile menu btn + tab strip) */
+.tab-bar {
+    display: flex;
+    align-items: stretch;
+    position: sticky;
+    top: 0;
+    z-index: 45;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+/* Mobile menu button (inline with tabs, mobile only) */
+.mobile-menu-btn {
     display: none;
-    background: none; border: none; color: var(--text-primary);
-    font-size: 1.5rem; cursor: pointer;
-    min-width: var(--tap-target); min-height: var(--tap-target);
+    background: none;
+    border: none;
+    border-right: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 1.3rem;
+    cursor: pointer;
+    width: 44px;
+    flex-shrink: 0;
+    align-items: center; justify-content: center;
 }
 
 /* Login Page */
@@ -543,15 +564,12 @@ body.modal-open { overflow: hidden; }
 .tab-strip {
     display: flex;
     align-items: flex-start;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
     min-height: 36px;
     padding: 0;
     gap: 0;
-    position: sticky;
-    top: var(--topbar-height);
-    z-index: 45;
     user-select: none;
+    flex: 1;
+    min-width: 0;
 }
 
 .tab-strip-scroll {
@@ -1215,51 +1233,71 @@ select.form-control {
 .alert-warning { background: rgba(var(--warning-rgb),0.1); border: 1px solid rgba(var(--warning-rgb),0.3); color: var(--alert-warning-text); }
 .alert-info { background: rgba(var(--accent-rgb),0.1); border: 1px solid rgba(var(--accent-rgb),0.3); color: var(--alert-info-text); }
 
+/* Sidebar backdrop (mobile only, visible when sidebar is open) */
+.sidebar-backdrop {
+    display: none;
+}
+
 /* Responsive: mobile sidebar -> off-canvas */
 @media (max-width: 768px) {
     .sidebar {
         transform: translateX(-100%);
+        width: 280px;
     }
 
+    /* On mobile, sidebar-collapsed toggles open (reversed from desktop) */
     .app-container:not(.sidebar-collapsed) .sidebar {
-        transform: translateX(0);
-    }
-
-    .sidebar-collapsed .sidebar {
         transform: translateX(-100%);
     }
 
-    .main-area {
-        margin-left: 0;
+    .sidebar-collapsed .sidebar {
+        transform: translateX(0);
+        box-shadow: var(--shadow-lg);
     }
 
-    .mobile-toggle { display: flex; }
-    .sidebar-toggle { display: none; }
+    /* Backdrop overlay when sidebar is open */
+    .sidebar-collapsed .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 99;
+    }
+
+    .main-area {
+        margin-left: 0 !important;
+    }
+
+    /* Show hamburger in tab bar, show close button in sidebar header */
+    .mobile-menu-btn { display: flex; }
+    .sidebar-toggle {
+        display: flex;
+        font-size: 1rem;
+    }
 
     .content-area { padding: 16px; }
 
-    .tab-strip { top: 0; }
     .tab-item { max-width: 120px; padding: 0 8px; font-size: 0.75rem; }
     .tab-overflow-dropdown { min-width: 200px; max-width: 280px; }
 
-    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .kpi-card { padding: 10px; }
+    .kpi-value { font-size: 1.3rem; }
+
+    .card { padding: 12px; margin-bottom: 8px; }
 }
 
 @media (min-width: 769px) {
     .sidebar-collapsed .sidebar {
-        width: 48px;
+        width: 0;
         overflow: hidden;
-    }
-    .sidebar-collapsed .sidebar-nav,
-    .sidebar-collapsed .sidebar-brand {
-        display: none;
-    }
-    .sidebar-collapsed .sidebar-header {
-        justify-content: center;
-        padding: 0;
+        border-right: none;
     }
     .sidebar-collapsed .main-area {
-        margin-left: 48px;
+        margin-left: 0;
+    }
+    .sidebar-collapsed .mobile-menu-btn {
+        display: flex;
     }
 }
 
@@ -1667,7 +1705,7 @@ select.form-control {
 .gantt-container.gantt-viewport {
     overflow-x: auto;
     overflow-y: auto;
-    max-height: 70vh;
+    max-height: calc(100vh - 340px);
     position: relative;
     cursor: grab;
 }
@@ -2254,6 +2292,26 @@ select.form-control {
 .gantt-bar-dragging {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
     transition: none !important;
+    z-index: 100 !important;
+    pointer-events: none;
+}
+
+/* Smooth bar position transitions after Blazor re-render */
+.gantt-build-bar-wrapper {
+    transition: left 0.3s ease;
+}
+.gantt-build-bar-wrapper.gantt-bar-dragging {
+    transition: none !important;
+}
+
+/* Cross-machine drop target highlight */
+.gantt-drop-target {
+    background: rgba(var(--accent-rgb), 0.08) !important;
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+}
+.gantt-drop-target .gantt-track {
+    background: rgba(var(--accent-rgb), 0.04);
 }
 .gantt-drag-ghost {
     position: absolute;
@@ -2276,12 +2334,23 @@ select.form-control {
 }
 
 /* ── Gantt Legend ── */
+.gantt-legend-details {
+    padding: 4px 12px 8px;
+}
+.gantt-legend-toggle {
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 4px 0;
+    user-select: none;
+}
 .gantt-legend {
     display: flex;
     gap: 16px;
     flex-wrap: wrap;
-    margin-top: 12px;
-    padding: 8px 0;
+    margin-top: 6px;
+    padding: 4px 0;
     font-size: 0.78rem;
     color: var(--text-muted);
 }
@@ -3075,7 +3144,6 @@ select.form-control {
 .sched-gantt-card {
     overflow-x: auto;
     padding: 0;
-    min-height: calc(100vh - 260px);
     cursor: grab;
     scroll-behavior: auto;
 }
@@ -4332,6 +4400,73 @@ select.form-control {
 
 /* ── Scheduler Responsive ── */
 @media (max-width: 1024px) {
+    /* ── Global: Content area tighter ── */
+    .content-area {
+        padding: 16px;
+    }
+
+    /* ── Global: Page header stacks ── */
+    .page-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+    .page-title {
+        font-size: 1.2rem;
+    }
+    .page-actions {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .page-actions select,
+    .page-actions input[type="text"],
+    .page-actions input[type="search"] {
+        max-width: 140px;
+        font-size: 0.82rem;
+    }
+    .page-actions .btn {
+        font-size: 0.82rem;
+        padding: 6px 12px;
+    }
+
+    /* ── Global: KPI grid 3-col ── */
+    .kpi-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+    .kpi-card {
+        padding: 12px;
+    }
+    .kpi-value {
+        font-size: 1.4rem;
+    }
+    .kpi-label {
+        font-size: 0.7rem;
+    }
+
+    /* ── Global: Cards compact ── */
+    .card {
+        padding: 14px;
+        margin-bottom: 10px;
+    }
+
+    /* ── Global: Tab strip compact ── */
+    .tab-item {
+        padding: 0 10px;
+        font-size: 0.8rem;
+    }
+
+    /* ── Global: Modals fit tablet ── */
+    .modal-content {
+        max-width: 90vw;
+    }
+    .modal-lg {
+        max-width: 95vw;
+    }
+
+    /* ── Scheduler-specific ── */
     .sched-layout,
     .sched-layout--3col {
         grid-template-columns: 1fr;
@@ -6708,7 +6843,7 @@ select.form-control {
 @media print {
     body { background: white; color: black; }
 
-    .sidebar, .top-bar, .mobile-toggle, .btn,
+    .sidebar, .mobile-menu-btn, .btn,
     .toast-container, .sched-controls-right,
     .page-actions, #blazor-error-ui { display: none !important; }
 

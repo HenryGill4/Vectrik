@@ -383,27 +383,32 @@
     // ── Work Order Demand Helpers ──
 
     /// <summary>
-    /// Calculates outstanding quantity for a WO line (ordered - produced - in programs).
+    /// Calculates outstanding quantity for a WO line.
+    /// Uses the greater of in-programs or in-production to avoid double-counting
+    /// (SLS builds create both ProgramParts and Jobs linked to the same WO line).
     /// </summary>
     private int GetOutstanding(WorkOrderLine line)
     {
         var produced = line.ProducedQuantity;
         var inPrograms = GetInProgramQty(line);
+        var inProduction = GetInProductionQty(line);
+        var scheduled = Math.Max(inPrograms, inProduction);
         var ordered = line.Quantity;
-        return Math.Max(0, ordered - produced - inPrograms);
+        return Math.Max(0, ordered - produced - scheduled);
     }
 
     /// <summary>
-    /// Quantity covered by active MachinePrograms linked to THIS specific WO line.
-    /// Uses the line's ProgramParts navigation (loaded via Include) so programs
-    /// fulfilling other WO lines for the same part are not double-counted.
+    /// Quantity covered by scheduled/active MachinePrograms linked to THIS specific WO line.
+    /// Only counts programs that are actually scheduled (Scheduled, Printing, PostPrint),
+    /// not source/template programs in None/Ready status.
     /// </summary>
     private static int GetInProgramQty(WorkOrderLine line)
     {
         if (line.ProgramParts == null) return 0;
         return line.ProgramParts
             .Where(pp => pp.MachineProgram != null
-                && pp.MachineProgram.ScheduleStatus is not (ProgramScheduleStatus.Completed or ProgramScheduleStatus.Cancelled))
+                && pp.MachineProgram.ScheduleStatus is ProgramScheduleStatus.Scheduled
+                    or ProgramScheduleStatus.Printing or ProgramScheduleStatus.PostPrint)
             .Sum(pp => pp.Quantity * pp.StackLevel);
     }
 

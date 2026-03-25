@@ -27,8 +27,12 @@ let _barDragType = null;      // 'exec', 'build', or 'group'
 let _barDragEntityId = null;  // The exec/program ID
 let _barDragOrigLeft = 0;     // Original CSS left value in px
 let _barDragStartX = 0;       // Mouse X at drag start
+let _barDragStartY = 0;       // Mouse Y at drag start (for cross-row drag)
 let _barDragActive = false;   // True once mouse moves past threshold
 let _barDragGhost = null;     // Tooltip showing proposed time
+let _barDragSourceMachineId = null;  // Machine ID the bar started on
+let _barDragTargetMachineId = null;  // Machine ID the cursor is currently over
+let _barDragHighlightedRow = null;   // Currently highlighted row element
 
 // Saved viewport state — survives DOM destruction
 let _savedScrollTimeMsFromStart = null; // ms offset from _dataStartMs at left edge of viewport
@@ -399,6 +403,9 @@ function onMouseDown(e) {
             _barDragEntityId = bar.dataset.execId || bar.dataset.programId;
             _barDragOrigLeft = parseFloat(wrapper.style.left) || 0;
             _barDragStartX = e.clientX;
+            _barDragStartY = e.clientY;
+            _barDragSourceMachineId = wrapper.dataset.machineId || null;
+            _barDragTargetMachineId = _barDragSourceMachineId;
             _barDragActive = false;
             return;
         }
@@ -419,12 +426,14 @@ function onMouseMove(e) {
     // Bar drag in progress
     if (_barDragEl) {
         const deltaX = e.clientX - _barDragStartX;
+        const deltaY = e.clientY - _barDragStartY;
+        const totalDelta = Math.abs(deltaX) + Math.abs(deltaY);
 
         // Activate drag after threshold
-        if (!_barDragActive && Math.abs(deltaX) > BAR_DRAG_THRESHOLD) {
+        if (!_barDragActive && totalDelta > BAR_DRAG_THRESHOLD) {
             _barDragActive = true;
             _barDragEl.style.opacity = '0.7';
-            _barDragEl.style.zIndex = '50';
+            _barDragEl.style.zIndex = '100';
             _barDragEl.classList.add('gantt-bar-dragging');
             document.body.style.cursor = 'grabbing';
 
@@ -438,13 +447,28 @@ function onMouseMove(e) {
             const newLeft = _barDragOrigLeft + deltaX;
             _barDragEl.style.left = newLeft + 'px';
 
+            // Allow vertical movement for cross-machine drag (build bars only)
+            if (_barDragType === 'build') {
+                _barDragEl.style.transform = `translateY(${deltaY}px)`;
+                detectTargetMachineRow(e.clientY);
+            }
+
             // Update ghost with proposed time
             if (_barDragGhost) {
                 const timeMs = _dataStartMs + ((_container.scrollLeft + (e.clientX - _container.getBoundingClientRect().left)) / _pixelsPerHour) * 3600000;
                 const dt = new Date(timeMs);
-                _barDragGhost.textContent = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                let ghostText = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+                // Show target machine name if different from source
+                if (_barDragTargetMachineId && _barDragTargetMachineId !== _barDragSourceMachineId && _barDragHighlightedRow) {
+                    const machineName = _barDragHighlightedRow.querySelector('.gantt-machine-name')?.textContent?.trim();
+                    if (machineName) ghostText += '\n→ ' + machineName;
+                }
+
+                _barDragGhost.textContent = ghostText;
+                _barDragGhost.style.whiteSpace = 'pre';
                 _barDragGhost.style.left = newLeft + 'px';
-                _barDragGhost.style.top = '-20px';
+                _barDragGhost.style.top = (deltaY - 24) + 'px';
             }
         }
         return;
@@ -454,6 +478,26 @@ function onMouseMove(e) {
     if (!_isDragging || _disposed || !isAlive()) return;
     const deltaX = e.clientX - _dragStartX;
     _container.scrollLeft = _dragStartScrollLeft - deltaX;
+}
+
+function detectTargetMachineRow(clientY) {
+    // Remove highlight from previous row
+    if (_barDragHighlightedRow) {
+        _barDragHighlightedRow.classList.remove('gantt-drop-target');
+        _barDragHighlightedRow = null;
+    }
+
+    const rows = _container.querySelectorAll('.gantt-row[data-machine-id]');
+    for (const row of rows) {
+        const rect = row.getBoundingClientRect();
+        if (clientY >= rect.top && clientY <= rect.bottom) {
+            _barDragTargetMachineId = row.dataset.machineId;
+            row.classList.add('gantt-drop-target');
+            _barDragHighlightedRow = row;
+            return;
+        }
+    }
+    // If cursor outside all rows, keep current target
 }
 
 function onMouseUp(e) {
@@ -466,19 +510,24 @@ function onMouseUp(e) {
         // Cleanup visual state
         _barDragEl.style.opacity = '';
         _barDragEl.style.zIndex = '';
+        _barDragEl.style.transform = '';
         _barDragEl.classList.remove('gantt-bar-dragging');
         document.body.style.cursor = '';
         if (_barDragGhost) {
             _barDragGhost.remove();
             _barDragGhost = null;
         }
+        if (_barDragHighlightedRow) {
+            _barDragHighlightedRow.classList.remove('gantt-drop-target');
+            _barDragHighlightedRow = null;
+        }
 
         // Restore original position (Blazor will re-render at the correct position after reschedule)
         _barDragEl.style.left = _barDragOrigLeft + 'px';
 
-        // Notify Blazor
+        // Notify Blazor with target machine ID
         if (_dotNetRef && _barDragEntityId) {
-            _dotNetRef.invokeMethodAsync('OnBarDragCompleted', _barDragType, _barDragEntityId, newTimeIso);
+            _dotNetRef.invokeMethodAsync('OnBarDragCompleted', _barDragType, _barDragEntityId, newTimeIso, _barDragTargetMachineId || '0');
         }
     }
 
@@ -487,6 +536,8 @@ function onMouseUp(e) {
     _barDragType = null;
     _barDragEntityId = null;
     _barDragActive = false;
+    _barDragSourceMachineId = null;
+    _barDragTargetMachineId = null;
 
     // Complete viewport pan
     if (_isDragging) {

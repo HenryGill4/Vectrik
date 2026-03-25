@@ -64,6 +64,47 @@ public class ProgramSchedulingService : IProgramSchedulingService
         if (!program.ProgramParts.Any())
             throw new InvalidOperationException("Add at least one part to the build plate before scheduling.");
 
+        // ── Reschedule: clean up existing job if this program was already scheduled ──
+        if (program.ScheduledJobId.HasValue)
+        {
+            var oldJobId = program.ScheduledJobId.Value;
+
+            // Delete per-part jobs that were created for this program's previous schedule
+            var perPartJobs = await _db.Jobs
+                .Where(j => j.Notes != null && j.Notes.Contains($"program: {program.Name ?? program.ProgramNumber}") && j.Id != oldJobId)
+                .ToListAsync();
+
+            // Delete old stage executions for the build job
+            var oldExecutions = await _db.StageExecutions
+                .Where(se => se.JobId == oldJobId)
+                .ToListAsync();
+            _db.StageExecutions.RemoveRange(oldExecutions);
+
+            // Delete per-part job stage executions and the jobs themselves
+            if (perPartJobs.Any())
+            {
+                var oldPerPartJobIds = perPartJobs.Select(j => j.Id).ToList();
+                var perPartExecutions = await _db.StageExecutions
+                    .Where(se => se.JobId != null && oldPerPartJobIds.Contains(se.JobId.Value))
+                    .ToListAsync();
+                _db.StageExecutions.RemoveRange(perPartExecutions);
+                _db.Jobs.RemoveRange(perPartJobs);
+            }
+
+            // Delete the old build job
+            var oldJob = await _db.Jobs.FindAsync(oldJobId);
+            if (oldJob != null)
+                _db.Jobs.Remove(oldJob);
+
+            // Clear the program's scheduling state so it can be re-scheduled fresh
+            program.ScheduledJobId = null;
+            program.ScheduledDate = null;
+            program.ScheduleStatus = ProgramScheduleStatus.None;
+            program.IsLocked = false;
+            program.PredecessorProgramId = null;
+            await _db.SaveChangesAsync();
+        }
+
         // Validate downstream program readiness
         var downstreamValidation = await _downstreamService.ValidateDownstreamReadinessAsync(machineProgramId);
         if (!downstreamValidation.IsValid)
@@ -331,6 +372,67 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var bestSlot = await FindBestSlotAsync(program.EstimatedPrintHours.Value, notBefore, machineType: "SLS");
 
         return await ScheduleBuildPlateAsync(machineProgramId, bestSlot.MachineId, startAfter);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // Cascade Rescheduling
+    // ══════════════════════════════════════════════════════════
+
+    public async Task<CascadeResult> CascadeRescheduleAsync(int machineId, int insertedProgramId)
+    {
+        var inserted = await _db.MachinePrograms.FindAsync(insertedProgramId);
+        if (inserted?.ScheduledDate == null || !inserted.EstimatedPrintHours.HasValue)
+            return new CascadeResult(0, new List<string>());
+
+        var machine = await _db.Machines.FindAsync(machineId);
+        var changeoverMinutes = (machine?.AutoChangeoverEnabled == true) ? machine.ChangeoverMinutes : 0;
+
+        var insertedEnd = inserted.ScheduledDate.Value.AddHours(inserted.EstimatedPrintHours.Value);
+        var blockingEnd = insertedEnd.AddMinutes(changeoverMinutes);
+
+        // Get all other scheduled builds on this machine, ordered by start time
+        var programsOnMachine = await _db.MachinePrograms
+            .Where(p => p.MachineId == machineId
+                && p.Id != insertedProgramId
+                && p.ProgramType == ProgramType.BuildPlate
+                && p.ScheduledDate != null
+                && (p.ScheduleStatus == ProgramScheduleStatus.Scheduled
+                    || p.ScheduleStatus == ProgramScheduleStatus.Ready))
+            .OrderBy(p => p.ScheduledDate)
+            .ToListAsync();
+
+        var shifted = new List<string>();
+        const int maxCascade = 20;
+
+        foreach (var prog in programsOnMachine)
+        {
+            if (shifted.Count >= maxCascade) break;
+
+            var progStart = prog.ScheduledDate!.Value;
+            var progDuration = prog.EstimatedPrintHours ?? 0;
+            var progEnd = progStart.AddHours(progDuration);
+
+            // If this program starts after the blocking window, no conflict — done
+            if (progStart >= blockingEnd) break;
+
+            // If this program ends before the inserted one starts, skip
+            if (progEnd <= inserted.ScheduledDate.Value) continue;
+
+            // Skip locked/in-progress builds — can't move them
+            if (prog.ScheduleStatus == ProgramScheduleStatus.Printing
+                || prog.ScheduleStatus == ProgramScheduleStatus.PostPrint
+                || prog.ScheduleStatus == ProgramScheduleStatus.Completed)
+                continue;
+
+            // Overlap detected — reschedule this build after the blocking window
+            await ScheduleBuildPlateAsync(prog.Id, machineId, blockingEnd);
+            shifted.Add(prog.Name ?? prog.ProgramNumber ?? $"Build #{prog.Id}");
+
+            // Update blocking end: this shifted build now occupies time after blockingEnd
+            blockingEnd = blockingEnd.AddHours(progDuration).AddMinutes(changeoverMinutes);
+        }
+
+        return new CascadeResult(shifted.Count, shifted);
     }
 
     public async Task<ProgramScheduleResult> ScheduleBuildPlateRunAsync(
@@ -681,31 +783,45 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
     public async Task<List<MachineProgram>> GetAvailableProgramsForPartAsync(int partId)
     {
-        // Find BuildPlate programs that:
-        // 1. Contain this part
-        // 2. Are in None or Ready status (not already scheduled/completed)
-        // 3. Have the part as an active ProgramPart entry
+        // Find BuildPlate programs that contain this part and are available for scheduling:
+        // 1. Unscheduled (None/Ready) programs
+        // 2. Source/master programs (reusable templates) regardless of schedule status
         return await _db.MachinePrograms
             .Include(p => p.ProgramParts)
             .Include(p => p.MachineAssignments)
             .Where(p => p.ProgramType == ProgramType.BuildPlate
-                && (p.ScheduleStatus == ProgramScheduleStatus.None
-                    || p.ScheduleStatus == ProgramScheduleStatus.Ready)
                 && p.Status == ProgramStatus.Active
-                && p.ProgramParts.Any(pp => pp.PartId == partId))
+                && p.ProgramParts.Any(pp => pp.PartId == partId)
+                && (
+                    (p.ScheduleStatus == ProgramScheduleStatus.None
+                        || p.ScheduleStatus == ProgramScheduleStatus.Ready)
+                    || (p.SourceProgramId == null && p.EstimatedPrintHours != null
+                        && p.ScheduleStatus != ProgramScheduleStatus.Cancelled)
+                ))
             .OrderByDescending(p => p.LastModifiedDate)
             .ToListAsync();
     }
 
     public async Task<List<MachineProgram>> GetAvailableBuildPlateProgramsAsync()
     {
+        // Return BuildPlate programs that are either:
+        // 1. Unscheduled (None/Ready) — traditional availability check
+        // 2. Source/master programs (no SourceProgramId) with slicer data — these are
+        //    reusable templates that ScheduleBuildPlateRunAsync creates copies from.
+        //    They may be in Scheduled status from previous runs but remain available.
         return await _db.MachinePrograms
             .Include(p => p.ProgramParts).ThenInclude(pp => pp.Part)
             .Include(p => p.MachineAssignments).ThenInclude(a => a.Machine)
             .Where(p => p.ProgramType == ProgramType.BuildPlate
-                && (p.ScheduleStatus == ProgramScheduleStatus.None
-                    || p.ScheduleStatus == ProgramScheduleStatus.Ready)
-                && (p.Status == ProgramStatus.Active || p.Status == ProgramStatus.Draft))
+                && (p.Status == ProgramStatus.Active || p.Status == ProgramStatus.Draft)
+                && (
+                    // Unscheduled programs
+                    (p.ScheduleStatus == ProgramScheduleStatus.None
+                        || p.ScheduleStatus == ProgramScheduleStatus.Ready)
+                    // Source/master programs with slicer data (reusable templates)
+                    || (p.SourceProgramId == null && p.EstimatedPrintHours != null
+                        && p.ScheduleStatus != ProgramScheduleStatus.Cancelled)
+                ))
             .OrderByDescending(p => p.LastModifiedDate)
             .ToListAsync();
     }
@@ -737,13 +853,15 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .ToListAsync();
 
         // Also include scheduled programs that don't yet have stage executions
+        // Exclude the program being rescheduled (forProgramId) to avoid self-blocking
         var existingPrograms = await _db.MachinePrograms
             .Where(p => p.MachineId == machine.Id
                 && p.ProgramType == ProgramType.BuildPlate
                 && p.ScheduledDate != null
                 && p.EstimatedPrintHours != null
                 && p.ScheduleStatus != ProgramScheduleStatus.Completed
-                && p.ScheduleStatus != ProgramScheduleStatus.Cancelled)
+                && p.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && (!forProgramId.HasValue || p.Id != forProgramId.Value))
             .OrderBy(p => p.ScheduledDate)
             .Select(p => new { p.Id, p.ScheduledDate, p.EstimatedPrintHours, p.SourceProgramId })
             .ToListAsync();
@@ -1473,7 +1591,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         _db.MachinePrograms.Add(copy);
         await _db.SaveChangesAsync();
 
-        // Copy program parts
+        // Copy program parts — do NOT copy WorkOrderLineId since each scheduled run
+        // gets its own WO fulfillment links via LinkProgramPartsToWorkOrdersAsync
         foreach (var srcPart in source.ProgramParts)
         {
             _db.ProgramParts.Add(new ProgramPart
@@ -1482,8 +1601,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 PartId = srcPart.PartId,
                 Quantity = srcPart.Quantity,
                 StackLevel = srcPart.StackLevel,
-                PositionNotes = srcPart.PositionNotes,
-                WorkOrderLineId = srcPart.WorkOrderLineId
+                PositionNotes = srcPart.PositionNotes
             });
         }
 

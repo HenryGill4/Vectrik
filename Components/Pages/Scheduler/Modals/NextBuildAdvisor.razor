@@ -52,7 +52,8 @@
                 @if (!_loading && _step == 0)
                 {
                     <div class="wizard-content">
-                        <div class="form-group">
+                        @* ── Machine Selector ── *@
+                        <div class="form-group" style="margin-bottom: 8px;">
                             <label>Machine</label>
                             <select class="form-control" @bind="_selectedMachineId" @bind:after="OnMachineChanged">
                                 @foreach (var m in SlsMachines)
@@ -62,134 +63,51 @@
                             </select>
                         </div>
 
-                        @* ── Machine Build Queue ── *@
-                        @if (_selectedMachine != null)
-                        {
-                            <div class="card" style="padding: 12px; margin-top: 12px;">
-                                <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">
-                                    Build Queue
-                                    @if (_machineBuilds.Any())
-                                    {
-                                        <span style="font-weight: 400; color: var(--text-muted);"> — @_machineBuilds.Count @(_machineBuilds.Count == 1 ? "build" : "builds")</span>
-                                    }
-                                </div>
-                                @if (_machineBuilds.Any())
-                                {
-                                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                                        @foreach (var build in _machineBuilds)
-                                        {
-                                            var isPrinting = build.ScheduleStatus == ProgramScheduleStatus.Printing;
-                                            var hoursRemaining = (build.PrintEnd - DateTime.UtcNow).TotalHours;
-                                            <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 0.82rem; padding: 6px 8px; background: var(--bg-secondary); border-radius: 6px; @(isPrinting ? "border-left: 3px solid var(--success);" : "border-left: 3px solid var(--border);")">
-                                                <div>
-                                                    @if (isPrinting)
-                                                    {
-                                                        <span class="badge badge-success" style="font-size: 0.7rem;">Printing</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="badge" style="font-size: 0.7rem;">Queued</span>
-                                                    }
-                                                </div>
-                                                <div>
-                                                    <div style="font-weight: 600;">@build.ProgramName</div>
-                                                    <div style="color: var(--text-muted); font-size: 0.78rem;">
-                                                        @build.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt") &rarr; @build.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")
-                                                    </div>
-                                                </div>
-                                                <div style="text-align: right; white-space: nowrap;">
-                                                    @if (isPrinting && hoursRemaining > 0)
-                                                    {
-                                                        <span style="font-weight: 600;">@hoursRemaining.ToString("F1")h left</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span style="color: var(--text-muted);">@((build.PrintEnd - build.PrintStart).TotalHours.ToString("F1"))h</span>
-                                                    }
-                                                </div>
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div style="font-size: 0.85rem; color: var(--text-secondary);">
-                                        Machine is <strong>idle</strong> — no builds currently printing or scheduled.
-                                        Next build can start immediately.
-                                    </div>
-                                }
-                            </div>
-                        }
-
-                        @* ── Other Machine Builds ── *@
-                        @if (_otherMachineBuilds.Any())
-                        {
-                            <div class="card" style="padding: 12px; margin-top: 8px;">
-                                <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">
-                                    Other Machines
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    @foreach (var (machineName, build) in _otherMachineBuilds)
-                                    {
-                                        var isPrinting = build.ScheduleStatus == ProgramScheduleStatus.Printing;
-                                        <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 0.78rem; padding: 4px 8px; background: var(--bg-secondary); border-radius: 4px;">
-                                            <span style="color: var(--text-muted); font-weight: 500;">@machineName</span>
-                                            <span style="font-weight: 500;">@build.ProgramName</span>
-                                            <span style="color: var(--text-muted);">
-                                                @if (isPrinting)
-                                                {
-                                                    <span style="color: var(--success);">Printing</span>
-                                                }
-                                                else
-                                                {
-                                                    <text>@build.PrintStart.ToLocalTime().ToString("MMM d, h:mm tt")</text>
-                                                }
-                                            </span>
-                                        </div>
-                                    }
-                                </div>
-                            </div>
-                        }
-
-                        @* ── Top Demand Context ── *@
+                        @* ── Recommended Build (prominent) ── *@
                         @{
                             var topDemand = _demand.Where(d => d.IsAdditive && d.NetRemaining > 0).OrderByDescending(d => d.HighestPriority).ThenBy(d => d.EarliestDueDate).FirstOrDefault();
                         }
-                        @if (topDemand != null)
+                        @if (_recommendation != null)
                         {
-                            <div style="margin-top: 8px; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.82rem;">
+                            var recAligned = _selectedMachine?.AutoChangeoverEnabled == true ? _recommendation.Plate.OperatorAvailable : true;
+                            <div style="padding: 12px; border-radius: 8px; font-size: 0.82rem; background: @(recAligned ? "rgba(var(--success-rgb, 46,160,67), 0.08)" : "rgba(var(--danger-rgb, 218,54,51), 0.08)"); border-left: 4px solid @(recAligned ? "var(--success)" : "var(--danger)"); margin-bottom: 12px;">
+                                <div style="font-weight: 700; font-size: 0.92rem; margin-bottom: 6px;">Recommended Build</div>
+                                @if (topDemand != null)
+                                {
+                                    <div style="margin-bottom: 4px;">
+                                        <strong>@topDemand.PartNumber</strong> — @topDemand.NetRemaining remaining, due @topDemand.EarliestDueDate.ToString("MMM d")
+                                    </div>
+                                }
+                                @if (!string.IsNullOrEmpty(_recommendation.Rationale))
+                                {
+                                    <div style="color: var(--text-secondary); margin-bottom: 4px;">@_recommendation.Rationale</div>
+                                }
+                                <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px;">
+                                    <span>Start: <strong>@_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</strong></span>
+                                    @if (_selectedMachine?.AutoChangeoverEnabled == true)
+                                    {
+                                        <span>Changeover: <strong>@_recommendation.Slot.ChangeoverStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</strong></span>
+                                        @if (recAligned)
+                                        {
+                                            <span style="color: var(--success);">&#x2713; Safe changeover</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--danger);">&#x2717; Machine stops until operator</span>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else if (topDemand != null)
+                        {
+                            <div style="padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.82rem; margin-bottom: 12px;">
                                 <strong>Top demand:</strong> @topDemand.PartNumber — @topDemand.NetRemaining remaining, due @topDemand.EarliestDueDate.ToString("MMM d")
                             </div>
                         }
 
-                        @* ── Recommendation / Changeover Preview ── *@
-                        @if (_recommendation != null && _selectedMachine?.AutoChangeoverEnabled == true)
-                        {
-                            var recAligned = _recommendation.Plate.OperatorAvailable;
-                            <div style="margin-top: 12px; padding: 10px 12px; border-radius: 6px; font-size: 0.82rem; background: @(recAligned ? "rgba(var(--success-rgb, 46,160,67), 0.08)" : "rgba(var(--danger-rgb, 218,54,51), 0.08)"); border-left: 3px solid @(recAligned ? "var(--success)" : "var(--danger)");">
-                                <div style="font-weight: 600; margin-bottom: 4px;">
-                                    @if (recAligned)
-                                    {
-                                        <text>Next slot: changeover during operator shift</text>
-                                    }
-                                    else
-                                    {
-                                        <text>Next slot: changeover outside operator shift</text>
-                                    }
-                                </div>
-                                <div style="color: var(--text-secondary);">
-                                    Earliest start: @_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")
-                                    — Changeover at @_recommendation.Slot.ChangeoverStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")
-                                    @if (!recAligned)
-                                    {
-                                        <text> — machine stops until operator arrives</text>
-                                    }
-                                </div>
-                            </div>
-                        }
-
                         @* ── Program Selection ── *@
-                        <div style="margin-top: 16px;">
+                        <div>
                             <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
                                 <div style="font-weight: 600; font-size: 0.85rem;">Choose a Program</div>
                                 <span style="font-size: 0.78rem; color: var(--text-muted);">@FilteredPrograms.Count of @_availablePrograms.Count programs</span>
@@ -1005,6 +923,20 @@
                 _selectedMachineId, machine?.Name ?? "Machine", slot, plate, rationale, warnings);
 
             InitializePlateFromRecommendation();
+
+            // Auto-select the best matching program for the recommended build's primary part
+            var primaryPartId = plate.Parts.FirstOrDefault()?.PartId;
+            if (primaryPartId.HasValue && _availablePrograms.Any())
+            {
+                var bestProgram = _availablePrograms
+                    .Where(p => p.ProgramParts.Any(pp => pp.PartId == primaryPartId.Value))
+                    .OrderByDescending(p => p.EstimatedPrintHours.HasValue && p.EstimatedPrintHours > 0)
+                    .ThenByDescending(p => p.TotalPartCount)
+                    .FirstOrDefault();
+
+                if (bestProgram != null)
+                    await OnExistingProgramSelected(bestProgram);
+            }
         }
         catch (Exception ex)
         {
@@ -1413,12 +1345,17 @@
             {
                 programId = _selectedExistingProgram.Id;
 
-                // Link ProgramParts to WO lines from current demand for fulfillment
+                // Use ScheduleBuildPlateRunAsync to create a copy and schedule it,
+                // leaving the original program available for future scheduling
+                var scheduleStart = ActiveSlot?.PrintStart ?? DateTime.UtcNow;
+                var result = await ProgramScheduling.ScheduleBuildPlateRunAsync(programId, _selectedMachineId, scheduleStart);
+
+                // Link the COPY's ProgramParts to WO lines (not the source's)
                 var woLinks = _plateAllocations
                     .Where(a => a.WorkOrderLineId.HasValue)
                     .ToDictionary(a => a.PartId, a => a.WorkOrderLineId);
                 if (woLinks.Any())
-                    await ProgramPlanning.LinkProgramPartsToWorkOrdersAsync(programId, woLinks);
+                    await ProgramPlanning.LinkProgramPartsToWorkOrdersAsync(result.MachineProgramId, woLinks);
             }
             else
             {
@@ -1442,10 +1379,11 @@
                     // No slicer data entered — use a minimal duration so scheduling can proceed
                     await ProgramPlanning.UpdateSlicerDataAsync(programId, EstimatedPrintHours);
                 }
-            }
 
-            var scheduleStart = ActiveSlot?.PrintStart ?? DateTime.UtcNow;
-            await ProgramScheduling.ScheduleBuildPlateAsync(programId, _selectedMachineId, scheduleStart);
+                // New programs are scheduled directly (they are single-use)
+                var scheduleStart = ActiveSlot?.PrintStart ?? DateTime.UtcNow;
+                await ProgramScheduling.ScheduleBuildPlateAsync(programId, _selectedMachineId, scheduleStart);
+            }
 
             _sessionBuilds++;
             var machine = _selectedMachine;
