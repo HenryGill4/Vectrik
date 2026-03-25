@@ -681,31 +681,45 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
     public async Task<List<MachineProgram>> GetAvailableProgramsForPartAsync(int partId)
     {
-        // Find BuildPlate programs that:
-        // 1. Contain this part
-        // 2. Are in None or Ready status (not already scheduled/completed)
-        // 3. Have the part as an active ProgramPart entry
+        // Find BuildPlate programs that contain this part and are available for scheduling:
+        // 1. Unscheduled (None/Ready) programs
+        // 2. Source/master programs (reusable templates) regardless of schedule status
         return await _db.MachinePrograms
             .Include(p => p.ProgramParts)
             .Include(p => p.MachineAssignments)
             .Where(p => p.ProgramType == ProgramType.BuildPlate
-                && (p.ScheduleStatus == ProgramScheduleStatus.None
-                    || p.ScheduleStatus == ProgramScheduleStatus.Ready)
                 && p.Status == ProgramStatus.Active
-                && p.ProgramParts.Any(pp => pp.PartId == partId))
+                && p.ProgramParts.Any(pp => pp.PartId == partId)
+                && (
+                    (p.ScheduleStatus == ProgramScheduleStatus.None
+                        || p.ScheduleStatus == ProgramScheduleStatus.Ready)
+                    || (p.SourceProgramId == null && p.EstimatedPrintHours != null
+                        && p.ScheduleStatus != ProgramScheduleStatus.Cancelled)
+                ))
             .OrderByDescending(p => p.LastModifiedDate)
             .ToListAsync();
     }
 
     public async Task<List<MachineProgram>> GetAvailableBuildPlateProgramsAsync()
     {
+        // Return BuildPlate programs that are either:
+        // 1. Unscheduled (None/Ready) — traditional availability check
+        // 2. Source/master programs (no SourceProgramId) with slicer data — these are
+        //    reusable templates that ScheduleBuildPlateRunAsync creates copies from.
+        //    They may be in Scheduled status from previous runs but remain available.
         return await _db.MachinePrograms
             .Include(p => p.ProgramParts).ThenInclude(pp => pp.Part)
             .Include(p => p.MachineAssignments).ThenInclude(a => a.Machine)
             .Where(p => p.ProgramType == ProgramType.BuildPlate
-                && (p.ScheduleStatus == ProgramScheduleStatus.None
-                    || p.ScheduleStatus == ProgramScheduleStatus.Ready)
-                && (p.Status == ProgramStatus.Active || p.Status == ProgramStatus.Draft))
+                && (p.Status == ProgramStatus.Active || p.Status == ProgramStatus.Draft)
+                && (
+                    // Unscheduled programs
+                    (p.ScheduleStatus == ProgramScheduleStatus.None
+                        || p.ScheduleStatus == ProgramScheduleStatus.Ready)
+                    // Source/master programs with slicer data (reusable templates)
+                    || (p.SourceProgramId == null && p.EstimatedPrintHours != null
+                        && p.ScheduleStatus != ProgramScheduleStatus.Cancelled)
+                ))
             .OrderByDescending(p => p.LastModifiedDate)
             .ToListAsync();
     }
@@ -1473,7 +1487,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         _db.MachinePrograms.Add(copy);
         await _db.SaveChangesAsync();
 
-        // Copy program parts
+        // Copy program parts — do NOT copy WorkOrderLineId since each scheduled run
+        // gets its own WO fulfillment links via LinkProgramPartsToWorkOrdersAsync
         foreach (var srcPart in source.ProgramParts)
         {
             _db.ProgramParts.Add(new ProgramPart
@@ -1482,8 +1497,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 PartId = srcPart.PartId,
                 Quantity = srcPart.Quantity,
                 StackLevel = srcPart.StackLevel,
-                PositionNotes = srcPart.PositionNotes,
-                WorkOrderLineId = srcPart.WorkOrderLineId
+                PositionNotes = srcPart.PositionNotes
             });
         }
 

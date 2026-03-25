@@ -1202,14 +1202,35 @@ else
 
             @* ── LEFT: Program List ── *@
             <div>
+                @* ── Batch Actions Toolbar ── *@
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.82rem;">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-secondary); margin: 0;">
+                        <input type="checkbox" checked="@(_batchSelectedIds.Count == _filteredPrograms.Count && _filteredPrograms.Any())"
+                               @onchange="() => ToggleBatchSelectAll()" />
+                        Select all
+                    </label>
+                    @if (_batchSelectedIds.Any())
+                    {
+                        <span style="color: var(--text-muted);">@_batchSelectedIds.Count selected</span>
+                        <button class="btn btn-sm btn-danger" disabled="@_batchDeleting" @onclick="BatchDeleteSelectedAsync">
+                            @if (_batchDeleting) { <text>Deleting...</text> } else { <text>Delete Selected</text> }
+                        </button>
+                        <button class="btn btn-sm btn-ghost" @onclick="() => _batchSelectedIds.Clear()">Clear</button>
+                    }
+                </div>
+
                 @foreach (var program in _filteredPrograms)
                 {
                     var isSelected = _selectedProgram?.Id == program.Id;
+                    var isBatchSelected = _batchSelectedIds.Contains(program.Id);
                     var feedbackCount = _feedbackCounts.GetValueOrDefault(program.Id, 0);
 
-                    <div class="card @(isSelected ? "card-selected" : "")" style="margin-bottom: 8px; cursor: pointer; border-left: 3px solid @GetStatusColor(program.Status);"
+                    <div class="card @(isSelected ? "card-selected" : "") @(isBatchSelected ? "card-batch-selected" : "")" style="margin-bottom: 8px; cursor: pointer; border-left: 3px solid @GetStatusColor(program.Status);"
                          @onclick="() => SelectProgram(program)">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="display: flex; gap: 8px; align-items: flex-start; min-width: 0;">
+                                <input type="checkbox" checked="@isBatchSelected" style="margin-top: 3px; flex-shrink: 0;"
+                                       @onclick:stopPropagation @onchange="() => ToggleBatchSelect(program.Id)" />
                             <div style="min-width: 0;">
                                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                     <strong>@program.ProgramNumber</strong>
@@ -1249,6 +1270,7 @@ else
                                     <div style="font-size: 0.8em; margin-top: 2px; color: var(--text-muted);">🖥️ @assignedCount machine@(assignedCount != 1 ? "s" : "")</div>
                                 }
                             </div>
+                            </div> @* close checkbox + content flex wrapper *@
                             <div style="display: flex; gap: 4px; align-items: center; flex-shrink: 0;">
                                 @if (feedbackCount > 0)
                                 {
@@ -2325,6 +2347,10 @@ else
     private List<ProcessStage> _pendingSetupStages = new();
     private bool _showPendingSetup;
 
+    // Batch selection
+    private HashSet<int> _batchSelectedIds = new();
+    private bool _batchDeleting;
+
     // Filters
     private string _filterStatus = "";
     private string _filterMachineType = "";
@@ -2860,6 +2886,47 @@ else
         await ProgramService.DeleteAsync(program.Id);
         Toast.ShowSuccess($"Program {program.ProgramNumber} deleted.");
         if (_selectedProgram?.Id == program.Id) _selectedProgram = null;
+        _batchSelectedIds.Remove(program.Id);
+        await LoadData();
+    }
+
+    private void ToggleBatchSelect(int programId)
+    {
+        if (!_batchSelectedIds.Add(programId))
+            _batchSelectedIds.Remove(programId);
+    }
+
+    private void ToggleBatchSelectAll()
+    {
+        if (_batchSelectedIds.Count == _filteredPrograms.Count)
+            _batchSelectedIds.Clear();
+        else
+            _batchSelectedIds = _filteredPrograms.Select(p => p.Id).ToHashSet();
+    }
+
+    private async Task BatchDeleteSelectedAsync()
+    {
+        if (!_batchSelectedIds.Any()) return;
+        _batchDeleting = true;
+        StateHasChanged();
+
+        var count = 0;
+        foreach (var id in _batchSelectedIds.ToList())
+        {
+            try
+            {
+                await ProgramService.DeleteAsync(id);
+                count++;
+            }
+            catch { /* skip programs that can't be deleted */ }
+        }
+
+        if (_selectedProgram != null && _batchSelectedIds.Contains(_selectedProgram.Id))
+            _selectedProgram = null;
+
+        _batchSelectedIds.Clear();
+        _batchDeleting = false;
+        Toast.ShowSuccess($"Deleted {count} program{(count != 1 ? "s" : "")}.");
         await LoadData();
     }
 
@@ -3402,7 +3469,7 @@ else
         _buildProcessing = true;
         try
         {
-            var result = await ProgramScheduling.ScheduleBuildPlateAsync(plate.Id, preferredMachine.MachineId);
+            var result = await ProgramScheduling.ScheduleBuildPlateRunAsync(plate.Id, preferredMachine.MachineId);
             var stageCount = result.StageExecutions.Count;
             var msg = $"Scheduled: {result.Slot.PrintStart:g} → {result.Slot.PrintEnd:g} — {stageCount} stage(s)";
             if (result.Diagnostics?.Warnings.Count > 0)
