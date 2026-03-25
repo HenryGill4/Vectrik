@@ -112,6 +112,9 @@ internal sealed class StubProgramSchedulingService : IProgramSchedulingService
 
     public Task<List<MachineProgram>> GetAvailableProgramsForPartAsync(int partId)
         => Task.FromResult(new List<MachineProgram>());
+
+    public Task<List<MachineProgram>> GetAvailableBuildPlateProgramsAsync()
+        => Task.FromResult(new List<MachineProgram>());
 }
 
 /// <summary>

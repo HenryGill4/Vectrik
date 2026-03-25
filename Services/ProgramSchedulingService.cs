@@ -697,6 +697,18 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .ToListAsync();
     }
 
+    public async Task<List<MachineProgram>> GetAvailableBuildPlateProgramsAsync()
+    {
+        return await _db.MachinePrograms
+            .Include(p => p.ProgramParts).ThenInclude(pp => pp.Part)
+            .Where(p => p.ProgramType == ProgramType.BuildPlate
+                && (p.ScheduleStatus == ProgramScheduleStatus.None
+                    || p.ScheduleStatus == ProgramScheduleStatus.Ready)
+                && p.Status == ProgramStatus.Active)
+            .OrderByDescending(p => p.LastModifiedDate)
+            .ToListAsync();
+    }
+
     // ══════════════════════════════════════════════════════════
     // Slot Finding
     // ══════════════════════════════════════════════════════════

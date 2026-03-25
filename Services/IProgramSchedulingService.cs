@@ -68,6 +68,12 @@ public interface IProgramSchedulingService
     Task<List<MachineProgram>> GetAvailableProgramsForPartAsync(int partId);
 
     /// <summary>
+    /// Get all BuildPlate programs available for scheduling (None or Ready status).
+    /// Includes ProgramParts with Part navigation for display purposes.
+    /// </summary>
+    Task<List<MachineProgram>> GetAvailableBuildPlateProgramsAsync();
+
+    /// <summary>
     /// Creates and schedules a job for a work order line using the part's manufacturing process.
     /// For additive parts: requires an existing BuildPlate program or creates a suggestion.
     /// For standard parts: creates a Job with stage executions linked to available programs.

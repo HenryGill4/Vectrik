@@ -1,9 +1,8 @@
 @* ═══════════════════════════════════════════════════════════════════════════
    NextBuildAdvisor — Machine-centric build scheduling assistant.
    "What should I print next on this machine?"
-   4-step wizard: Schedule Options → Plate Composition → Program Details → Confirm
-   Changeover-aware: suggests stack levels that land changeover during operator hours.
-   Connects to real build programs with slicer data and file attachments.
+   Program-first flow: Select existing program OR create new → Timing → Schedule.
+   Changeover-aware: suggests start times that land changeover during operator hours.
    ═══════════════════════════════════════════════════════════════════════════ *@
 @using Microsoft.AspNetCore.Components.Forms
 @inject IBuildAdvisorService Advisor
@@ -28,16 +27,16 @@
             <div class="modal-body">
                 @* ── Step Indicator ── *@
                 <div class="wizard-steps">
-                    @for (var i = 0; i < _steps.Length; i++)
+                    @for (var i = 0; i < ActiveSteps.Length; i++)
                     {
                         var idx = i;
-                        var isActive = _step >= idx;
-                        var isDone = _step > idx;
+                        var isActive = VisualStep >= idx;
+                        var isDone = VisualStep > idx;
                         <div class="wizard-step @(isActive ? "wizard-step--active" : "") @(isDone ? "wizard-step--done" : "")">
                             <span class="wizard-step-num">@(idx + 1)</span>
-                            <span class="wizard-step-label">@_steps[idx]</span>
+                            <span class="wizard-step-label">@ActiveSteps[idx]</span>
                         </div>
-                        @if (idx < _steps.Length - 1)
+                        @if (idx < ActiveSteps.Length - 1)
                         {
                             <div class="wizard-step-connector @(isDone ? "wizard-step-connector--done" : "")"></div>
                         }
@@ -46,10 +45,10 @@
 
                 @if (_loading)
                 {
-                    <div class="wizard-loading"><span class="spinner"></span> Analyzing demand and scheduling options...</div>
+                    <div class="wizard-loading"><span class="spinner"></span> Analyzing demand and available programs...</div>
                 }
 
-                @* ══════════ Step 0: Machine & Timing ══════════ *@
+                @* ══════════ Step 0: Machine & Program Selection ══════════ *@
                 @if (!_loading && _step == 0)
                 {
                     <div class="wizard-content">
@@ -118,10 +117,93 @@
                             </div>
                         }
 
-                        @if (_selectedMachine?.AutoChangeoverEnabled == true && _scheduleOptions.Any())
+                        @* ── Program Selection ── *@
+                        <div style="margin-top: 16px;">
+                            <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;">Choose a Program</div>
+                            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
+                                Select an existing sliced program to schedule, or create a new one.
+                            </div>
+
+                            @if (_availablePrograms.Any())
+                            {
+                                @foreach (var prog in _availablePrograms)
+                                {
+                                    var isSelected = _selectedExistingProgram?.Id == prog.Id;
+                                    var totalParts = prog.TotalPartCount;
+                                    var printHours = prog.EstimatedPrintHours ?? 0;
+                                    var isReady = prog.ScheduleStatus == ProgramScheduleStatus.Ready
+                                        || (prog.EstimatedPrintHours.HasValue && prog.EstimatedPrintHours > 0);
+
+                                    <div class="advisor-option-card @(isSelected ? "advisor-option-card--selected" : "")"
+                                         @onclick="() => OnExistingProgramSelected(prog)">
+                                        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                            <div style="font-weight: 600; font-size: 0.88rem;">@prog.Name</div>
+                                            <div style="font-size: 0.82rem;">
+                                                @if (isReady)
+                                                {
+                                                    <span class="badge badge-success" style="font-size: 0.72rem;">Ready</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge badge-warning" style="font-size: 0.72rem;">Draft</span>
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="advisor-option-detail" style="margin-top: 4px;">
+                                            @foreach (var pp in prog.ProgramParts)
+                                            {
+                                                var partName = pp.Part?.PartNumber ?? _demand.FirstOrDefault(d => d.PartId == pp.PartId)?.PartNumber ?? $"Part #{pp.PartId}";
+                                                var partTotal = pp.Quantity * pp.StackLevel;
+                                                var demandInfo = _demand.FirstOrDefault(d => d.PartId == pp.PartId);
+                                                <div style="display: flex; gap: 8px; font-size: 0.82rem;">
+                                                    <span style="font-weight: 500;">@partName</span>
+                                                    <span style="color: var(--text-muted);">@pp.Quantity pos &times; @(pp.StackLevel == 1 ? "single" : pp.StackLevel == 2 ? "double" : "triple") = @partTotal @(partTotal == 1 ? "part" : "parts")</span>
+                                                    @if (demandInfo != null && partTotal > demandInfo.NetRemaining && demandInfo.NetRemaining > 0)
+                                                    {
+                                                        <span style="color: var(--warning); font-size: 0.78rem;">@(partTotal - demandInfo.NetRemaining) surplus to stock</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                        @if (printHours > 0)
+                                        {
+                                            <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 4px;">
+                                                @printHours.ToString("F1")h print &middot; @totalParts total @(totalParts == 1 ? "part" : "parts")
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <div style="padding: 12px; font-size: 0.85rem; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px; text-align: center;">
+                                    No existing programs available for scheduling.
+                                </div>
+                            }
+
+                            <div style="margin-top: 8px; @(_creatingNewProgram ? "" : "")">
+                                @if (_creatingNewProgram)
+                                {
+                                    <div class="advisor-option-card advisor-option-card--selected">
+                                        <div style="font-weight: 600; font-size: 0.88rem;">Create New Program</div>
+                                        <div style="font-size: 0.82rem; color: var(--text-muted);">
+                                            Define a new plate composition and schedule it. A new program file will need to be sliced.
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-secondary" style="width: 100%; margin-top: 4px;" @onclick="OnCreateNewProgram">
+                                        + Create New Program
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        @* ── Timing Options (shown when a program is selected) ── *@
+                        @if ((_selectedExistingProgram != null || _creatingNewProgram) && _scheduleOptions.Any())
                         {
-                            @* ── Timing Options ── *@
-                            <div style="margin-top: 12px;">
+                            <div style="margin-top: 16px;">
                                 <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;">When should this build run?</div>
                                 <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
                                     Choose when to start. The changeover time is when an operator must remove the previous build from the cooldown chamber.
@@ -140,7 +222,7 @@
                                                 @opt.Label
                                             </div>
                                             <div style="font-size: 0.82rem; color: var(--text-muted);">
-                                                @opt.DurationHours.ToString("F1")h &middot; @opt.PartsPerBuild @(opt.PartsPerBuild == 1 ? "part" : "parts")
+                                                @opt.DurationHours.ToString("F1")h
                                             </div>
                                         </div>
                                         <div class="advisor-option-detail" style="margin-top: 4px;">
@@ -175,7 +257,7 @@
                                 }
                             </div>
                         }
-                        else if (_recommendation != null)
+                        else if ((_selectedExistingProgram != null || _creatingNewProgram) && _recommendation != null && !(_selectedMachine?.AutoChangeoverEnabled == true))
                         {
                             @* ── Simple slot display for non-changeover machines ── *@
                             <div class="card" style="padding: 12px; margin-top: 12px;">
@@ -187,21 +269,24 @@
                             </div>
                         }
 
-                        @* ── Override start (moved below options as it's an override) ── *@
-                        <details style="margin-top: 12px;">
-                            <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 500; color: var(--text-secondary);">
-                                Override start time
-                            </summary>
-                            <div class="form-group" style="margin-top: 8px;">
-                                <label>Start after (optional)</label>
-                                <input type="datetime-local" class="form-control" style="max-width: 250px;"
-                                       @bind="_startAfterOverride" @bind:after="OnMachineChanged" />
-                            </div>
-                        </details>
+                        @* ── Override start ── *@
+                        @if (_selectedExistingProgram != null || _creatingNewProgram)
+                        {
+                            <details style="margin-top: 12px;">
+                                <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 500; color: var(--text-secondary);">
+                                    Override start time
+                                </summary>
+                                <div class="form-group" style="margin-top: 8px;">
+                                    <label>Start after (optional)</label>
+                                    <input type="datetime-local" class="form-control" style="max-width: 250px;"
+                                           @bind="_startAfterOverride" @bind:after="RefreshTimingOptions" />
+                                </div>
+                            </details>
+                        }
                     </div>
                 }
 
-                @* ══════════ Step 1: Plate Composition (Editable) ══════════ *@
+                @* ══════════ Step 1: Plate Composition (New Program only) ══════════ *@
                 @if (!_loading && _step == 1)
                 {
                     <div class="wizard-content">
@@ -409,6 +494,10 @@
                                         <span style="color: var(--text-muted);">Est. Cost:</span>
                                         <span style="font-weight: 600;">@EstimatedBuildCost.ToString("C0")</span>
                                     </div>
+                                    @if (_selectedExistingProgram != null)
+                                    {
+                                        <div><span style="color: var(--text-muted);">Program:</span> <span style="font-weight: 600;">@_selectedExistingProgram.Name</span></div>
+                                    }
                                     @if (_uploadedFiles.Any())
                                     {
                                         <div><span style="color: var(--text-muted);">Files:</span> @_uploadedFiles.Count uploaded</div>
@@ -428,86 +517,89 @@
 
                             </div>
 
-                            @* ── Optional Slicer Data (expandable) ── *@
-                            <details style="margin-top: 12px;">
-                                <summary style="cursor: pointer; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">
-                                    Slicer Data (optional — can add later from Programs page)
-                                    @if (!_skipSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
-                                    {
-                                        <span style="color: var(--success); margin-left: 6px;">&#x2713;</span>
-                                    }
-                                </summary>
-                                <div class="card" style="padding: 12px; margin-top: 8px;">
-                                    <div class="advisor-slicer-grid">
-                                        <div class="form-group" style="margin-bottom: 0;">
-                                            <label class="form-label">Print Duration (hrs)</label>
-                                            <input class="form-control" type="number" step="0.1" min="0"
-                                                   @bind="_slicerPrintHours" disabled="@_skipSlicerData" />
+                            @* ── Optional Slicer Data (only for new programs) ── *@
+                            @if (_creatingNewProgram)
+                            {
+                                <details style="margin-top: 12px;">
+                                    <summary style="cursor: pointer; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">
+                                        Slicer Data (optional — can add later from Programs page)
+                                        @if (!_skipSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
+                                        {
+                                            <span style="color: var(--success); margin-left: 6px;">&#x2713;</span>
+                                        }
+                                    </summary>
+                                    <div class="card" style="padding: 12px; margin-top: 8px;">
+                                        <div class="advisor-slicer-grid">
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label class="form-label">Print Duration (hrs)</label>
+                                                <input class="form-control" type="number" step="0.1" min="0"
+                                                       @bind="_slicerPrintHours" disabled="@_skipSlicerData" />
+                                            </div>
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label class="form-label">Layer Count</label>
+                                                <input class="form-control" type="number" min="0"
+                                                       @bind="_slicerLayerCount" disabled="@_skipSlicerData" />
+                                            </div>
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label class="form-label">Build Height (mm)</label>
+                                                <input class="form-control" type="number" step="0.1" min="0"
+                                                       @bind="_slicerBuildHeightMm" disabled="@_skipSlicerData" />
+                                            </div>
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label class="form-label">Est. Powder (kg)</label>
+                                                <input class="form-control" type="number" step="0.1" min="0"
+                                                       @bind="_slicerPowderKg" disabled="@_skipSlicerData" />
+                                            </div>
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label class="form-label">Slicer Software</label>
+                                                <input class="form-control" @bind="_slicerSoftware" placeholder="e.g. Magics"
+                                                       disabled="@_skipSlicerData" />
+                                            </div>
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label class="form-label">Slicer Version</label>
+                                                <input class="form-control" @bind="_slicerVersion"
+                                                       disabled="@_skipSlicerData" />
+                                            </div>
                                         </div>
-                                        <div class="form-group" style="margin-bottom: 0;">
-                                            <label class="form-label">Layer Count</label>
-                                            <input class="form-control" type="number" min="0"
-                                                   @bind="_slicerLayerCount" disabled="@_skipSlicerData" />
-                                        </div>
-                                        <div class="form-group" style="margin-bottom: 0;">
-                                            <label class="form-label">Build Height (mm)</label>
-                                            <input class="form-control" type="number" step="0.1" min="0"
-                                                   @bind="_slicerBuildHeightMm" disabled="@_skipSlicerData" />
-                                        </div>
-                                        <div class="form-group" style="margin-bottom: 0;">
-                                            <label class="form-label">Est. Powder (kg)</label>
-                                            <input class="form-control" type="number" step="0.1" min="0"
-                                                   @bind="_slicerPowderKg" disabled="@_skipSlicerData" />
-                                        </div>
-                                        <div class="form-group" style="margin-bottom: 0;">
-                                            <label class="form-label">Slicer Software</label>
-                                            <input class="form-control" @bind="_slicerSoftware" placeholder="e.g. Magics"
+                                        <div class="form-group" style="margin-bottom: 8px;">
+                                            <label class="form-label">Slicer File Name</label>
+                                            <input class="form-control" @bind="_slicerFileName" placeholder="e.g. build-plate-250325.slc"
                                                    disabled="@_skipSlicerData" />
                                         </div>
-                                        <div class="form-group" style="margin-bottom: 0;">
-                                            <label class="form-label">Slicer Version</label>
-                                            <input class="form-control" @bind="_slicerVersion"
-                                                   disabled="@_skipSlicerData" />
-                                        </div>
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 8px;">
-                                        <label class="form-label">Slicer File Name</label>
-                                        <input class="form-control" @bind="_slicerFileName" placeholder="e.g. build-plate-250325.slc"
-                                               disabled="@_skipSlicerData" />
-                                    </div>
-                                    <label style="display: flex; align-items: center; gap: 6px; font-size: 0.82rem; cursor: pointer;">
-                                        <input type="checkbox" @bind="_skipSlicerData" />
-                                        Skip — I'll add slicer data later
-                                    </label>
+                                        <label style="display: flex; align-items: center; gap: 6px; font-size: 0.82rem; cursor: pointer;">
+                                            <input type="checkbox" @bind="_skipSlicerData" />
+                                            Skip — I'll add slicer data later
+                                        </label>
 
-                                    @* ── File Upload ── *@
-                                    <div style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
-                                        <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Slice File Upload</div>
-                                        <InputFile OnChange="HandleSliceFileUpload"
-                                                   accept=".3mf,.sls,.slice,.slc,.magics,.pdf,.step,.stp"
-                                                   style="display: block;" />
-                                        @if (_uploading)
-                                        {
-                                            <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 4px;">
-                                                <span class="spinner" style="width:12px;height:12px;margin-right:4px;"></span> Uploading...
-                                            </div>
-                                        }
-                                        @if (_uploadedFiles.Any())
-                                        {
-                                            <div class="advisor-file-list">
-                                                @foreach (var f in _uploadedFiles)
-                                                {
-                                                    <div class="advisor-file-item">
-                                                        <span style="color: var(--success);">&#x2713;</span>
-                                                        <span>@f.FileName</span>
-                                                        <span style="color: var(--text-muted);">(@FormatFileSize(f.FileSizeBytes))</span>
-                                                    </div>
-                                                }
-                                            </div>
-                                        }
+                                        @* ── File Upload ── *@
+                                        <div style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
+                                            <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Slice File Upload</div>
+                                            <InputFile OnChange="HandleSliceFileUpload"
+                                                       accept=".3mf,.sls,.slice,.slc,.magics,.pdf,.step,.stp"
+                                                       style="display: block;" />
+                                            @if (_uploading)
+                                            {
+                                                <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 4px;">
+                                                    <span class="spinner" style="width:12px;height:12px;margin-right:4px;"></span> Uploading...
+                                                </div>
+                                            }
+                                            @if (_uploadedFiles.Any())
+                                            {
+                                                <div class="advisor-file-list">
+                                                    @foreach (var f in _uploadedFiles)
+                                                    {
+                                                        <div class="advisor-file-item">
+                                                            <span style="color: var(--success);">&#x2713;</span>
+                                                            <span>@f.FileName</span>
+                                                            <span style="color: var(--text-muted);">(@FormatFileSize(f.FileSizeBytes))</span>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
                                     </div>
-                                </div>
-                            </details>
+                                </details>
+                            }
 
                             @* ── Downstream preview ── *@
                             <div style="margin-top: 12px; padding: 10px; background: var(--bg-secondary); border-radius: 8px; font-size: 0.82rem;">
@@ -564,8 +656,6 @@
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnScheduled { get; set; }
 
-    private static readonly string[] _steps = ["Schedule Options", "Plate Composition", "Review & Schedule"];
-
     private int _step;
     private bool _loading;
     private bool _scheduling;
@@ -578,18 +668,23 @@
     private BuildRecommendation? _recommendation;
     private List<DemandSummary> _demand = [];
 
-    // Schedule options (Step 0)
+    // Program selection (Step 0)
+    private List<MachineProgram> _availablePrograms = [];
+    private MachineProgram? _selectedExistingProgram;
+    private bool _creatingNewProgram;
+
+    // Schedule options (Step 0 — shown after program selected)
     private List<ScheduleOption> _scheduleOptions = [];
     private ScheduleOption? _selectedOption;
     private ProgramTimelineEntry? _currentBuild;
     private int _scheduledBuildCount;
 
-    // Mutable plate state (editable copy of the recommendation)
+    // Mutable plate state (editable copy of the recommendation — used for new programs)
     private List<EditablePlateAllocation> _plateAllocations = [];
     private bool _plateEdited;
     private List<string> _activeWarnings = [];
 
-    // Program details (Step 2)
+    // Program details (Step 2 — new programs only)
     private double? _slicerPrintHours;
     private int? _slicerLayerCount;
     private double? _slicerBuildHeightMm;
@@ -608,6 +703,28 @@
     private Machine? _selectedMachine => Machines.FirstOrDefault(m => m.Id == _selectedMachineId);
     private Machine? OtherMachine => SlsMachines.FirstOrDefault(m => m.Id != _selectedMachineId);
 
+    /// Dynamic step labels based on flow (existing program skips plate composition)
+    private string[] ActiveSteps => _selectedExistingProgram != null
+        ? ["Select Program", "Review & Schedule"]
+        : ["Select Program", "Plate Composition", "Review & Schedule"];
+
+    /// Maps internal _step (0,1,2) to the visual step index for the step indicator
+    private int VisualStep => _step switch
+    {
+        0 => 0,
+        1 => 1,
+        2 => _selectedExistingProgram != null ? 1 : 2,
+        _ => 0
+    };
+
+    private string StepTitle => _step switch
+    {
+        0 => "Next Build Advisor — Select Program",
+        1 => "Next Build Advisor — Plate Composition",
+        2 => "Next Build Advisor — Review & Schedule",
+        _ => "Next Build Advisor"
+    };
+
     private List<DemandSummary> AvailablePartsForPlate => _demand
         .Where(d => d.IsAdditive && d.NetRemaining > 0 && d.BuildConfig != null
             && !_plateAllocations.Any(a => a.PartId == d.PartId))
@@ -617,6 +734,10 @@
     {
         get
         {
+            // For existing programs, use the program's actual print hours
+            if (_selectedExistingProgram != null)
+                return _selectedExistingProgram.EstimatedPrintHours ?? 24;
+
             if (!_plateAllocations.Any()) return 0;
             var maxHours = 0.0;
             foreach (var alloc in _plateAllocations)
@@ -631,8 +752,10 @@
 
     /// Print hours: use slicer data if entered, else config-derived estimate
     private double EffectivePrintHours =>
-        (!_skipSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
-            ? _slicerPrintHours.Value : EstimatedPrintHours;
+        (_selectedExistingProgram != null)
+            ? _selectedExistingProgram.EstimatedPrintHours ?? 24
+            : (!_skipSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
+                ? _slicerPrintHours.Value : EstimatedPrintHours;
 
     private decimal EstimatedBuildCost => (decimal)EffectivePrintHours * (_selectedMachine?.HourlyRate ?? 0);
 
@@ -641,17 +764,9 @@
 
     private bool DisableNext => _step switch
     {
-        0 => _selectedOption == null && _recommendation == null,
+        0 => (_selectedExistingProgram == null && !_creatingNewProgram) || _selectedOption == null,
         1 => !_plateAllocations.Any(),
         _ => true
-    };
-
-    private string StepTitle => _step switch
-    {
-        0 => "Next Build Advisor — Schedule Options",
-        1 => "Next Build Advisor — Plate Composition",
-        2 => "Next Build Advisor — Review & Schedule",
-        _ => "Next Build Advisor"
     };
 
     // ── Lifecycle ──
@@ -660,11 +775,11 @@
     {
         if (!IsVisible)
         {
-            _initialized = false; // Reset so next open re-initializes
+            _initialized = false;
             return;
         }
 
-        if (_initialized) return; // Don't reset if already open
+        if (_initialized) return;
         _initialized = true;
 
         _step = 0;
@@ -675,6 +790,9 @@
         _plateAllocations.Clear();
         _scheduleOptions.Clear();
         _selectedOption = null;
+        _availablePrograms.Clear();
+        _selectedExistingProgram = null;
+        _creatingNewProgram = false;
         ResetProgramState();
 
         _selectedMachineId = InitialMachineId
@@ -703,6 +821,10 @@
 
     private async Task OnMachineChanged()
     {
+        _selectedExistingProgram = null;
+        _creatingNewProgram = false;
+        _scheduleOptions.Clear();
+        _selectedOption = null;
         if (_selectedMachineId > 0)
             await LoadRecommendationAsync();
     }
@@ -727,6 +849,10 @@
             _scheduledBuildCount = timeline.Count(t =>
                 t.ScheduleStatus == ProgramScheduleStatus.Scheduled && t.PrintStart > DateTime.UtcNow);
 
+            // Load available programs
+            _availablePrograms = await ProgramScheduling.GetAvailableBuildPlateProgramsAsync();
+
+            // Build recommendation for the "create new" flow
             var slot = await ProgramScheduling.FindEarliestSlotAsync(
                 _selectedMachineId, 1, _startAfterOverride ?? DateTime.UtcNow);
 
@@ -753,24 +879,6 @@
             _recommendation = new BuildRecommendation(
                 _selectedMachineId, machine?.Name ?? "Machine", slot, plate, rationale, warnings);
 
-            // Generate schedule options for changeover machines
-            _scheduleOptions.Clear();
-            _selectedOption = null;
-            if (machine?.AutoChangeoverEnabled == true)
-            {
-                var primary = _demand.FirstOrDefault(d => d.IsAdditive && d.NetRemaining > 0 && d.BuildConfig != null);
-                if (primary?.BuildConfig != null)
-                {
-                    var baseDuration = primary.BuildConfig.SingleStackDurationHours ?? 24;
-                    _scheduleOptions = await ProgramScheduling.GenerateScheduleOptionsAsync(
-                        _selectedMachineId, baseDuration,
-                        _startAfterOverride ?? DateTime.UtcNow,
-                        primary.BuildConfig, primary.NetRemaining);
-
-                    _selectedOption = _scheduleOptions.FirstOrDefault();
-                }
-            }
-
             InitializePlateFromRecommendation();
         }
         catch (Exception ex)
@@ -784,12 +892,104 @@
         }
     }
 
+    // ── Program selection ──
+
+    private async Task OnExistingProgramSelected(MachineProgram program)
+    {
+        _selectedExistingProgram = program;
+        _creatingNewProgram = false;
+
+        // Populate plate allocations from the existing program's parts
+        _plateAllocations = program.ProgramParts.Select(pp => new EditablePlateAllocation
+        {
+            PartId = pp.PartId,
+            PartNumber = pp.Part?.PartNumber ?? _demand.FirstOrDefault(d => d.PartId == pp.PartId)?.PartNumber ?? $"Part #{pp.PartId}",
+            Positions = pp.Quantity,
+            StackLevel = pp.StackLevel,
+            DemandRemaining = _demand.FirstOrDefault(d => d.PartId == pp.PartId)?.NetRemaining ?? 0,
+            WorkOrderLineId = pp.WorkOrderLineId,
+            WoDueDate = _demand.FirstOrDefault(d => d.PartId == pp.PartId)?.EarliestDueDate
+        }).ToList();
+
+        // Generate timing options based on actual program duration
+        await GenerateTimingOptionsForDuration(program.EstimatedPrintHours ?? 24);
+    }
+
+    private async Task OnCreateNewProgram()
+    {
+        _selectedExistingProgram = null;
+        _creatingNewProgram = true;
+
+        // Generate timing options based on recommendation
+        var machine = _selectedMachine;
+        if (machine?.AutoChangeoverEnabled == true && _recommendation != null)
+        {
+            var primary = _demand.FirstOrDefault(d => d.IsAdditive && d.NetRemaining > 0 && d.BuildConfig != null);
+            if (primary?.BuildConfig != null)
+            {
+                var baseDuration = primary.BuildConfig.SingleStackDurationHours ?? 24;
+                _scheduleOptions = await ProgramScheduling.GenerateScheduleOptionsAsync(
+                    _selectedMachineId, baseDuration,
+                    _startAfterOverride ?? DateTime.UtcNow,
+                    primary.BuildConfig, primary.NetRemaining);
+                _selectedOption = _scheduleOptions.FirstOrDefault();
+            }
+        }
+    }
+
+    private async Task GenerateTimingOptionsForDuration(double durationHours)
+    {
+        _scheduleOptions.Clear();
+        _selectedOption = null;
+
+        var machine = _selectedMachine;
+        if (machine?.AutoChangeoverEnabled != true) return;
+
+        // Generate options for the fixed duration (no stack level variants — program is already defined)
+        var notBefore = _startAfterOverride ?? DateTime.UtcNow;
+        var slot = await ProgramScheduling.FindEarliestSlotAsync(_selectedMachineId, durationHours, notBefore);
+
+        var totalParts = _selectedExistingProgram?.TotalPartCount ?? 0;
+        _scheduleOptions.Add(new ScheduleOption(
+            Label: "Earliest",
+            Description: $"{slot.PrintStart.ToLocalTime():MMM d h:mm tt} — {slot.PrintEnd.ToLocalTime():MMM d h:mm tt} ({durationHours:F1}h)",
+            Slot: slot,
+            StackLevel: 1,
+            PartsPerBuild: totalParts,
+            DurationHours: durationHours,
+            ChangeoverAligned: slot.OperatorAvailableForChangeover,
+            IsWeekendOptimal: false,
+            RecommendationScore: slot.OperatorAvailableForChangeover ? 90 : 50));
+
+        // If changeover isn't aligned, try to generate a shift-aligned option
+        if (!slot.OperatorAvailableForChangeover)
+        {
+            var alignedOptions = await ProgramScheduling.GenerateScheduleOptionsAsync(
+                _selectedMachineId, durationHours, notBefore);
+            var aligned = alignedOptions.FirstOrDefault(o => o.ChangeoverAligned);
+            if (aligned != null)
+            {
+                _scheduleOptions.Add(aligned with { Label = "Shift-Aligned" });
+            }
+        }
+
+        _selectedOption = _scheduleOptions.OrderByDescending(o => o.RecommendationScore).FirstOrDefault();
+    }
+
+    private async Task RefreshTimingOptions()
+    {
+        if (_selectedExistingProgram != null)
+            await GenerateTimingOptionsForDuration(_selectedExistingProgram.EstimatedPrintHours ?? 24);
+        else if (_creatingNewProgram)
+            await OnCreateNewProgram();
+    }
+
     private void OnOptionSelected(ScheduleOption option)
     {
         _selectedOption = option;
     }
 
-    // ── Plate management ──
+    // ── Plate management (for new programs) ──
 
     private void InitializePlateFromRecommendation()
     {
@@ -931,17 +1131,40 @@
 
     private async Task AdvanceStep()
     {
-        if (_step == 0) ApplySelectedOptionToPlate();
+        if (_step == 0)
+        {
+            if (_selectedExistingProgram != null)
+            {
+                // Existing program — skip plate composition, go directly to review
+                _step = 2;
+                return;
+            }
+            else
+            {
+                // Creating new — go to plate composition
+                ApplySelectedOptionToPlate();
+                _step = 1;
+                return;
+            }
+        }
         if (_step == 1) await CreateDraftProgramAsync();
         _step++;
     }
 
     private void GoBack()
     {
-        if (_step > 0) _step--;
+        if (_step == 2 && _selectedExistingProgram != null)
+        {
+            // Existing program flow: jump back to step 0 (skip plate composition)
+            _step = 0;
+        }
+        else if (_step > 0)
+        {
+            _step--;
+        }
     }
 
-    // ── Program creation (Step 2) ──
+    // ── Program creation (new programs only) ──
 
     private async Task CreateDraftProgramAsync()
     {
@@ -1008,6 +1231,8 @@
             _plateEdited = false;
             _scheduleOptions.Clear();
             _selectedOption = null;
+            _selectedExistingProgram = null;
+            _creatingNewProgram = false;
             ResetProgramState();
             await LoadRecommendationAsync();
         }
@@ -1024,6 +1249,8 @@
             _plateEdited = false;
             _scheduleOptions.Clear();
             _selectedOption = null;
+            _selectedExistingProgram = null;
+            _creatingNewProgram = false;
             ResetProgramState();
             await LoadRecommendationAsync();
         }
@@ -1037,28 +1264,38 @@
 
         try
         {
-            // Ensure draft program exists
-            if (!_createdProgramId.HasValue)
-                await CreateDraftProgramAsync();
+            int programId;
 
-            // Apply slicer data → transitions Draft to Ready
-            if (!_skipSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
+            if (_selectedExistingProgram != null)
             {
-                await ProgramPlanning.UpdateSlicerDataAsync(
-                    _createdProgramId!.Value, _slicerPrintHours,
-                    _slicerLayerCount, _slicerBuildHeightMm, _slicerPowderKg,
-                    _slicerFileName, _slicerSoftware, _slicerVersion);
+                // Use the existing program directly
+                programId = _selectedExistingProgram.Id;
             }
             else
             {
-                // Minimum: set EstimatedPrintHours so scheduling can proceed
-                await ProgramPlanning.UpdateSlicerDataAsync(
-                    _createdProgramId!.Value, EstimatedPrintHours);
+                // Create new program
+                if (!_createdProgramId.HasValue)
+                    await CreateDraftProgramAsync();
+
+                programId = _createdProgramId!.Value;
+
+                // Apply slicer data → transitions Draft to Ready
+                if (!_skipSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
+                {
+                    await ProgramPlanning.UpdateSlicerDataAsync(
+                        programId, _slicerPrintHours,
+                        _slicerLayerCount, _slicerBuildHeightMm, _slicerPowderKg,
+                        _slicerFileName, _slicerSoftware, _slicerVersion);
+                }
+                else
+                {
+                    // Minimum: set EstimatedPrintHours so scheduling can proceed
+                    await ProgramPlanning.UpdateSlicerDataAsync(programId, EstimatedPrintHours);
+                }
             }
 
             var scheduleStart = ActiveSlot?.PrintStart ?? DateTime.UtcNow;
-            await ProgramScheduling.ScheduleBuildPlateAsync(
-                _createdProgramId!.Value, _selectedMachineId, scheduleStart);
+            await ProgramScheduling.ScheduleBuildPlateAsync(programId, _selectedMachineId, scheduleStart);
 
             _sessionBuilds++;
             var machine = _selectedMachine;
