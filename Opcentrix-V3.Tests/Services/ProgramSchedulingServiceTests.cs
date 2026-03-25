@@ -675,4 +675,67 @@ public class ProgramSchedulingServiceTests : IDisposable
             int buildPlateProgramId, List<int> stageIdsNeedingPrograms, string createdBy)
             => Task.FromResult(new List<MachineProgram>());
     }
+
+    // ══════════════════════════════════════════════════════════
+    // Reschedule — No Duplication
+    // ══════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ScheduleBuildPlate_Reschedule_DoesNotDuplicateJobsOrExecutions()
+    {
+        // Arrange
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30);
+
+        var part = new Part
+        {
+            PartNumber = "RESCHED-001",
+            Name = "Reschedule Test Part",
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.Parts.Add(part);
+        await _db.SaveChangesAsync();
+
+        var program = new MachineProgram
+        {
+            Name = "Reschedule Test Build",
+            ProgramType = ProgramType.BuildPlate,
+            Status = ProgramStatus.Active,
+            EstimatedPrintHours = 12.5,
+            ScheduleStatus = ProgramScheduleStatus.None,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.MachinePrograms.Add(program);
+        await _db.SaveChangesAsync();
+
+        _db.ProgramParts.Add(new ProgramPart
+        {
+            MachineProgramId = program.Id,
+            PartId = part.Id,
+            Quantity = 5,
+            StackLevel = 1
+        });
+        await _db.SaveChangesAsync();
+
+        // Act 1: Initial schedule
+        var result1 = await _sut.ScheduleBuildPlateAsync(program.Id, machine.Id, Mon);
+        var jobCountAfterFirst = await _db.Jobs.CountAsync();
+        var execCountAfterFirst = await _db.StageExecutions.CountAsync();
+
+        // Act 2: Reschedule (same call, simulating drag-drop)
+        var result2 = await _sut.ScheduleBuildPlateAsync(program.Id, machine.Id, Mon.AddHours(5));
+        var jobCountAfterSecond = await _db.Jobs.CountAsync();
+        var execCountAfterSecond = await _db.StageExecutions.CountAsync();
+
+        // Assert: job and execution counts should be the same — no duplicates
+        Assert.Equal(jobCountAfterFirst, jobCountAfterSecond);
+        Assert.Equal(execCountAfterFirst, execCountAfterSecond);
+
+        // The program should point to a new job (old one was deleted)
+        var updatedProgram = await _db.MachinePrograms.FindAsync(program.Id);
+        Assert.NotNull(updatedProgram);
+        Assert.NotEqual(result1.Slot.PrintStart, result2.Slot.PrintStart);
+        Assert.Equal(ProgramScheduleStatus.Scheduled, updatedProgram!.ScheduleStatus);
+    }
 }

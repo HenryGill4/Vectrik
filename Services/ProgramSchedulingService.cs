@@ -64,6 +64,47 @@ public class ProgramSchedulingService : IProgramSchedulingService
         if (!program.ProgramParts.Any())
             throw new InvalidOperationException("Add at least one part to the build plate before scheduling.");
 
+        // ── Reschedule: clean up existing job if this program was already scheduled ──
+        if (program.ScheduledJobId.HasValue)
+        {
+            var oldJobId = program.ScheduledJobId.Value;
+
+            // Delete per-part jobs that were created for this program's previous schedule
+            var perPartJobs = await _db.Jobs
+                .Where(j => j.Notes != null && j.Notes.Contains($"program: {program.Name ?? program.ProgramNumber}") && j.Id != oldJobId)
+                .ToListAsync();
+
+            // Delete old stage executions for the build job
+            var oldExecutions = await _db.StageExecutions
+                .Where(se => se.JobId == oldJobId)
+                .ToListAsync();
+            _db.StageExecutions.RemoveRange(oldExecutions);
+
+            // Delete per-part job stage executions and the jobs themselves
+            if (perPartJobs.Any())
+            {
+                var oldPerPartJobIds = perPartJobs.Select(j => j.Id).ToList();
+                var perPartExecutions = await _db.StageExecutions
+                    .Where(se => se.JobId != null && oldPerPartJobIds.Contains(se.JobId.Value))
+                    .ToListAsync();
+                _db.StageExecutions.RemoveRange(perPartExecutions);
+                _db.Jobs.RemoveRange(perPartJobs);
+            }
+
+            // Delete the old build job
+            var oldJob = await _db.Jobs.FindAsync(oldJobId);
+            if (oldJob != null)
+                _db.Jobs.Remove(oldJob);
+
+            // Clear the program's scheduling state so it can be re-scheduled fresh
+            program.ScheduledJobId = null;
+            program.ScheduledDate = null;
+            program.ScheduleStatus = ProgramScheduleStatus.None;
+            program.IsLocked = false;
+            program.PredecessorProgramId = null;
+            await _db.SaveChangesAsync();
+        }
+
         // Validate downstream program readiness
         var downstreamValidation = await _downstreamService.ValidateDownstreamReadinessAsync(machineProgramId);
         if (!downstreamValidation.IsValid)
