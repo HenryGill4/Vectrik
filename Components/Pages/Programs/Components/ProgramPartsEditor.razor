@@ -1,0 +1,133 @@
+@* ProgramPartsEditor.razor — Program Parts section from the editor form *@
+@using Opcentrix_V3.Components.Pages.Programs.Models
+
+@{
+    var partsCardTitle = IsBuildPlateEditor ? "🔩 Parts on Plate" : "🔩 Program Parts";
+    var partsCardHint = IsBuildPlateEditor
+        ? "Search and add parts that will be nested on this build plate."
+        : "Add parts to this program. Click ★ to set the primary part.";
+    var partsSearchPlaceholder = "Search parts…";
+    var hasPrimaryPart = Parts.Any(p => p.IsPrimary);
+}
+
+<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+            <h4 style="margin:0;">@partsCardTitle</h4>
+            @if (Parts.Any())
+            {
+                <span class="badge badge-success" style="font-size:0.75em;">@Parts.Sum(p => p.Quantity) parts (@Parts.Count unique)</span>
+            }
+            @if (!IsBuildPlateEditor && hasPrimaryPart)
+            {
+                var primary = Parts.First(p => p.IsPrimary);
+                <span class="badge badge-info" style="font-size:0.75em;">★ @primary.PartNumber</span>
+            }
+        </div>
+        @if (!IsBuildPlateEditor && !hasPrimaryPart && Parts.Any())
+        {
+            <span style="font-size:0.75em;color:var(--warning);">⚠ No primary part selected</span>
+        }
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:end;flex-wrap:wrap;">
+        <div style="flex:2;min-width:160px;">
+            <label class="form-label" style="font-size:0.75em;">Search</label>
+            <input class="form-control" placeholder="@partsSearchPlaceholder" value="@SearchTerm" @oninput="HandleSearchInput" />
+        </div>
+        <div style="flex:3;min-width:180px;">
+            <label class="form-label" style="font-size:0.75em;">Part</label>
+            <select class="form-control" value="@SelectedPartId" @onchange="HandlePartSelection">
+                <option value="0">Select part…</option>
+                @if (FilteredParts != null)
+                {
+                    @foreach (var p in FilteredParts)
+                    {
+                        <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                    }
+                }
+            </select>
+        </div>
+        <div style="width:70px;">
+            <label class="form-label" style="font-size:0.75em;">Qty</label>
+            <input class="form-control" type="number" min="1" max="500" value="@Quantity" @onchange="HandleQuantityChange" />
+        </div>
+        <button class="btn btn-primary" style="height:36px;white-space:nowrap;margin-bottom:0;" @onclick="HandleAddPart" disabled="@(SelectedPartId <= 0)">+ Add</button>
+    </div>
+    @if (Parts.Any())
+    {
+        <table class="data-table" style="font-size:0.88rem;margin-top:10px;">
+            <thead>
+                <tr>
+                    @if (!IsBuildPlateEditor)
+                    {
+                        <th style="width:50px;text-align:center" title="Primary Part">★</th>
+                    }
+                    <th>Part</th>
+                    <th style="width:70px;text-align:center">Qty</th>
+                    <th style="width:40px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var cp in Parts)
+                {
+                    <tr>
+                        @if (!IsBuildPlateEditor)
+                        {
+                            <td style="text-align:center">
+                                <button class="btn btn-sm @(cp.IsPrimary ? "btn-warning" : "btn-outline-secondary")"
+                                        style="padding:2px 6px;font-size:0.85em;"
+                                        @onclick="() => OnSetPrimary.InvokeAsync(cp.PartId)"
+                                        title="@(cp.IsPrimary ? "Primary Part" : "Set as Primary")">
+                                    ★
+                                </button>
+                            </td>
+                        }
+                        <td><strong>@cp.PartNumber</strong> <span style="color:var(--text-secondary)">— @cp.PartName</span></td>
+                        <td style="text-align:center">@cp.Quantity</td>
+                        <td><button class="btn btn-sm btn-danger" @onclick="() => OnRemovePart.InvokeAsync(cp.PartId)" title="Remove">✕</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else
+    {
+        <div style="color:var(--text-muted);font-size:0.85em;margin-top:10px;text-align:center;padding:16px 0;font-style:italic;">
+            @partsCardHint
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public bool IsBuildPlateEditor { get; set; }
+    [Parameter, EditorRequired] public List<CreateBuildPartEntry> Parts { get; set; } = new();
+    [Parameter] public IEnumerable<Part>? FilteredParts { get; set; }
+    [Parameter] public string SearchTerm { get; set; } = "";
+    [Parameter] public EventCallback<string> SearchTermChanged { get; set; }
+    [Parameter] public int SelectedPartId { get; set; }
+    [Parameter] public EventCallback<int> SelectedPartIdChanged { get; set; }
+    [Parameter] public int Quantity { get; set; } = 1;
+    [Parameter] public EventCallback<int> QuantityChanged { get; set; }
+    [Parameter] public EventCallback OnAddPart { get; set; }
+    [Parameter] public EventCallback<int> OnSetPrimary { get; set; }
+    [Parameter] public EventCallback<int> OnRemovePart { get; set; }
+
+    private async Task HandleSearchInput(ChangeEventArgs e)
+    {
+        await SearchTermChanged.InvokeAsync(e.Value?.ToString() ?? "");
+    }
+
+    private async Task HandlePartSelection(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+            await SelectedPartIdChanged.InvokeAsync(id);
+    }
+
+    private async Task HandleQuantityChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var qty))
+            await QuantityChanged.InvokeAsync(qty);
+    }
+
+    private async Task HandleAddPart() => await OnAddPart.InvokeAsync();
+}

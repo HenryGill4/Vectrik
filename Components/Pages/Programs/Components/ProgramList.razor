@@ -1,0 +1,119 @@
+@* ProgramList.razor — Program card list with KPI grid and batch toolbar *@
+@using Opcentrix_V3.Components.Pages.Programs.Components
+@using Opcentrix_V3.Models.Enums
+
+@* ── KPI Summary ── *@
+<div class="kpi-grid" style="margin-bottom: 16px;">
+    <div class="kpi-card"><div class="kpi-label">Total Programs</div><div class="kpi-value">@AllPrograms.Count</div></div>
+    <div class="kpi-card"><div class="kpi-label">Active</div><div class="kpi-value" style="color:var(--success)">@AllPrograms.Count(p => p.Status == ProgramStatus.Active)</div></div>
+    <div class="kpi-card" style="cursor:pointer;" @onclick="OnTogglePendingSetup">
+        <div class="kpi-label">Needs Setup</div>
+        <div class="kpi-value" style="color:@(PendingSetupCount > 0 ? "var(--warning)" : "var(--text-muted)")">@PendingSetupCount</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Needing Review</div>
+        <div class="kpi-value" style="color:@(TotalUnresolvedFeedback > 0 ? "var(--warning)" : "var(--text-muted)")">@TotalUnresolvedFeedback</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Tooling Alerts</div>
+        <div class="kpi-value" style="color:@(MaintenanceAlertCount > 0 ? "var(--danger)" : "var(--text-muted)")">@MaintenanceAlertCount</div>
+    </div>
+    <div class="kpi-card"><div class="kpi-label">Auto-Learned</div><div class="kpi-value">@AllPrograms.Count(p => p.EstimateSource == "Auto")</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Runs</div><div class="kpi-value">@AllPrograms.Sum(p => p.TotalRunCount)</div></div>
+</div>
+
+@if (!Programs.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-icon">📄</div>
+        <div class="empty-state-text">No machine programs match your filters. Adjust filters or create a new program.</div>
+    </div>
+}
+else
+{
+    @* ── Batch Actions Toolbar ── *@
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.82rem;">
+        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-secondary); margin: 0;">
+            <input type="checkbox" checked="@(_batchSelectedIds.Count == Programs.Count && Programs.Any())"
+                   @onchange="ToggleBatchSelectAll" />
+            Select all
+        </label>
+        @if (_batchSelectedIds.Any())
+        {
+            <span style="color: var(--text-muted);">@_batchSelectedIds.Count selected</span>
+            @if (_confirmingDelete)
+            {
+                <span style="color: var(--danger); font-weight: 600;">Are you sure? @_batchSelectedIds.Count program(s) will be deleted.</span>
+                <button class="btn btn-sm btn-danger" @onclick="ConfirmBatchDelete">Yes, Delete</button>
+                <button class="btn btn-sm btn-secondary" @onclick="() => _confirmingDelete = false">Cancel</button>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-danger" @onclick="() => _confirmingDelete = true">Delete Selected</button>
+            }
+            <button class="btn btn-sm btn-ghost" @onclick="ClearBatchSelection">Clear</button>
+        }
+    </div>
+
+    @* ── Program Cards ── *@
+    @foreach (var program in Programs)
+    {
+        var isSelected = SelectedProgram?.Id == program.Id;
+        var isBatchSelected = _batchSelectedIds.Contains(program.Id);
+        var feedbackCount = FeedbackCounts.GetValueOrDefault(program.Id, 0);
+
+        <ProgramCard Program="program"
+                     IsSelected="isSelected"
+                     IsBatchSelected="isBatchSelected"
+                     FeedbackCount="feedbackCount"
+                     OnClick="() => OnSelectProgram.InvokeAsync(program)"
+                     OnBatchToggle="() => ToggleBatchSelect(program.Id)" />
+    }
+}
+
+@code {
+    [Parameter] public List<MachineProgram> Programs { get; set; } = [];
+    [Parameter] public List<MachineProgram> AllPrograms { get; set; } = [];
+    [Parameter] public MachineProgram? SelectedProgram { get; set; }
+    [Parameter] public Dictionary<int, int> FeedbackCounts { get; set; } = new();
+    [Parameter] public int PendingSetupCount { get; set; }
+    [Parameter] public int TotalUnresolvedFeedback { get; set; }
+    [Parameter] public int MaintenanceAlertCount { get; set; }
+    [Parameter] public EventCallback<MachineProgram> OnSelectProgram { get; set; }
+    [Parameter] public EventCallback<HashSet<int>> OnBatchDelete { get; set; }
+    [Parameter] public EventCallback OnTogglePendingSetup { get; set; }
+
+    // Internal batch state
+    private HashSet<int> _batchSelectedIds = new();
+    private bool _confirmingDelete;
+
+    private void ToggleBatchSelect(int programId)
+    {
+        if (!_batchSelectedIds.Add(programId))
+            _batchSelectedIds.Remove(programId);
+        _confirmingDelete = false;
+    }
+
+    private void ToggleBatchSelectAll()
+    {
+        if (_batchSelectedIds.Count == Programs.Count)
+            _batchSelectedIds.Clear();
+        else
+            _batchSelectedIds = Programs.Select(p => p.Id).ToHashSet();
+        _confirmingDelete = false;
+    }
+
+    private void ClearBatchSelection()
+    {
+        _batchSelectedIds.Clear();
+        _confirmingDelete = false;
+    }
+
+    private async Task ConfirmBatchDelete()
+    {
+        if (!_batchSelectedIds.Any()) return;
+        await OnBatchDelete.InvokeAsync(new HashSet<int>(_batchSelectedIds));
+        _batchSelectedIds.Clear();
+        _confirmingDelete = false;
+    }
+}

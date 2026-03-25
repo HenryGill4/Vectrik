@@ -1,0 +1,51 @@
+@* MachineAssignmentModal.razor — Machine assignment modal used in the detail panel *@
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" @onclick="OnClose">
+        <div class="modal-content" style="max-width: 550px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Assign Machines to @ProgramNumber</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="OnClose">✕</button>
+            </div>
+
+            <div style="margin-bottom: 8px; color: var(--text-muted); font-size: 0.85em;">
+                Select the machines this program can run on. At least one should be assigned.
+            </div>
+
+            <div style="max-height: 350px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px;">
+                @if (Machines != null)
+                {
+                    @foreach (var typeGroup in Machines.Where(m => m.IsActive).GroupBy(m => m.MachineType).OrderBy(g => g.Key))
+                    {
+                        <div style="font-weight: 600; font-size: 0.85em; color: var(--text-muted); margin-top: 8px; margin-bottom: 4px;">@typeGroup.Key</div>
+                        @foreach (var machine in typeGroup.OrderBy(m => m.Name))
+                        {
+                            var isChecked = SelectedMachineIds.Contains(machine.Id);
+                            <label style="display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; cursor: pointer; border-radius: 4px; @(isChecked ? "background: var(--bg-tertiary);" : "")">
+                                <input type="checkbox" checked="@isChecked" @onchange="() => OnToggleMachine.InvokeAsync(machine.Id)" />
+                                <span style="flex: 1;">@machine.Name</span>
+                                <span class="badge badge-@machine.Status.ToString().ToLower()" style="font-size:0.75em;">@machine.Status</span>
+                            </label>
+                        }
+                    }
+                }
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-secondary" @onclick="OnClose">Cancel</button>
+                <button class="btn btn-primary" @onclick="OnSave">Save Assignments (@SelectedMachineIds.Count)</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public bool IsVisible { get; set; }
+    [Parameter] public string? ProgramNumber { get; set; }
+    [Parameter, EditorRequired] public List<Machine>? Machines { get; set; }
+    [Parameter, EditorRequired] public HashSet<int> SelectedMachineIds { get; set; } = new();
+    [Parameter] public EventCallback<int> OnToggleMachine { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+}

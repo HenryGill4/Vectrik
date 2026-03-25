@@ -1,0 +1,285 @@
+@* ProgramDetail.razor — Detail panel: header, overview, tab bar, and routed tab sub-components *@
+@using Opcentrix_V3.Components.Pages.Programs.Components
+@using Opcentrix_V3.Models.Enums
+
+<div>
+    @* ── Detail Header ── *@
+    <div class="card" style="margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h3 style="margin: 0 0 4px 0;">@Program.ProgramNumber — @Program.Name</h3>
+                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                    <span class="badge badge-@Program.Status.ToString().ToLower()">@Program.Status</span>
+                    <span class="badge badge-secondary">v@(Program.Version)</span>
+                    @if (Program.IsBuildPlate)
+                    {
+                        <span class="badge badge-info">🏗️ Build Plate</span>
+                    }
+                    else if (!string.IsNullOrEmpty(Program.MachineType))
+                    {
+                        <span class="badge badge-info">@Program.MachineType</span>
+                    }
+                    @if (Program.HasSlicerData)
+                    {
+                        <span class="badge badge-info">📐 Sliced</span>
+                    }
+                    @if (Program.EstimateSource == "Auto")
+                    {
+                        <span class="badge badge-success">🧠 Auto-Learned</span>
+                    }
+                </div>
+            </div>
+            <div style="display: flex; gap: 6px;">
+                <button class="btn btn-sm btn-secondary" @onclick="OnEdit">✏️ Edit</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnNewVersion">📝 New Version</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnClone">📋 Clone</button>
+                <button class="btn btn-sm btn-danger" @onclick="OnDelete">🗑</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(Program.Description))
+        {
+            <div style="margin-top: 8px; color: var(--text-muted); font-size: 0.9em;">@Program.Description</div>
+        }
+
+        @* ── Overview Grid ── *@
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 12px;">
+            @if (Program.IsBuildPlate)
+            {
+                <div><span class="form-label">Parts on Plate</span><div>@Program.TotalPartCount total (@Program.UniquePartCount unique)</div></div>
+                <div><span class="form-label">Material</span><div>@(Program.Material?.Name ?? "—")</div></div>
+                <div><span class="form-label">Est. Print</span><div>@(Program.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div></div>
+            }
+            else
+            {
+                <div><span class="form-label">Part</span><div>@(Program.Part != null ? $"{Program.Part.PartNumber} — {Program.Part.Name}" : "Multi-part")</div></div>
+                <div><span class="form-label">Setup</span><div>@(Program.SetupTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+                <div><span class="form-label">Run / Part</span><div>@(Program.RunTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+                <div><span class="form-label">Cycle</span><div>@(Program.CycleTimeMinutes?.ToString("F1") ?? "—") min</div></div>
+            }
+            <div>
+                <span class="form-label">Machines</span>
+                <div>
+                    @if (Program.MachineAssignments?.Any() == true)
+                    {
+                        @foreach (var a in Program.MachineAssignments.OrderByDescending(x => x.IsPreferred))
+                        {
+                            <span class="badge @(a.IsPreferred ? "badge-success" : "badge-secondary")" style="margin-right: 4px;" title="@(a.IsPreferred ? "Preferred" : "Assigned")">
+                                @a.Machine.Name
+                                @if (a.IsPreferred) { <span>★</span> }
+                            </span>
+                        }
+                    }
+                    else if (Program.Machine != null)
+                    {
+                        <span class="badge badge-secondary">@Program.Machine.Name (legacy)</span>
+                    }
+                    else
+                    {
+                        <span style="color: var(--text-muted);">Any</span>
+                    }
+                </div>
+            </div>
+            <div><span class="form-label">Total Runs</span><div>@Program.TotalRunCount</div></div>
+        </div>
+    </div>
+
+    @* ── Tab Bar ── *@
+    <div style="display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 2px solid var(--border-color);">
+        @if (Program.IsBuildPlate)
+        {
+            <button class="btn btn-sm @(ActiveTab == "buildplate" ? "btn-primary" : "btn-secondary")"
+                    style="border-radius: 6px 6px 0 0;"
+                    @onclick="@(() => OnTabChanged.InvokeAsync("buildplate"))">
+                🏗️ Build Plate
+            </button>
+        }
+        else if (Program.ProgramParts?.Any() == true)
+        {
+            <button class="btn btn-sm @(ActiveTab == "parts" ? "btn-primary" : "btn-secondary")"
+                    style="border-radius: 6px 6px 0 0;"
+                    @onclick="@(() => OnTabChanged.InvokeAsync("parts"))">
+                🔩 Parts (@Program.ProgramParts.Count)
+            </button>
+        }
+        @foreach (var tab in _detailTabs)
+        {
+            <button class="btn btn-sm @(ActiveTab == tab.Key ? "btn-primary" : "btn-secondary")"
+                    style="border-radius: 6px 6px 0 0;"
+                    @onclick="() => OnTabChanged.InvokeAsync(tab.Key)">
+                @tab.Value
+            </button>
+        }
+    </div>
+
+    @* ── Tab Content ── *@
+    @if (ActiveTab == "machines")
+    {
+        <ProgramDetailMachines Program="Program"
+                               OnAssignMachines="OnAssignMachines"
+                               OnSetPreferred="OnSetPreferred"
+                               OnUnassign="OnUnassign"
+                               OnMigrateLegacy="OnMigrateLegacy" />
+    }
+    else if (ActiveTab == "tooling")
+    {
+        <ProgramDetailTooling Program="Program"
+                              ToolingItems="ToolingItems"
+                              ToolingAlerts="ToolingAlerts"
+                              OnAddTooling="OnAddTooling"
+                              OnEditTooling="OnEditTooling"
+                              OnDeleteTooling="OnDeleteTooling" />
+    }
+    else if (ActiveTab == "learning")
+    {
+        <ProgramDetailLearning Program="Program"
+                               ExecutionHistory="ExecutionHistory" />
+    }
+    else if (ActiveTab == "feedback")
+    {
+        <ProgramDetailFeedback FeedbackList="FeedbackList"
+                               FeedbackFilter="FeedbackFilter"
+                               OnFilterChanged="OnFeedbackFilterChanged"
+                               OnReviewFeedback="OnReviewFeedback"
+                               OnShowResolve="OnShowResolve" />
+    }
+    else if (ActiveTab == "parameters")
+    {
+        <ProgramDetailParameters Program="Program"
+                                 OnCopyForAI="OnCopyForAI" />
+    }
+    else if (ActiveTab == "files")
+    {
+        <ProgramDetailFiles Program="Program"
+                            UploadDescription="UploadDescription"
+                            Uploading="Uploading"
+                            OnFileUpload="OnFileUpload"
+                            OnDeleteFile="OnDeleteFile"
+                            OnSetPrimary="OnSetPrimary"
+                            OnUploadDescriptionChanged="OnUploadDescriptionChanged" />
+    }
+    else if (ActiveTab == "parts" && !Program.IsBuildPlate)
+    {
+        @* Parts tab for Standard programs with additional parts *@
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h4 style="margin: 0;">🔩 Additional Parts</h4>
+                <button class="btn btn-sm btn-primary" @onclick="OnEdit">✏️ Edit Parts</button>
+            </div>
+
+            @if (Program.ProgramParts?.Any() == true)
+            {
+                <table class="data-table" style="font-size: 0.85rem;">
+                    <thead>
+                        <tr>
+                            <th>Part</th>
+                            <th style="width:90px;text-align:center">Qty</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var pp in Program.ProgramParts)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@(pp.Part?.PartNumber ?? $"#{pp.PartId}")</strong>
+                                    @if (!string.IsNullOrEmpty(pp.Part?.Name))
+                                    {
+                                        <span style="color:var(--text-secondary)"> — @pp.Part.Name</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material))
+                                    {
+                                        <div style="font-size:0.75rem;color:var(--text-secondary);">🧪 @(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material)</div>
+                                    }
+                                </td>
+                                <td style="text-align:center">@pp.Quantity</td>
+                                <td style="font-size:0.85rem;color:var(--text-secondary);">@(pp.PositionNotes ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div class="empty-state" style="padding: 16px;">
+                    <div class="empty-state-text">No additional parts assigned. Edit the program to add parts.</div>
+                </div>
+            }
+        </div>
+    }
+    else if (ActiveTab == "buildplate" && Program.IsBuildPlate)
+    {
+        <ProgramDetailBuildPlate Program="Program"
+                                 AdditiveParts="AdditiveParts"
+                                 Processing="Processing"
+                                 CurrentUser="CurrentUser"
+                                 OnShowSlicerEntry="OnShowSlicerEntry"
+                                 OnActivate="OnActivate"
+                                 OnArchive="OnArchive"
+                                 OnSchedule="OnSchedule"
+                                 OnAddPart="OnBuildAddPart"
+                                 OnRemovePart="OnBuildRemovePart"
+                                 OnEditPart="OnBuildEditPart"
+                                 OnNavigateToProgram="OnNavigateToProgram" />
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = default!;
+    [Parameter] public string ActiveTab { get; set; } = "machines";
+    [Parameter] public EventCallback<string> OnTabChanged { get; set; }
+    [Parameter] public string CurrentUser { get; set; } = "System";
+
+    // Actions
+    [Parameter] public EventCallback OnEdit { get; set; }
+    [Parameter] public EventCallback OnNewVersion { get; set; }
+    [Parameter] public EventCallback OnClone { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+
+    // Tab data (passed through to sub-components)
+    [Parameter] public List<ProgramToolingItem> ToolingItems { get; set; } = [];
+    [Parameter] public List<ToolingReadinessAlert> ToolingAlerts { get; set; } = [];
+    [Parameter] public List<StageExecution> ExecutionHistory { get; set; } = [];
+    [Parameter] public List<ProgramFeedback> FeedbackList { get; set; } = [];
+    [Parameter] public string FeedbackFilter { get; set; } = "";
+    [Parameter] public List<Part>? AdditiveParts { get; set; }
+    [Parameter] public bool Processing { get; set; }
+    [Parameter] public string? UploadDescription { get; set; }
+    [Parameter] public bool Uploading { get; set; }
+
+    // Tab event callbacks (bubble up from sub-components)
+    [Parameter] public EventCallback OnAssignMachines { get; set; }
+    [Parameter] public EventCallback<MachineProgramAssignment> OnSetPreferred { get; set; }
+    [Parameter] public EventCallback<MachineProgramAssignment> OnUnassign { get; set; }
+    [Parameter] public EventCallback OnMigrateLegacy { get; set; }
+    [Parameter] public EventCallback OnAddTooling { get; set; }
+    [Parameter] public EventCallback<ProgramToolingItem> OnEditTooling { get; set; }
+    [Parameter] public EventCallback<ProgramToolingItem> OnDeleteTooling { get; set; }
+    [Parameter] public EventCallback<string> OnFeedbackFilterChanged { get; set; }
+    [Parameter] public EventCallback<(ProgramFeedback, ProgramFeedbackStatus)> OnReviewFeedback { get; set; }
+    [Parameter] public EventCallback<ProgramFeedback> OnShowResolve { get; set; }
+    [Parameter] public EventCallback OnCopyForAI { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnFileUpload { get; set; }
+    [Parameter] public EventCallback<MachineProgramFile> OnDeleteFile { get; set; }
+    [Parameter] public EventCallback<MachineProgramFile> OnSetPrimary { get; set; }
+    [Parameter] public EventCallback<string?> OnUploadDescriptionChanged { get; set; }
+    // BuildPlate tab callbacks
+    [Parameter] public EventCallback OnShowSlicerEntry { get; set; }
+    [Parameter] public EventCallback OnActivate { get; set; }
+    [Parameter] public EventCallback OnArchive { get; set; }
+    [Parameter] public EventCallback OnSchedule { get; set; }
+    [Parameter] public EventCallback<(int PartId, int Quantity)> OnBuildAddPart { get; set; }
+    [Parameter] public EventCallback<ProgramPart> OnBuildRemovePart { get; set; }
+    [Parameter] public EventCallback<(ProgramPart Part, int NewQty, int NewStack, string? Notes)> OnBuildEditPart { get; set; }
+    [Parameter] public EventCallback<int> OnNavigateToProgram { get; set; }
+
+    private readonly Dictionary<string, string> _detailTabs = new()
+    {
+        ["machines"] = "🖥️ Machines",
+        ["tooling"] = "🔧 Tooling",
+        ["learning"] = "🧠 Learning",
+        ["feedback"] = "💬 Feedback",
+        ["parameters"] = "⚙️ Parameters",
+        ["files"] = "📁 Files"
+    };
+}

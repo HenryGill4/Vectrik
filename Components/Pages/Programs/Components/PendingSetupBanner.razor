@@ -1,0 +1,131 @@
+@* PendingSetupBanner.razor — Banner showing stages that need program setup *@
+@using Opcentrix_V3.Models.Enums
+
+@if (PendingStages.Count > 0)
+{
+    var pendingParts = PendingStages
+        .GroupBy(s => s.ManufacturingProcess?.Part?.Id ?? 0)
+        .ToList();
+
+    <div class="program-pending-banner">
+        <span class="pending-icon">⚠️</span>
+        <div>
+            <strong><span class="program-pending-count">@PendingStages.Count</span> stage(s) across @pendingParts.Count part(s) need program setup</strong>
+            <span style="color:var(--text-muted);font-size:0.85em;margin-left:8px;">
+                Create programs to set real durations, enable scheduling, and feed the learning system.
+            </span>
+        </div>
+        <button class="btn btn-sm @(IsVisible ? "btn-secondary" : "btn-warning")" style="margin-left:auto;"
+                @onclick="OnToggle">
+            @(IsVisible ? "Hide" : "Review")
+        </button>
+    </div>
+
+    @if (IsVisible)
+    {
+        @foreach (var partGroup in pendingParts)
+        {
+            var firstStage = partGroup.First();
+            var part = firstStage.ManufacturingProcess?.Part;
+            var partNumber = part?.PartNumber ?? "—";
+            var partName = part?.Name ?? "";
+            var approach = part?.ManufacturingApproach;
+            var isAdditive = approach?.RequiresBuildPlate == true;
+
+            <div class="card" style="margin-bottom:12px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <span class="wo-line-type-badge @(isAdditive ? "wo-line-type--sls" : "wo-line-type--cnc")">@(isAdditive ? "SLS" : "CNC")</span>
+                    <div>
+                        <strong style="font-size:1em;">@partNumber</strong>
+                        <span style="color:var(--text-muted);font-size:0.85em;margin-left:6px;">@partName</span>
+                    </div>
+                    @if (approach != null)
+                    {
+                        <span class="badge badge-secondary" style="margin-left:auto;">@(approach.Name ?? "Process")</span>
+                    }
+                </div>
+                <table class="data-table" style="margin:0;">
+                    <thead>
+                        <tr>
+                            <th style="width:30px;">#</th>
+                            <th>Stage</th>
+                            <th>Level</th>
+                            <th>Default Duration</th>
+                            <th>Machine(s)</th>
+                            <th style="width:150px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var stage in partGroup.OrderBy(s => s.ExecutionOrder))
+                        {
+                            var stageName = stage.ProductionStage?.Name ?? $"Stage #{stage.ProductionStageId}";
+                            var stageIcon = stage.ProductionStage?.StageIcon ?? "❓";
+                            var stageColor = stage.ProductionStage?.StageColor ?? "#666";
+                            var machineNames = GetMachineNamesForStage(stage);
+                            var assignedName = stage.AssignedMachine?.Name;
+                            var defaultDuration = stage.RunTimeMinutes.HasValue
+                                ? $"{stage.RunTimeMinutes.Value:F0} min ({stage.RunDurationMode})"
+                                : stage.DurationFromBuildConfig
+                                    ? "From build config"
+                                    : stage.ProductionStage?.DefaultDurationHours > 0
+                                        ? $"{stage.ProductionStage.DefaultDurationHours:F1} hrs (catalog default)"
+                                        : "Not set";
+
+                            <tr>
+                                <td style="color:var(--text-muted);">@stage.ExecutionOrder</td>
+                                <td>
+                                    <span style="color:@stageColor;">@stageIcon</span> @stageName
+                                </td>
+                                <td><span class="badge badge-secondary">@stage.ProcessingLevel</span></td>
+                                <td style="font-size:0.85em;">@defaultDuration</td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(assignedName))
+                                    {
+                                        <span class="badge badge-info" style="margin-right:4px;">🖥️ @assignedName</span>
+                                    }
+                                    @if (machineNames.Count > 0)
+                                    {
+                                        @foreach (var mn in machineNames.Where(n => n != assignedName))
+                                        {
+                                            <span class="badge badge-secondary" style="margin-right:4px;">@mn</span>
+                                        }
+                                    }
+                                    @if (string.IsNullOrEmpty(assignedName) && machineNames.Count == 0)
+                                    {
+                                        <span style="color:var(--text-muted);font-style:italic;font-size:0.85em;">No machine</span>
+                                    }
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary" @onclick="() => OnCreateProgramForStage.InvokeAsync(stage)">
+                                        + Create Program
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public List<ProcessStage> PendingStages { get; set; } = [];
+    [Parameter] public List<Machine>? Machines { get; set; }
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnToggle { get; set; }
+    [Parameter] public EventCallback<ProcessStage> OnCreateProgramForStage { get; set; }
+
+    private List<string> GetMachineNamesForStage(ProcessStage stage)
+    {
+        if (string.IsNullOrWhiteSpace(stage.PreferredMachineIds) || Machines == null)
+            return [];
+
+        return stage.PreferredMachineIds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(id => int.TryParse(id.Trim(), out var mid) ? Machines.FirstOrDefault(m => m.Id == mid)?.Name : null)
+            .Where(n => n != null)
+            .Cast<string>()
+            .ToList();
+    }
+}

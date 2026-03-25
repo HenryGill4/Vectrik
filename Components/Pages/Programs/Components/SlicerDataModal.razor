@@ -1,0 +1,67 @@
+@* SlicerDataModal.razor — Slicer data entry modal for Build Plates *@
+
+@if (IsVisible && BuildPlate != null)
+{
+    <div class="modal-overlay" @onclick="OnClose">
+        <div class="modal-content" style="max-width:700px" @onclick:stopPropagation>
+            <div class="modal-header"><span class="modal-title">Build Planning — @(BuildPlate.Name ?? BuildPlate.ProgramNumber)</span><button class="modal-close" @onclick="OnClose">&times;</button></div>
+
+            <div class="form-group">
+                <label class="form-label">🖨️ Print Duration (hours) *</label>
+                <input class="form-control" type="number" step="0.1" min="0.1" @bind="Duration" />
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Layer Count</label>
+                    <input class="form-control" type="number" @bind="Layers" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Build Height (mm)</label>
+                    <input class="form-control" type="number" step="0.1" @bind="Height" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Est. Powder (kg)</label>
+                    <input class="form-control" type="number" step="0.1" @bind="Powder" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Slicer Software</label>
+                    <input class="form-control" @bind="Software" placeholder="e.g. Magics" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Slicer Version</label>
+                    <input class="form-control" @bind="Version" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Slicer File Name</label>
+                    <input class="form-control" @bind="FileName" />
+                </div>
+            </div>
+
+            <button class="btn btn-primary" @onclick="OnSave" disabled="@(Duration is null or <= 0)">
+                Save Slicer Data
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public bool IsVisible { get; set; }
+    [Parameter] public MachineProgram? BuildPlate { get; set; }
+    [Parameter] public double? Duration { get; set; }
+    [Parameter] public EventCallback<double?> DurationChanged { get; set; }
+    [Parameter] public int? Layers { get; set; }
+    [Parameter] public EventCallback<int?> LayersChanged { get; set; }
+    [Parameter] public double? Height { get; set; }
+    [Parameter] public EventCallback<double?> HeightChanged { get; set; }
+    [Parameter] public double? Powder { get; set; }
+    [Parameter] public EventCallback<double?> PowderChanged { get; set; }
+    [Parameter] public string? Software { get; set; }
+    [Parameter] public EventCallback<string?> SoftwareChanged { get; set; }
+    [Parameter] public string? Version { get; set; }
+    [Parameter] public EventCallback<string?> VersionChanged { get; set; }
+    [Parameter] public string? FileName { get; set; }
+    [Parameter] public EventCallback<string?> FileNameChanged { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+}

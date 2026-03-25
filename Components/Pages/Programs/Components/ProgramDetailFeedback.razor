@@ -1,0 +1,79 @@
+@* ── TAB: Operator Feedback ── *@
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="margin: 0;">💬 Operator Feedback</h4>
+        <select class="form-control" style="width: 150px;" value="@FeedbackFilter" @onchange="HandleFilterChange">
+            <option value="">All</option>
+            <option value="New">New</option>
+            <option value="Acknowledged">Acknowledged</option>
+            <option value="InReview">In Review</option>
+            <option value="Resolved">Resolved</option>
+        </select>
+    </div>
+
+    @if (FeedbackList.Count == 0)
+    {
+        <div class="empty-state" style="padding: 12px;"><div class="empty-state-text">No feedback submitted for this program.</div></div>
+    }
+    else
+    {
+        @foreach (var fb in FeedbackList)
+        {
+            <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; margin-bottom: 8px; border-left: 3px solid @GetFeedbackSeverityColor(fb.Severity);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <span class="badge badge-secondary">@fb.Category</span>
+                            <span class="badge" style="background: @GetFeedbackSeverityColor(fb.Severity); color: white;">@fb.Severity</span>
+                            <span class="badge badge-@fb.Status.ToString().ToLower()">@fb.Status</span>
+                        </div>
+                        <div style="margin-top: 6px;">@fb.Comment</div>
+                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                            By @fb.OperatorName • @fb.SubmittedAt.ToString("MMM dd, yyyy HH:mm")
+                        </div>
+                    </div>
+                    @if (fb.Status != ProgramFeedbackStatus.Resolved && fb.Status != ProgramFeedbackStatus.WontFix)
+                    {
+                        <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                            @if (fb.Status == ProgramFeedbackStatus.New)
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="() => OnReviewFeedback.InvokeAsync((fb, ProgramFeedbackStatus.Acknowledged))">👁 Ack</button>
+                            }
+                            <button class="btn btn-sm btn-primary" @onclick="() => OnShowResolve.InvokeAsync(fb)">✅ Resolve</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => OnReviewFeedback.InvokeAsync((fb, ProgramFeedbackStatus.WontFix))">✕</button>
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrEmpty(fb.Resolution))
+                {
+                    <div style="margin-top: 8px; padding: 6px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.85em;">
+                        <strong>Resolution:</strong> @fb.Resolution
+                        <div style="color: var(--text-muted); font-size: 0.85em;">By @fb.ReviewedBy • @fb.ReviewedAt?.ToString("MMM dd HH:mm")</div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public List<ProgramFeedback> FeedbackList { get; set; } = [];
+    [Parameter] public string FeedbackFilter { get; set; } = "";
+    [Parameter] public EventCallback<string> OnFilterChanged { get; set; }
+    [Parameter] public EventCallback<(ProgramFeedback Feedback, ProgramFeedbackStatus NewStatus)> OnReviewFeedback { get; set; }
+    [Parameter] public EventCallback<ProgramFeedback> OnShowResolve { get; set; }
+
+    private async Task HandleFilterChange(ChangeEventArgs e)
+    {
+        await OnFilterChanged.InvokeAsync(e.Value?.ToString() ?? "");
+    }
+
+    private static string GetFeedbackSeverityColor(ProgramFeedbackSeverity severity) => severity switch
+    {
+        ProgramFeedbackSeverity.Critical => "var(--danger)",
+        ProgramFeedbackSeverity.High => "#e67700",
+        ProgramFeedbackSeverity.Medium => "var(--warning)",
+        _ => "var(--text-muted)"
+    };
+}
