@@ -1,0 +1,396 @@
+@page "/admin/machine-connections"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject Opcentrix_V3.Data.TenantDbContext Db
+@inject IMachineService MachineService
+@inject ToastService Toast
+@using Microsoft.EntityFrameworkCore
+@using Opcentrix_V3.Services.MachineProviders
+
+<PageTitle>Machine Connections - Admin - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Machine Connections</h1>
+        <p class="page-subtitle" style="margin:0; opacity:0.7;">Connect machines via OPC UA, MQTT, or REST for live telemetry and status monitoring.</p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenAddModal">+ New Connection</button>
+</div>
+
+<!-- KPI Strip -->
+<div class="kpi-strip" style="display:flex; gap:1.5rem; margin-bottom:1.5rem; flex-wrap:wrap;">
+    <div class="kpi-card">
+        <div class="kpi-label">TOTAL CONNECTIONS</div>
+        <div class="kpi-value">@_connections.Count</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">ENABLED</div>
+        <div class="kpi-value">@_connections.Count(c => c.IsEnabled)</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">CONNECTED</div>
+        <div class="kpi-value">@_connections.Count(c => c.IsEnabled && GetLatestState(c.MachineId)?.IsConnected == true)</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">MOCK</div>
+        <div class="kpi-value">@_connections.Count(c => c.ProviderType == "Mock")</div>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!_connections.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-text">No machine connections configured yet. Click "+ New Connection" to add your first connection.</div>
+    </div>
+}
+else
+{
+    <div style="display:flex; flex-direction:column; gap:1rem;">
+        @foreach (var conn in _connections)
+        {
+            var state = GetLatestState(conn.MachineId);
+            var machineName = GetMachineName(conn.MachineId);
+            var isConnected = state?.IsConnected == true;
+            var providerClass = conn.ProviderType switch
+            {
+                "Mock" => "badge-info",
+                "OPC UA" => "badge-success",
+                "MQTT" => "badge-warning",
+                "REST" => "badge-secondary",
+                _ => "badge-secondary"
+            };
+            var timeAgo = state != null ? FormatTimeAgo(state.Timestamp) : null;
+
+            <div class="card" style="padding:1rem 1.25rem;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem;">
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <span style="font-size:0.75rem; color:@(isConnected ? "#22c55e" : "#ef4444");">@(isConnected ? "\u25cf" : "\u25cf")</span>
+                        <strong style="font-size:1.05rem;">@machineName</strong>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button class="btn btn-sm btn-secondary" @onclick="() => TestConnection(conn)" disabled="@_testing">Test</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => OpenEditModal(conn)">Edit</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(conn)">Delete</button>
+                    </div>
+                </div>
+                <div style="margin-top:0.5rem; font-size:0.85rem; opacity:0.8; display:flex; flex-wrap:wrap; gap:0.25rem 1rem;">
+                    <span>Provider: <span class="badge @providerClass">@conn.ProviderType</span></span>
+                    <span>Poll: @(conn.PollIntervalSeconds)s</span>
+                    <span>Enabled: @(conn.IsEnabled ? "\u2713" : "\u2717")</span>
+                </div>
+                <div style="margin-top:0.25rem; font-size:0.85rem; opacity:0.7;">
+                    Endpoint: @(string.IsNullOrEmpty(conn.EndpointUrl) ? "\u2014" : conn.EndpointUrl)
+                </div>
+                @if (state != null)
+                {
+                    <div style="margin-top:0.25rem; font-size:0.85rem; opacity:0.7;">
+                        Last state: @(state.Status ?? "Unknown")
+                        @if (state.CurrentLayer.HasValue && state.TotalLayers.HasValue)
+                        {
+                            <span> &bull; Layer @state.CurrentLayer.Value.ToString("N0")/@state.TotalLayers.Value.ToString("N0")</span>
+                        }
+                        @if (timeAgo != null)
+                        {
+                            <span> &bull; @timeAgo</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@* ───── Add / Edit Modal ───── *@
+@if (_showModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width:520px;">
+            <h3 style="margin-top:0;">@(_editingId.HasValue ? "Edit" : "Add") Machine Connection</h3>
+
+            <div class="form-group">
+                <label>Machine</label>
+                <select class="form-control" @bind="_formMachineId">
+                    <option value="">-- Select machine --</option>
+                    @foreach (var m in _machines)
+                    {
+                        <option value="@m.MachineId">@m.Name (@m.MachineId)</option>
+                    }
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Provider</label>
+                <select class="form-control" @bind="_formProviderType">
+                    <option value="Mock">Mock</option>
+                    <option value="OPC UA">OPC UA</option>
+                    <option value="MQTT">MQTT</option>
+                    <option value="REST">REST</option>
+                </select>
+            </div>
+
+            @if (_formProviderType == "OPC UA")
+            {
+                <div style="font-size:0.82rem; background:var(--surface-alt, #f0f4f8); padding:0.5rem 0.75rem; border-radius:6px; margin-bottom:0.75rem; opacity:0.85;">
+                    Enter the OPC UA endpoint URL (e.g., opc.tcp://192.168.1.100:4840). Ensure the machine's OPC UA server is running and accessible.
+                </div>
+            }
+
+            <div class="form-group">
+                <label>Endpoint URL</label>
+                <input class="form-control" type="text" @bind="_formEndpointUrl" placeholder="@(_formProviderType == "Mock" ? "Not required for Mock provider" : "e.g. opc.tcp://192.168.1.100:4840")" />
+            </div>
+
+            <div class="form-group">
+                <label>Poll Interval (seconds)</label>
+                <input class="form-control" type="number" min="1" max="60" @bind="_formPollInterval" />
+            </div>
+
+            <div class="form-group" style="display:flex; align-items:center; gap:0.5rem;">
+                <input type="checkbox" id="conn-enabled" @bind="_formEnabled" />
+                <label for="conn-enabled" style="margin:0;">Enabled</label>
+            </div>
+
+            <div class="form-group">
+                <label>Config JSON (advanced)</label>
+                <textarea class="form-control" rows="3" @bind="_formConfigJson" placeholder="Optional provider-specific configuration"></textarea>
+            </div>
+
+            @if (_formError != null)
+            {
+                <div class="alert alert-danger" style="margin-bottom:0.75rem;">@_formError</div>
+            }
+
+            <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
+                <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveConnection" disabled="@_saving">@(_saving ? "Saving..." : "Save")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<MachineConnectionSettings> _connections = new();
+    private Dictionary<string, MachineStateRecord?> _latestStates = new();
+    private Dictionary<string, string> _machineNames = new();
+    private List<Machine> _machines = new();
+    private bool _loading = true;
+    private bool _testing;
+    private ConfirmDialog _confirm = null!;
+
+    // Modal state
+    private bool _showModal;
+    private int? _editingId;
+    private string _formMachineId = "";
+    private string _formProviderType = "Mock";
+    private string? _formEndpointUrl;
+    private int _formPollInterval = 5;
+    private bool _formEnabled = true;
+    private string? _formConfigJson;
+    private string? _formError;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _machines = await MachineService.GetAllMachinesAsync();
+            _machineNames = _machines.ToDictionary(m => m.MachineId, m => m.Name);
+            await LoadConnections();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadConnections()
+    {
+        _connections = await Db.MachineConnectionSettings.OrderBy(c => c.MachineId).ToListAsync();
+
+        // Load latest state for each connection's machine
+        _latestStates.Clear();
+        foreach (var conn in _connections)
+        {
+            var state = await Db.MachineStateRecords
+                .Where(r => r.MachineId == conn.MachineId)
+                .OrderByDescending(r => r.Id)
+                .FirstOrDefaultAsync();
+            _latestStates[conn.MachineId] = state;
+        }
+    }
+
+    private MachineStateRecord? GetLatestState(string machineId) =>
+        _latestStates.TryGetValue(machineId, out var s) ? s : null;
+
+    private string GetMachineName(string machineId) =>
+        _machineNames.TryGetValue(machineId, out var n) ? n : machineId;
+
+    private static string? FormatTimeAgo(DateTime timestamp)
+    {
+        var diff = DateTime.UtcNow - timestamp;
+        if (diff.TotalSeconds < 60) return $"{(int)diff.TotalSeconds}s ago";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        return $"{(int)diff.TotalDays}d ago";
+    }
+
+    // ───── Modal ─────
+
+    private void OpenAddModal()
+    {
+        _editingId = null;
+        _formMachineId = "";
+        _formProviderType = "Mock";
+        _formEndpointUrl = null;
+        _formPollInterval = 5;
+        _formEnabled = true;
+        _formConfigJson = null;
+        _formError = null;
+        _showModal = true;
+    }
+
+    private void OpenEditModal(MachineConnectionSettings conn)
+    {
+        _editingId = conn.Id;
+        _formMachineId = conn.MachineId;
+        _formProviderType = conn.ProviderType;
+        _formEndpointUrl = conn.EndpointUrl;
+        _formPollInterval = conn.PollIntervalSeconds;
+        _formEnabled = conn.IsEnabled;
+        _formConfigJson = conn.ConfigJson;
+        _formError = null;
+        _showModal = true;
+    }
+
+    private void CloseModal() => _showModal = false;
+
+    private async Task SaveConnection()
+    {
+        _formError = null;
+
+        if (string.IsNullOrWhiteSpace(_formMachineId))
+        {
+            _formError = "Please select a machine.";
+            return;
+        }
+
+        if (_formProviderType != "Mock" && string.IsNullOrWhiteSpace(_formEndpointUrl))
+        {
+            _formError = "Endpoint URL is required for non-Mock providers.";
+            return;
+        }
+
+        if (_formPollInterval < 1 || _formPollInterval > 60)
+        {
+            _formError = "Poll interval must be between 1 and 60 seconds.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            if (_editingId.HasValue)
+            {
+                var existing = await Db.MachineConnectionSettings.FindAsync(_editingId.Value);
+                if (existing == null) { _formError = "Connection not found."; return; }
+
+                existing.MachineId = _formMachineId;
+                existing.ProviderType = _formProviderType;
+                existing.EndpointUrl = _formProviderType == "Mock" ? null : _formEndpointUrl;
+                existing.PollIntervalSeconds = _formPollInterval;
+                existing.IsEnabled = _formEnabled;
+                existing.ConfigJson = _formConfigJson;
+                existing.LastModifiedDate = DateTime.UtcNow;
+            }
+            else
+            {
+                // Check for duplicate machine connection
+                var exists = await Db.MachineConnectionSettings.AnyAsync(c => c.MachineId == _formMachineId);
+                if (exists) { _formError = "A connection already exists for this machine."; _saving = false; return; }
+
+                Db.MachineConnectionSettings.Add(new MachineConnectionSettings
+                {
+                    MachineId = _formMachineId,
+                    ProviderType = _formProviderType,
+                    EndpointUrl = _formProviderType == "Mock" ? null : _formEndpointUrl,
+                    PollIntervalSeconds = _formPollInterval,
+                    IsEnabled = _formEnabled,
+                    ConfigJson = _formConfigJson,
+                    LastModifiedDate = DateTime.UtcNow
+                });
+            }
+
+            await Db.SaveChangesAsync();
+            Toast.ShowSuccess(_editingId.HasValue ? "Connection updated." : "Connection created.");
+            _showModal = false;
+            await LoadConnections();
+        }
+        catch (Exception ex)
+        {
+            _formError = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    // ───── Test Connection ─────
+
+    private async Task TestConnection(MachineConnectionSettings conn)
+    {
+        _testing = true;
+        try
+        {
+            IMachineProvider provider = conn.ProviderType switch
+            {
+                // Future: "OPC UA" => new OpcUaMachineProvider(...),
+                _ => new Opcentrix_V3.Services.MachineProviders.MockMachineProvider(Db)
+            };
+
+            var result = await provider.TestConnectionAsync(conn.MachineId);
+            if (result)
+                Toast.ShowSuccess($"Connection to '{GetMachineName(conn.MachineId)}' successful.");
+            else
+                Toast.ShowError($"Connection to '{GetMachineName(conn.MachineId)}' failed.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Test failed: {ex.Message}");
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    // ───── Delete ─────
+
+    private async Task ConfirmDelete(MachineConnectionSettings conn)
+    {
+        var name = GetMachineName(conn.MachineId);
+        if (await _confirm.ShowAsync($"Delete connection for '{name}'? This cannot be undone.", "Delete Connection"))
+        {
+            try
+            {
+                Db.MachineConnectionSettings.Remove(conn);
+                await Db.SaveChangesAsync();
+                Toast.ShowSuccess($"Connection for '{name}' deleted.");
+                await LoadConnections();
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to delete: {ex.Message}");
+            }
+        }
+    }
+}

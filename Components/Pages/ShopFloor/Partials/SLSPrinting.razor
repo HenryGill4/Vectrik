@@ -1,88 +1,374 @@
-@* SLS/LPBF Printing - Rich built-in stage partial with build-level context *@
+@* SLS/LPBF Printing — Situational awareness dashboard for SLS operators *@
 @using Opcentrix_V3.Models
 @using Opcentrix_V3.Models.Enums
 @using Opcentrix_V3.Services
+@using Microsoft.EntityFrameworkCore
 @inject IMachineProgramService MachineProgramService
+@inject IProgramSchedulingService ProgramScheduling
+@inject IMachineService MachineService
+@inject Opcentrix_V3.Data.TenantDbContext Db
 
 <WorkInstructionBanner PartId="Execution?.Job?.Part?.Id" StageId="Stage?.Id" />
 
 @if (_program != null)
 {
-    @* ── Build-Level Mode ── *@
+    @* ══════════════════════════════════════════════════════════ *@
+    @* Section 1: Build Status Hero Card                         *@
+    @* ══════════════════════════════════════════════════════════ *@
     <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">📦 Build Plate: @_program.Name</div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
-            <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? _program.Machine?.Name ?? "—")</div></div>
-            <div><span class="form-label">Material</span><div>@(_program.Material?.Name ?? "—")</div></div>
-            <div><span class="form-label">Total Parts</span><div>@_program.TotalPartCount (@_program.UniquePartCount unique)</div></div>
-            <div><span class="form-label">Est. Duration</span><div>@(_program.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div></div>
-            <div><span class="form-label">Revision</span><div>@(_program.Version)</div></div>
+        <div class="card-header" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <span style="font-size: 1.1rem;">Build Status</span>
+            @{ var statusBadge = GetScheduleStatusBadge(); }
+            <span class="badge" style="@statusBadge.Style">@statusBadge.Label</span>
+            <span style="font-weight: 600;">@_program.Name</span>
+            @if (!string.IsNullOrEmpty(_program.Material?.Name))
+            {
+                <span style="opacity: 0.7;">@_program.Material.Name</span>
+            }
         </div>
 
-        @if (_program.HasSlicerData)
+        @* Progress bar *@
+        @if (_totalLayers > 0)
         {
-            <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 6px; margin-bottom: 12px;">
-                <div class="form-label" style="margin-bottom: 4px;">Slice File Data</div>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
-                    <div>Layers: @(_program.LayerCount?.ToString("N0") ?? "—")</div>
-                    <div>Height: @(_program.BuildHeightMm?.ToString("F1") ?? "—") mm</div>
-                    <div>Print Time: @(_program.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div>
-                    <div>Powder: @(_program.EstimatedPowderKg?.ToString("F2") ?? "—") kg</div>
-                    <div>Slicer: @(_program.SlicerSoftware ?? "—") @_program.SlicerVersion</div>
+            <div style="margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
+                    <span style="font-size: 1.3rem; font-weight: 700;">@(_progressPercent.ToString("F1"))%</span>
+                    <span style="font-size: 0.85rem; opacity: 0.7;">Layer @_effectiveCurrentLayer.ToString("N0") / @_totalLayers.ToString("N0")</span>
+                </div>
+                <div style="background: var(--bg-tertiary); border-radius: 4px; height: 24px; overflow: hidden;">
+                    <div style="background: var(--accent); height: 100%; width: @(_progressPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%; transition: width 0.3s; border-radius: 4px;"></div>
                 </div>
             </div>
         }
 
-        @* Build Contents Table *@
-        <div class="form-label" style="margin-bottom: 4px;">Build Contents</div>
-        <table class="data-table" style="font-size: 0.85rem; margin-bottom: 12px;">
-            <thead><tr><th>Part #</th><th>Name</th><th>Qty</th><th>WO #</th></tr></thead>
+        @* Time info strip *@
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.9rem; margin-bottom: 12px; opacity: 0.85;">
+            @if (_program.PrintStartedAt.HasValue)
+            {
+                <span>Started @GetElapsedTimeString() ago</span>
+                <span>~@GetRemainingTimeString() remaining</span>
+                <span>ETA @GetEtaString()</span>
+            }
+            else if (_program.ScheduledDate.HasValue)
+            {
+                <span>Scheduled: @_program.ScheduledDate.Value.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+            }
+        </div>
+
+        @* Telemetry strip *@
+        @if (_machineState != null)
+        {
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; font-size: 0.85rem; background: var(--bg-tertiary); padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                <div><span class="form-label">Bed</span><div style="font-weight: 600;">@(_machineState.BedTemperature?.ToString("F0") ?? "—")°C</div></div>
+                <div><span class="form-label">Chamber</span><div style="font-weight: 600;">@(_machineState.ChamberTemperature?.ToString("F0") ?? "—")°C</div></div>
+                <div><span class="form-label">O₂</span><div style="font-weight: 600;">@(_machineState.OxygenLevel?.ToString("F2") ?? "—")%</div></div>
+                <div><span class="form-label">Laser</span><div style="font-weight: 600;">@(_machineState.LaserPower?.ToString("F0") ?? "—")W</div></div>
+                <div><span class="form-label">Gas</span><div style="font-weight: 600;">@(_machineState.GasFlow?.ToString("F1") ?? "—") L/min</div></div>
+                <div><span class="form-label">Humidity</span><div style="font-weight: 600;">@(_machineState.HumidityPercent?.ToString("F0") ?? "—")%</div></div>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info" style="margin-bottom: 8px; padding: 6px 12px; font-size: 0.85rem;">No live telemetry — layer count is manual entry below.</div>
+        }
+
+        @* Manual layer override *@
+        <div style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
+            <div class="form-group" style="max-width: 160px; margin-bottom: 0;">
+                <label class="form-label" style="font-size: 0.8rem;">Manual Layer Override</label>
+                <input class="form-control" type="number" inputmode="numeric" min="0"
+                       max="@(_totalLayers > 0 ? _totalLayers : 99999)"
+                       @bind="_currentLayer" @bind:after="NotifyDataChanged"
+                       style="font-size: 0.9rem;" />
+            </div>
+            @if (_machineState?.CurrentLayer != null)
+            {
+                <span style="font-size: 0.8rem; opacity: 0.6; padding-bottom: 6px;">Auto-tracked: @_machineState.CurrentLayer.Value.ToString("N0")</span>
+            }
+        </div>
+    </div>
+
+    @* ══════════════════════════════════════════════════════════ *@
+    @* Section 2: Changeover & Next Build                        *@
+    @* ══════════════════════════════════════════════════════════ *@
+    @if (_changeoverAnalysis != null || _nextBuild != null)
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-header">Changeover &amp; Next Build</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                @* Left column: Changeover Window *@
+                <div>
+                    <div class="form-label" style="margin-bottom: 6px;">Changeover Window</div>
+                    @if (_changeoverAnalysis != null)
+                    {
+                        <div style="font-size: 1rem; font-weight: 600; margin-bottom: 4px;">
+                            @_changeoverAnalysis.ChangeoverStart.ToLocalTime().ToString("h:mm tt") — @_changeoverAnalysis.ChangeoverEnd.ToLocalTime().ToString("h:mm tt")
+                        </div>
+                        <div style="margin-bottom: 4px;">
+                            @if (_changeoverAnalysis.OperatorAvailable)
+                            {
+                                <span style="color: var(--success, #22c55e);">Operator Available</span>
+                            }
+                            else
+                            {
+                                <span style="color: var(--danger, #ef4444);">No Operator Available</span>
+                            }
+                        </div>
+                        <div style="font-size: 0.85rem; opacity: 0.7;">
+                            Cooldown: @_cooldownSlotsUsed / @(_machine?.BuildPlateCapacity ?? 2) slots used
+                        </div>
+                        @if (!string.IsNullOrEmpty(_changeoverAnalysis.SuggestedAction))
+                        {
+                            <div class="alert" style="margin-top: 8px; padding: 6px 10px; font-size: 0.85rem; background: var(--bg-tertiary);">
+                                @_changeoverAnalysis.SuggestedAction
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div style="opacity: 0.6; font-size: 0.9rem;">No changeover data</div>
+                    }
+                </div>
+
+                @* Right column: Next Build *@
+                <div>
+                    <div class="form-label" style="margin-bottom: 6px;">Next Build</div>
+                    @if (_nextBuild != null)
+                    {
+                        <div style="font-size: 1rem; font-weight: 600; margin-bottom: 4px;">@_nextBuild.Name</div>
+                        <div style="font-size: 0.9rem; margin-bottom: 2px;">@_nextBuild.TotalPartCount parts (@_nextBuild.UniquePartCount unique)</div>
+                        <div style="font-size: 0.9rem; margin-bottom: 2px;">Duration: @(_nextBuild.EstimatedPrintHours?.ToString("F1") ?? "—")h</div>
+                        @if (_nextBuild.Material != null)
+                        {
+                            var sameMaterial = _program.MaterialId.HasValue && _nextBuild.MaterialId == _program.MaterialId;
+                            <div style="font-size: 0.9rem; margin-bottom: 2px;">
+                                Material: @_nextBuild.Material.Name
+                                @if (sameMaterial)
+                                {
+                                    <span style="color: var(--success, #22c55e); margin-left: 4px;">(same)</span>
+                                }
+                                else
+                                {
+                                    <span style="color: var(--warning, #f59e0b); margin-left: 4px;">(different)</span>
+                                }
+                            </div>
+                        }
+                        @if (_nextBuild.ScheduledDate.HasValue)
+                        {
+                            <div style="font-size: 0.9rem; opacity: 0.7;">Starts: ~@_nextBuild.ScheduledDate.Value.ToLocalTime().ToString("h:mm tt")</div>
+                        }
+                    }
+                    else
+                    {
+                        <div style="opacity: 0.6; font-size: 0.9rem;">No build scheduled</div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ══════════════════════════════════════════════════════════ *@
+    @* Section 3: Build Contents Table                           *@
+    @* ══════════════════════════════════════════════════════════ *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">Build Contents</div>
+        <table class="data-table" style="font-size: 0.85rem; margin-bottom: 0;">
+            <thead>
+                <tr>
+                    <th>Part #</th>
+                    <th>Name</th>
+                    <th>Qty</th>
+                    <th>WO #</th>
+                    <th>Due Date</th>
+                    <th>Priority</th>
+                </tr>
+            </thead>
             <tbody>
                 @foreach (var pp in _program.ProgramParts)
                 {
+                    var dueDate = pp.WorkOrderLine?.WorkOrder?.DueDate;
+                    var urgencyClass = GetUrgencyClass(dueDate);
                     <tr>
                         <td>@(pp.Part?.PartNumber ?? "—")</td>
                         <td>@(pp.Part?.Name ?? "—")</td>
                         <td>@pp.Quantity</td>
                         <td>@(pp.WorkOrderLine?.WorkOrder?.OrderNumber ?? "—")</td>
+                        <td style="@urgencyClass">
+                            @if (dueDate.HasValue)
+                            {
+                                @dueDate.Value.ToString("MMM d")
+                                @if (dueDate.Value.Date < DateTime.UtcNow.Date)
+                                {
+                                    <span style="margin-left: 4px;">OVERDUE</span>
+                                }
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                        <td>@(pp.WorkOrderLine?.WorkOrder?.Priority.ToString() ?? "—")</td>
                     </tr>
                 }
             </tbody>
         </table>
     </div>
 
-    @* Build Progress *@
-    <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">📊 Build Progress</div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 8px;">
-            <div class="form-group">
-                <label class="form-label">Current Layer</label>
-                <input class="form-control" type="number" inputmode="numeric" min="0"
-                       max="@(_program.LayerCount ?? 99999)"
-                       @bind="_currentLayer" @bind:after="NotifyDataChanged" />
+    @* ══════════════════════════════════════════════════════════ *@
+    @* Section 4: Machine Queue                                  *@
+    @* ══════════════════════════════════════════════════════════ *@
+    @if (_queueBuilds?.Count > 0)
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-header">Machine Queue (@_queueBuilds.Count builds)</div>
+            <table class="data-table" style="font-size: 0.85rem; margin-bottom: 0;">
+                <thead>
+                    <tr><th>Build</th><th>Status</th><th>Time</th><th>Duration</th><th>Parts</th></tr>
+                </thead>
+                <tbody>
+                    @* Current build row *@
+                    <tr style="font-weight: 600; background: var(--bg-tertiary);">
+                        <td>@_program.Name</td>
+                        <td><span class="badge" style="@GetScheduleStatusBadge().Style">PRINTING</span></td>
+                        <td>@(_progressPercent.ToString("F1"))%</td>
+                        <td>ETA @GetEtaString()</td>
+                        <td>@_program.TotalPartCount</td>
+                    </tr>
+                    @foreach (var build in _queueBuilds)
+                    {
+                        var conflict = _changeoverConflicts?.FirstOrDefault(c =>
+                            c.FollowingProgramName == build.Name || c.PrecedingProgramName == build.Name);
+                        <tr>
+                            <td>@build.Name</td>
+                            <td>
+                                <span class="badge" style="background: var(--bg-tertiary); color: var(--text-primary); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">
+                                    @build.ScheduleStatus.ToString()
+                                </span>
+                            </td>
+                            <td>
+                                @if (build.ScheduledDate.HasValue)
+                                {
+                                    var schedLocal = build.ScheduledDate.Value.ToLocalTime();
+                                    @(schedLocal.Date == DateTime.Now.Date ? schedLocal.ToString("h:mm tt") :
+                                      schedLocal.Date == DateTime.Now.Date.AddDays(1) ? "Tomorrow " + schedLocal.ToString("h:mm tt") :
+                                      schedLocal.ToString("ddd MMM d"))
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </td>
+                            <td>@(build.EstimatedPrintHours?.ToString("F1") ?? "—")h</td>
+                            <td>@build.TotalPartCount</td>
+                        </tr>
+                        @if (conflict != null)
+                        {
+                            <tr>
+                                <td colspan="5" style="color: var(--warning, #f59e0b); font-size: 0.8rem; padding: 2px 8px;">
+                                    @conflict.Warning
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @* ══════════════════════════════════════════════════════════ *@
+    @* Section 5: Machine Health Card                            *@
+    @* ══════════════════════════════════════════════════════════ *@
+    @if (_machine != null)
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-header">Machine Health</div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 0.95rem;">
+                <span style="font-weight: 600;">@_machine.Name</span>
+                @if (_machineState != null)
+                {
+                    <span class="badge" style="background: @(_machineState.IsConnected ? "var(--success, #22c55e)" : "var(--danger, #ef4444)"); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">
+                        @(_machineState.IsConnected ? "Connected" : "Disconnected")
+                    </span>
+                }
+                <span style="opacity: 0.7;">@_machine.MachineType</span>
             </div>
-            <div>
-                <span class="form-label">Total Layers</span>
-                <div style="font-size: 1.1rem; font-weight: 600;">@(_program.LayerCount?.ToString("N0") ?? "—")</div>
-            </div>
-            <div>
-                <span class="form-label">Progress</span>
-                <div style="font-size: 1.1rem; font-weight: 600;">@(_progressPercent.ToString("F1"))%</div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 0.85rem;">
+                <div>
+                    <span class="form-label">Last Maintenance</span>
+                    <div>
+                        @if (_machine.LastMaintenanceDate.HasValue)
+                        {
+                            var daysSince = (DateTime.UtcNow - _machine.LastMaintenanceDate.Value).TotalDays;
+                            <span>@((int)daysSince) days ago</span>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </div>
+                </div>
+                <div>
+                    <span class="form-label">Next Maintenance</span>
+                    <div>
+                        @if (_machine.NextMaintenanceDate.HasValue)
+                        {
+                            var daysUntil = (_machine.NextMaintenanceDate.Value - DateTime.UtcNow).TotalDays;
+                            var overdue = daysUntil < 0;
+                            <span style="@(overdue ? "color: var(--danger, #ef4444); font-weight: 600;" : "")">
+                                @(overdue ? $"OVERDUE by {(int)Math.Abs(daysUntil)} days" : $"in {(int)daysUntil} days")
+                            </span>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </div>
+                </div>
+                <div>
+                    <span class="form-label">Operating Hours</span>
+                    <div>@_machine.TotalOperatingHours.ToString("N0")</div>
+                </div>
+                <div>
+                    <span class="form-label">Build Volume</span>
+                    <div>@(_machine.BuildLengthMm) x @(_machine.BuildWidthMm) x @(_machine.BuildHeightMm) mm</div>
+                </div>
+                <div>
+                    <span class="form-label">Plate Capacity</span>
+                    <div>@_machine.BuildPlateCapacity</div>
+                </div>
+                <div>
+                    <span class="form-label">Auto-Changeover</span>
+                    <div>@(_machine.AutoChangeoverEnabled ? "Enabled" : "Disabled") (@_machine.ChangeoverMinutes min)</div>
+                </div>
             </div>
         </div>
-        @if (_program.LayerCount > 0)
-        {
-            <div style="background: var(--bg-tertiary); border-radius: 4px; height: 20px; overflow: hidden;">
-                <div style="background: var(--accent); height: 100%; width: @(_progressPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%; transition: width 0.3s;"></div>
-            </div>
-        }
-    </div>
+    }
+
+    @* ══════════════════════════════════════════════════════════ *@
+    @* Section 6: Slicer Data (collapsible)                      *@
+    @* ══════════════════════════════════════════════════════════ *@
+    @if (_program.HasSlicerData)
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <details>
+                <summary class="card-header" style="cursor: pointer; user-select: none;">Slice File Data</summary>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem; padding: 12px 0 4px;">
+                    <div><span class="form-label">Layers</span><div>@(_program.LayerCount?.ToString("N0") ?? "—")</div></div>
+                    <div><span class="form-label">Build Height</span><div>@(_program.BuildHeightMm?.ToString("F1") ?? "—") mm</div></div>
+                    <div><span class="form-label">Print Time</span><div>@(_program.EstimatedPrintHours?.ToString("F1") ?? "—") hrs</div></div>
+                    <div><span class="form-label">Powder</span><div>@(_program.EstimatedPowderKg?.ToString("F2") ?? "—") kg</div></div>
+                    <div><span class="form-label">Slicer</span><div>@(_program.SlicerSoftware ?? "—") @_program.SlicerVersion</div></div>
+                </div>
+            </details>
+        </div>
+    }
 }
 else
 {
-    @* ── Single-Part Mode (backward compatible) ── *@
+    @* ── Single-Part / No-Program Fallback ── *@
     <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">🖨️ SLS/LPBF Printing Details</div>
+        <div class="card-header">SLS/LPBF Printing Details</div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
             <div><span class="form-label">Machine</span><div>@(Execution?.Machine?.Name ?? Execution?.Job?.Machine?.Name ?? "—")</div></div>
             <div><span class="form-label">Material</span><div>@(Execution?.Job?.SlsMaterial ?? "—")</div></div>
@@ -93,38 +379,9 @@ else
     </div>
 }
 
-@if (_upcomingBuilds?.Any() == true)
-{
-    <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">Upcoming Builds on @(Execution?.Machine?.Name ?? "this machine")</div>
-        <table class="data-table" style="font-size: 0.85rem;">
-            <thead><tr><th>Build</th><th>Start</th><th>Duration</th><th>Parts</th></tr></thead>
-            <tbody>
-                @foreach (var build in _upcomingBuilds)
-                {
-                    <tr>
-                        <td>@build.Name</td>
-                        <td>@build.ScheduledDate?.ToLocalTime().ToString("ddd MMM d, h:mm tt")</td>
-                        <td>@(build.EstimatedPrintHours?.ToString("F1") ?? "—")h</td>
-                        <td>@build.TotalPartCount</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-}
-
-<div class="card" style="margin-bottom: 16px;">
-    <div class="card-header">Machine Telemetry</div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
-        <div><span class="form-label">Build Progress</span><div>—</div></div>
-        <div><span class="form-label">Layer</span><div>—</div></div>
-        <div><span class="form-label">Bed Temp</span><div>—</div></div>
-        <div><span class="form-label">Chamber Temp</span><div>—</div></div>
-    </div>
-    <div class="alert alert-info" style="margin-top: 8px; margin-bottom: 0;">Live telemetry requires SignalR connection</div>
-</div>
-
+@* ══════════════════════════════════════════════════════════ *@
+@* Section 7: Existing bottom components                     *@
+@* ══════════════════════════════════════════════════════════ *@
 <LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
 
 @code {
@@ -133,45 +390,115 @@ else
     [Parameter] public EventCallback<Dictionary<string, object?>> OnDataChanged { get; set; }
     [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
+    // Data fields
     private MachineProgram? _program;
-    private List<MachineProgram>? _upcomingBuilds;
+    private MachineStateRecord? _machineState;
+    private ChangeoverAnalysis? _changeoverAnalysis;
+    private List<ProgramChangeoverConflict>? _changeoverConflicts;
+    private MachineProgram? _nextBuild;
+    private Machine? _machine;
+    private int _cooldownSlotsUsed;
+    private List<MachineProgram>? _queueBuilds;
+
+    // Manual input
     private int _currentLayer;
-    private double _progressPercent => _program?.LayerCount > 0
-        ? Math.Min(100.0, _currentLayer * 100.0 / _program.LayerCount.Value)
+
+    // Computed
+    private int _totalLayers => _machineState?.TotalLayers ?? _program?.LayerCount ?? 0;
+    private int _effectiveCurrentLayer => _machineState?.CurrentLayer ?? _currentLayer;
+    private double _progressPercent => _totalLayers > 0
+        ? Math.Min(100.0, _effectiveCurrentLayer * 100.0 / _totalLayers)
         : 0;
     private string _operatorName => Execution?.OperatorName ?? "Operator";
 
     protected override async Task OnParametersSetAsync()
     {
+        // Load program
         if (Execution?.MachineProgramId != null)
         {
-            try
-            {
-                _program = await MachineProgramService.GetByIdAsync(Execution.MachineProgramId.Value);
-            }
-            catch
-            {
-                _program = null;
-            }
+            try { _program = await MachineProgramService.GetByIdAsync(Execution.MachineProgramId.Value); }
+            catch { _program = null; }
         }
         else
         {
             _program = null;
         }
 
-        // Load upcoming builds for the same machine
-        if (Execution?.MachineId > 0)
+        // Load machine
+        var machineId = Execution?.MachineId ?? _program?.MachineId;
+        if (machineId > 0)
+        {
+            try { _machine = await MachineService.GetByIdAsync(machineId.Value); }
+            catch { _machine = null; }
+        }
+
+        // Load machine state (latest telemetry)
+        if (_machine != null)
         {
             try
             {
-                var allPrograms = await MachineProgramService.GetProgramsForMachineAsync(Execution.MachineId.Value);
-                _upcomingBuilds = allPrograms
-                    .Where(p => p.ScheduledDate > DateTime.UtcNow && p.ScheduleStatus == ProgramScheduleStatus.Scheduled)
-                    .OrderBy(p => p.ScheduledDate)
-                    .Take(3)
-                    .ToList();
+                _machineState = await Db.MachineStateRecords
+                    .Where(r => r.MachineId == _machine.MachineId)
+                    .OrderByDescending(r => r.Timestamp)
+                    .FirstOrDefaultAsync();
             }
-            catch { _upcomingBuilds = null; }
+            catch { _machineState = null; }
+        }
+
+        // Load changeover analysis
+        if (machineId > 0 && _program?.EstimatedPrintHours > 0)
+        {
+            try
+            {
+                var buildEnd = EstimateBuildEnd();
+                _changeoverAnalysis = await ProgramScheduling.AnalyzeChangeoverAsync(machineId.Value, buildEnd);
+            }
+            catch { _changeoverAnalysis = null; }
+        }
+
+        // Load cooldown slots used: programs on this machine with Printing or PostPrint status
+        if (machineId > 0)
+        {
+            try
+            {
+                var machinePrograms = await MachineProgramService.GetProgramsForMachineAsync(machineId.Value);
+                _cooldownSlotsUsed = machinePrograms
+                    .Count(p => p.ScheduleStatus == ProgramScheduleStatus.Printing ||
+                                p.ScheduleStatus == ProgramScheduleStatus.PostPrint);
+            }
+            catch { _cooldownSlotsUsed = 0; }
+        }
+
+        // Load queue builds (next 5 after current)
+        if (machineId > 0)
+        {
+            try
+            {
+                var allPrograms = await MachineProgramService.GetProgramsForMachineAsync(machineId.Value);
+                _queueBuilds = allPrograms
+                    .Where(p => p.Id != _program?.Id &&
+                                p.ScheduledDate > DateTime.UtcNow &&
+                                (p.ScheduleStatus == ProgramScheduleStatus.Scheduled ||
+                                 p.ScheduleStatus == ProgramScheduleStatus.Ready))
+                    .OrderBy(p => p.ScheduledDate)
+                    .Take(5)
+                    .ToList();
+
+                _nextBuild = _queueBuilds.FirstOrDefault();
+            }
+            catch { _queueBuilds = null; _nextBuild = null; }
+        }
+
+        // Load changeover conflicts
+        if (machineId > 0)
+        {
+            try
+            {
+                var from = DateTime.UtcNow;
+                var to = from.AddDays(3);
+                _changeoverConflicts = await ProgramScheduling.DetectChangeoverConflictsAsync(machineId.Value, from, to);
+            }
+            catch { _changeoverConflicts = null; }
         }
 
         HydrateFromInitialValues();
@@ -189,5 +516,71 @@ else
         {
             ["currentLayer"] = _currentLayer
         });
+    }
+
+    // ── Helpers ──────────────────────────────────────────────
+
+    private DateTime EstimateBuildEnd()
+    {
+        if (_program?.PrintStartedAt.HasValue == true && _program.EstimatedPrintHours.HasValue)
+        {
+            var remaining = _program.EstimatedPrintHours.Value * (1.0 - _progressPercent / 100.0);
+            return DateTime.UtcNow.AddHours(remaining);
+        }
+        if (_program?.ScheduledDate.HasValue == true && _program.EstimatedPrintHours.HasValue)
+        {
+            return _program.ScheduledDate.Value.AddHours(_program.EstimatedPrintHours.Value);
+        }
+        return DateTime.UtcNow.AddHours(24);
+    }
+
+    private string GetElapsedTimeString()
+    {
+        if (_program?.PrintStartedAt == null) return "—";
+        var elapsed = DateTime.UtcNow - _program.PrintStartedAt.Value;
+        if (elapsed.TotalHours >= 1)
+            return $"{(int)elapsed.TotalHours}h {elapsed.Minutes}m";
+        return $"{elapsed.Minutes}m";
+    }
+
+    private string GetRemainingTimeString()
+    {
+        if (_program?.EstimatedPrintHours == null) return "—";
+        var remaining = _program.EstimatedPrintHours.Value * (1.0 - _progressPercent / 100.0);
+        if (remaining < 0) remaining = 0;
+        var hours = (int)remaining;
+        var minutes = (int)((remaining - hours) * 60);
+        return hours > 0 ? $"{hours}h {minutes}m" : $"{minutes}m";
+    }
+
+    private string GetEtaString()
+    {
+        if (_program?.EstimatedPrintHours == null) return "—";
+        var remaining = _program.EstimatedPrintHours.Value * (1.0 - _progressPercent / 100.0);
+        var eta = DateTime.UtcNow.AddHours(remaining).ToLocalTime();
+        return eta.ToString("h:mm tt");
+    }
+
+    private string GetUrgencyClass(DateTime? dueDate)
+    {
+        if (!dueDate.HasValue) return "";
+        if (dueDate.Value.Date < DateTime.UtcNow.Date)
+            return "color: var(--danger, #ef4444); font-weight: 600;";
+        if (dueDate.Value.Date <= DateTime.UtcNow.Date.AddDays(3))
+            return "color: var(--warning, #f59e0b); font-weight: 600;";
+        return "";
+    }
+
+    private (string Label, string Style) GetScheduleStatusBadge()
+    {
+        var status = _program?.ScheduleStatus ?? ProgramScheduleStatus.None;
+        return status switch
+        {
+            ProgramScheduleStatus.Printing => ("PRINTING", "background: var(--accent); color: white; padding: 2px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;"),
+            ProgramScheduleStatus.Scheduled => ("SCHEDULED", "background: var(--bg-tertiary); color: var(--text-primary); padding: 2px 10px; border-radius: 4px; font-size: 0.8rem;"),
+            ProgramScheduleStatus.PostPrint => ("POST-PRINT", "background: var(--warning, #f59e0b); color: white; padding: 2px 10px; border-radius: 4px; font-size: 0.8rem;"),
+            ProgramScheduleStatus.Completed => ("COMPLETED", "background: var(--success, #22c55e); color: white; padding: 2px 10px; border-radius: 4px; font-size: 0.8rem;"),
+            _ => ("DRAFT", "background: var(--bg-tertiary); color: var(--text-secondary); padding: 2px 10px; border-radius: 4px; font-size: 0.8rem;")
+        };
     }
 }
