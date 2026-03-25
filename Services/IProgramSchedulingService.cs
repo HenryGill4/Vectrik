@@ -85,6 +85,16 @@ public interface IProgramSchedulingService
         DateTime? startAfter = null);
 
     // ══════════════════════════════════════════════════════════
+    // Cascade Rescheduling
+    // ══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// After a build is inserted/moved on a machine, cascade-reschedule any overlapping
+    /// downstream builds forward so they don't conflict. Returns count and names of shifted builds.
+    /// </summary>
+    Task<CascadeResult> CascadeRescheduleAsync(int machineId, int insertedProgramId);
+
+    // ══════════════════════════════════════════════════════════
     // Slot Finding
     // ══════════════════════════════════════════════════════════
 
@@ -180,6 +190,11 @@ public interface IProgramSchedulingService
 // ══════════════════════════════════════════════════════════
 // Result Records
 // ══════════════════════════════════════════════════════════
+
+/// <summary>
+/// Result of cascade-rescheduling builds after an insertion/move.
+/// </summary>
+public record CascadeResult(int ShiftedCount, List<string> ShiftedBuilds);
 
 /// <summary>
 /// Result of scheduling a BuildPlate program.

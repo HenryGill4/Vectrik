@@ -374,6 +374,67 @@ public class ProgramSchedulingService : IProgramSchedulingService
         return await ScheduleBuildPlateAsync(machineProgramId, bestSlot.MachineId, startAfter);
     }
 
+    // ══════════════════════════════════════════════════════════
+    // Cascade Rescheduling
+    // ══════════════════════════════════════════════════════════
+
+    public async Task<CascadeResult> CascadeRescheduleAsync(int machineId, int insertedProgramId)
+    {
+        var inserted = await _db.MachinePrograms.FindAsync(insertedProgramId);
+        if (inserted?.ScheduledDate == null || !inserted.EstimatedPrintHours.HasValue)
+            return new CascadeResult(0, new List<string>());
+
+        var machine = await _db.Machines.FindAsync(machineId);
+        var changeoverMinutes = (machine?.AutoChangeoverEnabled == true) ? machine.ChangeoverMinutes : 0;
+
+        var insertedEnd = inserted.ScheduledDate.Value.AddHours(inserted.EstimatedPrintHours.Value);
+        var blockingEnd = insertedEnd.AddMinutes(changeoverMinutes);
+
+        // Get all other scheduled builds on this machine, ordered by start time
+        var programsOnMachine = await _db.MachinePrograms
+            .Where(p => p.MachineId == machineId
+                && p.Id != insertedProgramId
+                && p.ProgramType == ProgramType.BuildPlate
+                && p.ScheduledDate != null
+                && (p.ScheduleStatus == ProgramScheduleStatus.Scheduled
+                    || p.ScheduleStatus == ProgramScheduleStatus.Ready))
+            .OrderBy(p => p.ScheduledDate)
+            .ToListAsync();
+
+        var shifted = new List<string>();
+        const int maxCascade = 20;
+
+        foreach (var prog in programsOnMachine)
+        {
+            if (shifted.Count >= maxCascade) break;
+
+            var progStart = prog.ScheduledDate!.Value;
+            var progDuration = prog.EstimatedPrintHours ?? 0;
+            var progEnd = progStart.AddHours(progDuration);
+
+            // If this program starts after the blocking window, no conflict — done
+            if (progStart >= blockingEnd) break;
+
+            // If this program ends before the inserted one starts, skip
+            if (progEnd <= inserted.ScheduledDate.Value) continue;
+
+            // Skip locked/in-progress builds — can't move them
+            if (prog.ScheduleStatus == ProgramScheduleStatus.Printing
+                || prog.ScheduleStatus == ProgramScheduleStatus.PostPrint
+                || prog.ScheduleStatus == ProgramScheduleStatus.Completed)
+                continue;
+
+            // Overlap detected — reschedule this build after the blocking window
+            await ScheduleBuildPlateAsync(prog.Id, machineId, blockingEnd);
+            shifted.Add(prog.Name ?? prog.ProgramNumber ?? $"Build #{prog.Id}");
+
+            // Update blocking end: this shifted build now occupies time after blockingEnd
+            blockingEnd = blockingEnd.AddHours(progDuration).AddMinutes(changeoverMinutes);
+        }
+
+        return new CascadeResult(shifted.Count, shifted);
+    }
+
     public async Task<ProgramScheduleResult> ScheduleBuildPlateRunAsync(
         int machineProgramId, int machineId, DateTime? startAfter = null)
     {
@@ -792,13 +853,15 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .ToListAsync();
 
         // Also include scheduled programs that don't yet have stage executions
+        // Exclude the program being rescheduled (forProgramId) to avoid self-blocking
         var existingPrograms = await _db.MachinePrograms
             .Where(p => p.MachineId == machine.Id
                 && p.ProgramType == ProgramType.BuildPlate
                 && p.ScheduledDate != null
                 && p.EstimatedPrintHours != null
                 && p.ScheduleStatus != ProgramScheduleStatus.Completed
-                && p.ScheduleStatus != ProgramScheduleStatus.Cancelled)
+                && p.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && (!forProgramId.HasValue || p.Id != forProgramId.Value))
             .OrderBy(p => p.ScheduledDate)
             .Select(p => new { p.Id, p.ScheduledDate, p.EstimatedPrintHours, p.SourceProgramId })
             .ToListAsync();

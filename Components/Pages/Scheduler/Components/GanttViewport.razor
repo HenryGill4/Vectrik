@@ -217,13 +217,14 @@
     /// Called by JS when a bar is drag-dropped to a new position.
     /// </summary>
     [JSInvokable("OnBarDragCompleted")]
-    public async Task HandleBarDragFromJs(string barType, string entityId, string newStartIso)
+    public async Task HandleBarDragFromJs(string barType, string entityId, string newStartIso, string targetMachineId = "0")
     {
         if (_disposed) return;
         var newStart = DateTime.Parse(newStartIso, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        int.TryParse(targetMachineId, out var machineId);
         if (int.TryParse(entityId, out var id))
         {
-            await OnBarDragCompleted.InvokeAsync(new BarDragResult(barType, id, newStart));
+            await OnBarDragCompleted.InvokeAsync(new BarDragResult(barType, id, newStart, machineId > 0 ? machineId : null));
         }
     }
 
@@ -447,5 +448,5 @@
     public record ViewportBoundsChangedArgs(DateTime Start, DateTime End, double PixelsPerHour);
 
     /// <summary>Result of a bar drag-and-drop reschedule operation.</summary>
-    public record BarDragResult(string BarType, int EntityId, DateTime NewStart);
+    public record BarDragResult(string BarType, int EntityId, DateTime NewStart, int? TargetMachineId = null);
 }
