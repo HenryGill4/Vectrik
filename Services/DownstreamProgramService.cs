@@ -101,8 +101,11 @@ public class DownstreamProgramService : IDownstreamProgramService
     {
         var requirements = await GetRequiredProgramsAsync(buildPlateProgramId);
 
+        // Only block scheduling for required stages that have no program AND no defaults.
+        // Stages with configured durations (depowder, EDM, CNC, etc.) can be scheduled
+        // using their process stage defaults without an explicit program assignment.
         var missingPrograms = requirements
-            .Where(r => r.IsRequired && !r.AssignedProgramId.HasValue)
+            .Where(r => r.IsRequired && !r.AssignedProgramId.HasValue && !r.HasDefaultParameters)
             .ToList();
 
         var warnings = new List<string>();
@@ -124,14 +127,14 @@ public class DownstreamProgramService : IDownstreamProgramService
             }
         }
 
-        // Add warnings for stages that need programs but have defaults available
-        var requiredWithDefaults = missingPrograms
-            .Where(r => r.HasDefaultParameters)
+        // Add warnings for required stages using defaults (no explicit program)
+        var requiredUsingDefaults = requirements
+            .Where(r => r.IsRequired && !r.AssignedProgramId.HasValue && r.HasDefaultParameters)
             .ToList();
 
-        foreach (var req in requiredWithDefaults)
+        foreach (var req in requiredUsingDefaults)
         {
-            warnings.Add($"Required stage '{req.StageName}' can auto-create placeholder with defaults");
+            warnings.Add($"Required stage '{req.StageName}' will use default parameters (no program assigned)");
         }
 
         return new DownstreamValidationResult(

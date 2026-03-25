@@ -39,6 +39,11 @@ public interface IProgramPlanningService
     Task<MachineProgram> UpdateBuildPlateAsync(MachineProgram program, string modifiedBy);
 
     /// <summary>
+    /// Updates WorkOrderLineId on ProgramParts for fulfillment tracking.
+    /// </summary>
+    Task LinkProgramPartsToWorkOrdersAsync(int programId, Dictionary<int, int?> partIdToWorkOrderLineId);
+
+    /// <summary>
     /// Deletes a BuildPlate program (soft-delete via Archived status).
     /// </summary>
     Task DeleteBuildPlateAsync(int programId);

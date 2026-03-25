@@ -701,10 +701,11 @@ public class ProgramSchedulingService : IProgramSchedulingService
     {
         return await _db.MachinePrograms
             .Include(p => p.ProgramParts).ThenInclude(pp => pp.Part)
+            .Include(p => p.MachineAssignments).ThenInclude(a => a.Machine)
             .Where(p => p.ProgramType == ProgramType.BuildPlate
                 && (p.ScheduleStatus == ProgramScheduleStatus.None
                     || p.ScheduleStatus == ProgramScheduleStatus.Ready)
-                && p.Status == ProgramStatus.Active)
+                && (p.Status == ProgramStatus.Active || p.Status == ProgramStatus.Draft))
             .OrderByDescending(p => p.LastModifiedDate)
             .ToListAsync();
     }

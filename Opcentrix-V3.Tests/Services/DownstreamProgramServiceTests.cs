@@ -282,18 +282,18 @@ public class DownstreamProgramServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ValidateReadiness_NotValid_WhenRequiredProgramsMissing()
+    public async Task ValidateReadiness_IsValid_WhenRequiredStagesHaveDefaults()
     {
-        // Arrange: required stages without programs
+        // Arrange: required stages without programs but WITH default durations configured
         var (buildPlate, _, _) = await SetupBuildPlateWithDownstreamAsync(
             downstreamCount: 2, assignPrograms: false);
 
         // Act
         var result = await _sut.ValidateDownstreamReadinessAsync(buildPlate.Id);
 
-        // Assert
-        Assert.False(result.IsValid);
-        Assert.Equal(2, result.MissingPrograms.Count);
+        // Assert: valid because stages have RunTimeMinutes (default parameters)
+        Assert.True(result.IsValid);
+        Assert.Empty(result.MissingPrograms);
     }
 
     [Fact]
@@ -322,9 +322,9 @@ public class DownstreamProgramServiceTests : IDisposable
         // Act
         var result = await _sut.ValidateDownstreamReadinessAsync(buildPlate.Id);
 
-        // Assert
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Warnings, w => w.Contains("auto-create placeholder"));
+        // Assert: valid because defaults exist, but warns about using defaults
+        Assert.True(result.IsValid);
+        Assert.Contains(result.Warnings, w => w.Contains("default parameters"));
     }
 
     // ══════════════════════════════════════════════════════════
@@ -411,22 +411,22 @@ public class DownstreamProgramServiceTests : IDisposable
     // ══════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task FullFlow_ValidateCreatePlaceholdersThenRevalidate_BecomesValid()
+    public async Task FullFlow_ValidateWithDefaults_AlreadyValid()
     {
-        // Arrange
+        // Arrange: stages with defaults but no programs
         var (buildPlate, _, downstreamStages) = await SetupBuildPlateWithDownstreamAsync(
             downstreamCount: 2, assignPrograms: false);
 
-        // Act 1: initial validation should fail
-        var initialResult = await _sut.ValidateDownstreamReadinessAsync(buildPlate.Id);
-        Assert.False(initialResult.IsValid);
+        // Act: validation passes because stages have default durations
+        var result = await _sut.ValidateDownstreamReadinessAsync(buildPlate.Id);
+        Assert.True(result.IsValid);
 
-        // Act 2: create placeholders for missing stages
-        var missingIds = initialResult.MissingPrograms.Select(m => m.ProcessStageId).ToList();
-        var placeholders = await _sut.CreatePlaceholderProgramsAsync(buildPlate.Id, missingIds, "test-user");
+        // Placeholders can still be created proactively
+        var stageIds = downstreamStages.Select(s => s.Id).ToList();
+        var placeholders = await _sut.CreatePlaceholderProgramsAsync(buildPlate.Id, stageIds, "test-user");
         Assert.Equal(2, placeholders.Count);
 
-        // Act 3: re-validate — should now pass
+        // Re-validate — still valid, now with explicit programs
         var revalidation = await _sut.ValidateDownstreamReadinessAsync(buildPlate.Id);
         Assert.True(revalidation.IsValid);
         Assert.Empty(revalidation.MissingPrograms);

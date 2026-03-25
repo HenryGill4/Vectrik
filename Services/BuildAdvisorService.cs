@@ -40,22 +40,26 @@ public class BuildAdvisorService : IBuildAdvisorService
             .ToListAsync();
 
         // Count parts already in active programs (not yet produced)
-        var programParts = await _db.ProgramParts
-            .Include(pp => pp.MachineProgram)
-            .Where(pp => pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed
+        // Load to memory first — SQLite GroupBy + navigation filter can miscompute sums
+        var activeProgramParts = await _db.ProgramParts
+            .Where(pp => pp.MachineProgram.Status == ProgramStatus.Active
+                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed
                 && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled)
-            .GroupBy(pp => pp.PartId)
-            .Select(g => new { PartId = g.Key, Count = g.Sum(pp => pp.Quantity * pp.StackLevel) })
+            .Select(pp => new { pp.PartId, pp.Quantity, pp.StackLevel })
             .ToListAsync();
-        var inProgramsMap = programParts.ToDictionary(x => x.PartId, x => x.Count);
+        var inProgramsMap = activeProgramParts
+            .GroupBy(pp => pp.PartId)
+            .ToDictionary(g => g.Key, g => g.Sum(pp => pp.Quantity * pp.StackLevel));
 
         // Count parts in active jobs (not completed/cancelled)
-        var jobParts = await _db.Jobs
-            .Where(j => j.Status != JobStatus.Completed && j.Status != JobStatus.Cancelled)
-            .GroupBy(j => j.PartId)
-            .Select(g => new { PartId = g.Key, Count = g.Sum(j => j.Quantity) })
+        var activeJobParts = await _db.Jobs
+            .Where(j => j.Status != JobStatus.Completed && j.Status != JobStatus.Cancelled
+                && j.Scope == JobScope.Part)
+            .Select(j => new { j.PartId, j.Quantity })
             .ToListAsync();
-        var inProductionMap = jobParts.ToDictionary(x => x.PartId, x => x.Count);
+        var inProductionMap = activeJobParts
+            .GroupBy(j => j.PartId)
+            .ToDictionary(g => g.Key, g => g.Sum(j => j.Quantity));
 
         // Group lines by part
         var grouped = lines.GroupBy(l => l.PartId);

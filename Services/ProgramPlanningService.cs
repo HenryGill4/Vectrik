@@ -118,6 +118,23 @@ public class ProgramPlanningService : IProgramPlanningService
         return existing;
     }
 
+    public async Task LinkProgramPartsToWorkOrdersAsync(int programId, Dictionary<int, int?> partIdToWorkOrderLineId)
+    {
+        var program = await _db.MachinePrograms
+            .Include(p => p.ProgramParts)
+            .FirstOrDefaultAsync(p => p.Id == programId)
+            ?? throw new InvalidOperationException("Program not found.");
+
+        foreach (var pp in program.ProgramParts)
+        {
+            if (partIdToWorkOrderLineId.TryGetValue(pp.PartId, out var woLineId) && woLineId.HasValue)
+                pp.WorkOrderLineId = woLineId;
+        }
+
+        program.LastModifiedDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
     public async Task DeleteBuildPlateAsync(int programId)
     {
         var program = await _db.MachinePrograms.FindAsync(programId)

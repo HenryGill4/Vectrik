@@ -138,6 +138,9 @@ internal sealed class StubProgramPlanningService : IProgramPlanningService
     public Task<MachineProgram> UpdateBuildPlateAsync(MachineProgram program, string modifiedBy)
         => Task.FromResult(program);
 
+    public Task LinkProgramPartsToWorkOrdersAsync(int programId, Dictionary<int, int?> partIdToWorkOrderLineId)
+        => Task.CompletedTask;
+
     public Task DeleteBuildPlateAsync(int programId)
         => Task.CompletedTask;
 
