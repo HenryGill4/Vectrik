@@ -6,6 +6,7 @@
 @inject IWorkOrderService WoService
 @inject IJSRuntime JS
 @inject ToastService Toast
+@inject IBuildAdvisorService BuildAdvisor
 
 <div class="wo-demand-view">
     @{
@@ -231,6 +232,10 @@
                                                     var buildsNeeded = (int)Math.Ceiling((double)outstanding / perBuild);
                                                     <span class="wo-line-builds-needed">@buildsNeeded build@(buildsNeeded != 1 ? "s" : "") needed</span>
                                                 }
+                                                @if (_completionEstimates.TryGetValue(line.PartId, out var estDate) && estDate.HasValue)
+                                                {
+                                                    <span style="font-size: 0.75rem; color: var(--accent);">Est. complete: <strong>@estDate.Value.ToLocalTime().ToString("MMM d")</strong></span>
+                                                }
                                             }
                                         }
                                         else
@@ -337,6 +342,36 @@
     // Diagnostic report state
     private List<ScheduleDiagnosticReport> _diagnosticReports = [];
     private List<string> _diagnosticWarnings = [];
+
+    // Completion estimates per part
+    private Dictionary<int, DateTime?> _completionEstimates = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Load completion estimates for SLS lines with outstanding demand
+        var slsLines = WorkOrders
+            .SelectMany(w => w.Lines)
+            .Where(l => IsAdditiveLine(l) && GetOutstanding(l) > 0)
+            .GroupBy(l => l.PartId)
+            .ToList();
+
+        var newEstimates = new Dictionary<int, DateTime?>();
+        foreach (var group in slsLines)
+        {
+            if (_completionEstimates.ContainsKey(group.Key))
+            {
+                newEstimates[group.Key] = _completionEstimates[group.Key];
+                continue;
+            }
+            var totalOutstanding = group.Sum(l => GetOutstanding(l));
+            try
+            {
+                newEstimates[group.Key] = await BuildAdvisor.EstimateCompletionDateAsync(group.Key, totalOutstanding);
+            }
+            catch { /* non-critical */ }
+        }
+        _completionEstimates = newEstimates;
+    }
 
     private async Task OnModalConfirmedAsync()
     {

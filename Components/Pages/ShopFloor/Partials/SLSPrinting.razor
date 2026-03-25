@@ -1,5 +1,6 @@
 @* SLS/LPBF Printing - Rich built-in stage partial with build-level context *@
 @using Opcentrix_V3.Models
+@using Opcentrix_V3.Models.Enums
 @using Opcentrix_V3.Services
 @inject IMachineProgramService MachineProgramService
 
@@ -92,6 +93,27 @@ else
     </div>
 }
 
+@if (_upcomingBuilds?.Any() == true)
+{
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">Upcoming Builds on @(Execution?.Machine?.Name ?? "this machine")</div>
+        <table class="data-table" style="font-size: 0.85rem;">
+            <thead><tr><th>Build</th><th>Start</th><th>Duration</th><th>Parts</th></tr></thead>
+            <tbody>
+                @foreach (var build in _upcomingBuilds)
+                {
+                    <tr>
+                        <td>@build.Name</td>
+                        <td>@build.ScheduledDate?.ToLocalTime().ToString("ddd MMM d, h:mm tt")</td>
+                        <td>@(build.EstimatedPrintHours?.ToString("F1") ?? "—")h</td>
+                        <td>@build.TotalPartCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">Machine Telemetry</div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.85rem;">
@@ -112,6 +134,7 @@ else
     [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
     private MachineProgram? _program;
+    private List<MachineProgram>? _upcomingBuilds;
     private int _currentLayer;
     private double _progressPercent => _program?.LayerCount > 0
         ? Math.Min(100.0, _currentLayer * 100.0 / _program.LayerCount.Value)
@@ -134,6 +157,21 @@ else
         else
         {
             _program = null;
+        }
+
+        // Load upcoming builds for the same machine
+        if (Execution?.MachineId > 0)
+        {
+            try
+            {
+                var allPrograms = await MachineProgramService.GetProgramsForMachineAsync(Execution.MachineId.Value);
+                _upcomingBuilds = allPrograms
+                    .Where(p => p.ScheduledDate > DateTime.UtcNow && p.ScheduleStatus == ProgramScheduleStatus.Scheduled)
+                    .OrderBy(p => p.ScheduledDate)
+                    .Take(3)
+                    .ToList();
+            }
+            catch { _upcomingBuilds = null; }
         }
 
         HydrateFromInitialValues();

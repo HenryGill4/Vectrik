@@ -70,6 +70,13 @@ else
                     <div class="card-header">@exec.Job?.Part?.PartNumber — Job #@exec.JobId</div>
                     <div style="margin-bottom: 12px;">
                         <span class="form-label">Operator: @exec.OperatorName</span> | Started: @exec.StartedAt?.ToString("HH:mm")
+                        @if (exec.StartedAt.HasValue)
+                        {
+                            var elapsed = DateTime.UtcNow - exec.StartedAt.Value;
+                            <span style="margin-left: 8px; font-weight: 600; color: var(--accent);">
+                                @((int)elapsed.TotalHours)h @(elapsed.Minutes)m elapsed
+                            </span>
+                        }
                         @if (exec.EstimatedHours.HasValue && exec.StartedAt.HasValue)
                         {
                             var elapsed = (DateTime.UtcNow - exec.StartedAt.Value).TotalHours;
@@ -249,6 +256,19 @@ else
                 </div>
             }
 
+            @if (_siblingExecutions?.Any() == true)
+            {
+                <div style="border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-top: 12px; background: var(--bg-secondary);">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" @bind="_completeBatchMode" style="width: 18px; height: 18px;" />
+                        <span>Complete all @(_siblingExecutions.Count + 1) jobs in this build at once</span>
+                    </label>
+                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                        This will also complete: @string.Join(", ", _siblingExecutions.Select(e => $"Job #{e.JobId}"))
+                    </div>
+                </div>
+            }
+
             <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
                 <button class="btn btn-secondary" @onclick="CloseCompleteModal">Cancel</button>
                 <button class="btn btn-success" @onclick="ConfirmComplete" disabled="@_actionInProgress">
@@ -288,6 +308,11 @@ else
     private string _feedbackCategory = "";
     private ProgramFeedbackSeverity _feedbackSeverity = ProgramFeedbackSeverity.Low;
     private string? _feedbackComment;
+
+    // Batch completion for build-level stages
+    private bool IsBuildLevelStage => _stage?.StageSlug?.ToLower() is "sls-printing" or "depowdering" or "wire-edm";
+    private List<StageExecution>? _siblingExecutions;
+    private bool _completeBatchMode;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -377,6 +402,20 @@ else
         _feedbackCategory = "";
         _feedbackSeverity = ProgramFeedbackSeverity.Low;
         _feedbackComment = null;
+
+        // Check for sibling build executions
+        if (IsBuildLevelStage && exec.MachineProgramId.HasValue)
+        {
+            _siblingExecutions = _active
+                .Where(e => e.MachineProgramId == exec.MachineProgramId && e.Id != exec.Id)
+                .ToList();
+        }
+        else
+        {
+            _siblingExecutions = null;
+        }
+
+        _completeBatchMode = false;
         _showCompleteModal = true;
     }
 
@@ -423,9 +462,23 @@ else
                 await ProgramService.SubmitFeedbackAsync(feedback);
                 Toast.ShowSuccess("Stage completed. Feedback submitted — thank you!");
             }
-            else
+            else if (!_completeBatchMode || _siblingExecutions == null || !_siblingExecutions.Any())
             {
                 Toast.ShowSuccess("Stage completed");
+            }
+
+            // Batch complete sibling executions in the same build
+            if (_completeBatchMode && _siblingExecutions?.Any() == true)
+            {
+                foreach (var sibling in _siblingExecutions)
+                {
+                    try
+                    {
+                        await StageService.CompleteStageExecutionAsync(sibling.Id, customFieldValues: cfv, notes: _completionNotes);
+                    }
+                    catch { /* Log but continue — don't block other completions */ }
+                }
+                Toast.ShowSuccess($"Build completed: {_siblingExecutions.Count + 1} jobs finished");
             }
 
             CloseCompleteModal();
