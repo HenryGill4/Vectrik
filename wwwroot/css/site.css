@@ -209,9 +209,7 @@ body.modal-open { overflow: hidden; }
     top: 0; left: 0; bottom: 0;
     z-index: 100;
     transition: width var(--transition-normal), transform var(--transition-normal);
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
+    overflow: hidden;
 }
 
 .sidebar-header {
@@ -256,6 +254,9 @@ body.modal-open { overflow: hidden; }
 .sidebar-nav {
     padding: 8px 0;
     flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
 }
 
 .nav-section {
@@ -450,46 +451,58 @@ body.modal-open { overflow: hidden; }
     transition: margin-left var(--transition-normal);
 }
 
-/* Top Bar */
-.top-bar {
-    height: var(--topbar-height);
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
+/* Sidebar Footer (user controls) */
+.sidebar-footer {
     display: flex;
     align-items: center;
-    padding: 0 20px;
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    box-shadow: var(--shadow-sm);
+    gap: 4px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
-.top-bar-spacer { flex: 1; }
-
-.top-bar-user {
+.sidebar-user {
+    flex: 1;
     color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-right: 12px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
-.btn-topbar {
+.sidebar-footer-btn {
     background: none; border: none;
     color: var(--text-secondary);
-    font-size: 1.25rem;
+    font-size: 1.1rem;
     cursor: pointer;
-    min-width: var(--tap-target);
-    min-height: var(--tap-target);
+    width: 32px; height: 32px;
     display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
     text-decoration: none;
-    padding: 0 8px;
+    transition: background var(--transition-fast), color var(--transition-fast);
 }
-.btn-topbar:hover { color: var(--text-primary); }
+.sidebar-footer-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
 
-.mobile-toggle {
+/* Mobile menu button (floating, mobile only) */
+.mobile-menu-btn {
     display: none;
-    background: none; border: none; color: var(--text-primary);
-    font-size: 1.5rem; cursor: pointer;
-    min-width: var(--tap-target); min-height: var(--tap-target);
+    position: fixed;
+    top: 8px; left: 8px;
+    z-index: 110;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 1.3rem;
+    cursor: pointer;
+    width: 40px; height: 40px;
+    align-items: center; justify-content: center;
+    box-shadow: var(--shadow-sm);
 }
 
 /* Login Page */
@@ -549,7 +562,7 @@ body.modal-open { overflow: hidden; }
     padding: 0;
     gap: 0;
     position: sticky;
-    top: var(--topbar-height);
+    top: 0;
     z-index: 45;
     user-select: none;
 }
@@ -1234,7 +1247,7 @@ select.form-control {
         margin-left: 0 !important;
     }
 
-    .mobile-toggle { display: flex; }
+    .mobile-menu-btn { display: flex; }
     .sidebar-toggle { display: none; }
 
     .content-area { padding: 16px; }
@@ -1256,7 +1269,8 @@ select.form-control {
         overflow: hidden;
     }
     .sidebar-collapsed .sidebar-nav,
-    .sidebar-collapsed .sidebar-brand {
+    .sidebar-collapsed .sidebar-brand,
+    .sidebar-collapsed .sidebar-footer {
         display: none;
     }
     .sidebar-collapsed .sidebar-header {
@@ -4347,21 +4361,6 @@ select.form-control {
 
 /* ── Scheduler Responsive ── */
 @media (max-width: 1024px) {
-    /* ── Global: Top bar compact ── */
-    .top-bar {
-        padding: 0 12px;
-        height: 48px;
-    }
-    .top-bar-user {
-        font-size: 0.8rem;
-        margin-right: 8px;
-    }
-    .btn-topbar {
-        font-size: 1rem;
-        min-width: 40px;
-        min-height: 40px;
-    }
-
     /* ── Global: Content area tighter ── */
     .content-area {
         padding: 16px;
@@ -6805,7 +6804,7 @@ select.form-control {
 @media print {
     body { background: white; color: black; }
 
-    .sidebar, .top-bar, .mobile-toggle, .btn,
+    .sidebar, .mobile-menu-btn, .btn,
     .toast-container, .sched-controls-right,
     .page-actions, #blazor-error-ui { display: none !important; }
 
