@@ -17,10 +17,10 @@
         _ => "📦"
     };
 }
-<div class="gantt-build-bar-wrapper" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
+<div class="gantt-build-bar-wrapper @(_showPopover ? "popover-open" : "")" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
      data-program-id="@Build.Id"
      data-bar-type="build">
-    <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "")"
+    <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "")"
          title="@ComputeTooltip()"
          @onclick="TogglePopover"
          @onclick:stopPropagation="true">
@@ -59,6 +59,9 @@
                 {
                     case ProgramScheduleStatus.Scheduled:
                         <button class="btn btn-sm btn-accent" @onclick="OnStartPrint">🖨️ Start Print</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="OnReschedule">Reschedule</button>
+                        <button class="btn btn-sm btn-danger" @onclick="OnDelete">Delete</button>
+                        <button class="btn btn-sm @(IsSelected ? "btn-warning" : "btn-secondary")" @onclick="OnSelect">@(IsSelected ? "Deselect" : "Select")</button>
                         break;
                     case ProgramScheduleStatus.Printing:
                         <button class="btn btn-sm btn-warning" @onclick="OnPostPrint">🔄 → Post-Print</button>
@@ -82,6 +85,8 @@
     [Parameter] public double ChangeoverMinutes { get; set; }
     [Parameter] public double PixelsPerHour { get; set; }
 
+    [Parameter] public bool IsSelected { get; set; }
+
     /// <summary>Raised when the user clicks a status action. Value is (MachineProgram, actionKey).</summary>
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
 
@@ -94,6 +99,9 @@
     private Task OnStartPrint() => InvokeAction("start-print");
     private Task OnPostPrint() => InvokeAction("post-print");
     private Task OnReleasePlate() => InvokeAction("release-plate");
+    private Task OnReschedule() => InvokeAction("reschedule");
+    private Task OnDelete() => InvokeAction("delete");
+    private Task OnSelect() { _showPopover = false; return OnBuildAction.InvokeAsync((Build, "select")); }
 
     private async Task InvokeAction(string action)
     {

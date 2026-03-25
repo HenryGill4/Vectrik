@@ -18,7 +18,20 @@
                 ⚡ Auto-Schedule (@AutoScheduleCount)
             </button>
         }
-        <button class="btn btn-primary btn-sm" @onclick="OnNewJob">+ New Job</button>
+        <div class="sched-new-dropdown" @onfocusout="() => _newDropdownOpen = false">
+            <button class="btn btn-primary btn-sm" @onclick="() => _newDropdownOpen = !_newDropdownOpen">+ New ▾</button>
+            @if (_newDropdownOpen)
+            {
+                <div class="sched-new-dropdown-menu">
+                    <button class="sched-new-dropdown-item" @onclick="() => { _newDropdownOpen = false; OnNewBuild.InvokeAsync(); }">
+                        SLS Build
+                    </button>
+                    <button class="sched-new-dropdown-item" @onclick="() => { _newDropdownOpen = false; OnNewCncJob.InvokeAsync(); }">
+                        CNC Job
+                    </button>
+                </div>
+            }
+        </div>
         <button class="btn btn-secondary btn-sm" @onclick="OnManualRefresh" title="Refresh now">🔄</button>
     </div>
 </div>
@@ -133,7 +146,10 @@
     [Parameter] public EventCallback OnManualRefresh { get; set; }
     [Parameter] public EventCallback OnToggleAutoRefresh { get; set; }
     [Parameter] public EventCallback OnAutoScheduleAll { get; set; }
-    [Parameter] public EventCallback OnNewJob { get; set; }
+    [Parameter] public EventCallback OnNewBuild { get; set; }
+    [Parameter] public EventCallback OnNewCncJob { get; set; }
+
+    private bool _newDropdownOpen;
 
     [Parameter] public EventCallback<bool> OnShowConflictsOnlyChanged { get; set; }
     [Parameter] public EventCallback<ProgramScheduleStatus?> OnProgramStatusFilterChanged { get; set; }

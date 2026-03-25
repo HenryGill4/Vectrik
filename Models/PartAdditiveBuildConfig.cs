@@ -80,6 +80,10 @@ public class PartAdditiveBuildConfig
         _ => null
     };
 
+    /// <summary>
+    /// Returns total parts produced per build at the given stack level.
+    /// E.g. 10 positions × 2 stack = 20 total parts per build.
+    /// </summary>
     public int? GetPartsPerBuild(int level) => level switch
     {
         1 => PlannedPartsPerBuildSingle,
@@ -87,6 +91,18 @@ public class PartAdditiveBuildConfig
         3 => PlannedPartsPerBuildTriple,
         _ => null
     };
+
+    /// <summary>
+    /// Returns the number of physical plate positions for the given stack level.
+    /// PlannedPartsPerBuild stores TOTAL parts (positions × stack), so divide by level.
+    /// </summary>
+    public int GetPositionsPerBuild(int level)
+    {
+        var totalParts = GetPartsPerBuild(level);
+        if (!totalParts.HasValue) return PlannedPartsPerBuildSingle;
+        if (level <= 1) return totalParts.Value;
+        return (int)Math.Ceiling((double)totalParts.Value / level);
+    }
 
     public List<string> ValidateStackingConfiguration()
     {

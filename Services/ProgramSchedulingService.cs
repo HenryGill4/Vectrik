@@ -101,7 +101,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var job = new Job
         {
             JobNumber = await _numberSeq.NextAsync("Job"),
-            PartId = program.ProgramParts.First().PartId,
+            PartId = program.ProgramParts.FirstOrDefault()?.PartId ?? 0,
             Scope = JobScope.Build,
             ManufacturingProcessId = firstProcess?.Id,
             Quantity = program.TotalPartCount,
@@ -1506,7 +1506,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
             if (batchStages.Count == 0 && partStages.Count == 0) continue;
 
-            var batchCapacity = process.DefaultBatchCapacity;
+            var batchCapacity = Math.Max(1, process.DefaultBatchCapacity);
             var batchCount = (int)Math.Ceiling((double)totalQuantity / batchCapacity);
 
             var totalEstimatedHours = 0.0;

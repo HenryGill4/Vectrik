@@ -32,6 +32,15 @@
         <span class="sched-kpi-value">@TotalHours.ToString("F0")h</span>
         <span class="sched-kpi-label">Scheduled</span>
     </div>
+    @if (BottleneckReport != null && BottleneckReport.Items.Any(b => b.Severity != "ok"))
+    {
+        var worstSeverity = BottleneckReport.Items.Any(b => b.Severity == "critical") ? "danger" : "warning";
+        var count = BottleneckReport.Items.Count(b => b.Severity != "ok");
+        <div class="sched-kpi sched-kpi--@worstSeverity" title="@string.Join(" | ", BottleneckReport.Recommendations)">
+            <span class="sched-kpi-value">@count</span>
+            <span class="sched-kpi-label">Bottleneck@(count != 1 ? "s" : "")</span>
+        </div>
+    }
 </div>
 
 @code {
@@ -39,6 +48,7 @@
     [Parameter] public List<StageExecution> Unscheduled { get; set; } = [];
     [Parameter] public List<Machine> Machines { get; set; } = [];
     [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
+    [Parameter] public BottleneckReport? BottleneckReport { get; set; }
 
     private int InProgressCount => Executions.Count(e => e.Status == StageExecutionStatus.InProgress);
 

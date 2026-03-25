@@ -368,6 +368,68 @@ public class PartAdditiveBuildConfigTests
         Assert.Null(config.CalculateStackEfficiency(99, 4));
     }
 
+    // ── GetPositionsPerBuild ───────────────────────────────────
+
+    [Fact]
+    public void GetPositionsPerBuild_SingleStack_ReturnsSameAsGetPartsPerBuild()
+    {
+        var config = new PartAdditiveBuildConfig { PlannedPartsPerBuildSingle = 10 };
+
+        Assert.Equal(10, config.GetPositionsPerBuild(1));
+        Assert.Equal(config.GetPartsPerBuild(1), config.GetPositionsPerBuild(1));
+    }
+
+    [Fact]
+    public void GetPositionsPerBuild_DoubleStack_DividesTotalByTwo()
+    {
+        var config = new PartAdditiveBuildConfig
+        {
+            PlannedPartsPerBuildSingle = 10,
+            EnableDoubleStack = true,
+            DoubleStackDurationHours = 8,
+            PlannedPartsPerBuildDouble = 20  // 10 positions × 2 stack = 20 total
+        };
+
+        Assert.Equal(10, config.GetPositionsPerBuild(2));
+    }
+
+    [Fact]
+    public void GetPositionsPerBuild_TripleStack_DividesTotalByThree()
+    {
+        var config = new PartAdditiveBuildConfig
+        {
+            PlannedPartsPerBuildSingle = 10,
+            EnableTripleStack = true,
+            TripleStackDurationHours = 12,
+            PlannedPartsPerBuildTriple = 30  // 10 positions × 3 stack = 30 total
+        };
+
+        Assert.Equal(10, config.GetPositionsPerBuild(3));
+    }
+
+    [Fact]
+    public void GetPositionsPerBuild_OddNumber_RoundsUp()
+    {
+        var config = new PartAdditiveBuildConfig
+        {
+            PlannedPartsPerBuildSingle = 5,
+            EnableDoubleStack = true,
+            DoubleStackDurationHours = 8,
+            PlannedPartsPerBuildDouble = 15  // 15 / 2 = 7.5 → ceiling = 8
+        };
+
+        Assert.Equal(8, config.GetPositionsPerBuild(2));
+    }
+
+    [Fact]
+    public void GetPositionsPerBuild_NoConfigForLevel_ReturnsSingleDefault()
+    {
+        var config = new PartAdditiveBuildConfig { PlannedPartsPerBuildSingle = 10 };
+
+        // Level 2 not configured → GetPartsPerBuild returns null → falls back to Single
+        Assert.Equal(10, config.GetPositionsPerBuild(2));
+    }
+
     // ── Default values ────────────────────────────────────────
 
     [Fact]

@@ -47,15 +47,19 @@ function isAlive() {
 
 function detachListeners() {
     if (!_container) return;
-    _container.removeEventListener('scroll', onScroll);
-    _container.removeEventListener('wheel', onWheel, { capture: true });
-    _container.removeEventListener('touchstart', onTouchStart);
-    _container.removeEventListener('touchmove', onTouchMove);
-    _container.removeEventListener('mousedown', onMouseDown);
-    _container.removeEventListener('mousemove', onMouseMove);
-    _container.removeEventListener('mouseup', onMouseUp);
-    _container.removeEventListener('mouseleave', onMouseUp);
-    _container.removeEventListener('contextmenu', onContextMenu);
+    try {
+        _container.removeEventListener('scroll', onScroll);
+        _container.removeEventListener('wheel', onWheel, { capture: true });
+        _container.removeEventListener('touchstart', onTouchStart);
+        _container.removeEventListener('touchmove', onTouchMove);
+        _container.removeEventListener('mousedown', onMouseDown);
+        _container.removeEventListener('mousemove', onMouseMove);
+        _container.removeEventListener('mouseup', onMouseUp);
+        _container.removeEventListener('mouseleave', onMouseUp);
+        _container.removeEventListener('contextmenu', onContextMenu);
+    } catch (e) {
+        // Gracefully handle missing references during dispose
+    }
 }
 
 function attachListeners() {
@@ -371,7 +375,11 @@ function onTouchMove(e) {
     }
 }
 
-// Old onMouseDown/onMouseMove/onMouseUp removed — replaced by bar-drag-aware versions below
+function onContextMenu(e) {
+    if (_isDragging || _barDragActive || e.button === 2) {
+        e.preventDefault();
+    }
+}
 
 // ── Bar Drag-to-Reschedule ──────────────────────────────────────────────────
 

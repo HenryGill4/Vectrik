@@ -105,6 +105,7 @@ builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
 
 // Shop Floor & Scheduling (Stage 4)
 builder.Services.AddScoped<IShiftManagementService, ShiftManagementService>();
+builder.Services.AddScoped<IBuildAdvisorService, BuildAdvisorService>();
 builder.Services.AddScoped<ISchedulingService, SchedulingService>();
 builder.Services.AddScoped<IProgramSchedulingService, ProgramSchedulingService>();
 builder.Services.AddScoped<IProgramPlanningService, ProgramPlanningService>();

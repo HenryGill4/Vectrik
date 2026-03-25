@@ -1999,8 +1999,8 @@ select.form-control {
     font-weight: 600;
     color: var(--gantt-bar-text);
     transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-    z-index: 1;
-    box-shadow: var(--shadow-sm);
+/*    z-index: 1; Henry did this to fix the popup when you click to fix the build pop up
+*/    box-shadow: var(--shadow-sm);
     border-left: 3px solid var(--bar-accent, transparent);
 }
 
@@ -2046,6 +2046,48 @@ select.form-control {
     top: 0;
     z-index: 1;
 }
+.gantt-build-bar-wrapper.popover-open {
+    z-index: 200;
+}
+
+/* ── Batch selection ── */
+.gantt-bar-selected {
+    outline: 2px solid var(--accent) !important;
+    outline-offset: 1px;
+    opacity: 1 !important;
+    box-shadow: 0 0 8px rgba(var(--accent-rgb, 99, 102, 241), 0.5) !important;
+}
+.gantt-bar-selected .gantt-bar-check {
+    position: absolute;
+    left: 2px;
+    top: 1px;
+    font-size: 0.65rem;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+.gantt-batch-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    margin-bottom: 6px;
+    font-size: 0.82rem;
+}
+.gantt-batch-count {
+    font-weight: 600;
+    color: var(--accent);
+    margin-right: auto;
+}
 .gantt-build-bar {
     top: 0;
     left: 0;
@@ -2073,7 +2115,7 @@ select.form-control {
     position: absolute;
     top: 52px;
     left: 0;
-    z-index: 50;
+    z-index: 150;
     min-width: 260px;
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -2183,6 +2225,31 @@ select.form-control {
     cursor: help;
     z-index: 0;
 }
+/* "+" zone for scheduling next SLS build */
+.gantt-next-build-zone {
+    position: absolute;
+    top: 4px;
+    width: 48px;
+    height: 40px;
+    border: 2px dashed rgba(var(--accent-rgb), 0.4);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 1.2rem;
+    font-weight: 700;
+    opacity: 0.5;
+    transition: opacity var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+    z-index: 2;
+}
+.gantt-next-build-zone:hover {
+    opacity: 1;
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.08);
+}
+
 /* Bar drag visual feedback */
 .gantt-bar-dragging {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
@@ -2399,6 +2466,42 @@ select.form-control {
     gap: 6px;
     align-items: center;
     flex-wrap: wrap;
+}
+
+.sched-new-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.sched-new-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    min-width: 140px;
+    overflow: hidden;
+}
+
+.sched-new-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    border: none;
+    background: none;
+    text-align: left;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.sched-new-dropdown-item:hover {
+    background: var(--bg-secondary);
 }
 
 /* ══ Tab Bar ══ */
@@ -3859,6 +3962,82 @@ select.form-control {
     border-radius: var(--radius-sm);
     font-size: 0.82rem;
     color: var(--success);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.wo-card-fulfilled-summary {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.wo-card--fulfilled {
+    opacity: 0.7;
+}
+
+.wo-card--fulfilled:hover {
+    opacity: 1;
+}
+
+.wo-card-po {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.wo-section-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0 8px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.wo-section-divider::before,
+.wo-section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.wo-section-label {
+    white-space: nowrap;
+}
+
+.wo-line-links {
+    display: inline-flex;
+    gap: 6px;
+    margin-left: 8px;
+}
+
+.wo-quick-link {
+    font-size: 0.7rem;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 1px 6px;
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.wo-quick-link:hover {
+    background: rgba(var(--accent-rgb), 0.1);
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.wo-line-shipped {
+    font-size: 0.75rem;
+    color: var(--success);
+}
+
+.wo-line-builds-needed {
+    font-size: 0.72rem;
+    color: var(--accent);
+    font-weight: 500;
 }
 
 .wo-card-lines {
@@ -5736,6 +5915,228 @@ select.form-control {
     color: var(--alert-danger-text);
 }
 
+/* ── Next Build Advisor: plate composition editing ── */
+
+.advisor-rationale {
+    margin-bottom: 12px;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.advisor-warning {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    background: rgba(var(--warning-rgb), 0.1);
+    border-left: 3px solid var(--warning);
+    font-size: 0.82rem;
+}
+
+.advisor-plate {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-top: 12px;
+}
+
+.advisor-plate-header {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.85rem;
+    background: var(--bg-secondary);
+}
+
+.advisor-plate-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.advisor-plate-row:last-of-type {
+    border-bottom: none;
+}
+
+.advisor-plate-role {
+    min-width: 50px;
+    text-align: center;
+}
+
+.advisor-role-primary {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.advisor-role-fill {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.advisor-plate-part {
+    flex: 1;
+    min-width: 0;
+}
+
+.advisor-plate-detail {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.advisor-plate-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.advisor-control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.advisor-control-group label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.advisor-total {
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding-top: 2px;
+}
+
+.advisor-plate-actions {
+    min-width: 32px;
+}
+
+.advisor-plate-add {
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.advisor-coverage {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+}
+
+.advisor-coverage-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+    font-size: 0.82rem;
+}
+
+.advisor-coverage-row:last-child {
+    margin-bottom: 0;
+}
+
+.advisor-coverage-label {
+    font-weight: 600;
+    min-width: 100px;
+}
+
+.advisor-coverage-value {
+    min-width: 120px;
+    text-align: right;
+    font-size: 0.78rem;
+}
+
+/* ── Advisor: Schedule Option Cards ──────────────────────── */
+.advisor-option-card {
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+    position: relative;
+}
+.advisor-option-card:hover {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.04);
+}
+.advisor-option-card--selected {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.08);
+}
+.advisor-option-badge {
+    position: absolute;
+    top: -8px;
+    right: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.advisor-option-changeover {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+}
+.advisor-option-detail {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.advisor-option-tags {
+    display: flex;
+    gap: 8px;
+    font-size: 0.78rem;
+}
+.advisor-option-tag {
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+.advisor-option-tag--safe { background: rgba(var(--success-rgb), 0.15); color: var(--success); }
+.advisor-option-tag--danger { background: rgba(var(--danger-rgb), 0.15); color: var(--danger); }
+.advisor-option-tag--info { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); }
+
+/* ── Advisor: Slicer Data Form ──────────────────────────── */
+.advisor-slicer-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.advisor-slicer-note {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+.advisor-file-list {
+    margin-top: 8px;
+    font-size: 0.82rem;
+}
+.advisor-file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
 
 .issue-current-actions {
     display: flex;

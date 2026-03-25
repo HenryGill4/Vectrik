@@ -1,6 +1,8 @@
 # Next Build Advisor — Implementation Plan
 
-## Status: Phase 1 In Progress
+## Status: ALL PHASES COMPLETE
+
+> **Next plan**: See [PLAN-scheduler-finalization.md](PLAN-scheduler-finalization.md) for the scheduler finalization plan (SLS/CNC routing split, plate composition editing, per-tenant config, supporting features).
 
 ---
 
@@ -34,7 +36,7 @@ Key: Build stages (print, depowder, EDM) operate on the whole plate. After EDM, 
 ---
 
 ## Phase 1: BuildAdvisorService (Foundation)
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Files to Create
 - [ ] `Services/IBuildAdvisorService.cs` — Interface
@@ -138,7 +140,7 @@ record BottleneckItem(
 ---
 
 ## Phase 2: NextBuildAdvisor Modal (UI)
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Files to Create
 - [ ] `Components/Pages/Scheduler/Modals/NextBuildAdvisor.razor`
@@ -188,7 +190,7 @@ record BottleneckItem(
 ---
 
 ## Phase 3: Gantt Integration
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Files to Modify
 - [ ] `Components/Pages/Scheduler/Components/GanttMachineRow.razor` — Add "+" zone for SLS machines
@@ -209,7 +211,7 @@ Only shown on machines where `IsAdditiveMachine == true`.
 ---
 
 ## Phase 4: CNC Setup Affinity
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Files to Modify
 - [ ] `Models/ProcessStage.cs` — Add `SetupChangeoverMinutes` (nullable double)
@@ -236,7 +238,7 @@ For each capable CNC machine:
 ---
 
 ## Phase 5: Bottleneck Detection
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 ### Files to Create
 - [ ] `Components/Pages/Scheduler/Components/BottleneckPanel.razor`
@@ -267,7 +269,7 @@ Special check for SLS→CNC throughput:
 ---
 
 ## Phase 6: Polish & Cleanup
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 - [ ] Simplify `UnifiedScheduleWizard.razor` to CNC-only (remove SLS path)
 - [ ] Update toolbar "+" button: dropdown with "SLS Build" and "CNC Job" options

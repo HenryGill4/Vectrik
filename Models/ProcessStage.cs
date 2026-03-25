@@ -89,6 +89,14 @@ public class ProcessStage
     /// </summary>
     public bool ProgramSetupRequired { get; set; }
 
+    // ── Setup Changeover ─────────────────────────────────────
+    /// <summary>
+    /// Minutes to change CNC/lathe setup when switching between different part types.
+    /// When the preceding job on the machine was a different part, this is added to duration.
+    /// Null means no setup changeover penalty.
+    /// </summary>
+    public double? SetupChangeoverMinutes { get; set; }
+
     // ── Cost ─────────────────────────────────────────────────
     [Column(TypeName = "decimal(8,2)")]
     public decimal? HourlyRateOverride { get; set; }

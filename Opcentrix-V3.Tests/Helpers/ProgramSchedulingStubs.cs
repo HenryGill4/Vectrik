@@ -138,6 +138,9 @@ internal sealed class StubProgramPlanningService : IProgramPlanningService
     public Task DeleteBuildPlateAsync(int programId)
         => Task.CompletedTask;
 
+    public Task DeleteBuildWithDownstreamAsync(int programId, string deletedBy)
+        => Task.CompletedTask;
+
     public Task<MachineProgram> CreateScheduledCopyAsync(int sourceProgramId, string createdBy, int? workOrderLineId = null)
         => Task.FromResult(new MachineProgram { Name = "Run", ProgramType = ProgramType.BuildPlate });
 

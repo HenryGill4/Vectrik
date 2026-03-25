@@ -4,6 +4,15 @@
 <div class="sched-layout">
     @* ── Gantt Chart ── *@
     <div class="sched-gantt-panel">
+        @if (HasSelection)
+        {
+            <div class="gantt-batch-bar">
+                <span class="gantt-batch-count">@SelectionCount selected</span>
+                <button class="btn btn-sm btn-danger" @onclick="OnBatchDelete">Delete Selected</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnBatchReschedule">Reschedule Selected</button>
+                <button class="btn btn-sm btn-secondary" @onclick="ClearSelection">Clear</button>
+            </div>
+        }
         <div class="card sched-gantt-card">
             @if (!Machines.Any())
             {
@@ -39,10 +48,13 @@
                                     Executions="GetExecutionsForMachine(machine)"
                                     DataRangeStart="DataRangeStart"
                                     PixelsPerHour="PixelsPerHour"
-                                    OnBarClick="OnShowReschedule"
-                                OnBuildAction="OnBuildAction"
+                                    OnBarClick="HandleBarClick"
+                                OnBuildAction="HandleBuildBarClick"
+                                OnNextBuildRequested="OnNextBuildRequested"
                                 BuildPrograms="BuildPrograms"
-                                BuildTimeline="GetTimelineForMachine(machine)" />
+                                BuildTimeline="GetTimelineForMachine(machine)"
+                                SelectedExecIds="_selectedExecIds"
+                                SelectedBuildIds="_selectedBuildIds" />
                         }
 
                         @* ── Unassigned row ── *@
@@ -69,7 +81,8 @@
                                             BarWidthPx="GetBarWidthPx(start, end)"
                                             Start="start" End="end"
                                             IsUnassigned="true"
-                                            OnClick="OnShowReschedule" />
+                                            IsSelected="_selectedExecIds.Contains(exec.Id)"
+                                            OnClick="HandleBarClick" />
                                     }
                                 </div>
                             </div>
@@ -117,8 +130,11 @@
     [Parameter] public bool ShowConflictsOnly { get; set; }
     [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
+    [Parameter] public EventCallback<List<int>> OnBatchDeleteBuilds { get; set; }
+    [Parameter] public EventCallback<List<int>> OnBatchRescheduleBuilds { get; set; }
     [Parameter] public EventCallback OnScheduleRequested { get; set; }
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
+    [Parameter] public EventCallback<int> OnNextBuildRequested { get; set; }
     [Parameter] public EventCallback<double> OnPixelsPerHourChanged { get; set; }
     [Parameter] public EventCallback<GanttViewport.ViewportBoundsChangedArgs> OnViewportBoundsChanged { get; set; }
     [Parameter] public EventCallback OnDataRangeExtensionNeeded { get; set; }
@@ -191,5 +207,55 @@
         if (MachineTimelines.TryGetValue(machine.Id, out var entries))
             return entries;
         return [];
+    }
+
+    // ── Batch Selection ──
+    private HashSet<int> _selectedExecIds = [];
+    private HashSet<int> _selectedBuildIds = [];
+
+    private bool HasSelection => _selectedExecIds.Count > 0 || _selectedBuildIds.Count > 0;
+    private int SelectionCount => _selectedExecIds.Count + _selectedBuildIds.Count;
+
+    private void HandleBarClick(StageExecution exec)
+    {
+        // Forward to parent for reschedule dialog
+        OnShowReschedule.InvokeAsync(exec);
+    }
+
+    private async Task HandleBuildBarClick((MachineProgram Build, string Action) args)
+    {
+        if (args.Action == "select")
+        {
+            // Toggle build selection
+            if (_selectedBuildIds.Contains(args.Build.Id))
+                _selectedBuildIds.Remove(args.Build.Id);
+            else
+                _selectedBuildIds.Add(args.Build.Id);
+        }
+        else
+        {
+            // Forward real actions to parent
+            await OnBuildAction.InvokeAsync(args);
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selectedExecIds.Clear();
+        _selectedBuildIds.Clear();
+    }
+
+    private async Task OnBatchDelete()
+    {
+        if (_selectedBuildIds.Count > 0)
+            await OnBatchDeleteBuilds.InvokeAsync(_selectedBuildIds.ToList());
+        ClearSelection();
+    }
+
+    private async Task OnBatchReschedule()
+    {
+        if (_selectedBuildIds.Count > 0)
+            await OnBatchRescheduleBuilds.InvokeAsync(_selectedBuildIds.ToList());
+        ClearSelection();
     }
 }

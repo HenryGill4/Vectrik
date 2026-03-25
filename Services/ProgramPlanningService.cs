@@ -135,6 +135,120 @@ public class ProgramPlanningService : IProgramPlanningService
         await _db.SaveChangesAsync();
     }
 
+    public async Task DeleteBuildWithDownstreamAsync(int programId, string deletedBy)
+    {
+        var program = await _db.MachinePrograms
+            .Include(p => p.ProgramParts)
+            .FirstOrDefaultAsync(p => p.Id == programId)
+            ?? throw new InvalidOperationException("Program not found.");
+
+        // 1. Cancel all stage executions linked to this program (by MachineProgramId or by build JobId)
+        var buildJobId = program.ScheduledJobId;
+        var executions = await _db.StageExecutions
+            .Where(e => (e.MachineProgramId == programId || (buildJobId.HasValue && e.JobId == buildJobId.Value))
+                && e.Status != StageExecutionStatus.Completed
+                && e.Status != StageExecutionStatus.Failed)
+            .ToListAsync();
+
+        foreach (var exec in executions)
+        {
+            exec.Status = StageExecutionStatus.Skipped;
+            exec.Notes = $"Cancelled: build deleted by {deletedBy}";
+            exec.CompletedAt = DateTime.UtcNow;
+            exec.LastModifiedDate = DateTime.UtcNow;
+        }
+
+        // 2. Cancel the build-level job
+        if (program.ScheduledJobId.HasValue)
+        {
+            var buildJob = await _db.Jobs.FindAsync(program.ScheduledJobId.Value);
+            if (buildJob != null && buildJob.Status != JobStatus.Completed)
+            {
+                buildJob.Status = JobStatus.Cancelled;
+                buildJob.LastModifiedDate = DateTime.UtcNow;
+                buildJob.LastModifiedBy = deletedBy;
+            }
+        }
+
+        // 3. Cancel downstream per-part jobs created from this program
+        var partIds = program.ProgramParts.Select(pp => pp.PartId).Distinct().ToList();
+        if (partIds.Any())
+        {
+            // Match by Notes containing the program number (set during CreateProgramPartJobsAsync),
+            // or by time-window from the build job as a fallback
+            var programNumber = program.ProgramNumber ?? "";
+            var notePattern = !string.IsNullOrEmpty(programNumber)
+                ? $"(program {programNumber})"
+                : null;
+
+            var query = _db.Jobs
+                .Where(j => partIds.Contains(j.PartId)
+                    && j.Scope == JobScope.Part
+                    && j.Status != JobStatus.Completed
+                    && j.Status != JobStatus.Cancelled);
+
+            List<Job> downstreamJobs;
+            if (notePattern != null)
+            {
+                // Primary: match by program reference in Notes
+                downstreamJobs = await query
+                    .Where(j => j.Notes != null && j.Notes.Contains(notePattern))
+                    .ToListAsync();
+            }
+            else if (program.ScheduledJobId.HasValue)
+            {
+                // Fallback: time-window from build job (generous 60s window for auto-schedule loops)
+                var buildJob = await _db.Jobs.FindAsync(program.ScheduledJobId.Value);
+                if (buildJob != null)
+                {
+                    downstreamJobs = await query
+                        .Where(j => j.CreatedDate >= buildJob.CreatedDate.AddSeconds(-1)
+                            && j.CreatedDate <= buildJob.CreatedDate.AddSeconds(60))
+                        .ToListAsync();
+                }
+                else
+                {
+                    downstreamJobs = [];
+                }
+            }
+            else
+            {
+                downstreamJobs = [];
+            }
+
+            foreach (var job in downstreamJobs)
+            {
+                job.Status = JobStatus.Cancelled;
+                job.LastModifiedDate = DateTime.UtcNow;
+                job.LastModifiedBy = deletedBy;
+
+                // Cancel their stage executions too
+                var jobExecs = await _db.StageExecutions
+                    .Where(e => e.JobId == job.Id
+                        && e.Status != StageExecutionStatus.Completed
+                        && e.Status != StageExecutionStatus.Failed)
+                    .ToListAsync();
+
+                foreach (var exec in jobExecs)
+                {
+                    exec.Status = StageExecutionStatus.Skipped;
+                    exec.Notes = $"Cancelled: upstream build deleted by {deletedBy}";
+                    exec.CompletedAt = DateTime.UtcNow;
+                    exec.LastModifiedDate = DateTime.UtcNow;
+                }
+            }
+        }
+
+        // 4. Unlock and archive the program
+        program.IsLocked = false;
+        program.ScheduleStatus = ProgramScheduleStatus.Cancelled;
+        program.Status = ProgramStatus.Archived;
+        program.LastModifiedDate = DateTime.UtcNow;
+        program.LastModifiedBy = deletedBy;
+
+        await _db.SaveChangesAsync();
+    }
+
     // ═══════════════════════════════════════════════════════════
     // Scheduled Copies (Print Runs)
     // ═══════════════════════════════════════════════════════════

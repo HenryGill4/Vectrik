@@ -1,17 +1,11 @@
 @* ═══════════════════════════════════════════════════════════════════════════
-   UnifiedScheduleWizard — Multi-step wizard for scheduling work orders.
-   Auto-detects SLS vs CNC parts. SLS parts get build variations with
-   per-part stacking; CNC parts get simple job creation. Downstream stages
-   are auto-populated from the approach routing and scheduled after SLS builds.
+   UnifiedScheduleWizard — CNC job scheduling wizard.
+   Creates jobs from work order lines for CNC/non-additive parts.
+   SLS build scheduling is handled by NextBuildAdvisor.
    ═══════════════════════════════════════════════════════════════════════════ *@
-@inject IMachineProgramService ProgramService
 @inject IProgramSchedulingService ProgramScheduling
-@inject IProgramPlanningService ProgramPlanning
-@inject IDownstreamProgramService DownstreamService
-@inject IManufacturingProcessService ProcessService
-@inject IMachineService MachineService
-@inject ISchedulingService SchedulingService
 @inject IWorkOrderService WorkOrderService
+@inject ISchedulingService SchedulingService
 @inject ToastService Toast
 
 @if (IsVisible)
@@ -19,24 +13,23 @@
     <div class="modal-overlay" @onclick="Close">
         <div class="modal-content modal-lg" @onclick:stopPropagation>
             <div class="modal-header">
-                <h3 class="modal-title">
-                    @(StepTitle)
-                </h3>
+                <h3 class="modal-title">@StepTitle</h3>
                 <button class="btn-icon" @onclick="Close">&#x2715;</button>
             </div>
 
             <div class="modal-body">
                 @* ── Step Indicator ── *@
                 <div class="wizard-steps">
-                    @foreach (var (step, idx) in _visibleSteps.Select((s, i) => (s, i)))
+                    @for (var i = 0; i < _steps.Length; i++)
                     {
+                        var idx = i;
                         var isActive = _stepIndex >= idx;
                         var isDone = _stepIndex > idx;
                         <div class="wizard-step @(isActive ? "wizard-step--active" : "") @(isDone ? "wizard-step--done" : "")">
                             <span class="wizard-step-num">@(idx + 1)</span>
-                            <span class="wizard-step-label">@step.Label</span>
+                            <span class="wizard-step-label">@_steps[idx]</span>
                         </div>
-                        @if (idx < _visibleSteps.Count - 1)
+                        @if (idx < _steps.Length - 1)
                         {
                             <div class="wizard-step-connector @(isDone ? "wizard-step-connector--done" : "")"></div>
                         }
@@ -48,7 +41,7 @@
                 {
                     <div class="wizard-loading">
                         <span class="spinner"></span>
-                        <span>Loading parts and programs...</span>
+                        <span>Loading parts...</span>
                     </div>
                 }
                 else if (_errorMessage != null)
@@ -60,16 +53,16 @@
                 }
 
                 @* ══════════════════════════════════════════════════════════
-                   Step 1: Select Parts
+                   Step 1: Select CNC Parts
                    ══════════════════════════════════════════════════════════ *@
-                @if (!_isLoading && _errorMessage == null && CurrentStep == WizardStep.SelectParts)
+                @if (!_isLoading && _errorMessage == null && _stepIndex == 0)
                 {
                     <div class="wizard-content">
-                        <p class="wizard-hint">Select parts to schedule. SLS parts will be configured as build plates; CNC parts will create jobs.</p>
+                        <p class="wizard-hint">Select CNC parts to create jobs for. Each part will create a job with auto-scheduled stages.</p>
 
                         @if (!_partSelections.Any())
                         {
-                            <div class="empty-state">No parts require scheduling.</div>
+                            <div class="empty-state">No CNC parts require scheduling.</div>
                         }
                         else
                         {
@@ -82,37 +75,16 @@
                                         </label>
                                         <div class="program-wizard-part-info">
                                             <div class="program-wizard-part-header">
-                                                <span class="wo-line-type-badge @(ps.IsAdditive ? "wo-line-type--sls" : "wo-line-type--cnc")">
-                                                    @(ps.IsAdditive ? "SLS" : "CNC")
-                                                </span>
+                                                <span class="wo-line-type-badge wo-line-type--cnc">CNC</span>
                                                 <span class="program-wizard-part-number">@(ps.Line.Part?.PartNumber ?? "?")</span>
                                                 <span class="program-wizard-part-name">@(ps.Line.Part?.Name ?? "")</span>
                                             </div>
                                             <div class="program-wizard-part-detail">
                                                 <span class="badge badge-info">@ps.OutstandingQty outstanding</span>
-                                                @if (ps.IsAdditive)
-                                                {
-                                                    @if (ps.MatchingPrograms.Any())
-                                                    {
-                                                        <span class="badge badge-success">@ps.MatchingPrograms.Count program(s)</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="badge badge-warning">No program</span>
-                                                    }
-                                                    @if (ps.BuildConfig != null || ps.MatchingPrograms.Any(p => p.IsBuildPlate))
-                                                    {
-                                                        <span class="badge badge-secondary">@ps.EffectivePartsPerPlate/plate</span>
-                                                        @if (ps.BuildConfig?.AllowStacking == true)
-                                                        {
-                                                            <span class="badge badge-secondary">Stack: @string.Join("/", ps.BuildConfig.AvailableStackLevels.Select(l => $"{l}x"))</span>
-                                                        }
-                                                    }
-                                                }
                                             </div>
                                         </div>
                                         <div class="program-wizard-part-wo">
-                                            <span class="text-muted">@WorkOrder?.OrderNumber</span>
+                                            <span class="text-muted">@ps.WoNumber</span>
                                         </div>
                                     </div>
                                 }
@@ -122,502 +94,74 @@
                 }
 
                 @* ══════════════════════════════════════════════════════════
-                   Step 2: Configure Builds (SLS) / Jobs (CNC)
+                   Step 2: Configure Jobs
                    ══════════════════════════════════════════════════════════ *@
-                @if (!_isLoading && _errorMessage == null && CurrentStep == WizardStep.ConfigureBuilds)
+                @if (!_isLoading && _errorMessage == null && _stepIndex == 1)
                 {
                     <div class="wizard-content">
-                        @* ── SLS Build Variations ── *@
-                        @if (SelectedSlsParts.Any())
+                        <p class="wizard-hint">Configure CNC jobs. Each part will create a job with auto-scheduled stages.</p>
+                        @foreach (var cnc in _cncConfigs)
                         {
-                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                                <p class="wizard-hint" style="margin:0;">Configure SLS build variations. Different builds can use different stacking levels to meet demand.</p>
-                                <button class="btn btn-sm btn-accent" @onclick="AutoSuggestBuilds" title="Auto-generate builds based on demand and stacking config">
-                                    Auto-Suggest
-                                </button>
-                            </div>
-
-                            @* ── Running Total Bar ── *@
-                            @foreach (var ps in SelectedSlsParts)
-                            {
-                                var covered = _buildVariations.Where(b => b.Parts.Any(p => p.PartId == ps.Line.PartId))
-                                    .SelectMany(b => b.Parts.Where(p => p.PartId == ps.Line.PartId))
-                                    .Sum(p => p.EffectiveTotal);
-                                var pct = ps.OutstandingQty > 0 ? Math.Min(100, covered * 100.0 / ps.OutstandingQty) : 0;
-                                <div class="build-coverage-bar" style="margin-bottom:12px;">
-                                    <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;">
-                                        <span><strong>@(ps.Line.Part?.PartNumber)</strong> coverage</span>
-                                        <span class="@(covered >= ps.OutstandingQty ? "text-success" : covered > 0 ? "text-warning" : "text-danger")">
-                                            @covered / @ps.OutstandingQty parts (@pct.ToString("F0")%)
-                                        </span>
-                                    </div>
-                                    <div class="wo-line-progress" style="height:8px;">
-                                        <div class="wo-line-progress-fill" style="width:@pct.ToString("F0")%;"></div>
-                                    </div>
+                            <div class="program-wizard-run-config">
+                                <div class="program-wizard-run-header">
+                                    <span class="wo-line-type-badge wo-line-type--cnc">CNC</span>
+                                    <span class="program-wizard-run-part">@(cnc.Line.Part?.PartNumber ?? "?")</span>
+                                    <span class="text-muted">@(cnc.Line.Part?.Name ?? "")</span>
                                 </div>
-                            }
-
-                            @* ── Build Variations Table ── *@
-                            <div class="build-variations-table">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Parts</th>
-                                            <th>Stack</th>
-                                            <th>Per Plate</th>
-                                            <th>Total</th>
-                                            <th>Est. Hours</th>
-                                            <th>Purpose</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var bv in _buildVariations)
-                                        {
-                                            <tr>
-                                                <td><strong>@(bv.Index + 1)</strong></td>
-                                                <td>
-                                                    @foreach (var bp in bv.Parts)
-                                                    {
-                                                        <div style="font-size:0.8rem;">@(bp.Part?.PartNumber ?? "?")</div>
-                                                    }
-                                                </td>
-                                                <td>
-                                                    @foreach (var bp in bv.Parts)
-                                                    {
-                                                        var config = bp.Part?.AdditiveBuildConfig;
-                                                        var levels = config?.AvailableStackLevels ?? [1];
-                                                        <div style="font-size:0.8rem;">
-                                                            <select class="form-control form-control-sm" style="width:90px;"
-                                                                    value="@bp.StackLevel"
-                                                                    @onchange="@(e => OnStackLevelChanged(bp, int.Parse(e.Value?.ToString() ?? "1")))">
-                                                                @foreach (var lvl in levels)
-                                                                {
-                                                                    <option value="@lvl">@lvl x @(lvl == 1 ? "Single" : lvl == 2 ? "Double" : "Triple")</option>
-                                                                }
-                                                            </select>
-                                                        </div>
-                                                    }
-                                                </td>
-                                                <td>
-                                                    @foreach (var bp in bv.Parts)
-                                                    {
-                                                        <div style="font-size:0.8rem;">
-                                                            <input type="number" class="form-control form-control-sm" style="width:70px;"
-                                                                   min="1" max="500" @bind="bp.Quantity" />
-                                                        </div>
-                                                    }
-                                                </td>
-                                                <td style="font-weight:600;">@bv.TotalParts</td>
-                                                <td>@bv.EstimatedHours.ToString("F1")h</td>
-                                                <td>
-                                                    <select class="form-control form-control-sm" style="width:120px;" @bind="bv.Purpose">
-                                                        <option value="Weekday">Weekday</option>
-                                                        <option value="Weekend">Weekend</option>
-                                                        <option value="ChangeoverBackup">Backup</option>
-                                                        <option value="DemandFill">Demand Fill</option>
-                                                        <option value="Custom">Custom</option>
-                                                    </select>
-                                                </td>
-                                                <td>
-                                                    <button class="btn btn-sm btn-ghost" style="color:var(--danger);" @onclick="() => RemoveBuildVariation(bv)">
-                                                        &#x2715;
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                                <button class="btn btn-sm btn-secondary" @onclick="AddBuildVariation" style="margin-top:8px;">
-                                    + Add Build
-                                </button>
-                            </div>
-                        }
-
-                        @* ── CNC Job Configuration ── *@
-                        @if (SelectedCncParts.Any())
-                        {
-                            <div style="margin-top:@(SelectedSlsParts.Any() ? "24px" : "0");">
-                                <p class="wizard-hint">Configure CNC jobs. Each part will create a job with auto-scheduled stages.</p>
-                                @foreach (var cnc in _cncConfigs)
-                                {
-                                    <div class="program-wizard-run-config">
-                                        <div class="program-wizard-run-header">
-                                            <span class="wo-line-type-badge wo-line-type--cnc">CNC</span>
-                                            <span class="program-wizard-run-part">@(cnc.Line.Part?.PartNumber ?? "?")</span>
-                                            <span class="text-muted">@(cnc.Line.Part?.Name ?? "")</span>
-                                        </div>
-                                        <div class="program-wizard-run-detail">
-                                            <div class="program-wizard-run-input">
-                                                <label>Qty:</label>
-                                                <input type="number" min="1" class="form-control" style="width:80px;" @bind="cnc.Quantity" />
-                                            </div>
-                                            <div class="program-wizard-run-input">
-                                                <label>Priority:</label>
-                                                <select class="form-control" style="width:120px;" @bind="cnc.Priority">
-                                                    @foreach (var p in Enum.GetValues<JobPriority>())
-                                                    {
-                                                        <option value="@p">@p</option>
-                                                    }
-                                                </select>
-                                            </div>
-                                        </div>
+                                <div class="program-wizard-run-detail">
+                                    <div class="program-wizard-run-input">
+                                        <label>Qty:</label>
+                                        <input type="number" min="1" class="form-control" style="width:80px;" @bind="cnc.Quantity" />
                                     </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                }
-
-                @* ══════════════════════════════════════════════════════════
-                   Step 3: Match Programs (SLS only)
-                   ══════════════════════════════════════════════════════════ *@
-                @if (!_isLoading && _errorMessage == null && CurrentStep == WizardStep.MatchPrograms)
-                {
-                    <div class="wizard-content">
-                        <p class="wizard-hint">Select a program source for each part group. Each build creates its own scheduled BuildPlate.</p>
-
-                        @{ var groupIdx = 0; }
-                        @foreach (var group in BuildGroups)
-                        {
-                            var gIdx = groupIdx++;
-                            var firstBuild = group.Builds[0];
-                            var partNames = string.Join(", ", firstBuild.Parts.Select(p => p.Part?.PartNumber ?? "?"));
-                            var totalParts = group.Builds.Sum(b => b.TotalParts);
-                            var buildCount = group.Builds.Count;
-                            var groupBuilds = group.Builds;
-
-                            <div class="program-wizard-match">
-                                <div class="program-wizard-match-header">
-                                    <span class="program-wizard-match-part">
-                                        @partNames — @buildCount build(s), @totalParts total parts
-                                    </span>
-                                </div>
-
-                                @* ── Build breakdown ── *@
-                                <div style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0;">
-                                    @foreach (var bv in group.Builds)
-                                    {
-                                        <span class="badge badge-secondary" style="font-size:0.78rem;">
-                                            #@(bv.Index + 1) @bv.Purpose @string.Join("/", bv.Parts.Select(p => $"{p.StackLevel}×{p.Quantity}"))&nbsp;=&nbsp;@bv.TotalParts
-                                        </span>
-                                    }
-                                </div>
-
-                                @if (group.MatchingPrograms.Any())
-                                {
-                                    <div class="program-wizard-match-options">
-                                        @foreach (var prog in group.MatchingPrograms)
-                                        {
-                                            var isSelected = firstBuild.SourceProgramId == prog.Id;
-                                            var progId = prog.Id;
-                                            <div class="program-wizard-match-option @(isSelected ? "program-wizard-match-option--selected" : "")"
-                                                 @onclick="() => SelectProgramForGroup(groupBuilds, progId)">
-                                                <div class="program-wizard-match-option-radio">
-                                                    <input type="radio" name="prog-group-@gIdx" checked="@isSelected" />
-                                                </div>
-                                                <div class="program-wizard-match-option-info">
-                                                    <div class="program-wizard-match-option-name">
-                                                        @prog.Name
-                                                        @if (prog.Status == ProgramStatus.Active)
-                                                        {
-                                                            <span class="badge badge-success badge-sm">Active</span>
-                                                        }
-                                                        @if (prog.IsBuildPlate)
-                                                        {
-                                                            <span class="badge badge-info badge-sm">Build Plate</span>
-                                                        }
-                                                        else
-                                                        {
-                                                            <span class="badge badge-secondary badge-sm">@(prog.MachineType ?? "Standard")</span>
-                                                        }
-                                                    </div>
-                                                    <div class="program-wizard-match-option-detail">
-                                                        @if (prog.EstimatedPrintHours.HasValue)
-                                                        {
-                                                            <span>@prog.EstimatedPrintHours.Value.ToString("F1")h print</span>
-                                                        }
-                                                        @if (prog.IsBuildPlate)
-                                                        {
-                                                            <span>@prog.TotalPartCount parts</span>
-                                                        }
-                                                        else
-                                                        {
-                                                            <span>@prog.ProgramNumber</span>
-                                                        }
-                                                        <span style="font-size:0.78em;color:var(--text-muted);">→ @buildCount BuildPlate(s) from this source</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        }
-
-                                        <div class="program-wizard-match-option @(firstBuild.SourceProgramId == -1 ? "program-wizard-match-option--selected" : "")"
-                                             @onclick="() => SelectProgramForGroup(groupBuilds, -1)">
-                                            <div class="program-wizard-match-option-radio">
-                                                <input type="radio" name="prog-group-@gIdx" checked="@(firstBuild.SourceProgramId == -1)" />
-                                            </div>
-                                            <div class="program-wizard-match-option-info">
-                                                <span class="program-wizard-match-option-name">+ Create @buildCount New BuildPlate(s)</span>
-                                                <div class="program-wizard-match-option-detail">
-                                                    <span style="font-size:0.78em;color:var(--text-muted);">Each build gets a unique auto-named program</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="program-wizard-no-match">
-                                        <span class="text-warning">No existing SLS program found for these parts.</span>
-                                        <span>@buildCount new BuildPlate program(s) will be auto-created.</span>
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                }
-
-                @* ══════════════════════════════════════════════════════════
-                   Step 4: Downstream Setup (SLS only)
-                   ══════════════════════════════════════════════════════════ *@
-                @if (!_isLoading && _errorMessage == null && CurrentStep == WizardStep.DownstreamSetup)
-                {
-                    <div class="wizard-content">
-                        <p class="wizard-hint">Review downstream processing stages. These will be auto-scheduled after the SLS print completes.</p>
-
-                        @if (_downstreamLoading)
-                        {
-                            <div class="wizard-loading">
-                                <span class="spinner"></span>
-                                <span>Loading downstream requirements...</span>
-                            </div>
-                        }
-                        else if (!_downstreamRequirements.Any())
-                        {
-                            <div class="empty-state">
-                                <div class="empty-state-icon">OK</div>
-                                <div class="empty-state-text">No downstream stages found in part manufacturing processes — ready to schedule.</div>
-                            </div>
-                        }
-                        else
-                        {
-                            @foreach (var (programId, reqs) in _downstreamRequirements)
-                            {
-                                if (!reqs.Any()) continue;
-                                var bv = programId > 0
-                                    ? _buildVariations.FirstOrDefault(b => b.SourceProgramId == programId)
-                                    : _buildVariations.ElementAtOrDefault(-(programId + 1));
-                                <div class="program-wizard-match" style="margin-bottom: 12px;">
-                                    <div class="program-wizard-match-header">
-                                        <span class="program-wizard-match-part">
-                                            @(bv != null ? $"Build {bv.Index + 1}" : $"Program {programId}")
-                                        </span>
-                                    </div>
-                                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-                                        @foreach (var req in reqs.OrderBy(r => r.ExecutionOrder))
-                                        {
-                                            var statusClass = req.AssignedProgramId.HasValue ? "downstream-stage--ready"
-                                                : req.HasDefaultParameters ? "downstream-stage--default"
-                                                : "downstream-stage--missing";
-                                            <div class="downstream-stage @statusClass">
-                                                <div style="display: flex; align-items: center; gap: 12px;">
-                                                    <span style="font-size: 1.1rem;">@(req.AssignedProgramId.HasValue ? "OK" : req.HasDefaultParameters ? "~" : "!")</span>
-                                                    <div style="flex: 1;">
-                                                        <div style="font-weight: 600;">@req.StageName</div>
-                                                        <div style="font-size: 0.8rem; color: var(--text-muted);">@req.MachineType @(req.IsRequired ? "(Required)" : "(Optional)")</div>
-                                                    </div>
-                                                    @if (req.AssignedProgramId.HasValue)
-                                                    {
-                                                        <span class="badge badge-success">@req.AssignedProgramName</span>
-                                                    }
-                                                    else if (programId < 0)
-                                                    {
-                                                        <span class="badge badge-info">Auto-created on schedule</span>
-                                                    }
-                                                    else if (req.HasDefaultParameters)
-                                                    {
-                                                        <button class="btn btn-sm btn-warning"
-                                                                @onclick="() => CreateDownstreamPlaceholderAsync(programId, req)"
-                                                                disabled="@_downstreamProcessing">
-                                                            Create with Defaults
-                                                        </button>
-                                                    }
-                                                    else if (req.IsRequired)
-                                                    {
-                                                        <span class="badge badge-danger">Program needed</span>
-                                                    }
-                                                </div>
-                                            </div>
-                                        }
-                                    </div>
-                                </div>
-                            }
-
-                            @if (HasUnassignedDefaults)
-                            {
-                                <div style="margin-top: 12px;">
-                                    <button class="btn btn-warning" @onclick="CreateAllDownstreamPlaceholdersAsync" disabled="@_downstreamProcessing">
-                                        Create All with Defaults
-                                    </button>
-                                </div>
-                            }
-                        }
-                    </div>
-                }
-
-                @* ══════════════════════════════════════════════════════════
-                   Step 5: Schedule & Confirm
-                   ══════════════════════════════════════════════════════════ *@
-                @if (!_isLoading && _errorMessage == null && CurrentStep == WizardStep.Schedule)
-                {
-                    <div class="wizard-content">
-                        <p class="wizard-hint">Select machines and scheduling strategy. Options are ranked by changeover safety and efficiency.</p>
-
-                        <div class="program-wizard-schedule-options">
-                            <div class="form-row" style="gap: 12px; margin-bottom: 12px;">
-                                <div class="form-group" style="flex:1;">
-                                    <label>Machine Selection:</label>
-                                    <select class="form-control" @bind="_machineSelectionMode">
-                                        <option value="auto">Auto-select (earliest available)</option>
-                                        <option value="manual">Manual per build</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Start After:</label>
-                                    <input type="datetime-local" class="form-control" style="max-width:220px;"
-                                           @bind="_startAfter" />
-                                </div>
-                            </div>
-
-                            @if (_machineSelectionMode == "manual")
-                            {
-                                @foreach (var bv in _buildVariations)
-                                {
-                                    <div class="program-wizard-machine-select">
-                                        <label>Build @(bv.Index + 1) (@bv.Purpose):</label>
-                                        <select class="form-control" @bind="bv.SelectedMachineId">
-                                            <option value="0">Auto</option>
-                                            @foreach (var m in Machines.Where(m => m.IsAdditiveMachine))
+                                    <div class="program-wizard-run-input">
+                                        <label>Priority:</label>
+                                        <select class="form-control" style="width:120px;" @bind="cnc.Priority">
+                                            @foreach (var p in Enum.GetValues<JobPriority>())
                                             {
-                                                <option value="@m.Id">@m.Name</option>
+                                                <option value="@p">@p</option>
                                             }
                                         </select>
                                     </div>
-                                }
-                            }
-                        </div>
-
-                        @* ── Changeover-Aware Schedule Options ── *@
-                        @if (_scheduleOptions.Any())
-                        {
-                            <div style="margin-bottom: 16px;">
-                                <h4 style="font-size: 0.9rem; font-weight: 600; margin-bottom: 8px;">Schedule Options</h4>
-                                <div style="display: flex; flex-direction: column; gap: 6px;">
-                                    @foreach (var opt in _scheduleOptions)
-                                    {
-                                        var isSelected = _selectedOption == opt;
-                                        <div class="program-wizard-match-option @(isSelected ? "program-wizard-match-option--selected" : "")"
-                                             style="@(opt.IsRecommended && !isSelected ? "border-color: var(--success);" : "")"
-                                             @onclick="() => _selectedOption = opt">
-                                            <div class="program-wizard-match-option-radio">
-                                                <input type="radio" checked="@isSelected" @onchange="() => _selectedOption = opt" />
-                                            </div>
-                                            <div class="program-wizard-match-option-info" style="flex:1;">
-                                                <div class="program-wizard-match-option-name">
-                                                    @opt.Label
-                                                    @if (opt.IsRecommended)
-                                                    {
-                                                        <span class="badge badge-success" style="font-size:0.65rem;">Recommended</span>
-                                                    }
-                                                    @if (opt.ChangeoverAligned)
-                                                    {
-                                                        <span class="badge badge-info" style="font-size:0.65rem;">Changeover Safe</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="badge badge-danger" style="font-size:0.65rem;">Changeover Risk</span>
-                                                    }
-                                                    @if (opt.IsWeekendOptimal)
-                                                    {
-                                                        <span class="badge badge-secondary" style="font-size:0.65rem;">Weekend</span>
-                                                    }
-                                                </div>
-                                                <div class="program-wizard-match-option-detail">
-                                                    @opt.Description
-                                                    <span style="margin-left:8px;opacity:0.6;">Score: @opt.RecommendationScore/100</span>
-                                                </div>
-                                            </div>
-                                            <div style="text-align:right;font-size:0.8rem;white-space:nowrap;">
-                                                <div>@opt.StackLevel x stack</div>
-                                                <div>@opt.PartsPerBuild parts</div>
-                                            </div>
-                                        </div>
-                                    }
                                 </div>
                             </div>
                         }
-                        else if (_loadingOptions)
-                        {
-                            <div class="wizard-loading" style="padding: 16px;">
-                                <span class="spinner"></span> Analyzing schedule options...
-                            </div>
-                        }
-                        else if (_buildVariations.Any())
-                        {
-                            <button class="btn btn-sm btn-accent" style="margin-bottom:12px;" @onclick="LoadScheduleOptionsAsync">
-                                Analyze Changeover Options
-                            </button>
-                        }
+                    </div>
+                }
 
-                        @* ── Summary ── *@
+                @* ══════════════════════════════════════════════════════════
+                   Step 3: Review & Schedule
+                   ══════════════════════════════════════════════════════════ *@
+                @if (!_isLoading && _errorMessage == null && _stepIndex == 2)
+                {
+                    <div class="wizard-content">
+                        <p class="wizard-hint">Review and schedule CNC jobs.</p>
+
                         <div class="program-wizard-summary">
                             <h4>Schedule Summary</h4>
                             <table class="table table-sm">
                                 <thead>
                                     <tr>
-                                        <th>Type</th>
-                                        <th>Parts</th>
-                                        <th>Stack</th>
-                                        <th>Total</th>
-                                        <th>Purpose</th>
+                                        <th>Part</th>
+                                        <th>Quantity</th>
+                                        <th>Priority</th>
+                                        <th>Work Order</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var bv in _buildVariations)
-                                    {
-                                        <tr>
-                                            <td><span class="wo-line-type-badge wo-line-type--sls">SLS</span></td>
-                                            <td>@string.Join(", ", bv.Parts.Select(p => p.Part?.PartNumber ?? "?"))</td>
-                                            <td>@string.Join("/", bv.Parts.Select(p => $"{p.StackLevel}x"))</td>
-                                            <td><strong>@bv.TotalParts</strong></td>
-                                            <td><span class="badge badge-secondary">@bv.Purpose</span></td>
-                                        </tr>
-                                    }
                                     @foreach (var cnc in _cncConfigs)
                                     {
                                         <tr>
-                                            <td><span class="wo-line-type-badge wo-line-type--cnc">CNC</span></td>
-                                            <td>@(cnc.Line.Part?.PartNumber ?? "?")</td>
-                                            <td>-</td>
+                                            <td>
+                                                <span class="wo-line-type-badge wo-line-type--cnc">CNC</span>
+                                                @(cnc.Line.Part?.PartNumber ?? "?")
+                                            </td>
                                             <td><strong>@cnc.Quantity</strong></td>
-                                            <td><span class="badge badge-secondary">@cnc.Priority</span></td>
+                                            <td><span class="badge badge-@cnc.Priority.ToString().ToLower()">@cnc.Priority</span></td>
+                                            <td class="text-muted">@cnc.WoNumber</td>
                                         </tr>
                                     }
                                 </tbody>
                             </table>
-
-                            @* ── Grand Total Coverage ── *@
-                            @foreach (var ps in _partSelections.Where(p => p.IsSelected && p.IsAdditive))
-                            {
-                                var covered = _buildVariations
-                                    .SelectMany(b => b.Parts.Where(p => p.PartId == ps.Line.PartId))
-                                    .Sum(p => p.EffectiveTotal);
-                                <div style="font-size:0.82rem;margin-top:4px;">
-                                    @(ps.Line.Part?.PartNumber): @covered / @ps.OutstandingQty
-                                    @(covered >= ps.OutstandingQty ? "- fully covered" : $"- {ps.OutstandingQty - covered} short")
-                                </div>
-                            }
                         </div>
                     </div>
                 }
@@ -630,7 +174,7 @@
                 }
                 <div style="flex:1;"></div>
 
-                @if (_stepIndex < _visibleSteps.Count - 1)
+                @if (_stepIndex < _steps.Length - 1)
                 {
                     <button class="btn btn-primary" @onclick="NextStep" disabled="@(!CanProceed)">
                         Next
@@ -646,7 +190,7 @@
                         }
                         else
                         {
-                            <span>Schedule @(_buildVariations.Count + _cncConfigs.Count) Item(s)</span>
+                            <span>Schedule @_cncConfigs.Count Job(s)</span>
                         }
                     </button>
                 }
@@ -664,109 +208,46 @@
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnScheduled { get; set; }
 
-    // ── Wizard Step Management ──
-    private enum WizardStep { SelectParts, ConfigureBuilds, MatchPrograms, DownstreamSetup, Schedule }
+    private static readonly string[] _steps = ["Select Parts", "Configure Jobs", "Review & Schedule"];
 
     private int _stepIndex;
-    private List<StepDef> _visibleSteps = [];
-
-    private record StepDef(WizardStep Step, string Label);
-
-    private WizardStep CurrentStep => _stepIndex < _visibleSteps.Count ? _visibleSteps[_stepIndex].Step : WizardStep.SelectParts;
-
-    private string StepTitle => CurrentStep switch
-    {
-        WizardStep.SelectParts => "Select Parts to Schedule",
-        WizardStep.ConfigureBuilds => "Configure Builds & Jobs",
-        WizardStep.MatchPrograms => "Match Programs",
-        WizardStep.DownstreamSetup => "Downstream Programs",
-        WizardStep.Schedule => "Schedule & Confirm",
-        _ => "Schedule"
-    };
-
-    // ── State ──
-    private List<PartSelection> _partSelections = [];
-    private List<BuildVariation> _buildVariations = [];
-    private List<CncJobConfig> _cncConfigs = [];
-    private string _machineSelectionMode = "auto";
-    private DateTime _startAfter = DateTime.UtcNow;
     private bool _scheduling;
     private bool _isLoading;
-    private List<ScheduleOption> _scheduleOptions = [];
-    private ScheduleOption? _selectedOption;
-    private bool _loadingOptions;
     private string? _errorMessage;
 
-    // Downstream
-    private Dictionary<int, List<DownstreamProgramRequirement>> _downstreamRequirements = [];
-    private bool _downstreamLoading;
-    private bool _downstreamProcessing;
+    private List<PartSelection> _partSelections = [];
+    private List<CncJobConfig> _cncConfigs = [];
 
-    // Program cache
-    private List<MachineProgram> _availablePrograms = [];
+    private string StepTitle => _stepIndex switch
+    {
+        0 => "Schedule CNC Jobs — Select Parts",
+        1 => "Schedule CNC Jobs — Configure",
+        2 => "Schedule CNC Jobs — Review & Schedule",
+        _ => "Schedule CNC Jobs"
+    };
 
-    // ── Selected Part Helpers ──
-    private List<PartSelection> SelectedSlsParts => _partSelections.Where(p => p.IsSelected && p.IsAdditive).ToList();
-    private List<PartSelection> SelectedCncParts => _partSelections.Where(p => p.IsSelected && !p.IsAdditive).ToList();
+    private bool CanProceed => _stepIndex switch
+    {
+        0 => _partSelections.Any(p => p.IsSelected),
+        1 => _cncConfigs.All(c => c.Quantity > 0),
+        2 => _cncConfigs.Any(),
+        _ => true
+    };
 
     // ── Data Models ──
+
     private class PartSelection
     {
         public WorkOrderLine Line { get; set; } = null!;
+        public string WoNumber { get; set; } = "";
         public int OutstandingQty { get; set; }
         public bool IsSelected { get; set; } = true;
-        public bool IsAdditive { get; set; }
-        public PartAdditiveBuildConfig? BuildConfig { get; set; }
-        public List<MachineProgram> MatchingPrograms { get; set; } = [];
-
-        /// <summary>
-        /// Returns the actual per-plate quantity from the best matching program's ProgramParts,
-        /// falling back to the BuildConfig planning guideline.
-        /// </summary>
-        public int EffectivePartsPerPlate
-        {
-            get
-            {
-                var fromProgram = MatchingPrograms
-                    .Where(p => p.IsBuildPlate && p.ProgramParts?.Any() == true)
-                    .SelectMany(p => p.ProgramParts!)
-                    .FirstOrDefault(pp => pp.PartId == Line.PartId);
-                if (fromProgram != null)
-                    return fromProgram.Quantity;
-                return BuildConfig?.PlannedPartsPerBuildSingle ?? 1;
-            }
-        }
-    }
-
-    private class BuildVariation
-    {
-        public int Index { get; set; }
-        public int SourceProgramId { get; set; } = -1;
-        public string NewProgramName { get; set; } = "";
-        public List<BuildPartConfig> Parts { get; set; } = [];
-        public string Purpose { get; set; } = "Weekday";
-        public int SelectedMachineId { get; set; }
-        public double EstimatedHours => Parts.Sum(p =>
-        {
-            var config = p.Part?.AdditiveBuildConfig;
-            return config?.GetStackDuration(p.StackLevel) ?? config?.SingleStackDurationHours ?? 24.0;
-        });
-        public int TotalParts => Parts.Sum(p => p.EffectiveTotal);
-    }
-
-    private class BuildPartConfig
-    {
-        public int PartId { get; set; }
-        public Part? Part { get; set; }
-        public int Quantity { get; set; }
-        public int StackLevel { get; set; } = 1;
-        public int? WorkOrderLineId { get; set; }
-        public int EffectiveTotal => Quantity * StackLevel;
     }
 
     private class CncJobConfig
     {
         public WorkOrderLine Line { get; set; } = null!;
+        public string WoNumber { get; set; } = "";
         public int Quantity { get; set; }
         public JobPriority Priority { get; set; } = JobPriority.Normal;
     }
@@ -779,11 +260,10 @@
     {
         if (IsVisible && !_partSelections.Any())
         {
-            // If no WorkOrder/Lines provided, load all open work order lines
             if (WorkOrder == null || Lines == null)
                 await InitializeFromAllOrdersAsync();
             else
-                await InitializeAsync();
+                InitializeFromLines();
         }
     }
 
@@ -792,7 +272,6 @@
         _isLoading = true;
         _errorMessage = null;
         _partSelections.Clear();
-        _buildVariations.Clear();
         _cncConfigs.Clear();
         _stepIndex = 0;
         StateHasChanged();
@@ -803,42 +282,23 @@
                 WorkOrderStatus.InProgress, WorkOrderStatus.Released);
             var allLines = orders.SelectMany(wo => wo.Lines ?? []).ToList();
 
-            _availablePrograms = await ProgramService.GetBuildPlateProgramsAsync(ProgramStatus.Active);
-
-            // Also load Standard programs for SLS parts (linked via PartId, not ProgramParts)
-            var allPrograms = await ProgramService.GetAllAsync();
-            var standardSls = allPrograms
-                .Where(p => p.Status == ProgramStatus.Active
-                    && p.ProgramType != ProgramType.BuildPlate
-                    && p.PartId.HasValue
-                    && !_availablePrograms.Any(bp => bp.Id == p.Id))
-                .ToList();
-            _availablePrograms.AddRange(standardSls);
-
             foreach (var line in allLines)
             {
                 if (line.Part == null) continue;
+                var isAdditive = line.Part.ManufacturingApproach?.RequiresBuildPlate == true;
+                if (isAdditive) continue; // SLS parts use NextBuildAdvisor
+
                 var outstanding = CalculateOutstanding(line);
                 if (outstanding <= 0) continue;
 
-                var isAdditive = line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
-                var matching = isAdditive
-                    ? _availablePrograms
-                        .Where(p => ProgramContainsPart(p, line.PartId) && IsSlsRelevantProgram(p))
-                        .ToList()
-                    : [];
-
+                var woNumber = orders.FirstOrDefault(o => o.Id == line.WorkOrderId)?.OrderNumber ?? "";
                 _partSelections.Add(new PartSelection
                 {
                     Line = line,
-                    OutstandingQty = outstanding,
-                    IsAdditive = isAdditive,
-                    BuildConfig = line.Part?.AdditiveBuildConfig,
-                    MatchingPrograms = matching
+                    WoNumber = woNumber,
+                    OutstandingQty = outstanding
                 });
             }
-
-            RebuildSteps();
         }
         catch (Exception ex)
         {
@@ -851,116 +311,43 @@
         }
     }
 
-    private async Task InitializeAsync()
+    private void InitializeFromLines()
     {
-        _isLoading = true;
-        _errorMessage = null;
         _partSelections.Clear();
-        _buildVariations.Clear();
         _cncConfigs.Clear();
         _stepIndex = 0;
-        StateHasChanged();
 
-        try
+        foreach (var line in Lines ?? [])
         {
-            // Load available SLS programs (both BuildPlate and Standard SLS types)
-            _availablePrograms = await ProgramService.GetBuildPlateProgramsAsync(ProgramStatus.Active);
+            if (line.Part == null) continue;
+            var isAdditive = line.Part.ManufacturingApproach?.RequiresBuildPlate == true;
+            if (isAdditive) continue; // SLS parts use NextBuildAdvisor
 
-            var allPrograms = await ProgramService.GetAllAsync();
-            var standardSls = allPrograms
-                .Where(p => p.Status == ProgramStatus.Active
-                    && p.ProgramType != ProgramType.BuildPlate
-                    && p.PartId.HasValue
-                    && !_availablePrograms.Any(bp => bp.Id == p.Id))
-                .ToList();
-            _availablePrograms.AddRange(standardSls);
+            var outstanding = CalculateOutstanding(line);
+            if (outstanding <= 0) continue;
 
-            foreach (var line in Lines ?? [])
+            _partSelections.Add(new PartSelection
             {
-                if (line.Part == null) continue;
-                var outstanding = CalculateOutstanding(line);
-                if (outstanding <= 0) continue;
-
-                var isAdditive = line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
-
-                var matching = isAdditive
-                    ? _availablePrograms
-                        .Where(p => ProgramContainsPart(p, line.PartId) && IsSlsRelevantProgram(p))
-                        .ToList()
-                    : [];
-
-                _partSelections.Add(new PartSelection
-                {
-                    Line = line,
-                    OutstandingQty = outstanding,
-                    IsAdditive = isAdditive,
-                    BuildConfig = line.Part?.AdditiveBuildConfig,
-                    MatchingPrograms = matching
-                });
-            }
-
-            RebuildSteps();
+                Line = line,
+                WoNumber = WorkOrder?.OrderNumber ?? "",
+                OutstandingQty = outstanding
+            });
         }
-        catch (Exception ex)
-        {
-            _errorMessage = $"Failed to initialize: {ex.Message}";
-        }
-        finally
-        {
-            _isLoading = false;
-            StateHasChanged();
-        }
-    }
-
-    private void RebuildSteps()
-    {
-        var steps = new List<StepDef> { new(WizardStep.SelectParts, "Parts") };
-        var hasSls = SelectedSlsParts.Any();
-        var hasCnc = SelectedCncParts.Any();
-
-        steps.Add(new(WizardStep.ConfigureBuilds, hasSls && hasCnc ? "Builds & Jobs" : hasSls ? "Builds" : "Jobs"));
-
-        if (hasSls)
-        {
-            steps.Add(new(WizardStep.MatchPrograms, "Programs"));
-            steps.Add(new(WizardStep.DownstreamSetup, "Downstream"));
-        }
-
-        steps.Add(new(WizardStep.Schedule, "Schedule"));
-        _visibleSteps = steps;
     }
 
     // ══════════════════════════════════════════════════════════
     // Navigation
     // ══════════════════════════════════════════════════════════
 
-    private bool CanProceed => CurrentStep switch
+    private void NextStep()
     {
-        WizardStep.SelectParts => _partSelections.Any(p => p.IsSelected),
-        WizardStep.ConfigureBuilds => (_buildVariations.Any() || !SelectedSlsParts.Any()) && (_cncConfigs.All(c => c.Quantity > 0) || !SelectedCncParts.Any()),
-        WizardStep.MatchPrograms => _buildVariations.All(bv => bv.SourceProgramId > 0 || !string.IsNullOrWhiteSpace(bv.NewProgramName)),
-        WizardStep.DownstreamSetup => DownstreamReady,
-        WizardStep.Schedule => true,
-        _ => true
-    };
+        if (_stepIndex >= _steps.Length - 1) return;
 
-    private async Task NextStep()
-    {
-        if (_stepIndex >= _visibleSteps.Count - 1) return;
-
-        // Rebuild steps when leaving part selection (types may have changed)
-        if (CurrentStep == WizardStep.SelectParts)
-        {
-            RebuildSteps();
+        // Initialize CNC configs when leaving part selection
+        if (_stepIndex == 0)
             InitializeCncConfigs();
-            if (SelectedSlsParts.Any() && !_buildVariations.Any())
-                AutoSuggestBuilds();
-        }
 
         _stepIndex++;
-
-        if (CurrentStep == WizardStep.DownstreamSetup)
-            await LoadDownstreamRequirementsAsync();
     }
 
     private void PreviousStep()
@@ -968,437 +355,22 @@
         if (_stepIndex > 0) _stepIndex--;
     }
 
-    // ══════════════════════════════════════════════════════════
-    // Build Variation Management
-    // ══════════════════════════════════════════════════════════
-
-    private void AutoSuggestBuilds()
-    {
-        _buildVariations.Clear();
-        var buildIndex = 0;
-
-        foreach (var ps in SelectedSlsParts)
-        {
-            var config = ps.BuildConfig;
-
-            // Try to get actual quantity from matching BuildPlate program
-            var bestProgram = ps.MatchingPrograms
-                .FirstOrDefault(p => p.IsBuildPlate && p.ProgramParts?.Any(pp => pp.PartId == ps.Line.PartId) == true);
-            var programPart = bestProgram?.ProgramParts?.FirstOrDefault(pp => pp.PartId == ps.Line.PartId);
-            var programQty = programPart?.Quantity;
-
-            // Need either a matching program or build config to suggest builds
-            if (programQty == null && config == null) continue;
-
-            // Use program quantity, then fall back to BuildConfig
-            var baseSingleQty = programQty ?? config?.PlannedPartsPerBuildSingle ?? 1;
-
-            var remaining = ps.OutstandingQty;
-            int recommendedLevel;
-            int partsPerBuild;
-
-            if (config != null)
-            {
-                recommendedLevel = config.GetRecommendedStackLevel(remaining);
-                partsPerBuild = programQty ?? config.GetPartsPerBuild(recommendedLevel) ?? baseSingleQty;
-            }
-            else
-            {
-                recommendedLevel = 1;
-                partsPerBuild = baseSingleQty;
-            }
-
-            var effectivePerBuild = partsPerBuild * recommendedLevel;
-            var buildsNeeded = effectivePerBuild > 0
-                ? (int)Math.Ceiling((double)remaining / effectivePerBuild)
-                : 1;
-
-            // Pre-select the matching program if one exists
-            var sourceProgramId = bestProgram?.Id ?? -1;
-
-            // Create weekday builds
-            for (int i = 0; i < buildsNeeded; i++)
-            {
-                _buildVariations.Add(new BuildVariation
-                {
-                    Index = buildIndex++,
-                    SourceProgramId = sourceProgramId,
-                    Purpose = "Weekday",
-                    NewProgramName = $"Build-{ps.Line.Part?.PartNumber}-{DateTime.UtcNow:yyMMdd}-{buildIndex}",
-                    Parts = [new BuildPartConfig
-                    {
-                        PartId = ps.Line.PartId,
-                        Part = ps.Line.Part,
-                        Quantity = partsPerBuild,
-                        StackLevel = recommendedLevel,
-                        WorkOrderLineId = ps.Line.Id
-                    }]
-                });
-            }
-
-            // Add changeover backup if >2 builds
-            if (buildsNeeded > 2)
-            {
-                _buildVariations.Add(new BuildVariation
-                {
-                    Index = buildIndex++,
-                    SourceProgramId = sourceProgramId,
-                    Purpose = "ChangeoverBackup",
-                    NewProgramName = $"Build-{ps.Line.Part?.PartNumber}-{DateTime.UtcNow:yyMMdd}-backup",
-                    Parts = [new BuildPartConfig
-                    {
-                        PartId = ps.Line.PartId,
-                        Part = ps.Line.Part,
-                        Quantity = baseSingleQty,
-                        StackLevel = 1,
-                        WorkOrderLineId = ps.Line.Id
-                    }]
-                });
-            }
-
-            // Add weekend build if demand warrants it and double stacking is available
-            if (remaining > effectivePerBuild * buildsNeeded && config?.HasValidDoubleStack == true)
-            {
-                var weekendLevel = Math.Min(config.AvailableStackLevels.Max(), 2);
-                var weekendQty = programQty ?? config.GetPartsPerBuild(weekendLevel) ?? partsPerBuild;
-                _buildVariations.Add(new BuildVariation
-                {
-                    Index = buildIndex++,
-                    SourceProgramId = sourceProgramId,
-                    Purpose = "Weekend",
-                    NewProgramName = $"Build-{ps.Line.Part?.PartNumber}-{DateTime.UtcNow:yyMMdd}-weekend",
-                    Parts = [new BuildPartConfig
-                    {
-                        PartId = ps.Line.PartId,
-                        Part = ps.Line.Part,
-                        Quantity = weekendQty,
-                        StackLevel = weekendLevel,
-                        WorkOrderLineId = ps.Line.Id
-                    }]
-                });
-            }
-        }
-    }
-
-    private void AddBuildVariation()
-    {
-        var firstSls = SelectedSlsParts.FirstOrDefault();
-        if (firstSls == null) return;
-
-        _buildVariations.Add(new BuildVariation
-        {
-            Index = _buildVariations.Count,
-            Purpose = "Weekday",
-            NewProgramName = $"Build-{firstSls.Line.Part?.PartNumber}-{DateTime.UtcNow:yyMMdd}-{_buildVariations.Count + 1}",
-            Parts = [new BuildPartConfig
-            {
-                PartId = firstSls.Line.PartId,
-                Part = firstSls.Line.Part,
-                Quantity = firstSls.EffectivePartsPerPlate,
-                StackLevel = 1,
-                WorkOrderLineId = firstSls.Line.Id
-            }]
-        });
-    }
-
-    private void RemoveBuildVariation(BuildVariation bv)
-    {
-        _buildVariations.Remove(bv);
-        // Re-index
-        for (int i = 0; i < _buildVariations.Count; i++)
-            _buildVariations[i].Index = i;
-    }
-
-    private void OnStackLevelChanged(BuildPartConfig bp, int newLevel)
-    {
-        bp.StackLevel = newLevel;
-        // Update quantity to match the stacking level's planned parts per build
-        var config = bp.Part?.AdditiveBuildConfig;
-        if (config != null)
-        {
-            var partsPerBuild = config.GetPartsPerBuild(newLevel);
-            if (partsPerBuild.HasValue)
-                bp.Quantity = partsPerBuild.Value;
-        }
-        StateHasChanged();
-    }
-
     private void InitializeCncConfigs()
     {
-        _cncConfigs = SelectedCncParts.Select(ps => new CncJobConfig
-        {
-            Line = ps.Line,
-            Quantity = ps.OutstandingQty
-        }).ToList();
-    }
-
-    // ══════════════════════════════════════════════════════════
-    // Program Matching
-    // ══════════════════════════════════════════════════════════
-
-    private List<MachineProgram> GetMatchingProgramsForBuild(BuildVariation bv)
-    {
-        var partIds = bv.Parts.Select(p => p.PartId).ToHashSet();
-        return _availablePrograms
-            .Where(p => partIds.All(pid => ProgramContainsPart(p, pid))
-                && IsSlsRelevantProgram(p))
-            .OrderByDescending(p => p.IsBuildPlate)
-            .ThenByDescending(p => p.EstimatedPrintHours.HasValue)
-            .ToList();
-    }
-
-    /// <summary>
-    /// Checks whether a program contains a part — via ProgramParts (BuildPlate) or PartId (Standard).
-    /// </summary>
-    private static bool ProgramContainsPart(MachineProgram p, int partId)
-    {
-        return (p.ProgramParts != null && p.ProgramParts.Any(pp => pp.PartId == partId))
-            || p.PartId == partId;
-    }
-
-    /// <summary>
-    /// SLS-type machine types for filtering Standard programs relevant to build plate scheduling.
-    /// </summary>
-    private static readonly HashSet<string> SlsMachineTypes = new(StringComparer.OrdinalIgnoreCase)
-        { "SLS", "Additive", "LPBF", "DMLS", "SLM", "MJF", "EBM", "3D Printing" };
-
-    /// <summary>
-    /// Returns true if the program is relevant for SLS build plate scheduling
-    /// (either a BuildPlate program or a Standard program with an SLS machine type).
-    /// </summary>
-    private static bool IsSlsRelevantProgram(MachineProgram p)
-    {
-        return p.IsBuildPlate
-            || (p.MachineType != null && SlsMachineTypes.Any(t =>
-                p.MachineType.Contains(t, StringComparison.OrdinalIgnoreCase)));
-    }
-
-    /// <summary>
-    /// Groups build variations by their part composition so Step 3 shows
-    /// one program selection per unique part set instead of per build.
-    /// </summary>
-    private record BuildGroup(List<BuildVariation> Builds, List<MachineProgram> MatchingPrograms);
-
-    private List<BuildGroup> BuildGroups => _buildVariations
-        .GroupBy(bv => string.Join(",", bv.Parts.Select(p => p.PartId).OrderBy(id => id)))
-        .Select(g => new BuildGroup(g.ToList(), GetMatchingProgramsForBuild(g.First())))
-        .ToList();
-
-    private void SelectProgramForGroup(List<BuildVariation> builds, int programId)
-    {
-        var program = programId > 0
-            ? _availablePrograms.FirstOrDefault(p => p.Id == programId)
-            : null;
-
-        foreach (var bv in builds)
-        {
-            bv.SourceProgramId = programId;
-
-            // Update part quantities from the selected program's ProgramParts
-            if (program?.ProgramParts != null)
+        _cncConfigs = _partSelections
+            .Where(p => p.IsSelected)
+            .Select(ps => new CncJobConfig
             {
-                foreach (var bp in bv.Parts)
-                {
-                    var pp = program.ProgramParts.FirstOrDefault(pp => pp.PartId == bp.PartId);
-                    if (pp != null)
-                        bp.Quantity = pp.Quantity;
-                }
-            }
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════
-    // Downstream
-    // ══════════════════════════════════════════════════════════
-
-    private bool DownstreamReady => _downstreamRequirements
-        .Where(kv => kv.Key > 0) // Only gate on existing programs; new builds auto-create at schedule time
-        .SelectMany(kv => kv.Value)
-        .Where(r => r.IsRequired)
-        .All(r => r.AssignedProgramId.HasValue);
-
-    private bool HasUnassignedDefaults => _downstreamRequirements
-        .Where(kv => kv.Key > 0) // Only show "Create All" for existing programs
-        .SelectMany(kv => kv.Value)
-        .Any(r => !r.AssignedProgramId.HasValue && r.HasDefaultParameters);
-
-    private async Task LoadDownstreamRequirementsAsync()
-    {
-        _downstreamLoading = true;
-        _downstreamRequirements.Clear();
-        StateHasChanged();
-
-        try
-        {
-            // Existing programs — use the downstream service directly
-            foreach (var bv in _buildVariations.Where(b => b.SourceProgramId > 0))
-            {
-                var reqs = await DownstreamService.GetRequiredProgramsAsync(bv.SourceProgramId);
-                if (reqs.Any())
-                    _downstreamRequirements[bv.SourceProgramId] = reqs;
-            }
-
-            // New builds — derive downstream requirements from each part's ManufacturingProcess
-            foreach (var bv in _buildVariations.Where(b => b.SourceProgramId <= 0))
-            {
-                var reqs = new List<DownstreamProgramRequirement>();
-                var seenStages = new HashSet<int>();
-
-                foreach (var bp in bv.Parts)
-                {
-                    var process = await ProcessService.GetByPartIdAsync(bp.PartId);
-                    if (process == null) continue;
-
-                    var printStage = process.Stages
-                        .Where(s => s.ProcessingLevel == ProcessingLevel.Build)
-                        .OrderBy(s => s.ExecutionOrder)
-                        .FirstOrDefault();
-                    if (printStage == null) continue;
-
-                    var downstreamStages = process.Stages
-                        .Where(s => s.ExecutionOrder > printStage.ExecutionOrder)
-                        .OrderBy(s => s.ExecutionOrder)
-                        .ToList();
-
-                    foreach (var stage in downstreamStages)
-                    {
-                        if (!seenStages.Add(stage.Id)) continue;
-
-                        var machineType = stage.AssignedMachine?.MachineType
-                            ?? stage.ProductionStage?.Department
-                            ?? "Unknown";
-
-                        reqs.Add(new DownstreamProgramRequirement(
-                            ProcessStageId: stage.Id,
-                            StageName: stage.ProductionStage?.Name ?? $"Stage {stage.ExecutionOrder}",
-                            MachineType: machineType,
-                            AssignedProgramId: stage.MachineProgramId,
-                            AssignedProgramName: stage.MachineProgram?.Name,
-                            IsRequired: stage.IsRequired && !stage.AllowSkip,
-                            HasDefaultParameters: stage.RunTimeMinutes.HasValue || stage.ProductionStage?.DefaultDurationHours > 0,
-                            ExecutionOrder: stage.ExecutionOrder));
-                    }
-                }
-
-                if (reqs.Any())
-                {
-                    // Use a negative key so the UI can distinguish new builds from existing programs
-                    _downstreamRequirements[-(bv.Index + 1)] = reqs.OrderBy(r => r.ExecutionOrder).ToList();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to load downstream: {ex.Message}");
-        }
-        finally
-        {
-            _downstreamLoading = false;
-            StateHasChanged();
-        }
-    }
-
-    private async Task CreateDownstreamPlaceholderAsync(int programId, DownstreamProgramRequirement req)
-    {
-        _downstreamProcessing = true;
-        StateHasChanged();
-        try
-        {
-            await DownstreamService.CreatePlaceholderProgramsAsync(programId, [req.ProcessStageId], UserName);
-            Toast.ShowSuccess($"Created placeholder for {req.StageName}");
-            await LoadDownstreamRequirementsAsync();
-        }
-        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
-        finally { _downstreamProcessing = false; }
-    }
-
-    private async Task CreateAllDownstreamPlaceholdersAsync()
-    {
-        _downstreamProcessing = true;
-        StateHasChanged();
-        try
-        {
-            var total = 0;
-            foreach (var (programId, reqs) in _downstreamRequirements)
-            {
-                var stageIds = reqs
-                    .Where(r => !r.AssignedProgramId.HasValue && r.HasDefaultParameters)
-                    .Select(r => r.ProcessStageId).ToList();
-                if (stageIds.Any())
-                {
-                    await DownstreamService.CreatePlaceholderProgramsAsync(programId, stageIds, UserName);
-                    total += stageIds.Count;
-                }
-            }
-            Toast.ShowSuccess($"Created {total} placeholder(s)");
-            await LoadDownstreamRequirementsAsync();
-        }
-        catch (Exception ex) { Toast.ShowError($"Failed: {ex.Message}"); }
-        finally { _downstreamProcessing = false; }
+                Line = ps.Line,
+                WoNumber = ps.WoNumber,
+                Quantity = ps.OutstandingQty,
+                Priority = JobPriority.Normal
+            }).ToList();
     }
 
     // ══════════════════════════════════════════════════════════
     // Execution
     // ══════════════════════════════════════════════════════════
-
-    private async Task LoadScheduleOptionsAsync()
-    {
-        _loadingOptions = true;
-        _scheduleOptions.Clear();
-        _selectedOption = null;
-        StateHasChanged();
-
-        try
-        {
-            // Get the first SLS machine for analysis (or use selected machine)
-            var slsMachines = Machines.Where(m => m.IsAdditiveMachine && m.IsAvailableForScheduling).ToList();
-            if (!slsMachines.Any()) return;
-
-            foreach (var bv in _buildVariations.Take(1)) // Analyze first build as representative
-            {
-                var firstPart = bv.Parts.FirstOrDefault();
-                if (firstPart == null) continue;
-
-                var duration = bv.EstimatedHours;
-                var buildConfig = firstPart.Part?.AdditiveBuildConfig;
-                var demand = _partSelections
-                    .Where(p => p.IsSelected && p.IsAdditive)
-                    .Sum(p => p.OutstandingQty);
-
-                foreach (var machine in slsMachines)
-                {
-                    var options = await ProgramScheduling.GenerateScheduleOptionsAsync(
-                        machine.Id, duration, _startAfter, buildConfig, demand);
-
-                    foreach (var opt in options)
-                    {
-                        // Annotate with machine name
-                        _scheduleOptions.Add(opt with
-                        {
-                            Label = $"{machine.Name}: {opt.Label}",
-                            Description = $"{machine.Name} — {opt.Description}"
-                        });
-                    }
-                }
-            }
-
-            // Sort by recommendation score
-            _scheduleOptions = _scheduleOptions
-                .OrderByDescending(o => o.RecommendationScore)
-                .ToList();
-
-            _selectedOption = _scheduleOptions.FirstOrDefault(o => o.IsRecommended)
-                ?? _scheduleOptions.FirstOrDefault();
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Failed to analyze options: {ex.Message}");
-        }
-        finally
-        {
-            _loadingOptions = false;
-        }
-    }
 
     private async Task ExecuteScheduleAsync()
     {
@@ -1410,101 +382,11 @@
             var scheduled = 0;
             var errors = new List<string>();
 
-            // ── Schedule SLS Builds ──
-            var scheduledProgramIds = new HashSet<int>();
-            foreach (var bv in _buildVariations)
-            {
-                try
-                {
-                    int programId = bv.SourceProgramId;
-
-                    // Create a new BuildPlate when: no source selected, source is Standard
-                    // (not BuildPlate), or the same source was already scheduled in this batch.
-                    var sourceProgram = programId > 0
-                        ? _availablePrograms.FirstOrDefault(p => p.Id == programId)
-                        : null;
-                    var needsNewBuildPlate = programId <= 0
-                        || (sourceProgram != null && !sourceProgram.IsBuildPlate)
-                        || scheduledProgramIds.Contains(programId);
-
-                    if (needsNewBuildPlate)
-                    {
-                        var buildName = !string.IsNullOrWhiteSpace(bv.NewProgramName)
-                            ? bv.NewProgramName
-                            : sourceProgram != null
-                                ? $"Build-{sourceProgram.ProgramNumber}-{DateTime.UtcNow:yyMMdd}"
-                                : $"Build-{bv.Index + 1}-{DateTime.UtcNow:yyMMdd}";
-
-                        var newProgram = new MachineProgram
-                        {
-                            Name = buildName,
-                            ProgramType = ProgramType.BuildPlate,
-                            Status = ProgramStatus.Active,
-                            ScheduleStatus = ProgramScheduleStatus.Ready,
-                            BuildPurpose = bv.Purpose,
-                            EstimatedPrintHours = sourceProgram?.EstimatedPrintHours ?? bv.EstimatedHours,
-                            LayerCount = sourceProgram?.LayerCount,
-                            BuildHeightMm = sourceProgram?.BuildHeightMm,
-                            EstimatedPowderKg = sourceProgram?.EstimatedPowderKg,
-                            SlicerFileName = sourceProgram?.SlicerFileName,
-                            SlicerSoftware = sourceProgram?.SlicerSoftware,
-                            SlicerVersion = sourceProgram?.SlicerVersion,
-                            PartPositionsJson = sourceProgram?.PartPositionsJson,
-                            MaterialId = sourceProgram?.MaterialId,
-                            CreatedBy = UserName,
-                            LastModifiedBy = UserName
-                        };
-                        var created = await ProgramPlanning.CreateBuildPlateAsync(newProgram, UserName);
-                        programId = created.Id;
-
-                        // Add parts to program with stacking
-                        foreach (var bp in bv.Parts)
-                        {
-                            var pp = await ProgramPlanning.AddPartToProgramAsync(
-                                programId, bp.PartId, bp.Quantity, bp.WorkOrderLineId);
-                            // Update stack level
-                            if (bp.StackLevel > 1)
-                                await ProgramPlanning.UpdateProgramPartAsync(pp.Id, bp.Quantity, bp.StackLevel);
-                        }
-                    }
-
-                    scheduledProgramIds.Add(programId);
-
-                    // Auto-create downstream placeholder programs from the part's
-                    // manufacturing process so ScheduleBuildPlateAsync validation passes.
-                    var downstreamReqs = await DownstreamService.GetRequiredProgramsAsync(programId);
-                    var missingStageIds = downstreamReqs
-                        .Where(r => !r.AssignedProgramId.HasValue)
-                        .Select(r => r.ProcessStageId)
-                        .ToList();
-                    if (missingStageIds.Any())
-                        await DownstreamService.CreatePlaceholderProgramsAsync(programId, missingStageIds, UserName);
-
-                    // Schedule the build (BuildPurpose is already set on creation;
-                    // do NOT call UpdateBuildPlateAsync after scheduling — the
-                    // program gets IsLocked = true during ScheduleBuildPlateAsync).
-                    var machineId = _machineSelectionMode == "manual" && bv.SelectedMachineId > 0
-                        ? bv.SelectedMachineId : (int?)null;
-
-                    if (machineId.HasValue)
-                        await ProgramScheduling.ScheduleBuildPlateAsync(programId, machineId.Value, _startAfter);
-                    else
-                        await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(programId, _startAfter);
-
-                    scheduled++;
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Build {bv.Index + 1}: {ex.Message}");
-                }
-            }
-
-            // ── Schedule CNC Jobs ──
             foreach (var cnc in _cncConfigs)
             {
                 try
                 {
-                    var result = await ProgramScheduling.ScheduleFromWorkOrderLineAsync(cnc.Line.Id);
+                    await ProgramScheduling.ScheduleFromWorkOrderLineAsync(cnc.Line.Id);
                     scheduled++;
                 }
                 catch (Exception ex)
@@ -1513,7 +395,6 @@
                 }
             }
 
-            // Report results
             if (errors.Any())
             {
                 Toast.ShowWarning($"Scheduled {scheduled} with {errors.Count} error(s)");
@@ -1522,7 +403,7 @@
             }
             else
             {
-                Toast.ShowSuccess($"Successfully scheduled {scheduled} item(s)");
+                Toast.ShowSuccess($"Successfully scheduled {scheduled} CNC job(s)");
             }
 
             await OnScheduled.InvokeAsync();
@@ -1541,7 +422,7 @@
     // Helpers
     // ══════════════════════════════════════════════════════════
 
-    private int CalculateOutstanding(WorkOrderLine line)
+    private static int CalculateOutstanding(WorkOrderLine line)
     {
         var produced = line.ProducedQuantity;
         var inPrograms = line.ProgramParts?
@@ -1553,9 +434,7 @@
     private void Close()
     {
         _partSelections.Clear();
-        _buildVariations.Clear();
         _cncConfigs.Clear();
-        _downstreamRequirements.Clear();
         _stepIndex = 0;
         _isLoading = false;
         _errorMessage = null;

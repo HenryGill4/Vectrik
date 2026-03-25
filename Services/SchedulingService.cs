@@ -189,13 +189,32 @@ public class SchedulingService : ISchedulingService
                 continue;
             }
 
-            // Try each capable machine — pick the one that finishes earliest
+            // Try each capable machine — pick the one that finishes earliest.
+            // For Part-level stages with setup changeover, prefer machines already set up for this part.
             ScheduleSlot? bestSlot = null;
+            var setupChangeover = exec.ProcessStage?.SetupChangeoverMinutes ?? 0;
 
             foreach (var machine in capableMachines)
             {
                 var mShifts = machineShiftMap.GetValueOrDefault(machine.Id, shifts);
-                var slot = await FindEarliestSlotOnMachine(machine.Id, totalDuration, cursor, mShifts);
+                var effectiveDuration = totalDuration;
+
+                // CNC setup affinity: check if this machine is already set up for this part
+                if (setupChangeover > 0 && exec.ProcessStage?.ProcessingLevel == ProcessingLevel.Part)
+                {
+                    var lastPartOnMachine = await _db.StageExecutions
+                        .Where(e => e.MachineId == machine.Id && e.Job != null
+                            && e.Status != StageExecutionStatus.Failed
+                            && e.ScheduledEndAt != null)
+                        .OrderByDescending(e => e.ScheduledEndAt)
+                        .Select(e => e.Job!.PartId)
+                        .FirstOrDefaultAsync();
+
+                    if (lastPartOnMachine != job.PartId)
+                        effectiveDuration += setupChangeover / 60.0; // Convert minutes to hours
+                }
+
+                var slot = await FindEarliestSlotOnMachine(machine.Id, effectiveDuration, cursor, mShifts);
                 if (bestSlot == null || slot.End < bestSlot.End)
                 {
                     bestSlot = slot;

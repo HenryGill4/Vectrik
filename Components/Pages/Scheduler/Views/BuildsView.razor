@@ -2,6 +2,7 @@
 @using Opcentrix_V3.Components.Pages.Scheduler.Components
 @inject IProgramPlanningService ProgramPlanning
 @inject IMachineProgramService ProgramService
+@inject IProgramSchedulingService ProgramScheduling
 @inject ToastService Toast
 
 <ConfirmDialog @ref="_confirmDialog" />
@@ -112,9 +113,9 @@
                                             ProgramScheduleStatus.Scheduled => "builds-bar--scheduled",
                                             _ => "builds-bar--ready"
                                         };
-                                        var tooltip = $"{entry.ProgramName}\nStatus: {entry.ScheduleStatus}\n{entry.PrintStart:MM/dd HH:mm} \u2192 {entry.PrintEnd:MM/dd HH:mm}";
+                                        var tooltip = $"{entry.ProgramName}\nStatus: {entry.ScheduleStatus}\n{entry.PrintStart:MM/dd HH:mm} → {entry.PrintEnd:MM/dd HH:mm}";
                                         if (entry.ChangeoverStart != null && entry.ChangeoverEnd != null)
-                                            tooltip += $"\nChangeover: {entry.ChangeoverStart:HH:mm} \u2192 {entry.ChangeoverEnd:HH:mm}";
+                                            tooltip += $"\nChangeover: {entry.ChangeoverStart:HH:mm} → {entry.ChangeoverEnd:HH:mm}";
                                         <div class="gantt-bar @statusClass"
                                              style="left: @(FormatPx(barLeft))px; width: @(FormatPx(barWidth))px;"
                                              title="@tooltip">
@@ -146,6 +147,61 @@
                 </div>
             }
         </div>
+
+        @* ── Batch Actions Bar ── *@
+        @if (_selectedIds.Count > 0)
+        {
+            <div class="table-bulk-bar">
+                <span>@_selectedIds.Count selected</span>
+                <button class="btn btn-sm btn-warning" @onclick="BulkRescheduleAsync" disabled="@_processing">
+                    Reschedule (@_selectedIds.Count)
+                </button>
+                <button class="btn btn-sm btn-danger" @onclick="BulkDeleteAsync" disabled="@_processing">
+                    Delete (@_selectedIds.Count)
+                </button>
+                <button class="btn btn-sm btn-secondary" @onclick="ClearSelection">✕ Clear</button>
+            </div>
+        }
+
+        @* ── Scheduled Programs Cards (with checkboxes) ── *@
+        @if (scheduled.Any())
+        {
+            <div class="builds-ready-section">
+                <h3 class="builds-ready-title" style="display: flex; align-items: center; gap: 8px;">
+                    📅 Scheduled (@scheduled.Count)
+                    <label style="font-size: 0.75rem; font-weight: 400; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                        <input type="checkbox" checked="@_selectAllScheduled" @onchange="ToggleSelectAllScheduled" /> Select all
+                    </label>
+                </h3>
+                <div class="builds-ready-grid">
+                    @foreach (var prog in scheduled)
+                    {
+                        var isSelected = _selectedIds.Contains(prog.Id);
+                        <div class="builds-ready-card @(isSelected ? "sched-row-selected" : "")" style="cursor: pointer;" @onclick="() => ToggleSelection(prog.Id)">
+                            <div class="builds-ready-card-header">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;" @onclick:stopPropagation>
+                                    <input type="checkbox" checked="@isSelected" @onchange="() => ToggleSelection(prog.Id)" />
+                                    <span class="builds-ready-card-name">📦 @(prog.Name ?? $"Program #{prog.Id}")</span>
+                                </label>
+                                <span class="badge badge-@ProgramStatusBadgeClass(prog.ScheduleStatus)">@ProgramStatusIcon(prog.ScheduleStatus) @prog.ScheduleStatus</span>
+                            </div>
+                            <div class="builds-ready-card-meta">
+                                <span>@(prog.TotalPartCount) parts</span>
+                                <span>🖨️ @(prog.EstimatedPrintHours?.ToString("F1") ?? "?")h print</span>
+                                @if (prog.ScheduledDate.HasValue)
+                                {
+                                    <span>📅 @prog.ScheduledDate.Value.ToString("MMM d, HH:mm")</span>
+                                }
+                            </div>
+                            <div style="margin-top: 6px; display: flex; gap: 6px;" @onclick:stopPropagation>
+                                <button class="btn btn-sm btn-warning" @onclick="() => RescheduleAsync(prog)" disabled="@_processing">Reschedule</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteWithDownstreamAsync(prog)" disabled="@_processing">Delete</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
 
         @* ── Ready Programs Cards ── *@
         @if (ready.Any())
@@ -259,6 +315,10 @@
     private bool _processing;
     private ConfirmDialog _confirmDialog = null!;
 
+    // Batch selection
+    private HashSet<int> _selectedIds = [];
+    private bool _selectAllScheduled;
+
     /// <summary>Filters programs based on the toolbar filter.</summary>
     private List<MachineProgram> FilteredPrograms => ProgramStatusFilter == null
         ? BuildPrograms
@@ -271,6 +331,138 @@
         Math.Max(2, (end - start).TotalHours * PixelsPerHour);
 
     private string FormatPx(double value) => value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+    // ── Selection ──
+
+    private void ToggleSelection(int id)
+    {
+        if (!_selectedIds.Remove(id))
+            _selectedIds.Add(id);
+        var scheduledIds = FilteredPrograms
+            .Where(p => p.ScheduleStatus == ProgramScheduleStatus.Scheduled)
+            .Select(p => p.Id).ToHashSet();
+        _selectAllScheduled = scheduledIds.Count > 0 && scheduledIds.IsSubsetOf(_selectedIds);
+    }
+
+    private void ToggleSelectAllScheduled()
+    {
+        var scheduledIds = FilteredPrograms
+            .Where(p => p.ScheduleStatus == ProgramScheduleStatus.Scheduled)
+            .Select(p => p.Id).ToList();
+
+        if (_selectAllScheduled)
+        {
+            foreach (var id in scheduledIds) _selectedIds.Remove(id);
+            _selectAllScheduled = false;
+        }
+        else
+        {
+            foreach (var id in scheduledIds) _selectedIds.Add(id);
+            _selectAllScheduled = true;
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selectedIds.Clear();
+        _selectAllScheduled = false;
+    }
+
+    // ── Single actions ──
+
+    private async Task RescheduleAsync(MachineProgram prog)
+    {
+        _processing = true;
+        try
+        {
+            await ProgramScheduling.UnlockProgramAsync(prog.Id, UserName, "Rescheduled from Builds view");
+            await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(prog.Id);
+            Toast.ShowSuccess($"Rescheduled: {prog.Name}");
+            await OnRefreshRequested.InvokeAsync();
+        }
+        catch (Exception ex) { Toast.ShowError($"Reschedule failed: {ex.Message}"); }
+        finally { _processing = false; }
+    }
+
+    private async Task DeleteWithDownstreamAsync(MachineProgram prog)
+    {
+        var confirmed = await _confirmDialog.ShowAsync(
+            $"Delete \"{prog.Name}\" and cancel all downstream jobs and stage executions?",
+            "Confirm Delete");
+        if (!confirmed) return;
+
+        _processing = true;
+        try
+        {
+            await ProgramPlanning.DeleteBuildWithDownstreamAsync(prog.Id, UserName);
+            _selectedIds.Remove(prog.Id);
+            Toast.ShowSuccess($"Deleted with downstream: {prog.Name}");
+            await OnRefreshRequested.InvokeAsync();
+        }
+        catch (Exception ex) { Toast.ShowError($"Delete failed: {ex.Message}"); }
+        finally { _processing = false; }
+    }
+
+    // ── Batch actions ──
+
+    private async Task BulkRescheduleAsync()
+    {
+        var confirmed = await _confirmDialog.ShowAsync(
+            $"Reschedule {_selectedIds.Count} builds to next available slots?",
+            "Confirm Bulk Reschedule");
+        if (!confirmed) return;
+
+        _processing = true;
+        StateHasChanged();
+        try
+        {
+            var count = 0;
+            foreach (var id in _selectedIds.ToList())
+            {
+                try
+                {
+                    await ProgramScheduling.UnlockProgramAsync(id, UserName, "Bulk rescheduled");
+                    await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(id);
+                    count++;
+                }
+                catch (Exception ex) { Toast.ShowError($"Failed to reschedule program {id}: {ex.Message}"); }
+            }
+            ClearSelection();
+            Toast.ShowSuccess($"Rescheduled {count} build(s)");
+            await OnRefreshRequested.InvokeAsync();
+        }
+        finally { _processing = false; }
+    }
+
+    private async Task BulkDeleteAsync()
+    {
+        var confirmed = await _confirmDialog.ShowAsync(
+            $"Delete {_selectedIds.Count} builds and ALL their downstream jobs/stages?",
+            "Confirm Bulk Delete");
+        if (!confirmed) return;
+
+        _processing = true;
+        StateHasChanged();
+        try
+        {
+            var count = 0;
+            foreach (var id in _selectedIds.ToList())
+            {
+                try
+                {
+                    await ProgramPlanning.DeleteBuildWithDownstreamAsync(id, UserName);
+                    count++;
+                }
+                catch (Exception ex) { Toast.ShowError($"Failed to delete program {id}: {ex.Message}"); }
+            }
+            ClearSelection();
+            Toast.ShowSuccess($"Deleted {count} build(s) with downstream work");
+            await OnRefreshRequested.InvokeAsync();
+        }
+        finally { _processing = false; }
+    }
+
+    // ── Status transitions ──
 
     private async Task TransitionToPostPrintAsync(MachineProgram prog)
     {
@@ -312,6 +504,8 @@
         finally { _processing = false; }
     }
 
+    // ── Helpers ──
+
     private static string ProgramStatusBadgeClass(ProgramScheduleStatus status) => status switch
     {
         ProgramScheduleStatus.Ready => "warning",
@@ -329,8 +523,7 @@
         ProgramScheduleStatus.Scheduled => "📅",
         ProgramScheduleStatus.Printing => "🖨️",
         ProgramScheduleStatus.PostPrint => "🔥",
-        ProgramScheduleStatus.Completed => "✔️",
-        ProgramScheduleStatus.Cancelled => "❌",
+        ProgramScheduleStatus.Completed => "✅",
         _ => "📦"
     };
 }

@@ -16,13 +16,15 @@
         _ => ""
     };
 }
-<div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "")"
+<div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "")"
      style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @jobColorStyle @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
      data-exec-id="@Exec.Id"
      data-bar-type="exec"
      data-job-id="@Exec.JobId"
      title="@ComputeTooltip()"
-     @onclick="HandleClick">
+     @onclick="HandleClick"
+     @onclick:stopPropagation="true">
+    @if (IsSelected) { <span class="gantt-bar-check">✓</span> }
     <span class="gantt-bar-text">@scopeIcon@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
 </div>
 
@@ -34,6 +36,7 @@
     [Parameter, EditorRequired] public DateTime End { get; set; }
     [Parameter] public bool IsConflict { get; set; }
     [Parameter] public bool IsUnassigned { get; set; }
+    [Parameter] public bool IsSelected { get; set; }
     [Parameter] public EventCallback<StageExecution> OnClick { get; set; }
 
     private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);

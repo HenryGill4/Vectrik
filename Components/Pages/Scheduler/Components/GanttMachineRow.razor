@@ -28,6 +28,7 @@
                 HasChangeoverConflict="entry.HasChangeoverConflict"
                 ChangeoverMinutes="@(Machine.AutoChangeoverEnabled ? Machine.ChangeoverMinutes : 0)"
                 PixelsPerHour="PixelsPerHour"
+                IsSelected="SelectedBuildIds.Contains(build.Id)"
                 OnBuildAction="OnBuildAction" />
         }
         @* ── Build-level stage execution groups (skip stages already shown by build bars) ── *@
@@ -61,6 +62,7 @@
                 BarWidthPx="GetBarWidthPx(start, end)"
                 Start="start" End="end"
                 PartList="@partList"
+                IsSelected="SelectedExecIds.Contains(first.Id)"
                 OnClick="OnBarClick" />
         }
         @foreach (var exec in individualExecs)
@@ -73,7 +75,20 @@
                 BarWidthPx="GetBarWidthPx(start, end)"
                 Start="start" End="end"
                 IsConflict="isConflict"
+                IsSelected="SelectedExecIds.Contains(exec.Id)"
                 OnClick="OnBarClick" />
+        }
+        @* ── "+" zone for SLS machines ── *@
+        @if (Machine.IsAdditiveMachine && OnNextBuildRequested.HasDelegate)
+        {
+            var lastEnd = GetLastScheduledEnd();
+            var zoneLeft = GetBarLeftPx(lastEnd);
+            <div class="gantt-next-build-zone" style="left: @(zoneLeft.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))px;"
+                 @onclick="() => OnNextBuildRequested.InvokeAsync(Machine.Id)"
+                 @onclick:stopPropagation
+                 title="Schedule next build on @Machine.Name">
+                <span>+</span>
+            </div>
         }
     </div>
 </div>
@@ -87,12 +102,32 @@
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
     [Parameter] public List<MachineProgram> BuildPrograms { get; set; } = [];
     [Parameter] public List<ProgramTimelineEntry> BuildTimeline { get; set; } = [];
+    [Parameter] public HashSet<int> SelectedExecIds { get; set; } = [];
+    [Parameter] public HashSet<int> SelectedBuildIds { get; set; } = [];
+    [Parameter] public EventCallback<int> OnNextBuildRequested { get; set; }
 
     private double GetBarLeftPx(DateTime start) =>
         (start - DataRangeStart).TotalHours * PixelsPerHour;
 
     private double GetBarWidthPx(DateTime start, DateTime end) =>
         Math.Max(2, (end - start).TotalHours * PixelsPerHour);
+
+    private DateTime GetLastScheduledEnd()
+    {
+        var lastExec = Executions
+            .Where(e => e.ScheduledEndAt.HasValue)
+            .OrderByDescending(e => e.ScheduledEndAt)
+            .FirstOrDefault();
+        var lastTimeline = BuildTimeline
+            .OrderByDescending(t => t.PrintEnd)
+            .FirstOrDefault();
+
+        var candidates = new List<DateTime> { DateTime.UtcNow };
+        if (lastExec?.ScheduledEndAt != null) candidates.Add(lastExec.ScheduledEndAt.Value);
+        if (lastTimeline != null) candidates.Add(lastTimeline.ChangeoverEnd ?? lastTimeline.PrintEnd);
+
+        return candidates.Max();
+    }
 
     private bool HasOverlap(StageExecution current)
     {

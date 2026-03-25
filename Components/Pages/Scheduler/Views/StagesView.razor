@@ -198,13 +198,21 @@
     [Parameter, EditorRequired] public List<StageExecution> Unscheduled { get; set; } = [];
     [Parameter, EditorRequired] public List<ProductionStage> Stages { get; set; } = [];
     [Parameter] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public List<OperatingShift> Shifts { get; set; } = [];
     [Parameter] public string? UserName { get; set; }
     [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
     private HashSet<int> _expandedStages = new();
-    private const double ShiftHoursPerDay = 8.0;
+    private double ShiftHoursPerDay => Shifts.Any()
+        ? Shifts.Sum(s =>
+        {
+            var duration = s.EndTime - s.StartTime;
+            if (duration < TimeSpan.Zero) duration += TimeSpan.FromHours(24);
+            return duration.TotalHours;
+        })
+        : 24.0;
 
     private List<StageExecution> _myWork => Executions.Concat(Unscheduled)
         .Where(e => !string.IsNullOrEmpty(e.OperatorName)

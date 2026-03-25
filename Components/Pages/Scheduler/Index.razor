@@ -7,6 +7,8 @@
 @inject IWorkOrderService WorkOrderService
 @inject IMachineProgramService ProgramService
 @inject IShiftManagementService ShiftService
+@inject IBuildAdvisorService BuildAdvisor
+@inject IProgramPlanningService ProgramPlanning
 @inject Opcentrix_V3.Data.TenantDbContext Db
 @inject ToastService Toast
 @implements IAsyncDisposable
@@ -39,7 +41,8 @@
                  OnManualRefresh="ManualRefreshAsync"
                  OnToggleAutoRefresh="ToggleAutoRefresh"
                  OnAutoScheduleAll="AutoScheduleAll"
-                 OnNewJob="() => _showScheduleWizard = true"
+                 OnNewBuild="OpenBuildAdvisor"
+                 OnNewCncJob="OpenCncWizard"
                  OnShowConflictsOnlyChanged="v => _showConflictsOnly = v"
                  OnProgramStatusFilterChanged="v => _programStatusFilter = v"
                  OnShowOverdueOnlyChanged="v => _showOverdueOnly = v" />
@@ -54,7 +57,8 @@ else if (_viewMode == "gantt")
     <KpiStrip Executions="_executions"
               Unscheduled="_unscheduled"
               Machines="_machines"
-              WorkOrders="_workOrders" />
+              WorkOrders="_workOrders"
+              BottleneckReport="_bottleneckReport" />
     <GanttView @ref="_ganttView"
                Executions="_executions"
                Unscheduled="_unscheduled"
@@ -70,8 +74,12 @@ else if (_viewMode == "gantt")
                PixelsPerHour="_pixelsPerHour"
                ShowConflictsOnly="_showConflictsOnly"
                OnShowReschedule="ShowReschedule"
-               OnScheduleRequested="() => _showScheduleWizard = true"
+               OnBuildAction="HandleBuildActionAsync"
+               OnBatchDeleteBuilds="HandleBatchDeleteAsync"
+               OnBatchRescheduleBuilds="HandleBatchRescheduleAsync"
+               OnScheduleRequested="OpenBuildAdvisor"
                OnAutoSchedule="AutoScheduleSingle"
+               OnNextBuildRequested="OpenBuildAdvisorForMachine"
                OnPixelsPerHourChanged="HandlePixelsPerHourChanged"
                OnViewportBoundsChanged="HandleViewportBoundsChanged"
                OnDataRangeExtensionNeeded="ExtendDataRangeAsync"
@@ -108,6 +116,7 @@ else if (_viewMode == "floor")
                 Unscheduled="_unscheduled"
                 Stages="_stages"
                 Machines="_machines"
+                Shifts="_shifts"
                 UserName="@_userName"
                 OnShowReschedule="ShowReschedule"
                 OnAutoSchedule="AutoScheduleSingle"
@@ -165,6 +174,14 @@ else if (_viewMode == "data")
     OnClose="() => { _showScheduleWizard = false; }"
     OnScheduled="OnModalConfirmedAsync" />
 
+<Opcentrix_V3.Components.Pages.Scheduler.Modals.NextBuildAdvisor
+    IsVisible="_showBuildAdvisor"
+    Machines="_machines"
+    InitialMachineId="_advisorMachineId"
+    UserName="@_userName"
+    OnClose="() => { _showBuildAdvisor = false; }"
+    OnScheduled="OnModalConfirmedAsync" />
+
 <ConfirmDialog @ref="_confirmDialog" />
 
 @code {
@@ -190,6 +207,7 @@ else if (_viewMode == "data")
     private List<WorkOrder> _workOrders = new();
     private List<MachineProgram> _programs = new();
     private List<OperatingShift> _shifts = new();
+    private BottleneckReport? _bottleneckReport;
 
     private GanttView? _ganttView;
     private ProgramsView? _programsView;
@@ -205,6 +223,8 @@ else if (_viewMode == "data")
     private readonly Dictionary<string, DateTime> _tabLastLoaded = new();
 
     private bool _showScheduleWizard;
+    private bool _showBuildAdvisor;
+    private int? _advisorMachineId;
     private bool _showReschedule;
     private ConfirmDialog _confirmDialog = null!;
     private StageExecution? _rescheduleExec;
@@ -323,7 +343,7 @@ else if (_viewMode == "data")
             if (settings.TryGetValue("scheduler.gantt_default_zoom", out var zoomVal) && double.TryParse(zoomVal, out var zoom))
                 _pixelsPerHour = zoom;
         }
-        catch { }
+        catch (Exception ex) { Console.WriteLine($"Settings load failed: {ex.Message}"); }
     }
 
     private async Task LoadSharedDataAsync()
@@ -360,6 +380,9 @@ else if (_viewMode == "data")
         _workOrders = await WorkOrderService.GetWorkOrdersByStatusesAsync(WorkOrderStatus.Released, WorkOrderStatus.InProgress);
         _programs = await ProgramService.GetBuildPlateProgramsAsync();
         await LoadProgramTimelinesAsync();
+
+        try { _bottleneckReport = await BuildAdvisor.AnalyzeBottlenecksAsync(_dataRangeStart, _dataRangeEnd); }
+        catch { _bottleneckReport = null; }
     }
 
     private async Task LoadDemandDataAsync()
@@ -517,6 +540,23 @@ else if (_viewMode == "data")
         _showReschedule = true;
     }
 
+    private void OpenBuildAdvisor()
+    {
+        _advisorMachineId = null;
+        _showBuildAdvisor = true;
+    }
+
+    private void OpenCncWizard()
+    {
+        _showScheduleWizard = true;
+    }
+
+    private void OpenBuildAdvisorForMachine(int machineId)
+    {
+        _advisorMachineId = machineId;
+        _showBuildAdvisor = true;
+    }
+
     private async Task HandleBarDragAsync(GanttViewport.BarDragResult drag)
     {
         try
@@ -540,6 +580,94 @@ else if (_viewMode == "data")
             Toast.ShowError($"Reschedule failed: {ex.Message}");
             await LoadData(isBackgroundRefresh: true);
         }
+    }
+
+    private async Task HandleBuildActionAsync((MachineProgram Build, string Action) args)
+    {
+        var (build, action) = args;
+        try
+        {
+            switch (action)
+            {
+                case "start-print":
+                    build.ScheduleStatus = ProgramScheduleStatus.Printing;
+                    build.PrintStartedAt = DateTime.UtcNow;
+                    await ProgramPlanning.UpdateBuildPlateAsync(build, _userName);
+                    Toast.ShowSuccess($"Print started: {build.Name}");
+                    break;
+
+                case "post-print":
+                    build.ScheduleStatus = ProgramScheduleStatus.PostPrint;
+                    build.PrintCompletedAt = DateTime.UtcNow;
+                    await ProgramPlanning.UpdateBuildPlateAsync(build, _userName);
+                    Toast.ShowSuccess($"Moved to post-print: {build.Name}");
+                    break;
+
+                case "release-plate":
+                    await ProgramScheduling.ReleasePlateAsync(build.Id, _userName);
+                    Toast.ShowSuccess($"Plate released: {build.Name}");
+                    break;
+
+                case "reschedule":
+                    await ProgramScheduling.UnlockProgramAsync(build.Id, _userName, "Rescheduled from Gantt");
+                    await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(build.Id);
+                    Toast.ShowSuccess($"Build rescheduled: {build.Name}");
+                    break;
+
+                case "delete":
+                    await ProgramPlanning.DeleteBuildWithDownstreamAsync(build.Id, _userName);
+                    Toast.ShowSuccess($"Build deleted with downstream work: {build.Name}");
+                    break;
+            }
+
+            await LoadData(isBackgroundRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Action failed: {ex.Message}");
+            await LoadData(isBackgroundRefresh: true);
+        }
+    }
+
+    private async Task HandleBatchDeleteAsync(List<int> buildIds)
+    {
+        var count = 0;
+        foreach (var id in buildIds)
+        {
+            try
+            {
+                await ProgramPlanning.DeleteBuildWithDownstreamAsync(id, _userName);
+                count++;
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to delete build {id}: {ex.Message}");
+            }
+        }
+        if (count > 0)
+            Toast.ShowSuccess($"Deleted {count} build(s) with downstream work");
+        await LoadData(isBackgroundRefresh: true);
+    }
+
+    private async Task HandleBatchRescheduleAsync(List<int> buildIds)
+    {
+        var count = 0;
+        foreach (var id in buildIds)
+        {
+            try
+            {
+                await ProgramScheduling.UnlockProgramAsync(id, _userName, "Batch rescheduled");
+                await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(id);
+                count++;
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"Failed to reschedule build {id}: {ex.Message}");
+            }
+        }
+        if (count > 0)
+            Toast.ShowSuccess($"Rescheduled {count} build(s)");
+        await LoadData(isBackgroundRefresh: true);
     }
 
     private async Task AutoScheduleSingle(int executionId)
@@ -571,7 +699,7 @@ else if (_viewMode == "data")
                     await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(prog.Id);
                     programCount++;
                 }
-                catch { }
+                catch (Exception ex) { Toast.ShowError($"Failed to schedule {prog.Name ?? prog.ProgramNumber}: {ex.Message}"); }
             }
 
             var msg = $"Auto-scheduled {count} job(s)";

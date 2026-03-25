@@ -158,6 +158,14 @@
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
+    private IJSObjectReference? _jsModule;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            _jsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/scheduler-utils.js");
+    }
+
     private string _tableSortCol = "Start";
     private bool _tableSortAsc = true;
     private string _tableSearch = "";
@@ -349,7 +357,8 @@
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         var base64 = Convert.ToBase64String(bytes);
-        await JS.InvokeVoidAsync("eval", $"{{ const a=document.createElement('a'); a.href='data:text/csv;base64,{base64}'; a.download='schedule-export.csv'; a.click(); }}");
+        if (_jsModule != null)
+            await _jsModule.InvokeVoidAsync("downloadCsv", base64, "schedule-export.csv");
     }
 
     private static string Escape(string value) =>

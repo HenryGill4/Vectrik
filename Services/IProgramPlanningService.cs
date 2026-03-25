@@ -43,6 +43,12 @@ public interface IProgramPlanningService
     /// </summary>
     Task DeleteBuildPlateAsync(int programId);
 
+    /// <summary>
+    /// Deletes a BuildPlate program AND cancels all downstream work:
+    /// build-level job, per-part jobs, and all stage executions linked to this program.
+    /// </summary>
+    Task DeleteBuildWithDownstreamAsync(int programId, string deletedBy);
+
     // ═══════════════════════════════════════════════════════════
     // Scheduled Copies (Print Runs)
     // ═══════════════════════════════════════════════════════════

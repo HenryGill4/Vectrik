@@ -1,0 +1,1038 @@
+@* ═══════════════════════════════════════════════════════════════════════════
+   NextBuildAdvisor — Machine-centric build scheduling assistant.
+   "What should I print next on this machine?"
+   4-step wizard: Schedule Options → Plate Composition → Program Details → Confirm
+   Changeover-aware: suggests stack levels that land changeover during operator hours.
+   Connects to real build programs with slicer data and file attachments.
+   ═══════════════════════════════════════════════════════════════════════════ *@
+@using Microsoft.AspNetCore.Components.Forms
+@inject IBuildAdvisorService Advisor
+@inject IProgramSchedulingService ProgramScheduling
+@inject IProgramPlanningService ProgramPlanning
+@inject IMachineProgramService ProgramService
+@inject ToastService Toast
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal-content modal-lg" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 class="modal-title">@StepTitle</h3>
+                @if (_sessionBuilds > 0)
+                {
+                    <span class="badge badge-success" style="margin-left: 8px;">@_sessionBuilds scheduled this session</span>
+                }
+                <button class="btn-icon" @onclick="Close">&#x2715;</button>
+            </div>
+
+            <div class="modal-body">
+                @* ── Step Indicator ── *@
+                <div class="wizard-steps">
+                    @for (var i = 0; i < _steps.Length; i++)
+                    {
+                        var idx = i;
+                        var isActive = _step >= idx;
+                        var isDone = _step > idx;
+                        <div class="wizard-step @(isActive ? "wizard-step--active" : "") @(isDone ? "wizard-step--done" : "")">
+                            <span class="wizard-step-num">@(idx + 1)</span>
+                            <span class="wizard-step-label">@_steps[idx]</span>
+                        </div>
+                        @if (idx < _steps.Length - 1)
+                        {
+                            <div class="wizard-step-connector @(isDone ? "wizard-step-connector--done" : "")"></div>
+                        }
+                    }
+                </div>
+
+                @if (_loading)
+                {
+                    <div class="wizard-loading"><span class="spinner"></span> Analyzing demand and scheduling options...</div>
+                }
+
+                @* ══════════ Step 0: Schedule Options ══════════ *@
+                @if (!_loading && _step == 0)
+                {
+                    <div class="wizard-content">
+                        <div class="form-group">
+                            <label>Machine</label>
+                            <select class="form-control" @bind="_selectedMachineId" @bind:after="OnMachineChanged">
+                                @foreach (var m in SlsMachines)
+                                {
+                                    <option value="@m.Id">@m.Name (@m.MachineType)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="margin-top: 8px;">
+                            <label>Override Start After (optional)</label>
+                            <input type="datetime-local" class="form-control" style="max-width: 250px;"
+                                   @bind="_startAfterOverride" @bind:after="OnMachineChanged" />
+                        </div>
+
+                        @if (_selectedMachine?.AutoChangeoverEnabled == true && _scheduleOptions.Any())
+                        {
+                            @* ── Changeover-first schedule option cards ── *@
+                            <div style="margin-top: 12px;">
+                                <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Schedule Options</div>
+                                @foreach (var opt in _scheduleOptions)
+                                {
+                                    var isSelected = _selectedOption == opt;
+                                    <div class="advisor-option-card @(isSelected ? "advisor-option-card--selected" : "")"
+                                         @onclick="() => OnOptionSelected(opt)">
+                                        @if (opt.IsRecommended)
+                                        {
+                                            <span class="advisor-option-badge">Recommended</span>
+                                        }
+                                        <div class="advisor-option-changeover">
+                                            Changeover: @opt.Slot.ChangeoverStart.ToString("ddd MMM d, HH:mm")
+                                            @if (opt.ChangeoverAligned)
+                                            {
+                                                <span style="color: var(--success); margin-left: 6px;">&#x2713; Operator available</span>
+                                            }
+                                            else
+                                            {
+                                                <span style="color: var(--danger); margin-left: 6px;">&#x2717; NO operator</span>
+                                            }
+                                        </div>
+                                        <div class="advisor-option-detail">
+                                            @(opt.StackLevel == 1 ? "Single" : opt.StackLevel == 2 ? "Double Stack" : "Triple Stack")
+                                            &middot; @opt.DurationHours.ToString("F1")h
+                                            &middot; @opt.PartsPerBuild parts
+                                        </div>
+                                        <div class="advisor-option-detail">
+                                            @opt.Slot.PrintStart.ToString("ddd MMM d, HH:mm") &rarr; @opt.Slot.PrintEnd.ToString("ddd MMM d, HH:mm")
+                                        </div>
+                                        <div class="advisor-option-tags">
+                                            @if (opt.ChangeoverAligned)
+                                            {
+                                                <span class="advisor-option-tag advisor-option-tag--safe">Safe changeover</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="advisor-option-tag advisor-option-tag--danger">Machine DOWN until shift</span>
+                                            }
+                                            @if (opt.IsWeekendOptimal)
+                                            {
+                                                <span class="advisor-option-tag advisor-option-tag--info">Spans weekend</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else if (_recommendation != null)
+                        {
+                            @* ── Simple slot display for non-changeover machines ── *@
+                            <div class="card" style="padding: 12px; margin-top: 12px;">
+                                <div style="font-weight: 600; margin-bottom: 8px;">Next Available Slot</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
+                                    <div><span style="color: var(--text-muted);">Start:</span> @_recommendation.Slot.PrintStart.ToString("ddd MMM d, HH:mm")</div>
+                                    <div><span style="color: var(--text-muted);">Machine:</span> @_recommendation.MachineName</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @* ══════════ Step 1: Plate Composition (Editable) ══════════ *@
+                @if (!_loading && _step == 1)
+                {
+                    <div class="wizard-content">
+                        @if (_recommendation != null)
+                        {
+                            @* ── Recommendation rationale ── *@
+                            <div class="advisor-rationale">
+                                <strong>Recommendation:</strong> @_recommendation.Rationale
+                                @if (_plateEdited)
+                                {
+                                    <button class="btn btn-sm btn-ghost" style="margin-left: 8px;" @onclick="ResetToRecommendation" title="Restore the original recommendation">
+                                        Reset
+                                    </button>
+                                }
+                            </div>
+
+                            @* ── Warnings ── *@
+                            @foreach (var warn in _activeWarnings)
+                            {
+                                <div class="advisor-warning">@warn</div>
+                            }
+
+                            @* ── Editable Plate Composition ── *@
+                            <div class="advisor-plate">
+                                <div class="advisor-plate-header">
+                                    <span>Plate Composition — @_plateAllocations.Sum(a => a.TotalParts) total parts
+                                        (@EstimatedPrintHours.ToString("F1")h print)</span>
+                                </div>
+
+                                @foreach (var (alloc, idx) in _plateAllocations.Select((a, i) => (a, i)))
+                                {
+                                    var allocIdx = idx;
+                                    var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
+                                    var levels = config?.AvailableStackLevels ?? [1];
+                                    var maxPositions = config?.GetPositionsPerBuild(alloc.StackLevel) ?? 500;
+
+                                    <div class="advisor-plate-row">
+                                        <div class="advisor-plate-role">
+                                            @if (idx == 0) { <span class="advisor-role-primary">PRIMARY</span> }
+                                            else { <span class="advisor-role-fill">FILL</span> }
+                                        </div>
+                                        <div class="advisor-plate-part">
+                                            <div style="font-weight: 600;">@alloc.PartNumber</div>
+                                            <div class="advisor-plate-detail">
+                                                @alloc.DemandRemaining needed
+                                                @if (alloc.Surplus > 0)
+                                                {
+                                                    <span style="color: var(--warning);">(@alloc.Surplus surplus)</span>
+                                                }
+                                                @if (alloc.WoDueDate.HasValue)
+                                                {
+                                                    <span style="color: var(--text-muted);">Due: @alloc.WoDueDate.Value.ToString("MMM d")</span>
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="advisor-plate-controls">
+                                            <div class="advisor-control-group">
+                                                <label>Stack</label>
+                                                <select class="form-control form-control-sm" style="width: 90px;"
+                                                        value="@alloc.StackLevel"
+                                                        @onchange="@(e => OnStackLevelChanged(allocIdx, int.Parse(e.Value?.ToString() ?? "1")))">
+                                                    @foreach (var lvl in levels)
+                                                    {
+                                                        <option value="@lvl">@lvl x @(lvl == 1 ? "Single" : lvl == 2 ? "Double" : "Triple")</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                            <div class="advisor-control-group">
+                                                <label>Positions</label>
+                                                <input type="number" class="form-control form-control-sm" style="width: 70px;"
+                                                       min="1" max="@maxPositions"
+                                                       value="@alloc.Positions"
+                                                       @onchange="@(e => OnPositionsChanged(allocIdx, int.Parse(e.Value?.ToString() ?? "1")))" />
+                                            </div>
+                                            <div class="advisor-control-group">
+                                                <label>Total</label>
+                                                <span class="advisor-total">= @alloc.TotalParts</span>
+                                            </div>
+                                        </div>
+                                        <div class="advisor-plate-actions">
+                                            @if (_plateAllocations.Count > 1)
+                                            {
+                                                <button class="btn btn-sm btn-ghost" style="color: var(--danger);"
+                                                        @onclick="() => RemoveFromPlate(allocIdx)" title="Remove this part from the plate">
+                                                    &#x2715;
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
+                                @* ── Add Part ── *@
+                                @if (_plateAllocations.Count < 4)
+                                {
+                                    <div class="advisor-plate-add">
+                                        @if (_showPartPicker)
+                                        {
+                                            <select class="form-control form-control-sm" style="flex: 1;"
+                                                    @onchange="OnAddPartSelected">
+                                                <option value="">— Select a part to add —</option>
+                                                @foreach (var d in AvailablePartsForPlate)
+                                                {
+                                                    <option value="@d.PartId">@d.PartNumber — @d.NetRemaining remaining (due @d.EarliestDueDate.ToString("MMM d"))</option>
+                                                }
+                                            </select>
+                                            <button class="btn btn-sm btn-ghost" @onclick="() => _showPartPicker = false">Cancel</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-secondary" @onclick="() => _showPartPicker = true"
+                                                    disabled="@(!AvailablePartsForPlate.Any())">
+                                                + Add Part
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            @* ── Demand Coverage Bars ── *@
+                            <div class="advisor-coverage">
+                                <div style="font-weight: 500; font-size: 0.82rem; margin-bottom: 6px;">Demand Coverage</div>
+                                @foreach (var alloc in _plateAllocations)
+                                {
+                                    var demandInfo = _demand.FirstOrDefault(d => d.PartId == alloc.PartId);
+                                    var remaining = demandInfo?.NetRemaining ?? alloc.DemandRemaining;
+                                    var pct = remaining > 0 ? Math.Min(100, alloc.TotalParts * 100.0 / remaining) : 100;
+                                    <div class="advisor-coverage-row">
+                                        <span class="advisor-coverage-label">@alloc.PartNumber</span>
+                                        <div class="wo-line-progress" style="flex: 1; height: 8px;">
+                                            <div class="wo-line-progress-fill" style="width: @pct.ToString("F0")%;"></div>
+                                        </div>
+                                        <span class="advisor-coverage-value @(pct >= 100 ? "text-success" : pct > 0 ? "text-warning" : "text-danger")">
+                                            @alloc.TotalParts / @remaining (@pct.ToString("F0")%)
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+
+                            @* ── All Demand (expandable) ── *@
+                            @if (_demand.Any(d => d.IsAdditive && d.NetRemaining > 0))
+                            {
+                                <details style="margin-top: 12px;">
+                                    <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 500; color: var(--text-secondary);">
+                                        All Outstanding Demand (@_demand.Count(d => d.IsAdditive && d.NetRemaining > 0) parts)
+                                    </summary>
+                                    <div style="margin-top: 8px; max-height: 200px; overflow-y: auto;">
+                                        <table class="data-table" style="font-size: 0.78rem;">
+                                            <thead><tr><th>Part</th><th>Remaining</th><th>Due</th><th>Priority</th><th></th></tr></thead>
+                                            <tbody>
+                                                @foreach (var d in _demand.Where(d => d.IsAdditive && d.NetRemaining > 0))
+                                                {
+                                                    var onPlate = _plateAllocations.Any(a => a.PartId == d.PartId);
+                                                    <tr style="@(onPlate ? "background: rgba(var(--accent-rgb), 0.06);" : "")">
+                                                        <td style="font-weight: 600;">@d.PartNumber @(onPlate ? "on plate" : "")</td>
+                                                        <td>@d.NetRemaining</td>
+                                                        <td>@d.EarliestDueDate.ToString("MMM d")</td>
+                                                        <td><span class="badge badge-@d.HighestPriority.ToString().ToLower()">@d.HighestPriority</span></td>
+                                                        <td>
+                                                            @if (!onPlate && d.BuildConfig != null && _plateAllocations.Count < 4)
+                                                            {
+                                                                <button class="btn btn-sm btn-ghost" style="font-size: 0.72rem; padding: 2px 6px;"
+                                                                        @onclick="() => AddPartToPlate(d)">+ Add</button>
+                                                            }
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </details>
+                            }
+                        }
+                    </div>
+                }
+
+                @* ══════════ Step 2: Program Details (Optional) ══════════ *@
+                @if (!_loading && _step == 2)
+                {
+                    <div class="wizard-content">
+                        <div class="card" style="padding: 12px; margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h4 style="margin: 0; font-size: 0.9rem; font-weight: 600;">Slicer Data</h4>
+                                <span style="font-size: 0.75rem; color: var(--text-muted);">Optional — can add later from Programs page</span>
+                            </div>
+
+                            <div class="advisor-slicer-grid">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label">Print Duration (hrs)</label>
+                                    <input class="form-control" type="number" step="0.1" min="0"
+                                           @bind="_slicerPrintHours" disabled="@_skipSlicerData" />
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label">Layer Count</label>
+                                    <input class="form-control" type="number" min="0"
+                                           @bind="_slicerLayerCount" disabled="@_skipSlicerData" />
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label">Build Height (mm)</label>
+                                    <input class="form-control" type="number" step="0.1" min="0"
+                                           @bind="_slicerBuildHeightMm" disabled="@_skipSlicerData" />
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label">Est. Powder (kg)</label>
+                                    <input class="form-control" type="number" step="0.1" min="0"
+                                           @bind="_slicerPowderKg" disabled="@_skipSlicerData" />
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label">Slicer Software</label>
+                                    <input class="form-control" @bind="_slicerSoftware" placeholder="e.g. Magics"
+                                           disabled="@_skipSlicerData" />
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label">Slicer Version</label>
+                                    <input class="form-control" @bind="_slicerVersion"
+                                           disabled="@_skipSlicerData" />
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 8px;">
+                                <label class="form-label">Slicer File Name</label>
+                                <input class="form-control" @bind="_slicerFileName" placeholder="e.g. build-plate-250325.slc"
+                                       disabled="@_skipSlicerData" />
+                            </div>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.82rem; cursor: pointer;">
+                                <input type="checkbox" @bind="_skipSlicerData" />
+                                Skip — I'll add slicer data later
+                            </label>
+                        </div>
+
+                        @* ── File Upload ── *@
+                        <div class="card" style="padding: 12px;">
+                            <h4 style="margin: 0 0 12px 0; font-size: 0.9rem; font-weight: 600;">Slice File Upload</h4>
+                            <div style="display: flex; gap: 8px; align-items: end;">
+                                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                    <InputFile OnChange="HandleSliceFileUpload"
+                                               accept=".3mf,.sls,.slice,.slc,.magics,.pdf,.step,.stp"
+                                               style="display: block;" />
+                                </div>
+                            </div>
+                            @if (_uploading)
+                            {
+                                <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 4px;">
+                                    <span class="spinner" style="width:12px;height:12px;margin-right:4px;"></span> Uploading...
+                                </div>
+                            }
+                            @if (_uploadedFiles.Any())
+                            {
+                                <div class="advisor-file-list">
+                                    @foreach (var f in _uploadedFiles)
+                                    {
+                                        <div class="advisor-file-item">
+                                            <span style="color: var(--success);">&#x2713;</span>
+                                            <span>@f.FileName</span>
+                                            <span style="color: var(--text-muted);">(@FormatFileSize(f.FileSizeBytes))</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        @if (_skipSlicerData)
+                        {
+                            <div class="advisor-slicer-note">
+                                Program will be created as Draft. You can add slicer data and files later from the Programs page.
+                            </div>
+                        }
+                    </div>
+                }
+
+                @* ══════════ Step 3: Confirm & Schedule ══════════ *@
+                @if (!_loading && _step == 3)
+                {
+                    <div class="wizard-content">
+                        @if (_plateAllocations.Any())
+                        {
+                            <div class="card" style="padding: 12px;">
+                                <h4 style="font-size: 0.9rem; font-weight: 600; margin-bottom: 12px;">Schedule Summary</h4>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
+                                    <div><span style="color: var(--text-muted);">Machine:</span> @(_selectedMachine?.Name ?? "Machine")</div>
+                                    <div><span style="color: var(--text-muted);">Print Time:</span> @EffectivePrintHours.ToString("F1")h</div>
+                                    <div><span style="color: var(--text-muted);">Start:</span> @ActiveSlot?.PrintStart.ToString("ddd MMM d, HH:mm")</div>
+                                    <div><span style="color: var(--text-muted);">Est. End:</span> @ActiveSlot?.PrintEnd.ToString("ddd MMM d, HH:mm")</div>
+                                    <div><span style="color: var(--text-muted);">Total Parts:</span> @_plateAllocations.Sum(a => a.TotalParts)</div>
+                                    <div><span style="color: var(--text-muted);">Part Types:</span> @_plateAllocations.Count</div>
+                                    <div>
+                                        <span style="color: var(--text-muted);">Changeover:</span>
+                                        @if (ActiveChangeoverAligned)
+                                        {
+                                            <span style="color: var(--success);">Safe — operator available</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--danger);">Risk — no operator</span>
+                                        }
+                                    </div>
+                                    @if (_uploadedFiles.Any())
+                                    {
+                                        <div><span style="color: var(--text-muted);">Files:</span> @_uploadedFiles.Count uploaded</div>
+                                    }
+                                </div>
+
+                                @* ── Parts on plate ── *@
+                                <div style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px;">
+                                    @foreach (var alloc in _plateAllocations)
+                                    {
+                                        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; padding: 2px 0;">
+                                            <span>@alloc.PartNumber</span>
+                                            <span>@alloc.TotalParts parts (@alloc.Positions pos x @alloc.StackLevel stack)</span>
+                                        </div>
+                                    }
+                                </div>
+
+                                @if (!_skipSlicerData && _slicerPrintHours.HasValue)
+                                {
+                                    <div style="margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; font-size: 0.82rem; color: var(--text-secondary);">
+                                        Slicer: @(_slicerPrintHours?.ToString("F1") ?? "?")h
+                                        @if (_slicerLayerCount.HasValue) { <span>&middot; @_slicerLayerCount layers</span> }
+                                        @if (_slicerBuildHeightMm.HasValue) { <span>&middot; @_slicerBuildHeightMm.Value.ToString("F1")mm</span> }
+                                        @if (!string.IsNullOrEmpty(_slicerSoftware)) { <span>&middot; @_slicerSoftware</span> }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="advisor-slicer-note">No slicer data — can add later from Programs page.</div>
+                                }
+                            </div>
+
+                            @* ── Downstream preview ── *@
+                            <div style="margin-top: 12px; padding: 10px; background: var(--bg-secondary); border-radius: 8px; font-size: 0.82rem;">
+                                <strong>After this build:</strong> Depowder + Wire EDM stages will be auto-scheduled.
+                                Per-part CNC jobs created after EDM for each part type.
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            @* ── Footer ── *@
+            <div class="modal-footer">
+                @if (_step > 0)
+                {
+                    <button class="btn btn-secondary" @onclick="GoBack" disabled="@_scheduling">Back</button>
+                }
+                <div style="flex:1;"></div>
+
+                @if (_step < 3)
+                {
+                    <button class="btn btn-primary" @onclick="AdvanceStep" disabled="@DisableNext">Next</button>
+                }
+                else
+                {
+                    <button class="btn btn-primary" @onclick="ScheduleAndCloseAsync" disabled="@(_scheduling || !_plateAllocations.Any())">
+                        @if (_scheduling) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                        Schedule This Build
+                    </button>
+                    <button class="btn btn-accent" @onclick="ScheduleAndQueueNextAsync" disabled="@(_scheduling || !_plateAllocations.Any())">
+                        @if (_scheduling) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                        Schedule & Queue Next
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public int? InitialMachineId { get; set; }
+    [Parameter] public int? InitialPartId { get; set; }
+    [Parameter] public string UserName { get; set; } = "System";
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnScheduled { get; set; }
+
+    private static readonly string[] _steps = ["Schedule Options", "Plate Composition", "Program Details", "Confirm"];
+
+    private int _step;
+    private bool _loading;
+    private bool _scheduling;
+    private int _sessionBuilds;
+    private int _selectedMachineId;
+    private DateTime? _startAfterOverride;
+    private bool _showPartPicker;
+
+    private BuildRecommendation? _recommendation;
+    private List<DemandSummary> _demand = [];
+
+    // Schedule options (Step 0)
+    private List<ScheduleOption> _scheduleOptions = [];
+    private ScheduleOption? _selectedOption;
+
+    // Mutable plate state (editable copy of the recommendation)
+    private List<EditablePlateAllocation> _plateAllocations = [];
+    private bool _plateEdited;
+    private List<string> _activeWarnings = [];
+
+    // Program details (Step 2)
+    private double? _slicerPrintHours;
+    private int? _slicerLayerCount;
+    private double? _slicerBuildHeightMm;
+    private double? _slicerPowderKg;
+    private string? _slicerSoftware;
+    private string? _slicerVersion;
+    private string? _slicerFileName;
+    private bool _skipSlicerData;
+    private bool _uploading;
+    private int? _createdProgramId;
+    private List<MachineProgramFile> _uploadedFiles = [];
+
+    // ── Computed ──
+
+    private List<Machine> SlsMachines => Machines.Where(m => m.IsAdditiveMachine && m.IsAvailableForScheduling).ToList();
+    private Machine? _selectedMachine => Machines.FirstOrDefault(m => m.Id == _selectedMachineId);
+
+    private List<DemandSummary> AvailablePartsForPlate => _demand
+        .Where(d => d.IsAdditive && d.NetRemaining > 0 && d.BuildConfig != null
+            && !_plateAllocations.Any(a => a.PartId == d.PartId))
+        .ToList();
+
+    private double EstimatedPrintHours
+    {
+        get
+        {
+            if (!_plateAllocations.Any()) return 0;
+            var maxHours = 0.0;
+            foreach (var alloc in _plateAllocations)
+            {
+                var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
+                var duration = config?.GetStackDuration(alloc.StackLevel) ?? config?.SingleStackDurationHours ?? 24;
+                maxHours = Math.Max(maxHours, duration);
+            }
+            return maxHours;
+        }
+    }
+
+    /// Print hours: use slicer data if entered, else config-derived estimate
+    private double EffectivePrintHours =>
+        (!_skipSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
+            ? _slicerPrintHours.Value : EstimatedPrintHours;
+
+    private ProgramScheduleSlot? ActiveSlot => _selectedOption?.Slot ?? _recommendation?.Slot;
+    private bool ActiveChangeoverAligned => _selectedOption?.ChangeoverAligned ?? _recommendation?.Plate.OperatorAvailable ?? true;
+
+    private bool DisableNext => _step switch
+    {
+        0 => _selectedOption == null && _recommendation == null,
+        1 => !_plateAllocations.Any(),
+        2 => false, // optional step
+        _ => true
+    };
+
+    private string StepTitle => _step switch
+    {
+        0 => "Next Build Advisor — Schedule Options",
+        1 => "Next Build Advisor — Plate Composition",
+        2 => "Next Build Advisor — Program Details",
+        3 => "Next Build Advisor — Confirm & Schedule",
+        _ => "Next Build Advisor"
+    };
+
+    // ── Lifecycle ──
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!IsVisible) return;
+
+        _step = 0;
+        _scheduling = false;
+        _startAfterOverride = null;
+        _showPartPicker = false;
+        _plateEdited = false;
+        _plateAllocations.Clear();
+        _scheduleOptions.Clear();
+        _selectedOption = null;
+        ResetProgramState();
+
+        _selectedMachineId = InitialMachineId
+            ?? SlsMachines.FirstOrDefault()?.Id ?? 0;
+
+        if (_selectedMachineId > 0)
+            await LoadRecommendationAsync();
+    }
+
+    private void ResetProgramState()
+    {
+        _slicerPrintHours = null;
+        _slicerLayerCount = null;
+        _slicerBuildHeightMm = null;
+        _slicerPowderKg = null;
+        _slicerSoftware = null;
+        _slicerVersion = null;
+        _slicerFileName = null;
+        _skipSlicerData = false;
+        _uploading = false;
+        _createdProgramId = null;
+        _uploadedFiles.Clear();
+    }
+
+    // ── Step 0: Loading ──
+
+    private async Task OnMachineChanged()
+    {
+        if (_selectedMachineId > 0)
+            await LoadRecommendationAsync();
+    }
+
+    private async Task LoadRecommendationAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            _demand = await Advisor.GetAggregateDemandAsync();
+
+            var slot = await ProgramScheduling.FindEarliestSlotAsync(
+                _selectedMachineId, 1, _startAfterOverride ?? DateTime.UtcNow);
+
+            var plate = await Advisor.OptimizePlateAsync(
+                _selectedMachineId, slot.PrintStart, _demand,
+                forcePrimaryPartId: InitialPartId);
+
+            if (plate.EstimatedPrintHours > 0)
+            {
+                slot = await ProgramScheduling.FindEarliestSlotAsync(
+                    _selectedMachineId, plate.EstimatedPrintHours,
+                    _startAfterOverride ?? DateTime.UtcNow);
+            }
+
+            var machine = _selectedMachine;
+            var warnings = new List<string>();
+            var rationale = BuildRationale(plate, machine);
+
+            if (!plate.OperatorAvailable && machine?.AutoChangeoverEnabled == true)
+                warnings.Add($"Changeover at {plate.ChangeoverTime:MMM d HH:mm} — no operator available. Machine may be down until next shift.");
+            foreach (var part in plate.Parts.Where(p => p.Surplus > 0))
+                warnings.Add($"{part.PartNumber}: {part.Surplus} surplus parts beyond current demand (will go to stock).");
+
+            _recommendation = new BuildRecommendation(
+                _selectedMachineId, machine?.Name ?? "Machine", slot, plate, rationale, warnings);
+
+            // Generate schedule options for changeover machines
+            _scheduleOptions.Clear();
+            _selectedOption = null;
+            if (machine?.AutoChangeoverEnabled == true)
+            {
+                var primary = _demand.FirstOrDefault(d => d.IsAdditive && d.NetRemaining > 0 && d.BuildConfig != null);
+                if (primary?.BuildConfig != null)
+                {
+                    var baseDuration = primary.BuildConfig.SingleStackDurationHours ?? 24;
+                    _scheduleOptions = await ProgramScheduling.GenerateScheduleOptionsAsync(
+                        _selectedMachineId, baseDuration,
+                        _startAfterOverride ?? DateTime.UtcNow,
+                        primary.BuildConfig, primary.NetRemaining);
+
+                    _selectedOption = _scheduleOptions.FirstOrDefault();
+                }
+            }
+
+            InitializePlateFromRecommendation();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Advisor error: {ex.Message}");
+            _recommendation = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnOptionSelected(ScheduleOption option)
+    {
+        _selectedOption = option;
+    }
+
+    // ── Plate management ──
+
+    private void InitializePlateFromRecommendation()
+    {
+        _plateAllocations = _recommendation?.Plate.Parts.Select(p => new EditablePlateAllocation
+        {
+            PartId = p.PartId,
+            PartNumber = p.PartNumber,
+            Positions = p.Positions,
+            StackLevel = p.StackLevel,
+            DemandRemaining = p.DemandRemaining,
+            WorkOrderLineId = p.WorkOrderLineId,
+            WoDueDate = p.WoDueDate
+        }).ToList() ?? [];
+
+        _plateEdited = false;
+        _activeWarnings = _recommendation?.Warnings.ToList() ?? [];
+        _showPartPicker = false;
+        RecalculateWarnings();
+    }
+
+    private void ApplySelectedOptionToPlate()
+    {
+        if (_selectedOption == null) return;
+        foreach (var alloc in _plateAllocations)
+        {
+            var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
+            if (config == null) continue;
+            var levels = config.AvailableStackLevels;
+            alloc.StackLevel = levels.Contains(_selectedOption.StackLevel)
+                ? _selectedOption.StackLevel : levels.First();
+            var maxPos = config.GetPositionsPerBuild(alloc.StackLevel);
+            var needed = (int)Math.Ceiling((double)alloc.DemandRemaining / alloc.StackLevel);
+            alloc.Positions = Math.Min(maxPos, Math.Max(1, needed));
+        }
+        _plateEdited = false;
+        RecalculateWarnings();
+    }
+
+    private void ResetToRecommendation()
+    {
+        InitializePlateFromRecommendation();
+        if (_selectedOption != null) ApplySelectedOptionToPlate();
+    }
+
+    private void OnStackLevelChanged(int index, int newLevel)
+    {
+        if (index < 0 || index >= _plateAllocations.Count) return;
+        var alloc = _plateAllocations[index];
+        alloc.StackLevel = newLevel;
+
+        var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
+        if (config != null)
+        {
+            var maxPos = config.GetPositionsPerBuild(newLevel);
+            var needed = (int)Math.Ceiling((double)alloc.DemandRemaining / newLevel);
+            alloc.Positions = Math.Min(maxPos, Math.Max(1, needed));
+        }
+
+        _plateEdited = true;
+        RecalculateWarnings();
+    }
+
+    private void OnPositionsChanged(int index, int newPositions)
+    {
+        if (index < 0 || index >= _plateAllocations.Count) return;
+        _plateAllocations[index].Positions = Math.Max(1, newPositions);
+        _plateEdited = true;
+        RecalculateWarnings();
+    }
+
+    private void RemoveFromPlate(int index)
+    {
+        if (index < 0 || index >= _plateAllocations.Count) return;
+        _plateAllocations.RemoveAt(index);
+        _plateEdited = true;
+        RecalculateWarnings();
+    }
+
+    private void AddPartToPlate(DemandSummary d)
+    {
+        if (_plateAllocations.Any(a => a.PartId == d.PartId)) return;
+        if (d.BuildConfig == null) return;
+
+        var primaryLevel = _selectedOption?.StackLevel ?? _plateAllocations.FirstOrDefault()?.StackLevel ?? 1;
+        var levels = d.BuildConfig.AvailableStackLevels;
+        var level = levels.Contains(primaryLevel) ? primaryLevel : levels.First();
+
+        var perBuild = d.BuildConfig.GetPositionsPerBuild(level);
+        var needed = (int)Math.Ceiling((double)d.NetRemaining / level);
+        var positions = Math.Min(perBuild, Math.Max(1, needed));
+
+        _plateAllocations.Add(new EditablePlateAllocation
+        {
+            PartId = d.PartId,
+            PartNumber = d.PartNumber,
+            Positions = positions,
+            StackLevel = level,
+            DemandRemaining = d.NetRemaining,
+            WorkOrderLineId = d.SourceLines.FirstOrDefault()?.WorkOrderLineId,
+            WoDueDate = d.EarliestDueDate
+        });
+
+        _plateEdited = true;
+        _showPartPicker = false;
+        RecalculateWarnings();
+    }
+
+    private void OnAddPartSelected(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (string.IsNullOrEmpty(val)) return;
+        if (!int.TryParse(val, out var partId)) return;
+        var d = _demand.FirstOrDefault(x => x.PartId == partId);
+        if (d != null) AddPartToPlate(d);
+    }
+
+    private void RecalculateWarnings()
+    {
+        _activeWarnings.Clear();
+        foreach (var alloc in _plateAllocations)
+        {
+            if (alloc.Surplus > 0)
+                _activeWarnings.Add($"{alloc.PartNumber}: {alloc.Surplus} surplus parts beyond current demand (will go to stock).");
+        }
+
+        if (_selectedOption != null && !_selectedOption.ChangeoverAligned)
+        {
+            _activeWarnings.Add($"Changeover at {_selectedOption.Slot.ChangeoverStart:MMM d HH:mm} — no operator available.");
+        }
+        else if (_recommendation != null && !_recommendation.Plate.OperatorAvailable && _selectedOption == null)
+        {
+            var machine = _selectedMachine;
+            if (machine?.AutoChangeoverEnabled == true)
+                _activeWarnings.Add($"Changeover at {_recommendation.Plate.ChangeoverTime:MMM d HH:mm} — no operator available.");
+        }
+    }
+
+    // ── Step navigation ──
+
+    private async Task AdvanceStep()
+    {
+        if (_step == 0) ApplySelectedOptionToPlate();
+        if (_step == 1) await CreateDraftProgramAsync();
+        _step++;
+    }
+
+    private void GoBack()
+    {
+        if (_step > 0) _step--;
+    }
+
+    // ── Program creation (Step 2) ──
+
+    private async Task CreateDraftProgramAsync()
+    {
+        if (_createdProgramId.HasValue) return; // already created
+
+        var partNames = string.Join("+", _plateAllocations.Select(a => a.PartNumber));
+        var newProgram = new MachineProgram
+        {
+            Name = $"{partNames}-{DateTime.UtcNow:yyMMdd}",
+            ProgramType = ProgramType.BuildPlate,
+            MachineId = _selectedMachineId,
+            EstimatedPrintHours = EstimatedPrintHours,
+            CreatedBy = UserName,
+            LastModifiedBy = UserName,
+            ProgramParts = _plateAllocations.Select(a => new ProgramPart
+            {
+                PartId = a.PartId,
+                Quantity = a.Positions,
+                StackLevel = a.StackLevel,
+                WorkOrderLineId = a.WorkOrderLineId
+            }).ToList()
+        };
+
+        var program = await ProgramPlanning.CreateBuildPlateAsync(newProgram, UserName);
+        _createdProgramId = program.Id;
+        _slicerPrintHours = EstimatedPrintHours;
+    }
+
+    private async Task HandleSliceFileUpload(InputFileChangeEventArgs e)
+    {
+        if (!_createdProgramId.HasValue) return;
+        _uploading = true;
+        StateHasChanged();
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+            var uploaded = await ProgramService.UploadFileAsync(
+                _createdProgramId.Value, file.Name, stream, file.Size, UserName);
+            _uploadedFiles.Add(uploaded);
+            Toast.ShowSuccess($"File {file.Name} uploaded.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Upload failed: {ex.Message}"); }
+        finally { _uploading = false; }
+    }
+
+    // ── Scheduling ──
+
+    private async Task ScheduleAndCloseAsync()
+    {
+        if (await ExecuteScheduleAsync())
+        {
+            await OnScheduled.InvokeAsync();
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task ScheduleAndQueueNextAsync()
+    {
+        if (await ExecuteScheduleAsync())
+        {
+            _step = 0;
+            _startAfterOverride = ActiveSlot?.PrintEnd;
+            _plateEdited = false;
+            _scheduleOptions.Clear();
+            _selectedOption = null;
+            ResetProgramState();
+            await LoadRecommendationAsync();
+        }
+    }
+
+    private async Task<bool> ExecuteScheduleAsync()
+    {
+        if (!_plateAllocations.Any()) return false;
+        _scheduling = true;
+        StateHasChanged();
+
+        try
+        {
+            // Ensure draft program exists
+            if (!_createdProgramId.HasValue)
+                await CreateDraftProgramAsync();
+
+            // Apply slicer data → transitions Draft to Ready
+            if (!_skipSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
+            {
+                await ProgramPlanning.UpdateSlicerDataAsync(
+                    _createdProgramId!.Value, _slicerPrintHours,
+                    _slicerLayerCount, _slicerBuildHeightMm, _slicerPowderKg,
+                    _slicerFileName, _slicerSoftware, _slicerVersion);
+            }
+            else
+            {
+                // Minimum: set EstimatedPrintHours so scheduling can proceed
+                await ProgramPlanning.UpdateSlicerDataAsync(
+                    _createdProgramId!.Value, EstimatedPrintHours);
+            }
+
+            var scheduleStart = ActiveSlot?.PrintStart ?? DateTime.UtcNow;
+            await ProgramScheduling.ScheduleBuildPlateAsync(
+                _createdProgramId!.Value, _selectedMachineId, scheduleStart);
+
+            _sessionBuilds++;
+            var machine = _selectedMachine;
+            Toast.ShowSuccess($"Build scheduled: {_plateAllocations.Sum(a => a.TotalParts)} parts on {machine?.Name ?? "machine"}");
+            _createdProgramId = null; // prevent cleanup on close
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Schedule failed: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            _scheduling = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        // Clean up orphan Draft if we created one but didn't schedule
+        if (_createdProgramId.HasValue)
+        {
+            try { await ProgramPlanning.DeleteBuildPlateAsync(_createdProgramId.Value); }
+            catch { /* best effort cleanup */ }
+        }
+
+        if (_sessionBuilds > 0)
+            await OnScheduled.InvokeAsync();
+        await OnClose.InvokeAsync();
+    }
+
+    // ── Helpers ──
+
+    private static string BuildRationale(PlateComposition plate, Machine? machine)
+    {
+        var parts = plate.Parts;
+        if (!parts.Any()) return "No demand found.";
+
+        var primary = parts[0];
+        var rationale = $"Print {primary.TotalParts}x {primary.PartNumber}";
+        if (parts.Count > 1)
+            rationale += $" + {parts.Skip(1).Sum(p => p.TotalParts)} mixed parts ({parts.Count} types)";
+
+        rationale += $" — {plate.EstimatedPrintHours:F1}h, {(plate.RecommendedStackLevel > 1 ? $"{plate.RecommendedStackLevel}x stack" : "single stack")}";
+        return rationale;
+    }
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
+    };
+
+    // ── Editable allocation model ──
+
+    private class EditablePlateAllocation
+    {
+        public int PartId { get; set; }
+        public string PartNumber { get; set; } = "";
+        public int Positions { get; set; }
+        public int StackLevel { get; set; } = 1;
+        public int DemandRemaining { get; set; }
+        public int? WorkOrderLineId { get; set; }
+        public DateTime? WoDueDate { get; set; }
+
+        public int TotalParts => Positions * StackLevel;
+        public int Surplus => Math.Max(0, TotalParts - DemandRemaining);
+    }
+}

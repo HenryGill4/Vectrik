@@ -25,13 +25,16 @@ public class MachineSyncService : BackgroundService
             try
             {
                 await PollAllMachinesAsync(stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during machine state polling.");
             }
-
-            await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
         }
     }
 

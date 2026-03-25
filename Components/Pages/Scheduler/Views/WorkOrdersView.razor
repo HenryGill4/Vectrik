@@ -22,6 +22,13 @@
         var overdueWos = WorkOrders.Where(w => w.DueDate.Date < today && w.Lines.Any(l => GetOutstanding(l) > 0)).ToList();
         var thisWeekWos = WorkOrders.Where(w => w.DueDate.Date >= today && w.DueDate.Date < endOfWeek).ToList();
         var nextWeekWos = WorkOrders.Where(w => w.DueDate.Date >= endOfWeek && w.DueDate.Date < endOfNextWeek).ToList();
+        var sortedWos = GetFilteredWorkOrders()
+            .OrderBy(w => w.Lines.Sum(l => GetOutstanding(l)) <= 0 ? 1 : 0)
+            .ThenBy(w => w.DueDate)
+            .ToList();
+        var unfulfilledCount = sortedWos.Count(w => w.Lines.Sum(l => GetOutstanding(l)) > 0);
+        var fulfilledCount = sortedWos.Count - unfulfilledCount;
+        var prevFulfilled = false;
     }
 
     @if (!WorkOrders.Any())
@@ -94,18 +101,33 @@
                 <button class="btn btn-sm btn-ghost" @onclick="() => _statFilter = null">✕ Clear filter</button>
             </div>
         }
+        @* ── Sort: unfulfilled first (by due date), then fulfilled ── *@
         <div class="wo-demand-list">
-            @foreach (var wo in GetFilteredWorkOrders().OrderBy(w => w.DueDate))
+            @foreach (var wo in sortedWos)
             {
                 var daysUntilDue = (wo.DueDate.Date - DateTime.UtcNow.Date).Days;
                 var dueClass = daysUntilDue < 0 ? "wo-card--overdue" : (daysUntilDue <= 3 ? "wo-card--urgent" : "");
                 var woOutstanding = wo.Lines.Sum(l => GetOutstanding(l));
+                var isFulfilled = woOutstanding <= 0;
 
-                <div class="wo-demand-card @dueClass">
+                @* Section divider between unfulfilled and fulfilled *@
+                if (isFulfilled && !prevFulfilled && unfulfilledCount > 0)
+                {
+                    prevFulfilled = true;
+                    <div class="wo-section-divider">
+                        <span class="wo-section-label">Fulfilled (@fulfilledCount)</span>
+                    </div>
+                }
+
+                <div class="wo-demand-card @dueClass @(isFulfilled ? "wo-card--fulfilled" : "")">
                     <div class="wo-card-header">
                         <div class="wo-card-title">
                             <a href="/workorders/@wo.Id" class="wo-card-number">@wo.OrderNumber</a>
                             <span class="wo-card-customer">@wo.CustomerName</span>
+                            @if (!string.IsNullOrEmpty(wo.CustomerPO))
+                            {
+                                <span class="wo-card-po">PO: @wo.CustomerPO</span>
+                            }
                         </div>
                         <div class="wo-card-meta">
                             <span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span>
@@ -125,117 +147,155 @@
                         </div>
                     </div>
 
-                    @if (woOutstanding <= 0)
+                    @if (isFulfilled)
                     {
                         <div class="wo-card-fulfilled">
-                            <span>✅ All parts produced or scheduled</span>
+                            <span>All parts produced or scheduled</span>
+                            <span class="wo-card-fulfilled-summary">
+                                @wo.Lines.Sum(l => l.ProducedQuantity) produced,
+                                @wo.Lines.Sum(l => l.ShippedQuantity) shipped
+                                of @wo.Lines.Sum(l => l.Quantity) ordered
+                            </span>
                         </div>
                     }
                     else
                     {
                         var linesNeedingSchedule = wo.Lines.Where(l => GetOutstanding(l) > 0).ToList();
+                        var slsLines = linesNeedingSchedule.Where(l => IsAdditiveLine(l)).ToList();
+                        var cncLines = linesNeedingSchedule.Where(l => !IsAdditiveLine(l)).ToList();
                         <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
-                            @if (linesNeedingSchedule.Any())
+                            @if (slsLines.Any())
                             {
-                                <button class="btn btn-sm btn-accent" @onclick="() => OpenWizard(wo)" title="Open unified wizard to schedule all outstanding parts">
-                                    Schedule All (@linesNeedingSchedule.Count lines)
+                                <button class="btn btn-sm btn-accent" @onclick="() => OpenAdvisorForPart(slsLines.First().PartId)" title="Open Build Advisor for SLS parts">
+                                    Schedule Builds (@slsLines.Count SLS)
+                                </button>
+                            }
+                            @if (cncLines.Any())
+                            {
+                                <button class="btn btn-sm btn-primary" @onclick="() => OpenWizard(wo)" title="Schedule CNC jobs">
+                                    Schedule Jobs (@cncLines.Count CNC)
                                 </button>
                             }
                         </div>
-                        <div class="wo-card-lines">
-                            @foreach (var line in wo.Lines.OrderByDescending(l => GetOutstanding(l)))
-                            {
-                                var outstanding = GetOutstanding(line);
-                                var isAdditive = IsAdditiveLine(line);
-                                var hasJobs = HasExistingJobs(line);
-                                var inPrograms = GetInProgramQty(line);
-                                var inProduction = GetInProductionQty(line);
-                                var progressPct = line.Quantity > 0 ? Math.Min(100, line.ProducedQuantity * 100.0 / line.Quantity) : 0;
-                                var prodPct = line.Quantity > 0 ? Math.Min(100 - progressPct, inProduction * 100.0 / line.Quantity) : 0;
-                                var programPct = line.Quantity > 0 ? Math.Min(100 - progressPct - prodPct, inPrograms * 100.0 / line.Quantity) : 0;
-
-                                <div class="wo-line-row @(outstanding <= 0 ? "wo-line-row--done" : "")">
-                                    <div class="wo-line-info">
-                                        <div class="wo-line-part">
-                                            <span class="wo-line-type-badge @(isAdditive ? "wo-line-type--sls" : "wo-line-type--cnc")">
-                                                @(isAdditive ? "🖨️ SLS" : "⚙️ CNC")
-                                            </span>
-                                            <span class="wo-line-partnum">@(line.Part?.PartNumber ?? "?")</span>
-                                            <span class="wo-line-partname">@(line.Part?.Name ?? "")</span>
-                                        </div>
-                                         <div class="wo-line-qty">
-                                            <span class="wo-line-qty-detail">@line.ProducedQuantity / @line.Quantity</span>
-                                            @if (inProduction > 0)
-                                            {
-                                                <span style="color: var(--warning); font-size: 0.75rem;">⚙️ @inProduction in jobs</span>
-                                            }
-                                            @if (inPrograms > 0)
-                                            {
-                                                <span style="color: var(--accent); font-size: 0.75rem;">🖨️ @inPrograms in programs</span>
-                                            }
-                                            @if (outstanding > 0)
-                                            {
-                                                <span class="wo-line-outstanding">@outstanding remaining</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="wo-line-complete">✅ Covered</span>
-                                            }
-                                        </div>
-                                    </div>
-
-                                    @* Progress bar: produced (green) + in-production (yellow) + in-programs (blue) *@
-                                    <div class="wo-line-progress">
-                                        <div style="display: flex; height: 100%;">
-                                            @if (progressPct > 0)
-                                            {
-                                                <div class="wo-line-progress-fill" style="width: @progressPct.ToString("F0")%;"></div>
-                                            }
-                                            @if (prodPct > 0)
-                                            {
-                                                <div class="wo-line-progress-prod" style="width: @prodPct.ToString("F0")%;"></div>
-                                            }
-                                            @if (programPct > 0)
-                                            {
-                                                <div class="wo-line-progress-build" style="width: @programPct.ToString("F0")%;"></div>
-                                            }
-                                        </div>
-                                    </div>
-
-                                    @* Actions *@
-                                    @if (outstanding > 0)
-                                    {
-                                        <div class="wo-line-actions">
-                                            @if (hasJobs)
-                                            {
-                                                <span class="badge badge-info" style="font-size:0.7rem;">Jobs exist</span>
-                                            }
-                                            <button class="btn btn-sm btn-primary" @onclick="() => OpenWizardForLine(wo, line)" title="Schedule this part">
-                                                @(isAdditive ? "Schedule Build" : "Schedule Job")
-                                            </button>
-                                            @if (inPrograms > 0)
-                                            {
-                                                <span class="badge badge-accent" style="font-size: 0.7rem;">@inPrograms in programs</span>
-                                            }
-                                            @if (HasUnscheduledJobs(line))
-                                            {
-                                                <button class="btn btn-sm btn-secondary" @onclick="() => AutoScheduleLineJobsAsync(line)" title="Auto-schedule draft jobs">
-                                                    Auto-Schedule
-                                                </button>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        </div>
                     }
+
+                    @* ── Line details (always shown) ── *@
+                    <div class="wo-card-lines">
+                        @foreach (var line in wo.Lines.OrderByDescending(l => GetOutstanding(l)))
+                        {
+                            var outstanding = GetOutstanding(line);
+                            var isAdditive = IsAdditiveLine(line);
+                            var hasJobs = HasExistingJobs(line);
+                            var inPrograms = GetInProgramQty(line);
+                            var inProduction = GetInProductionQty(line);
+                            var progressPct = line.Quantity > 0 ? Math.Min(100, line.ProducedQuantity * 100.0 / line.Quantity) : 0;
+                            var prodPct = line.Quantity > 0 ? Math.Min(100 - progressPct, inProduction * 100.0 / line.Quantity) : 0;
+                            var programPct = line.Quantity > 0 ? Math.Min(100 - progressPct - prodPct, inPrograms * 100.0 / line.Quantity) : 0;
+
+                            <div class="wo-line-row @(outstanding <= 0 ? "wo-line-row--done" : "")">
+                                <div class="wo-line-info">
+                                    <div class="wo-line-part">
+                                        <span class="wo-line-type-badge @(isAdditive ? "wo-line-type--sls" : "wo-line-type--cnc")">
+                                            @(isAdditive ? "SLS" : "CNC")
+                                        </span>
+                                        <a href="/parts/@line.PartId" class="wo-line-partnum" title="View part detail">@(line.Part?.PartNumber ?? "?")</a>
+                                        <span class="wo-line-partname">@(line.Part?.Name ?? "")</span>
+                                        <span class="wo-line-links">
+                                            <a href="/parts/@line.PartId" class="wo-quick-link" title="Part detail">Part</a>
+                                            <a href="/inventory" class="wo-quick-link" title="Inventory dashboard">Inventory</a>
+                                        </span>
+                                    </div>
+                                    <div class="wo-line-qty">
+                                        <span class="wo-line-qty-detail" title="Produced / Ordered">@line.ProducedQuantity / @line.Quantity</span>
+                                        @if (line.ShippedQuantity > 0)
+                                        {
+                                            <span class="wo-line-shipped">@line.ShippedQuantity shipped</span>
+                                        }
+                                        @if (inProduction > 0)
+                                        {
+                                            <span style="color: var(--warning); font-size: 0.75rem;">@inProduction in jobs</span>
+                                        }
+                                        @if (inPrograms > 0)
+                                        {
+                                            <span style="color: var(--accent); font-size: 0.75rem;">@inPrograms in programs</span>
+                                        }
+                                        @if (outstanding > 0)
+                                        {
+                                            <span class="wo-line-outstanding">@outstanding remaining</span>
+                                            @if (isAdditive)
+                                            {
+                                                var buildConfig = line.Part?.AdditiveBuildConfig;
+                                                var perBuild = buildConfig?.PlannedPartsPerBuildSingle ?? 0;
+                                                if (perBuild > 0)
+                                                {
+                                                    var buildsNeeded = (int)Math.Ceiling((double)outstanding / perBuild);
+                                                    <span class="wo-line-builds-needed">@buildsNeeded build@(buildsNeeded != 1 ? "s" : "") needed</span>
+                                                }
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="wo-line-complete">Covered</span>
+                                        }
+                                    </div>
+                                </div>
+
+                                @* Progress bar: produced (green) + in-production (yellow) + in-programs (blue) *@
+                                <div class="wo-line-progress">
+                                    <div style="display: flex; height: 100%;">
+                                        @if (progressPct > 0)
+                                        {
+                                            <div class="wo-line-progress-fill" style="width: @progressPct.ToString("F0")%;"></div>
+                                        }
+                                        @if (prodPct > 0)
+                                        {
+                                            <div class="wo-line-progress-prod" style="width: @prodPct.ToString("F0")%;"></div>
+                                        }
+                                        @if (programPct > 0)
+                                        {
+                                            <div class="wo-line-progress-build" style="width: @programPct.ToString("F0")%;"></div>
+                                        }
+                                    </div>
+                                </div>
+
+                                @* Actions *@
+                                @if (outstanding > 0)
+                                {
+                                    <div class="wo-line-actions">
+                                        @if (hasJobs)
+                                        {
+                                            <span class="badge badge-info" style="font-size:0.7rem;">Jobs exist</span>
+                                        }
+                                        @if (isAdditive)
+                                        {
+                                            <button class="btn btn-sm btn-accent" @onclick="() => OpenAdvisorForPart(line.PartId)" title="Open Build Advisor for this part">
+                                                Schedule Build
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-primary" @onclick="() => OpenWizardForLine(wo, line)" title="Schedule CNC job">
+                                                Schedule Job
+                                            </button>
+                                        }
+                                        @if (HasUnscheduledJobs(line))
+                                        {
+                                            <button class="btn btn-sm btn-secondary" @onclick="() => AutoScheduleLineJobsAsync(line)" title="Auto-schedule draft jobs">
+                                                Auto-Schedule
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                 </div>
             }
         </div>
     }
 </div>
 
-@* ── Unified Schedule Wizard ── *@
+@* ── CNC Schedule Wizard ── *@
 <UnifiedScheduleWizard
     IsVisible="_showWizard"
     WorkOrder="_wizardWo"
@@ -245,6 +305,15 @@
     OnClose="() => { _showWizard = false; }"
     OnScheduled="OnModalConfirmedAsync" />
 
+@* ── SLS Build Advisor ── *@
+<NextBuildAdvisor
+    IsVisible="_showAdvisor"
+    Machines="SlsMachines"
+    InitialPartId="_advisorPartId"
+    UserName="@UserName"
+    OnClose="() => { _showAdvisor = false; }"
+    OnScheduled="OnAdvisorConfirmedAsync" />
+
 @code {
     [Parameter, EditorRequired] public List<WorkOrder> WorkOrders { get; set; } = [];
     [Parameter] public List<MachineProgram> Programs { get; set; } = [];
@@ -253,10 +322,14 @@
     [Parameter] public bool ShowOverdueOnly { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
-    // Unified wizard state
+    // CNC wizard state
     private bool _showWizard;
     private WorkOrder? _wizardWo;
     private List<WorkOrderLine>? _wizardLines;
+
+    // SLS advisor state
+    private bool _showAdvisor;
+    private int? _advisorPartId;
 
     // Stat filter
     private string? _statFilter;
@@ -269,6 +342,18 @@
     {
         _showWizard = false;
         await OnRefreshRequested.InvokeAsync();
+    }
+
+    private async Task OnAdvisorConfirmedAsync()
+    {
+        _showAdvisor = false;
+        await OnRefreshRequested.InvokeAsync();
+    }
+
+    private void OpenAdvisorForPart(int partId)
+    {
+        _advisorPartId = partId;
+        _showAdvisor = true;
     }
 
     private void ToggleStatFilter(string filter)
@@ -309,15 +394,16 @@
     }
 
     /// <summary>
-    /// Quantity covered by active MachinePrograms (program-based scheduling).
+    /// Quantity covered by active MachinePrograms linked to THIS specific WO line.
+    /// Uses the line's ProgramParts navigation (loaded via Include) so programs
+    /// fulfilling other WO lines for the same part are not double-counted.
     /// </summary>
-    private int GetInProgramQty(WorkOrderLine line)
+    private static int GetInProgramQty(WorkOrderLine line)
     {
-        return Programs
-            .Where(p => p.ScheduleStatus is not (ProgramScheduleStatus.Completed or ProgramScheduleStatus.Cancelled)
-                && p.ProgramParts != null
-                && p.ProgramParts.Any(pp => pp.PartId == line.PartId))
-            .SelectMany(p => p.ProgramParts!.Where(pp => pp.PartId == line.PartId))
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus is not (ProgramScheduleStatus.Completed or ProgramScheduleStatus.Cancelled))
             .Sum(pp => pp.Quantity * pp.StackLevel);
     }
 

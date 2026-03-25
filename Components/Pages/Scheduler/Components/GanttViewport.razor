@@ -108,7 +108,7 @@
             }
             catch (JSException ex)
             {
-                Console.WriteLine($"Zoom sync failed: {ex.Message}");
+                // JS interop recovery — self-heals on next render
             }
             catch (ObjectDisposedException) { }
         }
@@ -127,7 +127,7 @@
             }
             catch (JSException ex)
             {
-                Console.WriteLine($"Viewport reinit failed: {ex.Message}");
+                // JS interop recovery — self-heals on next render
             }
             catch (ObjectDisposedException) { }
         }
@@ -146,7 +146,7 @@
         }
         catch (JSException ex)
         {
-            Console.WriteLine($"InitViewportAsync failed: {ex.Message}");
+            // JS interop recovery — self-heals on next render
         }
     }
 
@@ -157,10 +157,14 @@
         {
             try { await _jsModule.InvokeVoidAsync("dispose"); }
             catch (JSDisconnectedException) { }
+            catch (JSException) { }
             catch (ObjectDisposedException) { }
+            catch (TaskCanceledException) { }
             try { await _jsModule.DisposeAsync(); }
             catch (JSDisconnectedException) { }
+            catch (JSException) { }
             catch (ObjectDisposedException) { }
+            catch (TaskCanceledException) { }
         }
         _dotNetRef?.Dispose();
     }
@@ -333,7 +337,8 @@
         var cursor = DataRangeStart;
         var limit = DataRangeEnd;
 
-        for (int dayOffset = 0; cursor < limit && dayOffset < 120; dayOffset++)
+        var maxDays = (int)(DataRangeEnd - DataRangeStart).TotalDays + 2;
+        for (int dayOffset = 0; cursor < limit && dayOffset < maxDays; dayOffset++)
         {
             var checkDate = DataRangeStart.Date.AddDays(dayOffset);
             if (checkDate > limit) break;

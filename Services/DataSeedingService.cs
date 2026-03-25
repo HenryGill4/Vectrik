@@ -1093,6 +1093,8 @@ public class DataSeedingService : IDataSeedingService
             ["scheduler.gantt_default_zoom"] = ("6.0", "Scheduler UI", "Default pixels-per-hour zoom on the Gantt chart"),
             ["builds.name_template"] = ("{PARTS}-{DATE}-{SEQ}", "Builds", "Template for auto-generated build names. Tokens: {PARTS}, {MACHINE}, {DATE}, {SEQ}, {MATERIAL}"),
             ["builds.default_batch_capacity"] = ("60", "Builds", "Default batch capacity for new manufacturing processes"),
+            ["scheduler.max_part_types_per_plate"] = ("4", "Scheduling", "Maximum number of different part types allowed on a single build plate"),
+            ["scheduler.auto_create_downstream_programs"] = ("true", "Scheduling", "Automatically create placeholder downstream programs when scheduling builds"),
         };
 
         var existingKeys = await db.SystemSettings
