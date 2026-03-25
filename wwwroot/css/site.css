@@ -1233,10 +1233,16 @@ select.form-control {
 .alert-warning { background: rgba(var(--warning-rgb),0.1); border: 1px solid rgba(var(--warning-rgb),0.3); color: var(--alert-warning-text); }
 .alert-info { background: rgba(var(--accent-rgb),0.1); border: 1px solid rgba(var(--accent-rgb),0.3); color: var(--alert-info-text); }
 
+/* Sidebar backdrop (mobile only, visible when sidebar is open) */
+.sidebar-backdrop {
+    display: none;
+}
+
 /* Responsive: mobile sidebar -> off-canvas */
 @media (max-width: 768px) {
     .sidebar {
         transform: translateX(-100%);
+        width: 280px;
     }
 
     /* On mobile, sidebar-collapsed toggles open (reversed from desktop) */
@@ -1246,14 +1252,28 @@ select.form-control {
 
     .sidebar-collapsed .sidebar {
         transform: translateX(0);
+        box-shadow: var(--shadow-lg);
+    }
+
+    /* Backdrop overlay when sidebar is open */
+    .sidebar-collapsed .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 99;
     }
 
     .main-area {
         margin-left: 0 !important;
     }
 
+    /* Show hamburger in tab bar, show close button in sidebar header */
     .mobile-menu-btn { display: flex; }
-    .sidebar-toggle { display: none; }
+    .sidebar-toggle {
+        display: flex;
+        font-size: 1rem;
+    }
 
     .content-area { padding: 16px; }
 
