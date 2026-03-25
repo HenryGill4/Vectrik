@@ -11,9 +11,9 @@
     </div>
     <div class="alert alert-warning" style="margin-bottom: 12px;">Each part must be assigned a unique serial number at this stage.</div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
-        <div class="form-group"><label class="form-label">Serial Number</label><input class="form-control" placeholder="Scan or enter serial..." inputmode="text" /></div>
-        <div class="form-group"><label class="form-label">Engraving Power (%)</label><input class="form-control" type="number" min="10" max="100" value="80" inputmode="numeric" /></div>
-        <div class="form-group"><label class="form-label">Engraving Speed (mm/s)</label><input class="form-control" type="number" min="100" max="5000" value="1000" inputmode="numeric" /></div>
+        <div class="form-group"><label class="form-label">Serial Number</label><input class="form-control" placeholder="Scan or enter serial..." inputmode="text" @bind="_serialNumber" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Engraving Power (%)</label><input class="form-control" type="number" min="10" max="100" inputmode="numeric" @bind="_engravingPower" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Engraving Speed (mm/s)</label><input class="form-control" type="number" min="100" max="5000" inputmode="numeric" @bind="_engravingSpeed" @bind:after="NotifyDataChanged" /></div>
     </div>
 </div>
 
@@ -22,6 +22,34 @@
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
+    [Parameter] public EventCallback<Dictionary<string, object?>> OnDataChanged { get; set; }
+    [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
+    private string _serialNumber = "";
+    private int _engravingPower = 80;
+    private int _engravingSpeed = 1000;
     private string _operatorName => Execution?.OperatorName ?? "Operator";
+
+    protected override void OnParametersSet()
+    {
+        HydrateFromInitialValues();
+    }
+
+    private void HydrateFromInitialValues()
+    {
+        if (InitialValues == null) return;
+        if (InitialValues.TryGetValue("serialNumber", out var sn) && sn is string snStr) _serialNumber = snStr;
+        if (InitialValues.TryGetValue("engravingPower", out var ep) && ep is int epInt) _engravingPower = epInt;
+        if (InitialValues.TryGetValue("engravingSpeed", out var es) && es is int esInt) _engravingSpeed = esInt;
+    }
+
+    private async Task NotifyDataChanged()
+    {
+        await OnDataChanged.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["serialNumber"] = _serialNumber,
+            ["engravingPower"] = _engravingPower,
+            ["engravingSpeed"] = _engravingSpeed
+        });
+    }
 }

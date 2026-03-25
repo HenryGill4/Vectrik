@@ -146,6 +146,10 @@ public class TenantDbContext : DbContext
     // Part Pricing
     public DbSet<PartPricing> PartPricings { get; set; }
 
+    // Shipping
+    public DbSet<Shipment> Shipments { get; set; }
+    public DbSet<ShipmentLine> ShipmentLines { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

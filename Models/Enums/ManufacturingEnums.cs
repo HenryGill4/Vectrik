@@ -226,3 +226,10 @@ public enum ProgramFeedbackStatus { New, Acknowledged, InReview, Resolved, WontF
 
 /// <summary>Purpose tag for build variations in scheduling.</summary>
 public enum BuildPurpose { Weekday, Weekend, ChangeoverBackup, DemandFill, Custom }
+
+public enum ShipmentStatus
+{
+    Preparing,
+    Shipped,
+    Delivered
+}

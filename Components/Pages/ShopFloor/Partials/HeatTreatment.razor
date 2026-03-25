@@ -10,11 +10,16 @@
         <div><span class="form-label">Material</span><div>@(Execution?.Job?.SlsMaterial ?? "—")</div></div>
     </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-        <div class="form-group"><label class="form-label">Batch Quantity</label><input class="form-control" type="number" inputmode="numeric" min="1" /></div>
-        <div class="form-group"><label class="form-label">Oven Temperature (°C)</label><input class="form-control" type="number" inputmode="numeric" min="0" /></div>
-        <div class="form-group"><label class="form-label">Hold Time (hrs)</label><input class="form-control" type="number" step="0.5" inputmode="decimal" min="0" /></div>
+        <div class="form-group"><label class="form-label">Batch Quantity</label><input class="form-control" type="number" inputmode="numeric" min="1" @bind="_batchQuantity" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Oven Temperature (°C)</label><input class="form-control" type="number" inputmode="numeric" min="0" @bind="_ovenTempC" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Hold Time (hrs)</label><input class="form-control" type="number" step="0.5" inputmode="decimal" min="0" @bind="_holdTimeHrs" @bind:after="NotifyDataChanged" /></div>
         <div class="form-group"><label class="form-label">Atmosphere</label>
-            <select class="form-control"><option>Argon</option><option>Vacuum</option><option>Nitrogen</option></select>
+            <select class="form-control" @bind="_atmosphere" @bind:after="NotifyDataChanged">
+                <option value="">Select...</option>
+                <option value="Argon">Argon</option>
+                <option value="Vacuum">Vacuum</option>
+                <option value="Nitrogen">Nitrogen</option>
+            </select>
         </div>
     </div>
 </div>
@@ -24,6 +29,38 @@
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
+    [Parameter] public EventCallback<Dictionary<string, object?>> OnDataChanged { get; set; }
+    [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
     private string _operatorName => Execution?.OperatorName ?? "Operator";
+
+    private int? _batchQuantity;
+    private int? _ovenTempC;
+    private double? _holdTimeHrs;
+    private string _atmosphere = "";
+
+    protected override void OnParametersSet()
+    {
+        HydrateFromInitialValues();
+    }
+
+    private void HydrateFromInitialValues()
+    {
+        if (InitialValues == null) return;
+        if (InitialValues.TryGetValue("batchQuantity", out var v1) && int.TryParse(v1?.ToString(), out var n1)) _batchQuantity = n1;
+        if (InitialValues.TryGetValue("ovenTempC", out var v2) && int.TryParse(v2?.ToString(), out var n2)) _ovenTempC = n2;
+        if (InitialValues.TryGetValue("holdTimeHrs", out var v3) && double.TryParse(v3?.ToString(), out var n3)) _holdTimeHrs = n3;
+        if (InitialValues.TryGetValue("atmosphere", out var v4)) _atmosphere = v4?.ToString() ?? "";
+    }
+
+    private async Task NotifyDataChanged()
+    {
+        await OnDataChanged.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["batchQuantity"] = _batchQuantity,
+            ["ovenTempC"] = _ovenTempC,
+            ["holdTimeHrs"] = _holdTimeHrs,
+            ["atmosphere"] = _atmosphere
+        });
+    }
 }

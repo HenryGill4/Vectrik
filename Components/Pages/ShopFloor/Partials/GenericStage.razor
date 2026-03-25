@@ -16,7 +16,9 @@
                         {
                             case "dropdown":
                             case "select":
-                                <select class="form-control">
+                                <select class="form-control"
+                                        value="@GetFieldValue(field.Label)"
+                                        @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())">
                                     <option value="">Select...</option>
                                     @if (!string.IsNullOrWhiteSpace(field.Options))
                                     {
@@ -26,17 +28,23 @@
                                 break;
                             case "checkbox":
                                 <div style="min-height: var(--tap-target); display: flex; align-items: center;">
-                                    <input type="checkbox" style="width: 20px; height: 20px;" />
+                                    <input type="checkbox" style="width: 20px; height: 20px;"
+                                           checked="@IsFieldChecked(field.Label)"
+                                           @onchange="e => SetCheckboxValue(field.Label, e.Value)" />
                                 </div>
                                 break;
                             case "number":
                             case "decimal":
                                 <input class="form-control" type="number"
                                        min="@field.MinValue" max="@field.MaxValue"
-                                       inputmode="numeric" />
+                                       inputmode="numeric"
+                                       value="@GetFieldValue(field.Label)"
+                                       @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())" />
                                 break;
                             default:
-                                <input class="form-control" type="text" />
+                                <input class="form-control" type="text"
+                                       value="@GetFieldValue(field.Label)"
+                                       @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())" />
                                 break;
                         }
                     </div>
@@ -54,12 +62,52 @@
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
+    [Parameter] public EventCallback<Dictionary<string, object?>> OnDataChanged { get; set; }
+    [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
     private List<CustomFieldDefinition>? _fields;
+    private Dictionary<string, string> _fieldValues = new();
     private string _operatorName => Execution?.OperatorName ?? "Operator";
 
     protected override void OnParametersSet()
     {
         _fields = Stage?.GetCustomFields();
+        HydrateFromInitialValues();
+    }
+
+    private void HydrateFromInitialValues()
+    {
+        if (InitialValues == null) return;
+        foreach (var kvp in InitialValues)
+        {
+            if (kvp.Value is string strVal)
+                _fieldValues[kvp.Key] = strVal;
+            else if (kvp.Value != null)
+                _fieldValues[kvp.Key] = kvp.Value.ToString() ?? "";
+        }
+    }
+
+    private string GetFieldValue(string key) => _fieldValues.GetValueOrDefault(key, "");
+
+    private bool IsFieldChecked(string key) => GetFieldValue(key) == "true";
+
+    private Task SetCheckboxValue(string key, object? value)
+    {
+        var isChecked = value is bool b && b;
+        return SetFieldValue(key, isChecked ? "true" : "false");
+    }
+
+    private async Task SetFieldValue(string key, string? value)
+    {
+        _fieldValues[key] = value ?? "";
+        await NotifyDataChanged();
+    }
+
+    private async Task NotifyDataChanged()
+    {
+        var data = new Dictionary<string, object?>();
+        foreach (var kvp in _fieldValues)
+            data[kvp.Key] = kvp.Value;
+        await OnDataChanged.InvokeAsync(data);
     }
 }

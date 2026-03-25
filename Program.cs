@@ -124,6 +124,9 @@ builder.Services.AddScoped<ISpcService, SpcService>();
 // Visual Work Instructions (Module 03)
 builder.Services.AddScoped<IWorkInstructionService, WorkInstructionService>();
 
+// Shipping
+builder.Services.AddScoped<IShippingService, ShippingService>();
+
 // Machine providers + SignalR notifier
 builder.Services.AddScoped<MachineProviderFactory>();
 builder.Services.AddSingleton<IMachineStateNotifier, MachineStateNotifier>();

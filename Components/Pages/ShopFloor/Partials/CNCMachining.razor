@@ -12,11 +12,18 @@
     </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 12px;">
         <div class="form-group"><label class="form-label">Operation Type</label>
-            <select class="form-control"><option>Threading</option><option>Facing</option><option>Drilling</option><option>Milling</option><option>Turning</option></select>
+            <select class="form-control" @bind="_operationType" @bind:after="NotifyDataChanged">
+                <option value="">Select...</option>
+                <option value="Threading">Threading</option>
+                <option value="Facing">Facing</option>
+                <option value="Drilling">Drilling</option>
+                <option value="Milling">Milling</option>
+                <option value="Turning">Turning</option>
+            </select>
         </div>
-        <div class="form-group"><label class="form-label">Setup Time (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" /></div>
-        <div class="form-group"><label class="form-label">Run Time (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" /></div>
-        <div class="form-group"><label class="form-label">Tool Used</label><input class="form-control" /></div>
+        <div class="form-group"><label class="form-label">Setup Time (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" @bind="_setupTime" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Run Time (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" @bind="_runTime" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Tool Used</label><input class="form-control" @bind="_toolUsed" @bind:after="NotifyDataChanged" /></div>
     </div>
 </div>
 
@@ -25,6 +32,38 @@
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
+    [Parameter] public EventCallback<Dictionary<string, object?>> OnDataChanged { get; set; }
+    [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
     private string _operatorName => Execution?.OperatorName ?? "Operator";
+
+    private string _operationType = "";
+    private double? _setupTime;
+    private double? _runTime;
+    private string _toolUsed = "";
+
+    protected override void OnParametersSet()
+    {
+        HydrateFromInitialValues();
+    }
+
+    private void HydrateFromInitialValues()
+    {
+        if (InitialValues == null) return;
+        if (InitialValues.TryGetValue("operationType", out var v1)) _operationType = v1?.ToString() ?? "";
+        if (InitialValues.TryGetValue("setupTime", out var v2) && double.TryParse(v2?.ToString(), out var n2)) _setupTime = n2;
+        if (InitialValues.TryGetValue("runTime", out var v3) && double.TryParse(v3?.ToString(), out var n3)) _runTime = n3;
+        if (InitialValues.TryGetValue("toolUsed", out var v4)) _toolUsed = v4?.ToString() ?? "";
+    }
+
+    private async Task NotifyDataChanged()
+    {
+        await OnDataChanged.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["operationType"] = _operationType,
+            ["setupTime"] = _setupTime,
+            ["runTime"] = _runTime,
+            ["toolUsed"] = _toolUsed
+        });
+    }
 }

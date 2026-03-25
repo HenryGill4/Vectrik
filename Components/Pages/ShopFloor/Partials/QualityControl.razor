@@ -12,16 +12,16 @@
     </div>
     <hr style="margin: 12px 0; border-color: var(--border);" />
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
-        <div class="form-group"><label class="form-label">Serial Number</label><input class="form-control" placeholder="Scan serial..." inputmode="text" /></div>
+        <div class="form-group"><label class="form-label">Serial Number</label><input class="form-control" placeholder="Scan serial..." inputmode="text" @bind="_serialNumber" @bind:after="NotifyDataChanged" /></div>
         <div class="form-group"><label class="form-label">Visual Inspection</label>
-            <select class="form-control"><option value="">Select...</option><option>Pass</option><option>Fail</option></select>
+            <select class="form-control" @bind="_visualInspection" @bind:after="NotifyDataChanged"><option value="">Select...</option><option>Pass</option><option>Fail</option></select>
         </div>
         <div class="form-group"><label class="form-label">Dimensional Check</label>
-            <select class="form-control"><option value="">Select...</option><option>Pass</option><option>Fail</option></select>
+            <select class="form-control" @bind="_dimensionalCheck" @bind:after="NotifyDataChanged"><option value="">Select...</option><option>Pass</option><option>Fail</option></select>
         </div>
-        <div class="form-group"><label class="form-label">Surface Finish (Ra µm)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" /></div>
+        <div class="form-group"><label class="form-label">Surface Finish (Ra µm)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" @bind="_surfaceFinishRa" @bind:after="NotifyDataChanged" /></div>
     </div>
-    <div class="form-group"><label class="form-label">Inspector Notes</label><textarea class="form-control" rows="3" @bind="_qualityNotes"></textarea></div>
+    <div class="form-group"><label class="form-label">Inspector Notes</label><textarea class="form-control" rows="3" @bind="_qualityNotes" @bind:after="NotifyDataChanged"></textarea></div>
 </div>
 
 <LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
@@ -29,12 +29,41 @@
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
+    [Parameter] public EventCallback<Dictionary<string, object?>> OnDataChanged { get; set; }
+    [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
+    private string _serialNumber = "";
+    private string _visualInspection = "";
+    private string _dimensionalCheck = "";
+    private double? _surfaceFinishRa;
     private string _qualityNotes = "";
     private string _operatorName => Execution?.OperatorName ?? "Inspector";
 
     protected override void OnParametersSet()
     {
         _qualityNotes = Execution?.QualityNotes ?? "";
+        HydrateFromInitialValues();
+    }
+
+    private void HydrateFromInitialValues()
+    {
+        if (InitialValues == null) return;
+        if (InitialValues.TryGetValue("serialNumber", out var sn) && sn is string snStr) _serialNumber = snStr;
+        if (InitialValues.TryGetValue("visualInspection", out var vi) && vi is string viStr) _visualInspection = viStr;
+        if (InitialValues.TryGetValue("dimensionalCheck", out var dc) && dc is string dcStr) _dimensionalCheck = dcStr;
+        if (InitialValues.TryGetValue("surfaceFinishRa", out var sf) && sf is double sfVal) _surfaceFinishRa = sfVal;
+        if (InitialValues.TryGetValue("qualityNotes", out var qn) && qn is string qnStr) _qualityNotes = qnStr;
+    }
+
+    private async Task NotifyDataChanged()
+    {
+        await OnDataChanged.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["serialNumber"] = _serialNumber,
+            ["visualInspection"] = _visualInspection,
+            ["dimensionalCheck"] = _dimensionalCheck,
+            ["surfaceFinishRa"] = _surfaceFinishRa,
+            ["qualityNotes"] = _qualityNotes
+        });
     }
 }
