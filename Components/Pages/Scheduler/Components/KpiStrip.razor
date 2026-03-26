@@ -91,20 +91,27 @@
     {
         get
         {
-            var count = 0;
+            var conflictingIds = new HashSet<int>();
             var byMachine = Executions
                 .Where(e => e.MachineId.HasValue && e.ScheduledStartAt.HasValue && e.ScheduledEndAt.HasValue)
                 .GroupBy(e => e.MachineId!.Value);
             foreach (var group in byMachine)
             {
-                var sorted = group.OrderBy(e => e.ScheduledStartAt).ToList();
-                for (int i = 0; i < sorted.Count - 1; i++)
+                var items = group.ToList();
+                for (int i = 0; i < items.Count; i++)
                 {
-                    if (sorted[i].ScheduledEndAt > sorted[i + 1].ScheduledStartAt)
-                        count++;
+                    for (int j = i + 1; j < items.Count; j++)
+                    {
+                        if (items[i].ScheduledStartAt < items[j].ScheduledEndAt &&
+                            items[j].ScheduledStartAt < items[i].ScheduledEndAt)
+                        {
+                            conflictingIds.Add(items[i].Id);
+                            conflictingIds.Add(items[j].Id);
+                        }
+                    }
                 }
             }
-            return count;
+            return conflictingIds.Count;
         }
     }
 }
