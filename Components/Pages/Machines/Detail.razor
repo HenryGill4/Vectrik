@@ -13,7 +13,7 @@
 
 @if (!IsNew && _machine == null)
 {
-    @if (_notFound) { <div class="empty-state"><div class="empty-state-icon">🖥️</div><div class="empty-state-text">Machine not found. <a href="machines">Back to Machines</a></div></div> }
+    @if (_notFound) { <div class="empty-state"><div class="empty-state-icon">🖥️</div><div class="empty-state-text">Machine not found. <a href="/machines">Back to Machines</a></div></div> }
     else { <div class="loading"><span class="spinner"></span></div> }
 }
 else
@@ -48,7 +48,7 @@ else
                 {
                     <button class="btn btn-primary btn-sm" @onclick="StartEditing">✏️ Edit</button>
                 }
-                <a href="machines" class="btn btn-secondary btn-sm">← Back</a>
+                <a href="/machines" class="btn btn-secondary btn-sm">← Back</a>
             }
         </div>
     </div>
@@ -654,7 +654,7 @@ else
 
         if (IsNew)
         {
-            if (!_canEdit) { Nav.NavigateTo("machines"); return; }
+            if (!_canEdit) { Nav.NavigateTo("/machines"); return; }
             _editModel = new Machine { Priority = 5, IsActive = true, IsAvailableForScheduling = true, MaintenanceIntervalHours = 500, HourlyRate = 150.00m, CreatedBy = "System", LastModifiedBy = "System" };
             _editing = true;
             try
@@ -800,7 +800,7 @@ else
 
     private void CreateNewWorkOrder()
     {
-        Nav.NavigateTo("maintenance/workorders");
+        Nav.NavigateTo("/maintenance/workorders");
     }
 
     private static string OeeColor(decimal oee) => oee switch
@@ -855,7 +855,7 @@ else
     {
         _editing = false;
         _validationErrors.Clear();
-        if (IsNew) Nav.NavigateTo("machines");
+        if (IsNew) Nav.NavigateTo("/machines");
     }
 
     private async Task SaveMachine()
