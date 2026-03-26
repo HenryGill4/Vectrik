@@ -449,8 +449,10 @@ public class ProgramPlanningService : IProgramPlanningService
         var program = await _db.MachinePrograms.FindAsync(programId)
             ?? throw new InvalidOperationException("Program not found.");
 
-        if (program.IsLocked)
-            throw new InvalidOperationException("Cannot update slicer data on a locked program.");
+        // Slicer metadata is allowed on locked programs — the lock prevents
+        // structural changes (adding/removing parts), not metadata updates.
+        // This enables the scheduling wizard to add missing slicer data to
+        // existing programs that were locked before slicing was complete.
 
         program.EstimatedPrintHours = estimatedPrintHours;
         program.LayerCount = layerCount ?? program.LayerCount;

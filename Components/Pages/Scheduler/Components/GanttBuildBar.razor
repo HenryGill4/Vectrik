@@ -9,13 +9,17 @@
         ProgramScheduleStatus.Completed => "gantt-build-completed",
         _ => "gantt-build-scheduled"
     };
-    var statusLabel = Build.ScheduleStatus switch
+    var statusIcon = Build.ScheduleStatus switch
     {
         ProgramScheduleStatus.Printing => "🖨️",
         ProgramScheduleStatus.PostPrint => "⏳",
         ProgramScheduleStatus.Completed => "✅",
+        ProgramScheduleStatus.Scheduled => "📅",
         _ => "📦"
     };
+    var durationStr = Build.EstimatedPrintHours.HasValue ? $"{Build.EstimatedPrintHours.Value:F1}h" : "";
+    var partLabel = Build.TotalPartCount == 1 ? "part" : "parts";
+    var isNarrow = BarWidthPx < 120;
 }
 <div class="gantt-build-bar-wrapper @(_showPopover ? "popover-open" : "")" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
      data-program-id="@Build.Id"
@@ -29,15 +33,34 @@
         {
             <span class="gantt-conflict-icon" title="Changeover conflict: cooldown chamber may not be emptied in time">⚠️</span>
         }
-        <span class="gantt-bar-text">@statusLabel @Build.Name — @Build.TotalPartCount parts</span>
+        @if (IsSelected)
+        {
+            <span class="gantt-bar-check">✓</span>
+        }
+        @if (isNarrow)
+        {
+            <span class="gantt-bar-text">@statusIcon @(Build.TotalPartCount)p</span>
+        }
+        else
+        {
+            <div class="gantt-build-bar-content">
+                <span class="gantt-build-bar-title">@statusIcon @Build.Name</span>
+                <span class="gantt-build-bar-detail">@Build.TotalPartCount @partLabel · @durationStr</span>
+            </div>
+        }
     </div>
+
     @* ── Changeover time segment (shown after build end) ── *@
-    @if (ChangeoverMinutes > 0)
+    @if (ChangeoverMinutes > 0 && Build.ScheduleStatus != ProgramScheduleStatus.Completed)
     {
         var changeoverWidthPx = ChangeoverMinutes / 60.0 * PixelsPerHour;
         <div class="gantt-changeover-segment @(HasChangeoverConflict ? "gantt-changeover-segment--conflict" : "")"
              style="left: @(FormatPx(BarWidthPx))px; width: @(FormatPx(changeoverWidthPx))px;"
-             title="Changeover: @ChangeoverMinutes min @(HasChangeoverConflict ? "(NO OPERATOR AVAILABLE)" : "")">
+             title="Auto-changeover: @ChangeoverMinutes min @(HasChangeoverConflict ? "⚠️ NO OPERATOR AVAILABLE" : "✓ Safe")">
+            @if (changeoverWidthPx > 20)
+            {
+                <span class="gantt-changeover-label">@((int)ChangeoverMinutes)m</span>
+            }
         </div>
     }
 
@@ -45,15 +68,45 @@
     {
         <div class="gantt-build-popover" @onclick:stopPropagation="true">
             <div class="gantt-build-popover-header">
-                <strong>@Build.Name</strong>
+                <strong>@statusIcon @Build.Name</strong>
                 <button class="gantt-build-popover-close" @onclick="() => _showPopover = false">✕</button>
             </div>
             <div class="gantt-build-popover-body">
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Status</span><span class="badge badge-sm">@statusLabel @Build.ScheduleStatus</span></div>
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Machine</span><span>@(Build.Machine?.Name ?? "—")</span></div>
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Parts</span><span>@Build.TotalPartCount (@Build.UniquePartCount types)</span></div>
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Duration</span><span>@(Build.EstimatedPrintHours?.ToString("F1") ?? "?")h</span></div>
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Time</span><span>@Start.ToString("MM/dd HH:mm") → @End.ToString("MM/dd HH:mm")</span></div>
+                <div class="gantt-build-popover-row">
+                    <span class="gantt-build-popover-label">Status</span>
+                    <span class="gantt-build-status-badge gantt-build-status-@Build.ScheduleStatus.ToString().ToLower()">@Build.ScheduleStatus</span>
+                </div>
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Parts</span><span>@Build.TotalPartCount (@Build.UniquePartCount @(Build.UniquePartCount == 1 ? "type" : "types"))</span></div>
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Print Time</span><span>@(Build.EstimatedPrintHours?.ToString("F1") ?? "?")h</span></div>
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Start</span><span>@Start.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span></div>
+                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">End</span><span>@End.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span></div>
+                @if (ChangeoverMinutes > 0)
+                {
+                    <div class="gantt-build-popover-row">
+                        <span class="gantt-build-popover-label">Changeover</span>
+                        <span>@((int)ChangeoverMinutes) min @(HasChangeoverConflict ? "⚠️ Conflict" : "✓ Safe")</span>
+                    </div>
+                }
+                @if (Build.EstimatedPowderKg.HasValue)
+                {
+                    <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Powder</span><span>@Build.EstimatedPowderKg.Value.ToString("F1") kg</span></div>
+                }
+                @if (Build.LayerCount.HasValue)
+                {
+                    <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Layers</span><span>@Build.LayerCount.Value.ToString("N0")</span></div>
+                }
+                @if (Build.ProgramParts?.Any() == true)
+                {
+                    <div class="gantt-build-popover-parts">
+                        @foreach (var pp in Build.ProgramParts)
+                        {
+                            <div class="gantt-build-popover-part">
+                                <span class="gantt-build-popover-part-num">@(pp.Part?.PartNumber ?? $"Part #{pp.PartId}")</span>
+                                <span class="gantt-build-popover-part-qty">@pp.Quantity × @pp.StackLevel stack</span>
+                            </div>
+                        }
+                    </div>
+                }
             </div>
             <div class="gantt-build-popover-actions">
                 @switch (Build.ScheduleStatus)
@@ -70,6 +123,9 @@
                     case ProgramScheduleStatus.PostPrint:
                         <button class="btn btn-sm btn-success" @onclick="OnReleasePlate">📦 Release Plate</button>
                         break;
+                    case ProgramScheduleStatus.Completed:
+                        <span style="font-size:0.78rem;color:var(--text-muted);">No actions available</span>
+                        break;
                 }
             </div>
         </div>
@@ -85,7 +141,6 @@
     [Parameter] public bool HasChangeoverConflict { get; set; }
     [Parameter] public double ChangeoverMinutes { get; set; }
     [Parameter] public double PixelsPerHour { get; set; }
-
     [Parameter] public bool IsSelected { get; set; }
 
     /// <summary>Raised when the user clicks a status action. Value is (MachineProgram, actionKey).</summary>
@@ -114,10 +169,12 @@
     {
         var parts = Build.TotalPartCount;
         var unique = Build.UniquePartCount;
-        var tip = $"{Build.Name}\nStatus: {Build.ScheduleStatus}\nParts: {parts} ({unique} types)\n{Start:MM/dd HH:mm} → {End:MM/dd HH:mm}\nEst: {Build.EstimatedPrintHours?.ToString("F1") ?? "?"}h";
+        var duration = Build.EstimatedPrintHours?.ToString("F1") ?? "?";
+        var tip = $"{Build.Name}\n{Build.ScheduleStatus} · {parts} parts ({unique} types) · {duration}h\n{Start.ToLocalTime():ddd MMM d, h:mm tt} → {End.ToLocalTime():ddd MMM d, h:mm tt}";
+        if (ChangeoverMinutes > 0)
+            tip += $"\nChangeover: {(int)ChangeoverMinutes} min {(HasChangeoverConflict ? "⚠️ CONFLICT" : "✓ Safe")}";
         if (HasChangeoverConflict)
-            tip += "\n⚠️ CHANGEOVER CONFLICT: Cooldown chamber may not be emptied before next build completes. Machine will be down until an operator arrives.";
-        tip += "\nClick for actions";
+            tip += "\n⚠️ Machine will STOP until an operator removes the cooled build.";
         return tip;
     }
 }

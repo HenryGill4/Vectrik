@@ -11,6 +11,8 @@
 @inject IProgramSchedulingService ProgramScheduling
 @inject IProgramPlanningService ProgramPlanning
 @inject IMachineProgramService ProgramService
+@inject IStageCostService StageCostService
+@inject IStageService StageService
 @inject ToastService Toast
 
 @if (IsVisible)
@@ -298,8 +300,65 @@
                     </div>
                 }
 
+                @* ══════════ Step 1: Slicer Data for Existing Program ══════════ *@
+                @if (!_loading && _step == 1 && _existingNeedsSlicerData && _selectedExistingProgram != null)
+                {
+                    <div class="wizard-content">
+                        <div style="padding: 12px 16px; background: rgba(var(--warning-rgb), 0.08); border: 1px solid rgba(var(--warning-rgb), 0.25); border-radius: 8px; margin-bottom: 16px;">
+                            <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 4px;">⚠️ Slicer Data Required</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary);">
+                                <strong>@_selectedExistingProgram.Name</strong> doesn't have slicer data yet.
+                                Enter the print duration (at minimum) so the build can be scheduled.
+                            </div>
+                        </div>
+
+                        <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Print Data</div>
+                        <div class="advisor-slicer-grid">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Print Duration (hrs) <span style="color:var(--danger);">*</span></label>
+                                <input class="form-control" type="number" step="0.1" min="0.1"
+                                       @bind="_slicerPrintHours" placeholder="From slicer output" />
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Layer Count</label>
+                                <input class="form-control" type="number" min="0"
+                                       @bind="_slicerLayerCount" />
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Build Height (mm)</label>
+                                <input class="form-control" type="number" step="0.1" min="0"
+                                       @bind="_slicerBuildHeightMm" />
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Est. Powder (kg)</label>
+                                <input class="form-control" type="number" step="0.1" min="0"
+                                       @bind="_slicerPowderKg" />
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Slicer Software</label>
+                                <input class="form-control" @bind="_slicerSoftware" placeholder="e.g. Magics" />
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Slicer Version</label>
+                                <input class="form-control" @bind="_slicerVersion" />
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+                            <label class="form-label">Slicer File Name</label>
+                            <input class="form-control" @bind="_slicerFileName" placeholder="e.g. build-plate-250325.slc" />
+                        </div>
+
+                        @* ── Program summary ── *@
+                        <div style="margin-top: 16px; padding: 10px; background: var(--bg-secondary); border-radius: 8px; font-size: 0.82rem;">
+                            <strong>Program:</strong> @_selectedExistingProgram.Name
+                            — @_selectedExistingProgram.TotalPartCount @(_selectedExistingProgram.TotalPartCount == 1 ? "part" : "parts")
+                            <span style="color: var(--text-muted); margin-left: 4px;">(@_selectedExistingProgram.ProgramNumber)</span>
+                        </div>
+                    </div>
+                }
+
                 @* ══════════ Step 1: New Program (Full Form) ══════════ *@
-                @if (!_loading && _step == 1)
+                @if (!_loading && _step == 1 && !_existingNeedsSlicerData)
                 {
                     <div class="wizard-content">
                         @* ── Program Name ── *@
@@ -472,7 +531,7 @@
                                     </div>
                                     <div>
                                         <span style="color: var(--text-muted);">Est. Cost:</span>
-                                        <span style="font-weight: 600;">@EstimatedBuildCost.ToString("C0")</span>
+                                        <span style="font-weight: 600;">@_estimatedBuildCost.ToString("C0")</span>
                                     </div>
                                     @if (_uploadedFiles.Any())
                                     {
@@ -571,6 +630,7 @@
     private List<MachineProgram> _availablePrograms = [];
     private MachineProgram? _selectedExistingProgram;
     private bool _creatingNewProgram;
+    private bool _existingNeedsSlicerData;
 
     // Schedule options (Step 0 — shown after program selected)
     private List<ScheduleOption> _scheduleOptions = [];
@@ -605,9 +665,11 @@
     private Machine? _selectedMachine => Machines.FirstOrDefault(m => m.Id == _selectedMachineId);
     private Machine? OtherMachine => SlsMachines.FirstOrDefault(m => m.Id != _selectedMachineId);
 
-    /// Dynamic step labels based on flow (existing program skips plate composition)
+    /// Dynamic step labels based on flow
     private string[] ActiveSteps => _selectedExistingProgram != null
-        ? ["Select Program", "Review & Schedule"]
+        ? (_existingNeedsSlicerData
+            ? ["Select Program", "Slicer Data", "Review & Schedule"]
+            : ["Select Program", "Review & Schedule"])
         : ["Select Program", "New Program", "Review & Schedule"];
 
     /// Maps internal _step (0,1,2) to the visual step index for the step indicator
@@ -615,14 +677,16 @@
     {
         0 => 0,
         1 => 1,
-        2 => _selectedExistingProgram != null ? 1 : 2,
+        2 => (_selectedExistingProgram != null && !_existingNeedsSlicerData) ? 1 : 2,
         _ => 0
     };
 
     private string StepTitle => _step switch
     {
         0 => "Next Build Advisor — Select Program",
-        1 => "Next Build Advisor — New Program",
+        1 => _existingNeedsSlicerData
+            ? "Next Build Advisor — Enter Slicer Data"
+            : "Next Build Advisor — New Program",
         2 => "Next Build Advisor — Review & Schedule",
         _ => "Next Build Advisor"
     };
@@ -669,14 +733,53 @@
         }
     }
 
-    /// Print hours: for existing programs use their data, for new programs use only user-entered slicer data
+    /// Print hours: for existing programs use their data (or user-entered slicer data if missing),
+    /// for new programs use only user-entered slicer data
     private double EffectivePrintHours =>
         (_selectedExistingProgram != null)
-            ? _selectedExistingProgram.EstimatedPrintHours ?? 24
+            ? (_existingNeedsSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
+                ? _slicerPrintHours.Value
+                : _selectedExistingProgram.EstimatedPrintHours ?? 24
             : (_slicerPrintHours.HasValue && _slicerPrintHours > 0)
                 ? _slicerPrintHours.Value : 0;
 
-    private decimal EstimatedBuildCost => (decimal)EffectivePrintHours * (_selectedMachine?.HourlyRate ?? 0);
+    private decimal _estimatedBuildCost;
+
+    private async Task CalculateBuildCostAsync()
+    {
+        if (!_plateAllocations.Any())
+        {
+            _estimatedBuildCost = 0;
+            return;
+        }
+
+        try
+        {
+            var totalParts = _plateAllocations.Sum(a => a.TotalParts);
+            var printHours = EffectivePrintHours;
+
+            // Get the SLS printing stage for cost estimation
+            var allStages = await StageService.GetAllStagesAsync(activeOnly: true);
+            var slsStage = allStages.FirstOrDefault(s => s.StageSlug == "sls-printing");
+
+            if (slsStage != null)
+            {
+                // Use the stage cost service which respects cost profiles and fallback rates
+                var estimate = await StageCostService.EstimateCostAsync(slsStage.Id, printHours, totalParts, 1);
+                _estimatedBuildCost = estimate.TotalCost;
+            }
+            else
+            {
+                // Fallback: machine rate × print hours
+                _estimatedBuildCost = (decimal)printHours * (_selectedMachine?.HourlyRate ?? 0);
+            }
+        }
+        catch
+        {
+            // Fallback on error
+            _estimatedBuildCost = (decimal)EffectivePrintHours * (_selectedMachine?.HourlyRate ?? 0);
+        }
+    }
 
     private ProgramScheduleSlot? ActiveSlot => _selectedOption?.Slot ?? _recommendation?.Slot;
     private bool ActiveChangeoverAligned => _selectedOption?.ChangeoverAligned ?? _recommendation?.Plate.OperatorAvailable ?? true;
@@ -684,7 +787,9 @@
     private bool DisableNext => _step switch
     {
         0 => (_selectedExistingProgram == null && !_creatingNewProgram) || _selectedOption == null,
-        1 => !_plateAllocations.Any(),
+        1 => _existingNeedsSlicerData
+            ? !(_slicerPrintHours.HasValue && _slicerPrintHours > 0)
+            : !_plateAllocations.Any(),
         _ => true
     };
 
@@ -711,6 +816,7 @@
         _selectedOption = null;
         _availablePrograms.Clear();
         _selectedExistingProgram = null;
+        _existingNeedsSlicerData = false;
         _creatingNewProgram = false;
         ResetProgramState();
 
@@ -742,6 +848,7 @@
     private async Task OnMachineChanged()
     {
         _selectedExistingProgram = null;
+        _existingNeedsSlicerData = false;
         _creatingNewProgram = false;
         _programSearch = "";
         _scheduleOptions.Clear();
@@ -849,6 +956,19 @@
     {
         _selectedExistingProgram = program;
         _creatingNewProgram = false;
+        _existingNeedsSlicerData = !program.HasSlicerData;
+
+        // Pre-populate slicer fields from existing program data (if any)
+        if (_existingNeedsSlicerData)
+        {
+            _slicerPrintHours = program.EstimatedPrintHours;
+            _slicerLayerCount = program.LayerCount;
+            _slicerBuildHeightMm = program.BuildHeightMm;
+            _slicerPowderKg = program.EstimatedPowderKg;
+            _slicerSoftware = program.SlicerSoftware;
+            _slicerVersion = program.SlicerVersion;
+            _slicerFileName = program.SlicerFileName;
+        }
 
         // Populate plate allocations from the existing program's parts,
         // linking to current demand WO lines for fulfillment
@@ -1106,8 +1226,15 @@
         {
             if (_selectedExistingProgram != null)
             {
-                // Existing program — skip plate composition, go directly to review
+                if (_existingNeedsSlicerData)
+                {
+                    // Existing program missing slicer data — go to slicer entry step
+                    _step = 1;
+                    return;
+                }
+                // Existing program with slicer data — skip to review
                 _step = 2;
+                await CalculateBuildCostAsync();
                 return;
             }
             else
@@ -1127,13 +1254,16 @@
             }
         }
         _step++;
+        // Calculate build cost when entering the review step
+        if (_step == 2)
+            await CalculateBuildCostAsync();
     }
 
     private void GoBack()
     {
-        if (_step == 2 && _selectedExistingProgram != null)
+        if (_step == 2 && _selectedExistingProgram != null && !_existingNeedsSlicerData)
         {
-            // Existing program flow: jump back to step 0 (skip plate composition)
+            // Existing program with slicer data: jump back to step 0 (skip plate composition)
             _step = 0;
         }
         else if (_step > 0)
@@ -1244,6 +1374,16 @@
             if (_selectedExistingProgram != null)
             {
                 programId = _selectedExistingProgram.Id;
+
+                // Save slicer data if it was entered for an existing program that was missing it
+                if (_existingNeedsSlicerData && _slicerPrintHours.HasValue && _slicerPrintHours > 0)
+                {
+                    await ProgramPlanning.UpdateSlicerDataAsync(
+                        programId, _slicerPrintHours,
+                        _slicerLayerCount, _slicerBuildHeightMm, _slicerPowderKg,
+                        _slicerFileName, _slicerSoftware, _slicerVersion);
+                    _existingNeedsSlicerData = false;
+                }
 
                 // Use ScheduleBuildPlateRunAsync to create a copy and schedule it,
                 // leaving the original program available for future scheduling

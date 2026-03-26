@@ -965,7 +965,6 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 && e.MachineProgramId != null
                 && e.ScheduledStartAt != null
                 && e.ScheduledEndAt != null
-                && e.Status != StageExecutionStatus.Completed
                 && e.Status != StageExecutionStatus.Skipped
                 && e.Status != StageExecutionStatus.Failed)
             .OrderBy(e => e.ScheduledStartAt)
@@ -976,8 +975,9 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
         foreach (var exec in programExecutions)
         {
-            var printStart = exec.ScheduledStartAt!.Value;
-            var printEnd = exec.ScheduledEndAt!.Value;
+            // Prefer actual times for completed builds, fall back to scheduled times
+            var printStart = exec.ActualStartAt ?? exec.ScheduledStartAt!.Value;
+            var printEnd = exec.ActualEndAt ?? exec.ScheduledEndAt!.Value;
 
             if (printEnd < from || printStart > to)
                 continue;
