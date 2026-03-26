@@ -258,14 +258,18 @@ else
             var stage = _allStages.FirstOrDefault(s => s.StageSlug == tmpl.Slug);
             if (stage == null) continue;
 
-            var durationHours = (stage.DefaultDurationHours) * tmpl.Level switch
+            // Prefer template durations, fall back to catalog defaults
+            var baseDurationHours = tmpl.RunTimeMinutes.HasValue
+                ? tmpl.RunTimeMinutes.Value / 60.0
+                : stage.DefaultDurationHours;
+            var durationHours = baseDurationHours * tmpl.Level switch
             {
                 ProcessingLevel.Build => 1.0,
                 ProcessingLevel.Batch => batchCount,
                 _ => qty
             };
             // Clamp: build-level stages run once regardless of quantity
-            if (tmpl.Level == ProcessingLevel.Build) durationHours = stage.DefaultDurationHours;
+            if (tmpl.Level == ProcessingLevel.Build) durationHours = baseDurationHours;
 
             var estimate = await StageCostService.EstimateCostAsync(stage.Id, durationHours, qty, batchCount);
 

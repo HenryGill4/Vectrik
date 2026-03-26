@@ -425,6 +425,12 @@ public class ManufacturingProcessService : IManufacturingProcessService
             if (!stageBySlug.TryGetValue(entry.Slug, out var catalogStage))
                 continue;
 
+            // Template durations take precedence over catalog defaults
+            var setupMins = entry.SetupTimeMinutes
+                ?? (catalogStage.DefaultSetupMinutes > 0 ? catalogStage.DefaultSetupMinutes : (double?)null);
+            var runMins = entry.RunTimeMinutes
+                ?? (!entry.DurationFromBuildConfig ? catalogStage.DefaultDurationHours * 60 : (double?)null);
+
             var processStage = new ProcessStage
             {
                 ManufacturingProcessId = process.Id,
@@ -432,10 +438,10 @@ public class ManufacturingProcessService : IManufacturingProcessService
                 ExecutionOrder = order++,
                 ProcessingLevel = entry.Level,
                 DurationFromBuildConfig = entry.DurationFromBuildConfig,
-                SetupDurationMode = catalogStage.DefaultSetupMinutes > 0
+                SetupDurationMode = setupMins.HasValue
                     ? (entry.Level == ProcessingLevel.Build ? DurationMode.PerBuild : DurationMode.PerBatch)
                     : DurationMode.None,
-                SetupTimeMinutes = catalogStage.DefaultSetupMinutes > 0 ? catalogStage.DefaultSetupMinutes : null,
+                SetupTimeMinutes = setupMins,
                 RunDurationMode = entry.Level switch
                 {
                     ProcessingLevel.Build => DurationMode.PerBuild,
@@ -443,7 +449,7 @@ public class ManufacturingProcessService : IManufacturingProcessService
                     ProcessingLevel.Part => DurationMode.PerPart,
                     _ => DurationMode.PerPart
                 },
-                RunTimeMinutes = !entry.DurationFromBuildConfig ? catalogStage.DefaultDurationHours * 60 : null,
+                RunTimeMinutes = runMins,
                 BatchCapacityOverride = entry.BatchCapacityOverride,
                 PreferredMachineIds = entry.MachineIds.Count > 0
                     ? string.Join(",", entry.MachineIds)
