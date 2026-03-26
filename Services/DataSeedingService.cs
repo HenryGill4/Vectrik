@@ -2250,24 +2250,24 @@ public class DataSeedingService : IDataSeedingService
     }
 
     /// <summary>
-    /// Seeds a PSA suppressor part with manufacturing approach, additive build config,
-    /// a released work order, and a 20.2h BuildPlate program ready for scheduling.
-    /// Also backfills ManufacturingApproachId on existing additive parts.
+    /// Seeds demo data: 3 suppressor variants, 10 work orders, 14 completed builds,
+    /// active builds on both machines, scheduled builds, and builds mid-downstream
+    /// to exercise all scheduler states.
     /// </summary>
     private static async Task SeedSchedulerDemoDataAsync(TenantDbContext db)
     {
-        if (await db.Jobs.AnyAsync()) return; // Already has production data
+        if (await db.Jobs.AnyAsync()) return;
 
         var now = DateTime.UtcNow;
         var slsApproach = await db.ManufacturingApproaches.FirstOrDefaultAsync(a => a.Slug == "sls-based");
         var suppApproach = await db.ManufacturingApproaches.FirstOrDefaultAsync(a => a.Slug == "suppressor-no-ht");
         var tiMat = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("Ti-6Al-4V"));
-        var ssMat = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("316L"));
         var stages = await db.ProductionStages.ToDictionaryAsync(s => s.StageSlug, s => s);
         var machines = await db.Machines.Where(m => m.IsActive).ToDictionaryAsync(m => m.MachineId, m => m);
         int? Mid(string id) => machines.TryGetValue(id, out var m) ? m.Id : null;
+        var appId = suppApproach?.Id ?? slsApproach?.Id;
 
-        // ── Backfill approach FK on orphan parts ──
+        // Backfill approach FK on orphan parts
         if (slsApproach != null)
         {
             var orphans = await db.Parts.Where(p => p.ManufacturingApproachId == null && p.IsActive).ToListAsync();
@@ -2276,18 +2276,23 @@ public class DataSeedingService : IDataSeedingService
         }
 
         // ════════════════════════════════════════════════════════════
-        // PARTS — 3 realistic SLS defense parts
+        // PARTS — 3 suppressor variants, all Ti-6Al-4V, no HT
+        //
+        //   SUPP-001: Standard body   — 72/build, 20.2 hrs (workhorse)
+        //   SUPP-002: Compact model   — 96/build, 16.5 hrs (high volume, shorter prints)
+        //   SUPP-003: Extended model   — 48/build single 24.8 hrs,
+        //                                64/build double 32.5 hrs (stackable)
         // ════════════════════════════════════════════════════════════
 
-        async Task<Part> EnsurePart(string pn, string name, string desc, string mat, int? matId, int? appId,
+        async Task<Part> EnsurePart(string pn, string name, string desc,
             bool stacking, int ppsS, double durS, int? ppsD = null, double? durD = null)
         {
             var part = await db.Parts.Include(p => p.AdditiveBuildConfig).FirstOrDefaultAsync(p => p.PartNumber == pn);
             if (part == null)
             {
-                part = new Part { PartNumber = pn, Name = name, Description = desc, Material = mat,
-                    MaterialId = matId, ManufacturingApproachId = appId, IsActive = true,
-                    CreatedBy = "System", LastModifiedBy = "System" };
+                part = new Part { PartNumber = pn, Name = name, Description = desc,
+                    Material = "Ti-6Al-4V Grade 5", MaterialId = tiMat?.Id, ManufacturingApproachId = appId,
+                    IsActive = true, CreatedBy = "System", LastModifiedBy = "System" };
                 db.Parts.Add(part);
                 await db.SaveChangesAsync();
             }
@@ -2300,8 +2305,7 @@ public class DataSeedingService : IDataSeedingService
             {
                 var bc = new PartAdditiveBuildConfig { PartId = part.Id, AllowStacking = stacking,
                     MaxStackCount = stacking ? 2 : 1, PlannedPartsPerBuildSingle = ppsS,
-                    SingleStackDurationHours = durS, EnableDoubleStack = stacking,
-                    EnableTripleStack = false };
+                    SingleStackDurationHours = durS, EnableDoubleStack = stacking, EnableTripleStack = false };
                 if (stacking && ppsD.HasValue) { bc.PlannedPartsPerBuildDouble = ppsD.Value; bc.DoubleStackDurationHours = durD; }
                 db.Set<PartAdditiveBuildConfig>().Add(bc);
                 await db.SaveChangesAsync();
@@ -2309,49 +2313,24 @@ public class DataSeedingService : IDataSeedingService
             return part;
         }
 
-        var suppPart = await EnsurePart("PSA-SUPP-001", "PSA Suppressor Body",
-            "Titanium PSA suppressor body — SLS printed, EDM cut, CNC finished",
-            "Ti-6Al-4V Grade 5", tiMat?.Id, suppApproach?.Id ?? slsApproach?.Id,
+        var supp1 = await EnsurePart("PSA-SUPP-001", "PSA Suppressor Body",
+            "Titanium suppressor body — SLS printed, EDM cut, CNC finished",
             false, 72, 20.2);
 
-        var bracketPart = await EnsurePart("DM-BRK-001", "Mounting Bracket",
-            "316L stainless mounting bracket — SLS printed with full post-processing",
-            "316L Stainless Steel", ssMat?.Id, slsApproach?.Id,
-            true, 48, 14.5, 96, 22.0);
+        var supp2 = await EnsurePart("PSA-SUPP-002", "PSA Compact Suppressor",
+            "Titanium compact suppressor — shorter print, higher plate density",
+            false, 96, 16.5);
 
-        var manifoldPart = await EnsurePart("DM-MAN-001", "Hydraulic Manifold",
-            "Titanium hydraulic manifold — SLS printed, heat treated, CNC finished",
-            "Ti-6Al-4V Grade 5", tiMat?.Id, slsApproach?.Id,
-            false, 24, 26.8);
+        var supp3 = await EnsurePart("PSA-SUPP-003", "PSA Extended Suppressor",
+            "Titanium extended suppressor — supports double stacking for volume runs",
+            true, 48, 24.8, 64, 32.5);
 
         // ════════════════════════════════════════════════════════════
-        // MANUFACTURING PROCESSES — one per part
+        // MANUFACTURING PROCESSES — one per part, all Suppressor (No HT)
+        // SLS → Depowder → Wire EDM → Sandblast → CNC → Engrave → QC → Pack
         // ════════════════════════════════════════════════════════════
 
-        async Task EnsureProcess(Part part, int? appId, string appName,
-            (string slug, ProcessingLevel lvl, double? setup, double? run, string? machineId, bool slicer, bool release, int? batch)[] routing)
-        {
-            if (await db.ManufacturingProcesses.AnyAsync(p => p.PartId == part.Id && p.IsActive)) return;
-            var proc = new ManufacturingProcess { PartId = part.Id, ManufacturingApproachId = appId,
-                Name = $"{part.PartNumber} — {appName}", Description = $"Manufacturing process for {part.Name}",
-                DefaultBatchCapacity = 60, IsActive = true, Version = 1,
-                CreatedBy = "System", LastModifiedBy = "System", CreatedDate = now, LastModifiedDate = now };
-            db.ManufacturingProcesses.Add(proc);
-            await db.SaveChangesAsync();
-            var ord = 1;
-            foreach (var r in routing)
-            {
-                if (!stages.TryGetValue(r.slug, out var stg)) continue;
-                db.ProcessStages.Add(new ProcessStage { ManufacturingProcessId = proc.Id, ProductionStageId = stg.Id,
-                    ExecutionOrder = ord++, ProcessingLevel = r.lvl, SetupTimeMinutes = r.setup, RunTimeMinutes = r.run,
-                    DurationFromBuildConfig = r.slicer, AssignedMachineId = Mid(r.machineId ?? ""),
-                    BatchCapacityOverride = r.batch, IsRequired = true, IsBlocking = true,
-                    CreatedBy = "System", LastModifiedBy = "System" });
-            }
-            await db.SaveChangesAsync();
-        }
-
-        await EnsureProcess(suppPart, suppApproach?.Id ?? slsApproach?.Id, "Suppressor (No HT)", [
+        var suppProcessRouting = new (string slug, ProcessingLevel lvl, double? setup, double? run, string machineId, bool slicer, bool release, int? batch)[] {
             ("sls-printing",    ProcessingLevel.Build, null, null, "M4-1",    true,  false, null),
             ("depowdering",     ProcessingLevel.Build, 15,  45,   "INC1",    false, false, null),
             ("wire-edm",        ProcessingLevel.Build, 25,  90,   "EDM1",    false, true,  null),
@@ -2360,33 +2339,44 @@ public class DataSeedingService : IDataSeedingService
             ("laser-engraving", ProcessingLevel.Batch, null, 5,   "ENGRAVE1",false, false, 36),
             ("qc",              ProcessingLevel.Part,  null, 5,   "QC1",     false, false, null),
             ("packaging",       ProcessingLevel.Batch, null, 3,   "PACK1",   false, false, 50),
-        ]);
+        };
 
-        await EnsureProcess(bracketPart, slsApproach?.Id, "SLS-Based", [
-            ("sls-printing",    ProcessingLevel.Build, null, null, "M4-2",    true,  false, null),
-            ("depowdering",     ProcessingLevel.Build, 15,  60,   "INC1",    false, false, null),
-            ("heat-treatment",  ProcessingLevel.Build, 20,  240,  "HT1",     false, false, null),
-            ("wire-edm",        ProcessingLevel.Build, 25,  75,   "EDM1",    false, true,  null),
-            ("sandblasting",    ProcessingLevel.Batch, null, 12,  "BLAST1",  false, false, 24),
-            ("cnc-machining",   ProcessingLevel.Part,  20,  12,   "CNC2",    false, false, null),
-            ("laser-engraving", ProcessingLevel.Batch, null, 4,   "ENGRAVE1",false, false, 36),
-            ("qc",              ProcessingLevel.Part,  null, 4,   "QC1",     false, false, null),
-            ("packaging",       ProcessingLevel.Batch, null, 3,   "PACK1",   false, false, 50),
-        ]);
-
-        await EnsureProcess(manifoldPart, slsApproach?.Id, "SLS-Based", [
-            ("sls-printing",    ProcessingLevel.Build, null, null, "M4-1",    true,  false, null),
-            ("depowdering",     ProcessingLevel.Build, 15,  50,   "INC1",    false, false, null),
-            ("heat-treatment",  ProcessingLevel.Build, 20,  240,  "HT1",     false, false, null),
-            ("wire-edm",        ProcessingLevel.Build, 25,  120,  "EDM1",    false, true,  null),
-            ("cnc-machining",   ProcessingLevel.Part,  45,  35,   "CNC4",    false, false, null),
-            ("surface-finishing",ProcessingLevel.Part, null, 15,   "FINISH1", false, false, null),
-            ("qc",              ProcessingLevel.Part,  null, 8,   "QC1",     false, false, null),
-            ("packaging",       ProcessingLevel.Batch, null, 3,   "PACK1",   false, false, 24),
-        ]);
+        foreach (var part in new[] { supp1, supp2, supp3 })
+        {
+            if (await db.ManufacturingProcesses.AnyAsync(p => p.PartId == part.Id && p.IsActive)) continue;
+            var proc = new ManufacturingProcess { PartId = part.Id, ManufacturingApproachId = appId,
+                Name = $"{part.PartNumber} — Suppressor (No HT)", Description = $"Manufacturing process for {part.Name}",
+                DefaultBatchCapacity = 72, IsActive = true, Version = 1,
+                CreatedBy = "System", LastModifiedBy = "System", CreatedDate = now, LastModifiedDate = now };
+            db.ManufacturingProcesses.Add(proc);
+            await db.SaveChangesAsync();
+            var ord = 1;
+            foreach (var r in suppProcessRouting)
+            {
+                if (!stages.TryGetValue(r.slug, out var stg)) continue;
+                // Duration modes must match processing level:
+                //   Build → PerBuild (depowder/EDM: one operation for the whole plate)
+                //   Batch → PerBatch (sandblast/engrave: one operation per batch)
+                //   Part  → PerPart  (CNC/QC: one operation per part)
+                var durationMode = r.lvl switch {
+                    ProcessingLevel.Build => DurationMode.PerBuild,
+                    ProcessingLevel.Batch => DurationMode.PerBatch,
+                    _ => DurationMode.PerPart
+                };
+                var setupMode = r.setup.HasValue ? durationMode : DurationMode.None;
+                db.ProcessStages.Add(new ProcessStage { ManufacturingProcessId = proc.Id, ProductionStageId = stg.Id,
+                    ExecutionOrder = ord++, ProcessingLevel = r.lvl,
+                    SetupDurationMode = setupMode, SetupTimeMinutes = r.setup,
+                    RunDurationMode = durationMode, RunTimeMinutes = r.run,
+                    DurationFromBuildConfig = r.slicer, AssignedMachineId = Mid(r.machineId),
+                    BatchCapacityOverride = r.batch, IsRequired = true, IsBlocking = true,
+                    CreatedBy = "System", LastModifiedBy = "System" });
+            }
+            await db.SaveChangesAsync();
+        }
 
         // ════════════════════════════════════════════════════════════
-        // WORK ORDERS — realistic customer orders
+        // WORK ORDERS — 10 orders mixing all 3 suppressor types
         // ════════════════════════════════════════════════════════════
 
         var wos = new List<WorkOrder>();
@@ -2410,49 +2400,56 @@ public class DataSeedingService : IDataSeedingService
             return wo;
         }
 
-        // Completed order
-        var wo1 = await CreateWO("WO-00001", "Apex Industries", "APX-2026-0441", 28, -3,
+        // ── Completed & shipped ──
+        var wo1 = await CreateWO("WO-00001", "PSA Defense",      "PSA-2026-1001", 60, -30,
             WorkOrderStatus.Complete, JobPriority.Normal,
-            [(suppPart, 72)]);
+            [(supp1, 144)]);                                      // 2× SUPP-001 builds
 
-        // Completed order
-        var wo2 = await CreateWO("WO-00002", "TechForge Solutions", "TF-PO-8821", 21, -1,
+        var wo2 = await CreateWO("WO-00002", "Apex Industries",  "APX-2026-0341", 52, -22,
             WorkOrderStatus.Complete, JobPriority.Normal,
-            [(bracketPart, 48)]);
+            [(supp2, 192)]);                                      // 2× SUPP-002 builds
 
-        // In progress — partially fulfilled
-        var wo3 = await CreateWO("WO-00003", "Henry Gill", "HG-2026-0103", 14, 12,
+        var wo3 = await CreateWO("WO-00003", "Henry Gill",       "HG-2026-0080", 45, -15,
+            WorkOrderStatus.Complete, JobPriority.High,
+            [(supp3, 128)]);                                      // 2× SUPP-003 double-stack builds
+
+        var wo4 = await CreateWO("WO-00004", "PSA Defense",      "PSA-2026-1102", 38, -8,
+            WorkOrderStatus.Complete, JobPriority.Normal,
+            [(supp1, 216), (supp2, 96)]);                         // 3× SUPP-001 + 1× SUPP-002
+
+        // ── In progress ──
+        var wo5 = await CreateWO("WO-00005", "Apex Industries",  "APX-2026-0512", 18, 8,
             WorkOrderStatus.InProgress, JobPriority.High,
-            [(suppPart, 144), (bracketPart, 96)]);
+            [(supp1, 144), (supp2, 96)]);                         // mixed: 2× SUPP-001 + 1× SUPP-002
 
-        // In progress — active
-        var wo4 = await CreateWO("WO-00004", "Summit Dynamics", "SD-PO-3377", 7, 21,
+        var wo6 = await CreateWO("WO-00006", "PSA Defense",      "PSA-2026-1201", 10, 16,
             WorkOrderStatus.InProgress, JobPriority.Normal,
-            [(manifoldPart, 24), (suppPart, 72)]);
+            [(supp2, 192)]);                                      // 2× SUPP-002, 1 done, 1 printing
 
-        // Released — new, needs scheduling
-        var wo5 = await CreateWO("WO-00005", "PSA Defense", "PSA-2026-2201", 2, 28,
+        var wo7 = await CreateWO("WO-00007", "Henry Gill",       "HG-2026-0120", 6, 22,
+            WorkOrderStatus.InProgress, JobPriority.Normal,
+            [(supp3, 64)]);                                       // 1× SUPP-003 DS, in depowder
+
+        // ── Released — needs scheduling ──
+        var wo8 = await CreateWO("WO-00008", "PSA Defense",      "PSA-2026-1301", 3, 28,
             WorkOrderStatus.Released, JobPriority.High,
-            [(suppPart, 216), (bracketPart, 192)]);
+            [(supp1, 288), (supp3, 96)]);                         // 4× SUPP-001 + 2× SUPP-003 needed
 
-        // Released — rush
-        var wo6 = await CreateWO("WO-00006", "Apex Industries", "APX-2026-0512", 1, 14,
+        var wo9 = await CreateWO("WO-00009", "Apex Industries",  "APX-2026-0601", 2, 14,
             WorkOrderStatus.Released, JobPriority.Rush,
-            [(manifoldPart, 48)]);
+            [(supp2, 288)]);                                      // 3× SUPP-002 needed (urgent)
 
-        // Released — standard
-        var wo7 = await CreateWO("WO-00007", "TechForge Solutions", "TF-PO-9004", 3, 35,
+        var wo10 = await CreateWO("WO-00010", "Henry Gill",      "HG-2026-0201", 1, 35,
             WorkOrderStatus.Released, JobPriority.Normal,
-            [(bracketPart, 144)]);
+            [(supp1, 144), (supp2, 96), (supp3, 64)]);            // mixed order, all 3 types
 
         // ════════════════════════════════════════════════════════════
-        // BUILD PLATE PROGRAMS — master templates + scheduled copies
+        // BUILD PLATE PROGRAMS — master templates
         // ════════════════════════════════════════════════════════════
 
         var slicerParams = System.Text.Json.JsonSerializer.Serialize(new {
             laserPower = 370, scanSpeed = 1200, layerThickness = 0.03, hatchSpacing = 0.12, contourCount = 2 });
 
-        // Helper: create a build plate program
         async Task<MachineProgram> CreateProgram(string num, string name, ProgramType type, ProgramScheduleStatus schedStatus,
             int? matId, double printHrs, int layers, double heightMm, double powderKg, string slicerFile,
             bool locked, DateTime? schedDate, DateTime? printStart, DateTime? printEnd, DateTime? plateRel,
@@ -2472,8 +2469,7 @@ public class DataSeedingService : IDataSeedingService
             return prog;
         }
 
-        // Helper: add parts to a program and link to WO line
-        async Task LinkParts(MachineProgram prog, (Part part, int qty, int stack, WorkOrder wo)[] items)
+        async Task LinkProgParts(MachineProgram prog, (Part part, int qty, int stack, WorkOrder wo)[] items)
         {
             foreach (var (part, qty, stack, wo) in items)
             {
@@ -2484,99 +2480,68 @@ public class DataSeedingService : IDataSeedingService
             await db.SaveChangesAsync();
         }
 
-        // ── Master templates (reusable, not scheduled) ──
-        var masterSupp72 = await CreateProgram("BP-00001", "PSA Suppressor 72x", ProgramType.BuildPlate,
+        // ── Masters (reusable templates, not scheduled) ──
+        var masterS1 = await CreateProgram("BP-00001", "Suppressor Body 72x", ProgramType.BuildPlate,
             ProgramScheduleStatus.Ready, tiMat?.Id, 20.2, 3100, 95.0, 14.8, "PSA_Supp_72x_v2.sli",
             false, null, null, null, null, null);
-        await LinkParts(masterSupp72, [(suppPart, 72, 1, wo5)]);
+        await LinkProgParts(masterS1, [(supp1, 72, 1, wo8)]);
 
-        var masterBrk48 = await CreateProgram("BP-00002", "Bracket 48x Single Stack", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, ssMat?.Id, 14.5, 2200, 68.0, 9.2, "Bracket_48x_SS_v1.sli",
+        var masterS2 = await CreateProgram("BP-00002", "Compact Supp 96x", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 16.5, 2400, 72.0, 11.0, "PSA_Compact_96x_v1.sli",
             false, null, null, null, null, null);
-        await LinkParts(masterBrk48, [(bracketPart, 48, 1, wo5)]);
+        await LinkProgParts(masterS2, [(supp2, 96, 1, wo9)]);
 
-        var masterBrk96 = await CreateProgram("BP-00003", "Bracket 96x Double Stack", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, ssMat?.Id, 22.0, 3400, 132.0, 17.6, "Bracket_96x_DS_v1.sli",
+        var masterS3s = await CreateProgram("BP-00003", "Extended Supp 48x Single", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 24.8, 3800, 120.0, 18.2, "PSA_Ext_48x_v1.sli",
             false, null, null, null, null, null);
-        await LinkParts(masterBrk96, [(bracketPart, 48, 2, wo5)]); // 48 positions × 2 stack = 96 parts
+        await LinkProgParts(masterS3s, [(supp3, 48, 1, wo8)]);
 
-        var masterMan24 = await CreateProgram("BP-00004", "Manifold 24x Build", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 26.8, 4100, 155.0, 22.5, "Manifold_24x_v1.sli",
+        var masterS3d = await CreateProgram("BP-00004", "Extended Supp 64x Double", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 32.5, 4900, 155.0, 24.0, "PSA_Ext_64x_DS_v1.sli",
             false, null, null, null, null, null);
-        await LinkParts(masterMan24, [(manifoldPart, 24, 1, wo6)]);
-
-        // ── Completed builds (within Gantt view range: -7 days to now) ──
-        // M4-1 timeline: Build1 → 30min changeover → Build3 → 30min changeover → ActiveBuild5
-        // M4-2 timeline: Build2 → 30min changeover → Build4 → 30min changeover → ActiveBuild6
-
-        // Build 1: Suppressor 72x on M4-1 — completed ~5 days ago
-        var compBuild1Start = now.AddDays(-5).AddHours(-14);
-        var compBuild1End = compBuild1Start.AddHours(20.2);
-        var comp1 = await CreateProgram("BP-00029", "PSA Supp 72x — Run #1", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Completed, tiMat?.Id, 20.2, 3100, 95.0, 14.8, "PSA_Supp_72x_v2.sli",
-            true, compBuild1Start, compBuild1Start, compBuild1End, compBuild1End.AddHours(2), masterSupp72.Id, "M4-1");
-        await LinkParts(comp1, [(suppPart, 72, 1, wo1)]);
-
-        // Build 3: Suppressor 72x on M4-1 — starts 30min after Build1 ends
-        var compBuild3Start = compBuild1End.AddMinutes(30); // 30min auto-changeover gap
-        var compBuild3End = compBuild3Start.AddHours(20.2);
-        var comp3 = await CreateProgram("BP-00031", "PSA Supp 72x — Run #2", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Completed, tiMat?.Id, 20.2, 3100, 95.0, 14.8, "PSA_Supp_72x_v2.sli",
-            true, compBuild3Start, compBuild3Start, compBuild3End, compBuild3End.AddHours(2), masterSupp72.Id, "M4-1");
-        await LinkParts(comp3, [(suppPart, 72, 1, wo3)]);
-
-        // Build 5: Suppressor 72x on M4-1 — currently PRINTING, starts 30min after Build3 ends
-        var activeBuild1Start = compBuild3End.AddMinutes(30); // 30min auto-changeover gap
-        var active1 = await CreateProgram("BP-00033", "PSA Supp 72x — Run #3", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Printing, tiMat?.Id, 20.2, 3100, 95.0, 14.8, "PSA_Supp_72x_v2.sli",
-            true, activeBuild1Start, activeBuild1Start, null, null, masterSupp72.Id, "M4-1");
-        await LinkParts(active1, [(suppPart, 72, 1, wo3)]);
-
-        // Build 2: Bracket 48x on M4-2 — completed ~4 days ago
-        var compBuild2Start = now.AddDays(-4).AddHours(-10);
-        var compBuild2End = compBuild2Start.AddHours(14.5);
-        var comp2 = await CreateProgram("BP-00030", "Bracket 48x — Run #1", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Completed, ssMat?.Id, 14.5, 2200, 68.0, 9.2, "Bracket_48x_SS_v1.sli",
-            true, compBuild2Start, compBuild2Start, compBuild2End, compBuild2End.AddHours(1.5), masterBrk48.Id, "M4-2");
-        await LinkParts(comp2, [(bracketPart, 48, 1, wo2)]);
-
-        // Build 4: Bracket 96x double on M4-2 — starts 30min after Build2 ends
-        var compBuild4Start = compBuild2End.AddMinutes(30); // 30min auto-changeover gap
-        var compBuild4End = compBuild4Start.AddHours(22.0);
-        var comp4 = await CreateProgram("BP-00032", "Bracket 96x DS — Run #1", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Completed, ssMat?.Id, 22.0, 3400, 132.0, 17.6, "Bracket_96x_DS_v1.sli",
-            true, compBuild4Start, compBuild4Start, compBuild4End, compBuild4End.AddHours(1.5), masterBrk96.Id, "M4-2");
-        await LinkParts(comp4, [(bracketPart, 48, 2, wo3)]); // 48 positions × 2 stack = 96 parts
-
-        // Build 6: Manifold 24x on M4-2 — in POST-PRINT, starts 30min after Build4 ends
-        var activeBuild2Start = compBuild4End.AddMinutes(30); // 30min auto-changeover gap
-        var activeBuild2End = activeBuild2Start.AddHours(26.8);
-        var active2 = await CreateProgram("BP-00034", "Manifold 24x — Run #1", ProgramType.BuildPlate,
-            ProgramScheduleStatus.PostPrint, tiMat?.Id, 26.8, 4100, 155.0, 22.5, "Manifold_24x_v1.sli",
-            true, activeBuild2Start, activeBuild2Start, activeBuild2End, null, masterMan24.Id, "M4-2");
-        await LinkParts(active2, [(manifoldPart, 24, 1, wo4)]);
-
-        // ── Scheduled (queued for next print slots) ──
-        // Next build starts after active build ends + 30min auto-changeover
-        var activeBuild1End = activeBuild1Start.AddHours(20.2);
-        var schedStart1 = activeBuild1End.AddMinutes(30); // 30min auto-changeover gap
-        var sched1 = await CreateProgram("BP-00035", "PSA Supp 72x — Run #4", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.2, 3100, 95.0, 14.8, "PSA_Supp_72x_v2.sli",
-            true, schedStart1, null, null, null, masterSupp72.Id, "M4-1");
-        await LinkParts(sched1, [(suppPart, 72, 1, wo4)]);
+        await LinkProgParts(masterS3d, [(supp3, 32, 1, wo8), (supp3, 32, 2, wo8)]);
 
         // ════════════════════════════════════════════════════════════
-        // JOBS + STAGE EXECUTIONS — completed production history
+        // STAGE ROUTING TEMPLATES — per-part cost/time definitions
+        // (stageSlug, defaultMachineId, estimatedHours, estimatedCost)
+        // ════════════════════════════════════════════════════════════
+
+        var s1Routing = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 20.2, 4545m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 1.9, 162m), ("sandblasting", "BLAST1", 1.0, 40m),
+            ("cnc-machining", "CNC1", 21.6, 2052m), ("laser-engraving", "ENGRAVE1", 0.6, 33m),
+            ("qc", "QC1", 6.0, 450m), ("packaging", "PACK1", 0.7, 25m) };
+
+        var s2Routing = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 16.5, 3713m), ("depowdering", "INC1", 0.8, 44m),
+            ("wire-edm", "EDM1", 1.5, 128m), ("sandblasting", "BLAST1", 0.8, 32m),
+            ("cnc-machining", "CNC1", 14.4, 1368m), ("laser-engraving", "ENGRAVE1", 0.5, 28m),
+            ("qc", "QC1", 4.0, 300m), ("packaging", "PACK1", 0.5, 18m) };
+
+        var s3Routing = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 24.8, 5580m), ("depowdering", "INC1", 1.2, 66m),
+            ("wire-edm", "EDM1", 2.2, 187m), ("sandblasting", "BLAST1", 1.2, 48m),
+            ("cnc-machining", "CNC1", 28.8, 2736m), ("laser-engraving", "ENGRAVE1", 0.8, 44m),
+            ("qc", "QC1", 8.0, 600m), ("packaging", "PACK1", 0.9, 32m) };
+
+        var s3DsRouting = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 32.5, 7313m), ("depowdering", "INC1", 1.5, 83m),
+            ("wire-edm", "EDM1", 2.8, 238m), ("sandblasting", "BLAST1", 1.5, 60m),
+            ("cnc-machining", "CNC1", 38.4, 3648m), ("laser-engraving", "ENGRAVE1", 1.0, 55m),
+            ("qc", "QC1", 10.7, 800m), ("packaging", "PACK1", 1.2, 42m) };
+
+        // ════════════════════════════════════════════════════════════
+        // JOBS + STAGE EXECUTIONS — helpers
         // ════════════════════════════════════════════════════════════
 
         int jobNum = 1;
 
         async Task<Job> CreateJob(Part part, int? machineId, int qty, JobScope scope, JobStatus status,
             DateTime schedStart, DateTime schedEnd, DateTime? actStart, DateTime? actEnd,
-            int? woLinePartId, WorkOrder? wo, int produced = 0)
+            WorkOrder? wo, int produced = 0)
         {
-            var woLine = wo != null && woLinePartId.HasValue
-                ? await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo.Id && l.PartId == woLinePartId)
+            var woLine = wo != null
+                ? await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo.Id && l.PartId == part.Id)
                 : null;
             var job = new Job { JobNumber = $"JOB-{jobNum++:D5}", PartId = part.Id, MachineId = machineId,
                 Scope = scope, Status = status, Priority = wo?.Priority ?? JobPriority.Normal,
@@ -2607,137 +2572,240 @@ public class DataSeedingService : IDataSeedingService
                 CreatedBy = "System", LastModifiedBy = "System" });
         }
 
-        // ── Completed Build 1: Suppressor 72x (wo1) — all stages done ──
+        // ── Helper: create a fully completed build with all stage executions ──
+        async Task<MachineProgram> CompletedBuild(int idx, string num, string name,
+            Part part, int qty, double printHrs, int layers, double height, double powder,
+            string slicer, int? sourceId, string machine, DateTime start, WorkOrder wo,
+            (string slug, string mid, double hrs, decimal cost)[] routing,
+            (Part p2, int qty2)? stack2 = null)
         {
-            var pStart = compBuild1Start;
-            var j = await CreateJob(suppPart, Mid("M4-1"), 72, JobScope.Build, JobStatus.Completed,
-                pStart, pStart.AddHours(28), pStart, pStart.AddHours(27.5), suppPart.Id, wo1, 72);
+            var end = start.AddHours(printHrs);
+            var prog = await CreateProgram(num, name, ProgramType.BuildPlate,
+                ProgramScheduleStatus.Completed, tiMat?.Id, printHrs, layers, height, powder, slicer,
+                true, start, start, end, end.AddHours(1.5), sourceId, machine);
 
-            await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.Completed,
-                pStart, pStart.AddHours(20.2), pStart, pStart.AddHours(20.4), 20.2, 20.4, 4545m, 4590m, comp1.Id);
-            await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.Completed,
-                pStart.AddHours(20.5), pStart.AddHours(21.5), pStart.AddHours(20.6), pStart.AddHours(21.6), 1.0, 1.0, 55m, 55m);
-            await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.Completed,
-                pStart.AddHours(21.5), pStart.AddHours(23.5), pStart.AddHours(21.8), pStart.AddHours(23.7), 1.9, 1.9, 162m, 162m);
-            await CreateStageExec(j, "sandblasting", "BLAST1", StageExecutionStatus.Completed,
-                pStart.AddHours(24), pStart.AddHours(25), pStart.AddHours(24.2), pStart.AddHours(25.2), 1.0, 1.0, 40m, 40m);
-            await CreateStageExec(j, "cnc-machining", "CNC1", StageExecutionStatus.Completed,
-                pStart.AddHours(25), pStart.AddHours(46.6), pStart.AddHours(25.2), pStart.AddHours(47), 21.6, 21.8, 2052m, 2071m);
-            await CreateStageExec(j, "laser-engraving", "ENGRAVE1", StageExecutionStatus.Completed,
-                pStart.AddHours(47), pStart.AddHours(47.6), pStart.AddHours(47.1), pStart.AddHours(47.7), 0.6, 0.6, 33m, 33m);
-            await CreateStageExec(j, "qc", "QC1", StageExecutionStatus.Completed,
-                pStart.AddHours(48), pStart.AddHours(54), pStart.AddHours(48.2), pStart.AddHours(54.2), 6.0, 6.0, 450m, 450m);
-            await CreateStageExec(j, "packaging", "PACK1", StageExecutionStatus.Completed,
-                pStart.AddHours(54), pStart.AddHours(55), pStart.AddHours(54.3), pStart.AddHours(55.1), 0.7, 0.8, 25m, 28m);
-            await db.SaveChangesAsync();
+            if (stack2.HasValue)
+                await LinkProgParts(prog, [(part, qty, 1, wo), (stack2.Value.p2, stack2.Value.qty2, 2, wo)]);
+            else
+                await LinkProgParts(prog, [(part, qty, 1, wo)]);
 
-            // Mark WO1 lines as produced
-            var woLine = await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo1.Id && l.PartId == suppPart.Id);
-            if (woLine != null) { woLine.ProducedQuantity = 72; woLine.ShippedQuantity = 72; }
+            var totalQty = qty + (stack2?.qty2 ?? 0);
+            var downHrs = routing.Skip(1).Sum(r => r.hrs + 0.3);
+            var jobEnd = end.AddHours(downHrs + 1);
+            var j = await CreateJob(part, Mid(machine), totalQty, JobScope.Build, JobStatus.Completed,
+                start, jobEnd, start, jobEnd.AddHours(-0.5), wo, totalQty);
+
+            var t = start;
+            var v = 1.0 + (idx % 5 - 2) * 0.01; // ±2% deterministic variation
+            foreach (var (slug, mid, hrs, cost) in routing)
+            {
+                var actualMachine = slug == "sls-printing" ? machine : mid;
+                await CreateStageExec(j, slug, actualMachine, StageExecutionStatus.Completed,
+                    t, t.AddHours(hrs), t.AddHours(0.15), t.AddHours(hrs * v + 0.15),
+                    hrs, hrs * v, cost, cost * (decimal)v,
+                    slug == "sls-printing" ? prog.Id : null);
+                t = t.AddHours(hrs + 0.3);
+            }
             await db.SaveChangesAsync();
+            return prog;
         }
 
-        // ── Completed Build 2: Bracket 48x (wo2) — all stages done ──
+        // ════════════════════════════════════════════════════════════
+        // COMPLETED BUILDS — M4-1 (7 builds, mix of SUPP-001 and SUPP-003)
+        // ════════════════════════════════════════════════════════════
+
+        int bpn = 10;
+
+        // B1: SUPP-001 72x → wo1 batch 1 (started 55 days ago)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #1",
+            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
+            "M4-1", now.AddDays(-55), wo1, s1Routing);
+
+        // B2: SUPP-001 72x → wo1 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #2",
+            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
+            "M4-1", now.AddDays(-50), wo1, s1Routing);
+
+        // B3: SUPP-003 64x DS → wo3 batch 1 (double-stacked extended)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Ext Supp 64x DS — Run #1",
+            supp3, 32, 32.5, 4900, 155, 24.0, "PSA_Ext_64x_DS_v1.sli", masterS3d.Id,
+            "M4-1", now.AddDays(-44), wo3, s3DsRouting, stack2: (supp3, 32));
+
+        // B4: SUPP-001 72x → wo4 batch 1
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #3",
+            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
+            "M4-1", now.AddDays(-38), wo4, s1Routing);
+
+        // B5: SUPP-001 72x → wo4 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #4",
+            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
+            "M4-1", now.AddDays(-33), wo4, s1Routing);
+
+        // B6: SUPP-001 72x → wo5 batch 1
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #5",
+            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
+            "M4-1", now.AddDays(-18), wo5, s1Routing);
+
+        // B7: SUPP-001 72x → wo5 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #6",
+            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
+            "M4-1", now.AddDays(-13), wo5, s1Routing);
+
+        // ════════════════════════════════════════════════════════════
+        // COMPLETED BUILDS — M4-2 (7 builds, mix of SUPP-002 and SUPP-003)
+        // ════════════════════════════════════════════════════════════
+
+        // B8: SUPP-002 96x → wo2 batch 1
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #1",
+            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
+            "M4-2", now.AddDays(-53), wo2, s2Routing);
+
+        // B9: SUPP-002 96x → wo2 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #2",
+            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
+            "M4-2", now.AddDays(-48), wo2, s2Routing);
+
+        // B10: SUPP-003 64x DS → wo3 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Ext Supp 64x DS — Run #2",
+            supp3, 32, 32.5, 4900, 155, 24.0, "PSA_Ext_64x_DS_v1.sli", masterS3d.Id,
+            "M4-2", now.AddDays(-42), wo3, s3DsRouting, stack2: (supp3, 32));
+
+        // B11: SUPP-001 72x → wo4 batch 3 (wo4 needed 3× SUPP-001)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #7",
+            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
+            "M4-2", now.AddDays(-35), wo4, s1Routing);
+
+        // B12: SUPP-002 96x → wo4 (1× SUPP-002 for wo4)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #3",
+            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
+            "M4-2", now.AddDays(-30), wo4, s2Routing);
+
+        // B13: SUPP-002 96x → wo5 (1× SUPP-002 for wo5)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #4",
+            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
+            "M4-2", now.AddDays(-16), wo5, s2Routing);
+
+        // B14: SUPP-002 96x → wo6 batch 1 (first of 2)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #5",
+            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
+            "M4-2", now.AddDays(-8), wo6, s2Routing);
+
+        // ════════════════════════════════════════════════════════════
+        // ACTIVE BUILDS — currently on the machines
+        // ════════════════════════════════════════════════════════════
+
+        // M4-1: SUPP-002 96x currently PRINTING (~70% done) → wo6
+        var activeM41Start = now.AddHours(-12);
+        var activeM41 = await CreateProgram($"BP-{bpn++:D5}", "Compact Supp 96x — Run #6", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Printing, tiMat?.Id, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli",
+            true, activeM41Start, activeM41Start, null, null, masterS2.Id, "M4-1");
+        await LinkProgParts(activeM41, [(supp2, 96, 1, wo6)]);
         {
-            var pStart = compBuild2Start;
-            var j = await CreateJob(bracketPart, Mid("M4-2"), 48, JobScope.Build, JobStatus.Completed,
-                pStart, pStart.AddHours(24), pStart, pStart.AddHours(24.5), bracketPart.Id, wo2, 48);
-
-            await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.Completed,
-                pStart, pStart.AddHours(14.5), pStart, pStart.AddHours(14.7), 14.5, 14.7, 3263m, 3308m, comp2.Id);
-            await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.Completed,
-                pStart.AddHours(15), pStart.AddHours(16.2), pStart.AddHours(15.1), pStart.AddHours(16.4), 1.25, 1.3, 69m, 72m);
-            await CreateStageExec(j, "heat-treatment", "HT1", StageExecutionStatus.Completed,
-                pStart.AddHours(16.5), pStart.AddHours(20.8), pStart.AddHours(16.6), pStart.AddHours(21.0), 4.3, 4.4, 280m, 286m);
-            await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.Completed,
-                pStart.AddHours(21), pStart.AddHours(22.7), pStart.AddHours(21.2), pStart.AddHours(22.9), 1.7, 1.7, 145m, 145m);
-            await CreateStageExec(j, "sandblasting", "BLAST1", StageExecutionStatus.Completed,
-                pStart.AddHours(23), pStart.AddHours(23.5), pStart.AddHours(23.1), pStart.AddHours(23.6), 0.5, 0.5, 20m, 20m);
-            await CreateStageExec(j, "cnc-machining", "CNC2", StageExecutionStatus.Completed,
-                pStart.AddHours(24), pStart.AddHours(33.6), pStart.AddHours(24.1), pStart.AddHours(34.0), 9.6, 9.9, 912m, 941m);
-            await CreateStageExec(j, "laser-engraving", "ENGRAVE1", StageExecutionStatus.Completed,
-                pStart.AddHours(34), pStart.AddHours(34.5), pStart.AddHours(34.1), pStart.AddHours(34.6), 0.5, 0.5, 28m, 28m);
-            await CreateStageExec(j, "qc", "QC1", StageExecutionStatus.Completed,
-                pStart.AddHours(35), pStart.AddHours(38.2), pStart.AddHours(35.1), pStart.AddHours(38.4), 3.2, 3.3, 240m, 248m);
-            await CreateStageExec(j, "packaging", "PACK1", StageExecutionStatus.Completed,
-                pStart.AddHours(38.5), pStart.AddHours(39), pStart.AddHours(38.6), pStart.AddHours(39.1), 0.5, 0.5, 18m, 18m);
-            await db.SaveChangesAsync();
-
-            var woLine = await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo2.Id && l.PartId == bracketPart.Id);
-            if (woLine != null) { woLine.ProducedQuantity = 48; woLine.ShippedQuantity = 48; }
-            await db.SaveChangesAsync();
-        }
-
-        // ── In-Progress Build 5 (currently printing on M4-1): Suppressor 72x ──
-        {
-            var pStart = activeBuild1Start;
-            var j = await CreateJob(suppPart, Mid("M4-1"), 72, JobScope.Build, JobStatus.InProgress,
-                pStart, pStart.AddHours(28), pStart, null, suppPart.Id, wo3);
-
+            var j = await CreateJob(supp2, Mid("M4-1"), 96, JobScope.Build, JobStatus.InProgress,
+                activeM41Start, activeM41Start.AddHours(50), activeM41Start, null, wo6);
             await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.InProgress,
-                pStart, pStart.AddHours(20.2), pStart, null, 20.2, null, 4545m, null, active1.Id);
+                activeM41Start, activeM41Start.AddHours(16.5), activeM41Start, null, 16.5, null, 3713m, null, activeM41.Id);
             await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.NotStarted,
-                pStart.AddHours(20.5), pStart.AddHours(21.5), null, null, 1.0, null, 55m, null);
+                activeM41Start.AddHours(17.0), activeM41Start.AddHours(17.8), null, null, 0.8, null, 44m, null);
             await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.NotStarted,
-                pStart.AddHours(21.5), pStart.AddHours(23.5), null, null, 1.9, null, 162m, null);
+                activeM41Start.AddHours(18.3), activeM41Start.AddHours(19.8), null, null, 1.5, null, 128m, null);
             await db.SaveChangesAsync();
         }
 
-        // ── In-Progress Build 6 (post-print, awaiting depowder): Manifold 24x ──
+        // M4-2: SUPP-003 64x DS in POST-PRINT → wo7 (print done ~8h ago, in depowder)
+        var activeM42Start = now.AddHours(-40);
+        var activeM42End = activeM42Start.AddHours(32.5);
+        var activeM42 = await CreateProgram($"BP-{bpn++:D5}", "Ext Supp 64x DS — Run #3", ProgramType.BuildPlate,
+            ProgramScheduleStatus.PostPrint, tiMat?.Id, 32.5, 4900, 155, 24.0, "PSA_Ext_64x_DS_v1.sli",
+            true, activeM42Start, activeM42Start, activeM42End, null, masterS3d.Id, "M4-2");
+        await LinkProgParts(activeM42, [(supp3, 32, 1, wo7), (supp3, 32, 2, wo7)]);
         {
-            var pStart = activeBuild2Start;
-            var j = await CreateJob(manifoldPart, Mid("M4-1"), 24, JobScope.Build, JobStatus.InProgress,
-                pStart, pStart.AddHours(36), pStart, null, manifoldPart.Id, wo4);
-
+            var j = await CreateJob(supp3, Mid("M4-2"), 64, JobScope.Build, JobStatus.InProgress,
+                activeM42Start, activeM42Start.AddHours(75), activeM42Start, null, wo7);
+            // print completed
             await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.Completed,
-                pStart, pStart.AddHours(26.8), pStart, activeBuild2End, 26.8, 26.8, 6030m, 6030m, active2.Id);
-            await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.NotStarted,
-                activeBuild2End.AddHours(0.5), activeBuild2End.AddHours(1.5), null, null, 1.1, null, 61m, null);
-            await CreateStageExec(j, "heat-treatment", "HT1", StageExecutionStatus.NotStarted,
-                activeBuild2End.AddHours(2), activeBuild2End.AddHours(6.3), null, null, 4.3, null, 280m, null);
+                activeM42Start, activeM42Start.AddHours(32.5), activeM42Start, activeM42End,
+                32.5, 32.5, 7313m, 7313m, activeM42.Id);
+            // depowder in progress (started 4 hours ago)
+            await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.InProgress,
+                activeM42End.AddHours(0.5), activeM42End.AddHours(2.0), now.AddHours(-4), null,
+                1.5, null, 83m, null);
+            // wire-edm not started yet
             await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.NotStarted,
-                activeBuild2End.AddHours(7), activeBuild2End.AddHours(9.4), null, null, 2.4, null, 204m, null);
+                activeM42End.AddHours(2.5), activeM42End.AddHours(5.3), null, null, 2.8, null, 238m, null);
+            // sandblasting not started
+            await CreateStageExec(j, "sandblasting", "BLAST1", StageExecutionStatus.NotStarted,
+                activeM42End.AddHours(5.8), activeM42End.AddHours(7.3), null, null, 1.5, null, 60m, null);
             await db.SaveChangesAsync();
         }
 
-        // ── Completed Build 3 & 4 — partial fulfillment jobs for wo3 ──
+        // ════════════════════════════════════════════════════════════
+        // READY BUILDS — prepared for scheduling (not yet on timeline)
+        // These are build plate programs with parts assigned and slicer
+        // data entered, ready for the scheduler or Next Build Advisor
+        // to place on a machine. They do NOT block machine time.
+        // ════════════════════════════════════════════════════════════
+
+        // M4-1: SUPP-001 72x ready to schedule → wo8
+        var readyM41 = await CreateProgram($"BP-{bpn++:D5}", "Supp Body 72x — Run #8", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli",
+            false, null, null, null, null, masterS1.Id, "M4-1");
+        await LinkProgParts(readyM41, [(supp1, 72, 1, wo8)]);
+
+        // M4-2: SUPP-002 96x ready to schedule → wo9
+        var readyM42 = await CreateProgram($"BP-{bpn++:D5}", "Compact Supp 96x — Run #7", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli",
+            false, null, null, null, null, masterS2.Id, "M4-2");
+        await LinkProgParts(readyM42, [(supp2, 96, 1, wo9)]);
+
+        // M4-1: SUPP-003 48x single ready to schedule → wo8
+        var readyM41b = await CreateProgram($"BP-{bpn++:D5}", "Ext Supp 48x — Run #1", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 24.8, 3800, 120, 18.2, "PSA_Ext_48x_v1.sli",
+            false, null, null, null, null, masterS3s.Id, "M4-1");
+        await LinkProgParts(readyM41b, [(supp3, 48, 1, wo8)]);
+
+        // ════════════════════════════════════════════════════════════
+        // UPDATE WO LINE QUANTITIES — mark produced/shipped
+        // ════════════════════════════════════════════════════════════
+
+        async Task UpdateLine(WorkOrder wo, Part part, int produced, int? shipped = null)
         {
-            var pStart3 = compBuild3Start;
-            var j3 = await CreateJob(suppPart, Mid("M4-1"), 72, JobScope.Build, JobStatus.Completed,
-                pStart3, pStart3.AddHours(28), pStart3, pStart3.AddHours(27.8), suppPart.Id, wo3, 72);
-            await CreateStageExec(j3, "sls-printing", "M4-1", StageExecutionStatus.Completed,
-                pStart3, pStart3.AddHours(20.2), pStart3, pStart3.AddHours(20.3), 20.2, 20.3, 4545m, 4568m, comp3.Id);
-            await CreateStageExec(j3, "depowdering", "INC1", StageExecutionStatus.Completed,
-                pStart3.AddHours(20.5), pStart3.AddHours(21.5), pStart3.AddHours(20.6), pStart3.AddHours(21.5), 1.0, 0.9, 55m, 50m);
-            await CreateStageExec(j3, "wire-edm", "EDM1", StageExecutionStatus.Completed,
-                pStart3.AddHours(21.5), pStart3.AddHours(23.5), pStart3.AddHours(21.7), pStart3.AddHours(23.6), 1.9, 1.9, 162m, 162m);
-            await CreateStageExec(j3, "sandblasting", "BLAST1", StageExecutionStatus.Completed,
-                pStart3.AddHours(24), pStart3.AddHours(25), pStart3.AddHours(24.1), pStart3.AddHours(25.0), 1.0, 0.9, 40m, 36m);
-            await CreateStageExec(j3, "cnc-machining", "CNC1", StageExecutionStatus.Completed,
-                pStart3.AddHours(25), pStart3.AddHours(46.6), pStart3.AddHours(25.3), pStart3.AddHours(47.1), 21.6, 21.8, 2052m, 2071m);
-            await db.SaveChangesAsync();
-
-            // Update wo3 suppressor line produced qty
-            var woLine3 = await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo3.Id && l.PartId == suppPart.Id);
-            if (woLine3 != null) woLine3.ProducedQuantity = 72; // 72 of 144 done
-
-            var pStart4 = compBuild4Start;
-            var j4 = await CreateJob(bracketPart, Mid("M4-2"), 96, JobScope.Build, JobStatus.Completed,
-                pStart4, pStart4.AddHours(30), pStart4, pStart4.AddHours(30.2), bracketPart.Id, wo3, 96);
-            await CreateStageExec(j4, "sls-printing", "M4-2", StageExecutionStatus.Completed,
-                pStart4, pStart4.AddHours(22), pStart4, pStart4.AddHours(22.1), 22.0, 22.1, 4950m, 4973m, comp4.Id);
-            await CreateStageExec(j4, "depowdering", "INC1", StageExecutionStatus.Completed,
-                pStart4.AddHours(22.5), pStart4.AddHours(23.5), pStart4.AddHours(22.6), pStart4.AddHours(23.7), 1.25, 1.1, 69m, 61m);
-            await CreateStageExec(j4, "heat-treatment", "HT1", StageExecutionStatus.Completed,
-                pStart4.AddHours(24), pStart4.AddHours(28.3), pStart4.AddHours(24.1), pStart4.AddHours(28.5), 4.3, 4.4, 280m, 286m);
-            await CreateStageExec(j4, "wire-edm", "EDM1", StageExecutionStatus.Completed,
-                pStart4.AddHours(28.5), pStart4.AddHours(30.2), pStart4.AddHours(28.7), pStart4.AddHours(30.3), 1.7, 1.6, 145m, 136m);
-            await db.SaveChangesAsync();
-
-            var woLine4 = await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo3.Id && l.PartId == bracketPart.Id);
-            if (woLine4 != null) woLine4.ProducedQuantity = 96; // all 96 done
-            await db.SaveChangesAsync();
+            var line = await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo.Id && l.PartId == part.Id);
+            if (line != null)
+            {
+                line.ProducedQuantity = produced;
+                if (shipped.HasValue) line.ShippedQuantity = shipped.Value;
+            }
         }
+
+        // wo1: Complete — 144× SUPP-001 (2 builds on M4-1, all shipped)
+        await UpdateLine(wo1, supp1, 144, 144);
+
+        // wo2: Complete — 192× SUPP-002 (2 builds on M4-2, all shipped)
+        await UpdateLine(wo2, supp2, 192, 192);
+
+        // wo3: Complete — 128× SUPP-003 (2× DS builds, 1 M4-1 + 1 M4-2, all shipped)
+        await UpdateLine(wo3, supp3, 128, 128);
+
+        // wo4: Complete — 216× SUPP-001 (2 M4-1 + 1 M4-2) + 96× SUPP-002 (1 M4-2), all shipped
+        await UpdateLine(wo4, supp1, 216, 216);
+        await UpdateLine(wo4, supp2, 96, 96);
+
+        // wo5: InProgress — 144× SUPP-001 done (2 M4-1), 96× SUPP-002 done (1 M4-2)
+        await UpdateLine(wo5, supp1, 144);
+        await UpdateLine(wo5, supp2, 96);
+
+        // wo6: InProgress — 96 SUPP-002 produced (1 completed build on M4-2),
+        //      96 more printing on M4-1
+        await UpdateLine(wo6, supp2, 96);
+
+        // wo7: InProgress — 64× SUPP-003 in post-print (depowdering on M4-2)
+        // (nothing "produced" yet — still on the plate)
+
+        // wo8-10: Released — nothing produced yet
+
+        await db.SaveChangesAsync();
     }
+
 
     }

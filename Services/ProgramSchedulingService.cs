@@ -70,8 +70,10 @@ public class ProgramSchedulingService : IProgramSchedulingService
             var oldJobId = program.ScheduledJobId.Value;
 
             // Delete per-part jobs that were created for this program's previous schedule
+            // Per-part job notes use format: "Post-build processing: ... (program {ProgramNumber})"
+            var programRef = $"(program {program.ProgramNumber ?? program.Name})";
             var perPartJobs = await _db.Jobs
-                .Where(j => j.Notes != null && j.Notes.Contains($"program: {program.Name ?? program.ProgramNumber}") && j.Id != oldJobId)
+                .Where(j => j.Notes != null && j.Notes.Contains(programRef) && j.Id != oldJobId)
                 .ToListAsync();
 
             // Delete old stage executions for the build job
@@ -852,8 +854,13 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .Select(e => new { e.ScheduledStartAt, e.ScheduledEndAt, e.MachineProgramId })
             .ToListAsync();
 
-        // Also include scheduled programs that don't yet have stage executions
-        // Exclude the program being rescheduled (forProgramId) to avoid self-blocking
+        // Also include scheduled programs that don't yet have stage executions.
+        // Only include programs that are truly committed to the timeline:
+        //   - Must have ScheduledJobId (fully scheduled with job + stage executions), OR
+        //   - Must be Printing/PostPrint (actively on the machine)
+        // Programs in "Scheduled" status without a ScheduledJobId are incomplete
+        // artifacts that should NOT block machine time.
+        // Exclude the program being rescheduled (forProgramId) to avoid self-blocking.
         var existingPrograms = await _db.MachinePrograms
             .Where(p => p.MachineId == machine.Id
                 && p.ProgramType == ProgramType.BuildPlate
@@ -861,6 +868,11 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 && p.EstimatedPrintHours != null
                 && p.ScheduleStatus != ProgramScheduleStatus.Completed
                 && p.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && p.ScheduleStatus != ProgramScheduleStatus.None
+                && p.ScheduleStatus != ProgramScheduleStatus.Ready
+                && (p.ScheduledJobId != null
+                    || p.ScheduleStatus == ProgramScheduleStatus.Printing
+                    || p.ScheduleStatus == ProgramScheduleStatus.PostPrint)
                 && (!forProgramId.HasValue || p.Id != forProgramId.Value))
             .OrderBy(p => p.ScheduledDate)
             .Select(p => new { p.Id, p.ScheduledDate, p.EstimatedPrintHours, p.SourceProgramId })
@@ -1002,13 +1014,21 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 scheduleStatus, exec.Id));
         }
 
-        // Fallback: include programs without stage executions
+        // Fallback: include programs without stage executions but only if they
+        // are truly committed to the timeline (have a job, or are Printing/PostPrint).
+        // Programs in "Scheduled" status without a ScheduledJobId are incomplete
+        // and should NOT appear on the timeline.
         var coveredProgramIds = entries.Select(e => e.MachineProgramId).ToHashSet();
         var orphanPrograms = await _db.MachinePrograms
             .Where(p => p.MachineId == machineId
                 && p.ProgramType == ProgramType.BuildPlate
                 && p.ScheduledDate != null
                 && p.ScheduleStatus != ProgramScheduleStatus.Cancelled
+                && p.ScheduleStatus != ProgramScheduleStatus.None
+                && p.ScheduleStatus != ProgramScheduleStatus.Ready
+                && (p.ScheduledJobId != null
+                    || p.ScheduleStatus == ProgramScheduleStatus.Printing
+                    || p.ScheduleStatus == ProgramScheduleStatus.PostPrint)
                 && !coveredProgramIds.Contains(p.Id))
             .OrderBy(p => p.ScheduledDate)
             .ToListAsync();
@@ -1733,13 +1753,15 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
     private async Task<int> GetOrCreatePrintStageIdAsync()
     {
-        var printStage = await _db.ProductionStages.FirstOrDefaultAsync(s => s.StageSlug == "sls-print");
+        // Check both slugs: "sls-printing" (seed data) and "sls-print" (legacy)
+        var printStage = await _db.ProductionStages.FirstOrDefaultAsync(
+            s => s.StageSlug == "sls-printing" || s.StageSlug == "sls-print");
         if (printStage != null) return printStage.Id;
 
         printStage = new ProductionStage
         {
-            Name = "SLS Print",
-            StageSlug = "sls-print",
+            Name = "SLS Printing",
+            StageSlug = "sls-printing",
             IsActive = true
         };
         _db.ProductionStages.Add(printStage);
