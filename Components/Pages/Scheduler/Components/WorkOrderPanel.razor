@@ -43,12 +43,16 @@
                 </div>
                 <div class="wo-panel-customer">@wo.CustomerName</div>
 
-                @* ── Progress bar ── *@
-                <div class="wo-panel-progress-bar">
-                    <div class="wo-panel-progress-fill" style="width: @(progress.Percent)%;"></div>
+                @* ── 4-Segment Progress bar ── *@
+                <div class="wo-fulfillment-bar" style="height: 5px;">
+                    @if (progress.ShippedPct > 0) { <div class="wo-bar-shipped" style="width: @F(progress.ShippedPct)%;"></div> }
+                    @if (progress.ProducedPct > 0) { <div class="wo-bar-produced" style="width: @F(progress.ProducedPct)%;"></div> }
+                    @if (progress.InProdPct > 0) { <div class="wo-bar-inprod" style="width: @F(progress.InProdPct)%;"></div> }
+                    @if (progress.ScheduledPct > 0) { <div class="wo-bar-scheduled" style="width: @F(progress.ScheduledPct)%;"></div> }
                 </div>
                 <div class="wo-panel-progress-label">
                     @progress.Produced / @progress.Total parts
+                    @if (progress.Scheduled > 0) { <span style="color: var(--accent); margin-left: 4px;">+@progress.Scheduled sched</span> }
                 </div>
 
                 @* ── Outstanding lines with actions ── *@
@@ -167,11 +171,27 @@
         return wo.DueDate.ToString("MMM d");
     }
 
-    private (int Produced, int Total, double Percent) GetProgress(WorkOrder wo)
+    private static string F(double val) => val.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+    private (int Produced, int Total, double Percent, int Shipped, int Scheduled, int InProd,
+        double ShippedPct, double ProducedPct, double InProdPct, double ScheduledPct) GetProgress(WorkOrder wo)
     {
         var total = wo.Lines.Sum(l => l.Quantity);
         var produced = wo.Lines.Sum(l => l.ProducedQuantity);
+        var shipped = wo.Lines.Sum(l => l.ShippedQuantity);
+        var producedNotShipped = Math.Max(0, produced - shipped);
+        var inProd = wo.Lines.Sum(l =>
+            l.Jobs?.Where(j => j.Status is not (JobStatus.Completed or JobStatus.Cancelled)).Sum(j => j.Quantity) ?? 0);
+        var scheduled = wo.Lines.Sum(l =>
+            l.ProgramParts?.Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus is ProgramScheduleStatus.Scheduled
+                    or ProgramScheduleStatus.Printing or ProgramScheduleStatus.PostPrint)
+                .Sum(pp => pp.Quantity * pp.StackLevel) ?? 0);
         var pct = total > 0 ? (double)produced / total * 100 : 0;
-        return (produced, total, pct);
+        return (produced, total, pct, shipped, scheduled, inProd,
+            total > 0 ? shipped * 100.0 / total : 0,
+            total > 0 ? producedNotShipped * 100.0 / total : 0,
+            total > 0 ? inProd * 100.0 / total : 0,
+            total > 0 ? scheduled * 100.0 / total : 0);
     }
 }

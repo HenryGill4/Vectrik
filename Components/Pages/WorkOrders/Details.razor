@@ -63,47 +63,47 @@ else
             var totalQty = _order.Lines.Sum(l => l.Quantity);
             var producedQty = _order.Lines.Sum(l => l.ProducedQuantity);
             var shippedQty = _order.Lines.Sum(l => l.ShippedQuantity);
+            var producedNotShipped = Math.Max(0, producedQty - shippedQty);
             var inBuildsQty = _order.Lines.Sum(l => GetInBuildQuantity(l));
-            var inProductionQty = _order.Lines.Sum(l => l.PartInstances?.Count(pi => !string.Equals(pi.Status.ToString(), "Completed", StringComparison.OrdinalIgnoreCase)) ?? 0);
+            var scheduledQty = _order.Lines.Sum(l => GetScheduledQuantity(l));
+            var outstandingQty = Math.Max(0, totalQty - producedQty - Math.Max(inBuildsQty, scheduledQty));
             var pct = totalQty > 0 ? (int)(producedQty * 100.0 / totalQty) : 0;
+
+            var daysUntilDue = (_order.DueDate - DateTime.UtcNow).Days;
+            var isOverdue = daysUntilDue < 0 && _order.Status != WorkOrderStatus.Complete;
+            var isDueSoon = daysUntilDue >= 0 && daysUntilDue <= 7 && _order.Status != WorkOrderStatus.Complete;
         }
         <div class="kpi-card">
             <div class="kpi-label">Due Date</div>
-            <div class="kpi-value" style="font-size: 1.2rem; color: @(_order.DueDate < DateTime.UtcNow && _order.Status != WorkOrderStatus.Complete ? "var(--danger)" : "var(--text-primary)")">@_order.DueDate.ToString("MMM dd, yyyy")</div>
+            <div class="kpi-value" style="font-size: 1.2rem; color: @(isOverdue ? "var(--danger)" : isDueSoon ? "var(--warning)" : "var(--text-primary)")">@_order.DueDate.ToString("MMM dd, yyyy")</div>
+            @if (isOverdue) { <div class="kpi-sub" style="color: var(--danger); font-weight: 600;">@(Math.Abs(daysUntilDue)) days overdue</div> }
+            else if (isDueSoon) { <div class="kpi-sub" style="color: var(--warning);">@daysUntilDue @(daysUntilDue == 1 ? "day" : "days") remaining</div> }
+            else { <div class="kpi-sub">@daysUntilDue days remaining</div> }
         </div>
         <div class="kpi-card">
             <div class="kpi-label">Priority</div>
             <div class="kpi-value" style="font-size: 1.2rem;"><span class="badge badge-@_order.Priority.ToString().ToLower()">@_order.Priority</span></div>
         </div>
-        <div class="kpi-card">
-            <div class="kpi-label">Fulfillment</div>
-            <div class="kpi-value" style="font-size: 1.4rem;">@pct%</div>
-            <div class="kpi-sub">@producedQty / @totalQty produced</div>
+        <div class="kpi-card" style="grid-column: span 2;">
+            <div class="kpi-label">Fulfillment — @pct%</div>
+            <div class="wo-fulfillment-bar" style="height: 10px; margin: 6px 0 4px;">
+                @{ var barShp = totalQty > 0 ? shippedQty * 100.0 / totalQty : 0;
+                   var barPrd = totalQty > 0 ? producedNotShipped * 100.0 / totalQty : 0;
+                   var barInp = totalQty > 0 ? inBuildsQty * 100.0 / totalQty : 0;
+                   var barSch = totalQty > 0 ? scheduledQty * 100.0 / totalQty : 0; }
+                @if (barShp > 0) { <div class="wo-bar-shipped" style="width: @F(barShp)%;"></div> }
+                @if (barPrd > 0) { <div class="wo-bar-produced" style="width: @F(barPrd)%;"></div> }
+                @if (barInp > 0) { <div class="wo-bar-inprod" style="width: @F(barInp)%;"></div> }
+                @if (barSch > 0) { <div class="wo-bar-scheduled" style="width: @F(barSch)%;"></div> }
+            </div>
+            <div style="display: flex; gap: 10px; font-size: 0.75rem; flex-wrap: wrap;">
+                @if (shippedQty > 0) { <span><span style="display:inline-block;width:8px;height:8px;background:#1a7f37;border-radius:2px;margin-right:3px;"></span>@shippedQty shipped</span> }
+                @if (producedNotShipped > 0) { <span><span style="display:inline-block;width:8px;height:8px;background:var(--success);border-radius:2px;margin-right:3px;"></span>@producedNotShipped produced</span> }
+                @if (inBuildsQty > 0) { <span><span style="display:inline-block;width:8px;height:8px;background:var(--warning);border-radius:2px;margin-right:3px;"></span>@inBuildsQty in production</span> }
+                @if (scheduledQty > 0) { <span><span style="display:inline-block;width:8px;height:8px;background:var(--accent);border-radius:2px;margin-right:3px;"></span>@scheduledQty scheduled</span> }
+                @if (outstandingQty > 0) { <span><span style="display:inline-block;width:8px;height:8px;background:var(--bg-tertiary);border-radius:2px;margin-right:3px;"></span>@outstandingQty outstanding</span> }
+            </div>
         </div>
-        @if (inBuildsQty > 0)
-        {
-            <div class="kpi-card" style="border-left: 3px solid var(--accent);">
-                <div class="kpi-label">In Builds</div>
-                <div class="kpi-value" style="font-size: 1.4rem; color: var(--accent);">@inBuildsQty</div>
-                <div class="kpi-sub">parts on build plates</div>
-            </div>
-        }
-        @if (inProductionQty > 0)
-        {
-            <div class="kpi-card" style="border-left: 3px solid var(--info);">
-                <div class="kpi-label">In Production</div>
-                <div class="kpi-value" style="font-size: 1.4rem; color: var(--info);">@inProductionQty</div>
-                <div class="kpi-sub">parts in process</div>
-            </div>
-        }
-        @if (shippedQty > 0)
-        {
-            <div class="kpi-card" style="border-left: 3px solid var(--success);">
-                <div class="kpi-label">Shipped</div>
-                <div class="kpi-value" style="font-size: 1.4rem; color: var(--success);">@shippedQty</div>
-                <div class="kpi-sub">of @totalQty total</div>
-            </div>
-        }
     </div>
 
     <!-- Tabs -->
@@ -137,12 +137,15 @@ else
                 <tbody>
                     @foreach (var line in _order.Lines)
                     {
-                        var lineInBuilds = GetInBuildQuantity(line);
+                        var lineInProd = GetInBuildQuantity(line);
+                        var lineScheduled = GetScheduledQuantity(line);
                         var lineProduced = line.ProducedQuantity;
                         var lineShipped = line.ShippedQuantity;
-                        var lineRemaining = Math.Max(0, line.Quantity - lineProduced - lineInBuilds);
-                        var lineProgressPct = line.Quantity > 0 ? Math.Min(100, (int)((lineProduced + lineInBuilds) * 100.0 / line.Quantity)) : 0;
+                        var lineProducedNotShipped = Math.Max(0, lineProduced - lineShipped);
+                        var lineOutstanding = Math.Max(0, line.Quantity - lineProduced - Math.Max(lineInProd, lineScheduled));
                         var isAdditive = line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
+                        var perBuild = line.Part?.AdditiveBuildConfig?.PlannedPartsPerBuildSingle ?? 0;
+                        var lineBuildsNeeded = perBuild > 0 && lineOutstanding > 0 ? (int)Math.Ceiling((double)lineOutstanding / perBuild) : 0;
                         var activeProgramParts = line.ProgramParts?
                             .Where(pp => pp.MachineProgram != null
                                 && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
@@ -158,11 +161,12 @@ else
                                 <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
                                     @if (isAdditive)
                                     {
-                                        <span class="badge badge-accent" style="font-size: 0.65rem; padding: 1px 6px;">🖨️ SLS</span>
+                                        <span class="badge badge-accent" style="font-size: 0.65rem; padding: 1px 6px;">SLS</span>
+                                        @if (perBuild > 0) { <span style="margin-left: 4px;">@perBuild/build</span> }
                                     }
                                     else
                                     {
-                                        <span class="badge badge-info" style="font-size: 0.65rem; padding: 1px 6px;">⚙️ CNC</span>
+                                        <span class="badge badge-info" style="font-size: 0.65rem; padding: 1px 6px;">CNC</span>
                                     }
                                     @if (!string.IsNullOrEmpty(line.Part?.Material))
                                     {
@@ -174,42 +178,29 @@ else
                                 <div style="font-size: 1.1rem; font-weight: 600;">@line.Quantity</div>
                             </td>
                             <td>
-                                <div style="display: flex; flex-direction: column; gap: 4px; min-width: 180px;">
-                                    @* Progress bar showing produced + in-builds *@
-                                    <div style="display: flex; gap: 6px; font-size: 0.78rem; color: var(--text-secondary);">
-                                        @if (lineProduced > 0)
-                                        {
-                                            <span style="color: var(--success);">✅ @lineProduced produced</span>
-                                        }
-                                        @if (lineInBuilds > 0)
-                                        {
-                                            <span style="color: var(--accent);">🖨️ @lineInBuilds in builds</span>
-                                        }
-                                        @if (lineShipped > 0)
-                                        {
-                                            <span style="color: var(--info);">📦 @lineShipped shipped</span>
-                                        }
-                                        @if (lineRemaining > 0)
-                                        {
-                                            <span>@lineRemaining remaining</span>
-                                        }
+                                <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px;">
+                                    @* 4-segment progress bar *@
+                                    <div class="wo-fulfillment-bar" style="height: 7px;">
+                                        @{ var lShpPct = line.Quantity > 0 ? lineShipped * 100.0 / line.Quantity : 0;
+                                           var lPrdPct = line.Quantity > 0 ? lineProducedNotShipped * 100.0 / line.Quantity : 0;
+                                           var lInpPct = line.Quantity > 0 ? lineInProd * 100.0 / line.Quantity : 0;
+                                           var lSchPct = line.Quantity > 0 ? lineScheduled * 100.0 / line.Quantity : 0; }
+                                        @if (lShpPct > 0) { <div class="wo-bar-shipped" style="width: @F(lShpPct)%;"></div> }
+                                        @if (lPrdPct > 0) { <div class="wo-bar-produced" style="width: @F(lPrdPct)%;"></div> }
+                                        @if (lInpPct > 0) { <div class="wo-bar-inprod" style="width: @F(lInpPct)%;"></div> }
+                                        @if (lSchPct > 0) { <div class="wo-bar-scheduled" style="width: @F(lSchPct)%;"></div> }
                                     </div>
-                                    <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
-                                        @{
-                                            var producedPct = line.Quantity > 0 ? lineProduced * 100.0 / line.Quantity : 0;
-                                            var buildPct = line.Quantity > 0 ? lineInBuilds * 100.0 / line.Quantity : 0;
-                                        }
-                                        <div style="display: flex; height: 100%;">
-                                            @if (producedPct > 0)
-                                            {
-                                                <div style="width: @producedPct.ToString("F1")%; background: var(--success);"></div>
-                                            }
-                                            @if (buildPct > 0)
-                                            {
-                                                <div style="width: @buildPct.ToString("F1")%; background: var(--accent); opacity: 0.7;"></div>
-                                            }
-                                        </div>
+                                    <div style="display: flex; gap: 6px; font-size: 0.72rem; color: var(--text-muted); flex-wrap: wrap;">
+                                        @if (lineShipped > 0) { <span style="color: #1a7f37;">@lineShipped shipped</span> }
+                                        @if (lineProducedNotShipped > 0) { <span style="color: var(--success);">@lineProducedNotShipped produced</span> }
+                                        @if (lineInProd > 0) { <span style="color: var(--warning);">@lineInProd in prod</span> }
+                                        @if (lineScheduled > 0) { <span style="color: var(--accent);">@lineScheduled scheduled</span> }
+                                        @if (lineOutstanding > 0) { <span>@lineOutstanding outstanding</span> }
                                     </div>
+                                    @if (lineBuildsNeeded > 0)
+                                    {
+                                        <div style="font-size: 0.7rem; color: var(--warning); font-weight: 500;">@lineBuildsNeeded @(lineBuildsNeeded == 1 ? "build" : "builds") needed</div>
+                                    }
                                 </div>
                             </td>
                             <td>
@@ -962,14 +953,24 @@ else
         _ => ""
     };
 
+    private static string F(double val) => val.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
     private static int GetInBuildQuantity(WorkOrderLine line)
     {
         if (line.ProgramParts == null) return 0;
         return line.ProgramParts
             .Where(pp => pp.MachineProgram != null
-                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Cancelled
-                && pp.MachineProgram.ScheduleStatus != ProgramScheduleStatus.Completed)
-            .Sum(pp => pp.Quantity);
+                && pp.MachineProgram.ScheduleStatus is ProgramScheduleStatus.Printing or ProgramScheduleStatus.PostPrint)
+            .Sum(pp => pp.Quantity * pp.StackLevel);
+    }
+
+    private static int GetScheduledQuantity(WorkOrderLine line)
+    {
+        if (line.ProgramParts == null) return 0;
+        return line.ProgramParts
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus == ProgramScheduleStatus.Scheduled)
+            .Sum(pp => pp.Quantity * pp.StackLevel);
     }
 
     // ── Sign-off actions ─────────────────────────────────────────

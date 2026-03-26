@@ -72,7 +72,7 @@ else
                     <th>PO #</th>
                     <th>Due Date</th>
                     <th>Lines</th>
-                    <th>Fulfillment</th>
+                    <th style="min-width: 200px;">Fulfillment</th>
                     <th>Status</th>
                     <th>Priority</th>
                 </tr>
@@ -81,19 +81,56 @@ else
                 @foreach (var wo in _filtered.Skip((_page - 1) * _pageSize).Take(_pageSize))
                 {
                     var totalQty = wo.Lines.Sum(l => l.Quantity);
+                    var shippedQty = wo.Lines.Sum(l => l.ShippedQuantity);
                     var producedQty = wo.Lines.Sum(l => l.ProducedQuantity);
-                    var pct = totalQty > 0 ? (int)(producedQty * 100.0 / totalQty) : 0;
+                    var producedNotShipped = Math.Max(0, producedQty - shippedQty);
+                    var inProductionQty = wo.Lines.Sum(l => GetInProductionQty(l));
+                    var scheduledQty = wo.Lines.Sum(l => GetScheduledQty(l));
+                    var outstandingQty = Math.Max(0, totalQty - producedQty - Math.Max(inProductionQty, scheduledQty));
+
+                    var shippedPct = totalQty > 0 ? shippedQty * 100.0 / totalQty : 0;
+                    var producedPct = totalQty > 0 ? producedNotShipped * 100.0 / totalQty : 0;
+                    var inProdPct = totalQty > 0 ? inProductionQty * 100.0 / totalQty : 0;
+                    var schedPct = totalQty > 0 ? scheduledQty * 100.0 / totalQty : 0;
+
+                    var daysUntilDue = (wo.DueDate - DateTime.UtcNow).Days;
+                    var isOverdue = daysUntilDue < 0 && wo.Status != WorkOrderStatus.Complete;
+                    var isDueSoon = daysUntilDue >= 0 && daysUntilDue <= 7 && wo.Status != WorkOrderStatus.Complete;
+                    var dueDateColor = isOverdue ? "var(--danger)" : isDueSoon ? "var(--warning)" : "inherit";
+
+                    var buildsNeeded = wo.Lines.Sum(l => GetBuildsNeeded(l));
+
                     <tr class="clickable-row" @onclick="() => GoToDetail(wo.Id)">
                         <td><strong>@wo.OrderNumber</strong></td>
                         <td>@wo.CustomerName</td>
                         <td>@(wo.CustomerPO ?? "—")</td>
-                        <td style="color: @(wo.DueDate < DateTime.UtcNow && wo.Status != WorkOrderStatus.Complete ? "var(--danger)" : "inherit")">@wo.DueDate.ToString("yyyy-MM-dd")</td>
+                        <td style="white-space: nowrap;">
+                            <span style="color: @dueDateColor; font-weight: @(isOverdue ? "700" : "normal");">@wo.DueDate.ToString("yyyy-MM-dd")</span>
+                            @if (isOverdue)
+                            {
+                                <div style="font-size: 0.68rem; color: var(--danger); font-weight: 600;">@(Math.Abs(daysUntilDue))d overdue</div>
+                            }
+                            else if (isDueSoon)
+                            {
+                                <div style="font-size: 0.68rem; color: var(--warning);">@daysUntilDue @(daysUntilDue == 1 ? "day" : "days") left</div>
+                            }
+                        </td>
                         <td>@wo.Lines.Count</td>
                         <td>
-                            <div class="progress-bar-container">
-                                <div class="progress-bar-fill" style="width: @(pct)%;"></div>
+                            <div class="wo-fulfillment-bar">
+                                @if (shippedPct > 0) { <div class="wo-bar-shipped" style="width: @F(shippedPct)%;" title="Shipped: @shippedQty"></div> }
+                                @if (producedPct > 0) { <div class="wo-bar-produced" style="width: @F(producedPct)%;" title="Produced: @producedNotShipped"></div> }
+                                @if (inProdPct > 0) { <div class="wo-bar-inprod" style="width: @F(inProdPct)%;" title="In production: @inProductionQty"></div> }
+                                @if (schedPct > 0) { <div class="wo-bar-scheduled" style="width: @F(schedPct)%;" title="Scheduled: @scheduledQty"></div> }
                             </div>
-                            <span style="font-size: 0.75rem; color: var(--text-muted);">@producedQty / @totalQty (@pct%)</span>
+                            <div style="display: flex; gap: 6px; font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; flex-wrap: wrap;">
+                                @if (shippedQty > 0) { <span style="color: var(--success-dark, #1a7f37);">@shippedQty shipped</span> }
+                                @if (producedNotShipped > 0) { <span style="color: var(--success);">@producedNotShipped produced</span> }
+                                @if (inProductionQty > 0) { <span style="color: var(--warning);">@inProductionQty in prod</span> }
+                                @if (scheduledQty > 0) { <span style="color: var(--accent);">@scheduledQty scheduled</span> }
+                                @if (outstandingQty > 0) { <span>@outstandingQty outstanding</span> }
+                                @if (buildsNeeded > 0) { <span>· @buildsNeeded @(buildsNeeded == 1 ? "build" : "builds") needed</span> }
+                            </div>
                         </td>
                         <td><span class="badge @GetBadge(wo.Status)">@wo.Status</span></td>
                         <td><span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span></td>
@@ -142,6 +179,29 @@ else
 
     private void GoToCreate() => Nav.NavigateTo("/workorders/new");
     private void GoToDetail(int id) => Nav.NavigateTo($"/workorders/{id}");
+
+    private static string F(double val) => val.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static int GetScheduledQty(WorkOrderLine line) =>
+        line.ProgramParts?
+            .Where(pp => pp.MachineProgram != null
+                && pp.MachineProgram.ScheduleStatus is ProgramScheduleStatus.Scheduled
+                    or ProgramScheduleStatus.Printing or ProgramScheduleStatus.PostPrint)
+            .Sum(pp => pp.Quantity * pp.StackLevel) ?? 0;
+
+    private static int GetInProductionQty(WorkOrderLine line) =>
+        line.Jobs?
+            .Where(j => j.Status is not (JobStatus.Completed or JobStatus.Cancelled))
+            .Sum(j => j.Quantity) ?? 0;
+
+    private static int GetBuildsNeeded(WorkOrderLine line)
+    {
+        var remaining = line.Quantity - line.ProducedQuantity
+            - Math.Max(GetScheduledQty(line), GetInProductionQty(line));
+        if (remaining <= 0) return 0;
+        var perBuild = line.Part?.AdditiveBuildConfig?.PlannedPartsPerBuildSingle ?? 0;
+        return perBuild > 0 ? (int)Math.Ceiling((double)remaining / perBuild) : 0;
+    }
 
     private static string GetBadge(WorkOrderStatus status) => status switch
     {
