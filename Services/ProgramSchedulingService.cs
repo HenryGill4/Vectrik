@@ -1757,7 +1757,10 @@ public class ProgramSchedulingService : IProgramSchedulingService
         List<ManufacturingProcess> processes,
         DateTime startAfter)
     {
-        var processLookup = processes.ToDictionary(p => p.PartId, p => p);
+        // Use first active process per part (a part could have multiple process versions)
+        var processLookup = processes
+            .GroupBy(p => p.PartId)
+            .ToDictionary(g => g.Key, g => g.First());
         var createdJobIds = new List<int>();
 
         var machineLookupById = await _db.Machines.Where(m => m.IsActive).ToDictionaryAsync(m => m.Id, m => m);
