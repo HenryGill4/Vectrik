@@ -64,6 +64,27 @@
         </div>
     }
 
+    @* ── Machine DOWN block (shown when changeover lands outside operator hours) ── *@
+    @if (DowntimeStart.HasValue && DowntimeEnd.HasValue && Build.ScheduleStatus != ProgramScheduleStatus.Completed)
+    {
+        var dtOffsetHours = (DowntimeStart.Value - Start).TotalHours;
+        var dtDurationHours = (DowntimeEnd.Value - DowntimeStart.Value).TotalHours;
+        var dtLeftPx = dtOffsetHours * PixelsPerHour;
+        var dtWidthPx = dtDurationHours * PixelsPerHour;
+        <div class="gantt-downtime-block"
+             style="left: @(FormatPx(dtLeftPx))px; width: @(FormatPx(Math.Max(dtWidthPx, 8)))px;"
+             title="Machine DOWN: @(dtDurationHours.ToString("F1"))h until operator arrives and unloads printer">
+            @if (dtWidthPx > 30)
+            {
+                <span class="gantt-downtime-label">DOWN @(dtDurationHours.ToString("F0"))h</span>
+            }
+            else if (dtWidthPx > 12)
+            {
+                <span class="gantt-downtime-label">⬇</span>
+            }
+        </div>
+    }
+
     @if (_showPopover)
     {
         <div class="gantt-build-popover" @onclick:stopPropagation="true">
@@ -85,6 +106,14 @@
                     <div class="gantt-build-popover-row">
                         <span class="gantt-build-popover-label">Changeover</span>
                         <span>@((int)ChangeoverMinutes) min @(HasChangeoverConflict ? "⚠️ No operator" : "✓ Safe")</span>
+                    </div>
+                }
+                @if (DowntimeStart.HasValue && DowntimeEnd.HasValue)
+                {
+                    var dtHours = (DowntimeEnd.Value - DowntimeStart.Value).TotalHours;
+                    <div class="gantt-build-popover-row" style="color: var(--danger);">
+                        <span class="gantt-build-popover-label">Downtime</span>
+                        <span>@(dtHours.ToString("F1"))h — machine stops until operator unloads</span>
                     </div>
                 }
                 @if (Build.EstimatedPowderKg.HasValue)
@@ -142,6 +171,8 @@
     [Parameter] public double ChangeoverMinutes { get; set; }
     [Parameter] public double PixelsPerHour { get; set; }
     [Parameter] public bool IsSelected { get; set; }
+    [Parameter] public DateTime? DowntimeStart { get; set; }
+    [Parameter] public DateTime? DowntimeEnd { get; set; }
 
     /// <summary>Raised when the user clicks a status action. Value is (MachineProgram, actionKey).</summary>
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }

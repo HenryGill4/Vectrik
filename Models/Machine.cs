@@ -61,6 +61,14 @@ public class Machine
     public bool AutoChangeoverEnabled { get; set; }
     public double ChangeoverMinutes { get; set; } = 30;
 
+    /// <summary>
+    /// Time (minutes) from operator arrival until machine can start a new build.
+    /// Covers removing the cooled plate from the cooldown chamber, loading a fresh
+    /// build plate, and any pre-print setup. Default 90 min (~1.5 hrs) for EOS M4.
+    /// Only relevant when AutoChangeoverEnabled is true.
+    /// </summary>
+    public double OperatorUnloadMinutes { get; set; } = 90;
+
     // Laser configuration (planning reference)
     public int? LaserCount { get; set; }
 

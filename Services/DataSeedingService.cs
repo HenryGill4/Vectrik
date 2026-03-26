@@ -251,7 +251,7 @@ public class DataSeedingService : IDataSeedingService
                 MachineId = "M4-1", Name = "EOS M4 Onyx #1", MachineType = "SLS",
                 MachineModel = "EOS M 400-4", Department = "SLS",
                 BuildLengthMm = 450, BuildWidthMm = 450, BuildHeightMm = 400,
-                BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30,
+                BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30, OperatorUnloadMinutes = 90,
                 LaserCount = 6, MaxLaserPowerWatts = 1000,
                 HourlyRate = 200.00m, CreatedBy = "System", LastModifiedBy = "System"
             },
@@ -260,7 +260,7 @@ public class DataSeedingService : IDataSeedingService
                 MachineId = "M4-2", Name = "EOS M4 Onyx #2", MachineType = "SLS",
                 MachineModel = "EOS M 400-4", Department = "SLS",
                 BuildLengthMm = 450, BuildWidthMm = 450, BuildHeightMm = 400,
-                BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30,
+                BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30, OperatorUnloadMinutes = 90,
                 LaserCount = 6, MaxLaserPowerWatts = 1000,
                 HourlyRate = 200.00m, CreatedBy = "System", LastModifiedBy = "System"
             },
@@ -471,7 +471,7 @@ public class DataSeedingService : IDataSeedingService
             MachineId = "M4-1", Name = "EOS M4 Onyx #1", MachineType = "SLS",
             MachineModel = "EOS M 400-4", Department = "SLS",
             BuildLengthMm = 450, BuildWidthMm = 450, BuildHeightMm = 400,
-            BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30,
+            BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30, OperatorUnloadMinutes = 90,
             LaserCount = 6, MaxLaserPowerWatts = 1000, IsAdditiveMachine = true,
             HourlyRate = 200.00m, CreatedBy = "System", LastModifiedBy = "System"
         },
@@ -480,7 +480,7 @@ public class DataSeedingService : IDataSeedingService
             MachineId = "M4-2", Name = "EOS M4 Onyx #2", MachineType = "SLS",
             MachineModel = "EOS M 400-4", Department = "SLS",
             BuildLengthMm = 450, BuildWidthMm = 450, BuildHeightMm = 400,
-            BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30,
+            BuildPlateCapacity = 2, AutoChangeoverEnabled = true, ChangeoverMinutes = 30, OperatorUnloadMinutes = 90,
             LaserCount = 6, MaxLaserPowerWatts = 1000, IsAdditiveMachine = true,
             HourlyRate = 200.00m, CreatedBy = "System", LastModifiedBy = "System"
         },

@@ -86,25 +86,56 @@
                                 .OrderByDescending(d => d.HighestPriority).ThenBy(d => d.EarliestDueDate).ToList();
                             var totalRemaining = activeDemand.Sum(d => d.NetRemaining);
                             var overdueCount = activeDemand.Count(d => d.IsOverdue);
+                            var totalBuildsNeeded = activeDemand.Sum(d =>
+                                d.BuildConfig != null && d.BuildConfig.PlannedPartsPerBuildSingle > 0
+                                    ? (int)Math.Ceiling((double)d.NetRemaining / d.BuildConfig.PlannedPartsPerBuildSingle)
+                                    : 1);
                         }
                         @if (activeDemand.Any())
                         {
                             <div style="margin-bottom: 12px;">
                                 <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
                                     <div style="font-weight: 600; font-size: 0.85rem;">Outstanding Demand</div>
-                                    <span style="font-size: 0.78rem; color: var(--text-muted);">@totalRemaining parts across @activeDemand.Count @(activeDemand.Count == 1 ? "part type" : "part types")</span>
+                                    <span style="font-size: 0.78rem; color: var(--text-muted);">@totalRemaining parts · @totalBuildsNeeded builds needed · @activeDemand.Count @(activeDemand.Count == 1 ? "type" : "types")</span>
                                 </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;">
+                                @if (overdueCount > 0)
+                                {
+                                    <div style="padding: 4px 8px; background: rgba(var(--danger-rgb), 0.1); border-radius: 4px; margin-bottom: 6px; font-size: 0.78rem; color: var(--danger); font-weight: 600;">
+                                        ⚠ @overdueCount overdue @(overdueCount == 1 ? "order" : "orders")
+                                    </div>
+                                }
+                                <div style="display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto;">
                                     @foreach (var d in activeDemand)
                                     {
-                                        var woList = string.Join(", ", d.SourceLines.Select(s => s.WorkOrderNumber).Distinct().Take(3));
-                                        <div style="display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--bg-secondary); border-radius: 4px; font-size: 0.78rem; @(d.IsOverdue ? "border-left: 3px solid var(--danger);" : "")">
-                                            <span style="font-weight: 600; min-width: 100px;">@d.PartNumber</span>
-                                            <span class="badge badge-@d.HighestPriority.ToString().ToLower()" style="font-size: 0.65rem;">@d.HighestPriority</span>
-                                            <span style="color: var(--text-primary); font-weight: 500;">@d.NetRemaining remaining</span>
-                                            <span style="color: var(--text-muted);">due @d.EarliestDueDate.ToString("MMM d")</span>
-                                            @if (d.IsOverdue) { <span style="color: var(--danger); font-weight: 600; font-size: 0.72rem;">OVERDUE</span> }
-                                            <span style="color: var(--text-muted); margin-left: auto; font-size: 0.72rem;">@woList</span>
+                                        var woList = string.Join(", ", d.SourceLines.Select(s => s.WorkOrderNumber).Distinct().Take(4));
+                                        var perBuild = d.BuildConfig?.PlannedPartsPerBuildSingle ?? 0;
+                                        var buildsNeeded = perBuild > 0 ? (int)Math.Ceiling((double)d.NetRemaining / perBuild) : 0;
+                                        var daysUntilDue = (d.EarliestDueDate - DateTime.UtcNow).Days;
+                                        var dueDateColor = d.IsOverdue ? "var(--danger)" : daysUntilDue <= 7 ? "var(--warning)" : "var(--text-muted)";
+
+                                        <div style="padding: 6px 10px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.78rem; @(d.IsOverdue ? "border-left: 3px solid var(--danger);" : "")">
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <span style="font-weight: 700; min-width: 105px;">@d.PartNumber</span>
+                                                <span class="badge badge-@d.HighestPriority.ToString().ToLower()" style="font-size: 0.62rem;">@d.HighestPriority</span>
+                                                <span style="color: var(--text-primary); font-weight: 600;">@d.NetRemaining remaining</span>
+                                                @if (d.IsOverdue) { <span style="color: var(--danger); font-weight: 700; font-size: 0.72rem;">OVERDUE</span> }
+                                                <span style="color: @dueDateColor; margin-left: auto; font-size: 0.72rem; white-space: nowrap;">due @d.EarliestDueDate.ToString("MMM d")</span>
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 3px; color: var(--text-muted); font-size: 0.72rem;">
+                                                @if (perBuild > 0)
+                                                {
+                                                    <span>@perBuild/build</span>
+                                                    <span>·</span>
+                                                    <span style="font-weight: 500; color: var(--text-secondary);">@buildsNeeded @(buildsNeeded == 1 ? "build" : "builds") needed</span>
+                                                }
+                                                @if (d.TotalOrdered > d.NetRemaining)
+                                                {
+                                                    <span>·</span>
+                                                    <span>@d.TotalProduced produced</span>
+                                                    @if (d.InPrograms > 0) { <span>· @d.InPrograms in programs</span> }
+                                                }
+                                                <span style="margin-left: auto;">@woList</span>
+                                            </div>
                                         </div>
                                     }
                                 </div>

@@ -225,7 +225,9 @@ public record ProgramScheduleSlot(
     DateTime ChangeoverStart,
     DateTime ChangeoverEnd,
     int MachineId,
-    bool OperatorAvailableForChangeover);
+    bool OperatorAvailableForChangeover,
+    DateTime? DowntimeStart = null,
+    DateTime? DowntimeEnd = null);
 
 /// <summary>
 /// Result of FindBestSlotAsync — wraps a ProgramScheduleSlot with the chosen machine info.
@@ -248,7 +250,9 @@ public record ProgramTimelineEntry(
     DateTime? ChangeoverEnd,
     ProgramScheduleStatus ScheduleStatus,
     int? StageExecutionId = null,
-    bool HasChangeoverConflict = false);
+    bool HasChangeoverConflict = false,
+    DateTime? DowntimeStart = null,
+    DateTime? DowntimeEnd = null);
 
 /// <summary>
 /// Result of analyzing changeover timing and operator availability.
@@ -258,7 +262,8 @@ public record ChangeoverAnalysis(
     DateTime ChangeoverStart,
     DateTime ChangeoverEnd,
     string? SuggestedAction,
-    double? SuggestedDurationHours);
+    double? SuggestedDurationHours,
+    double? DowntimeHours = null);
 
 /// <summary>
 /// Warning raised when two consecutive programs finish without an operator

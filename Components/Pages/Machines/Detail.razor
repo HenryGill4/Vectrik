@@ -204,6 +204,11 @@ else
                         <label class="form-label">Changeover Minutes</label>
                         <input class="form-control" type="number" step="1" min="0" @bind="_editModel.ChangeoverMinutes" disabled="@(!_editModel.AutoChangeoverEnabled)" />
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Operator Unload Minutes</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_editModel.OperatorUnloadMinutes" disabled="@(!_editModel.AutoChangeoverEnabled)" />
+                        <small class="form-text text-muted">Time from operator arrival until machine can start next build</small>
+                    </div>
                 </div>
             </div>
 
@@ -242,7 +247,7 @@ else
                     <div><span class="form-label">Department</span><div>@(_machine.Department ?? "—")</div></div>
                     <div><span class="form-label">Priority</span><div>@_machine.Priority / 10</div></div>
                     <div><span class="form-label">Scheduling</span><div>@(_machine.IsAvailableForScheduling ? "✅ Available" : "❌ Not available")</div></div>
-                    <div><span class="form-label">Auto Changeover</span><div>@(_machine.AutoChangeoverEnabled ? $"✅ {_machine.ChangeoverMinutes:F0} min" : "❌ Off")</div></div>
+                    <div><span class="form-label">Auto Changeover</span><div>@(_machine.AutoChangeoverEnabled ? $"✅ {_machine.ChangeoverMinutes:F0} min swap, {_machine.OperatorUnloadMinutes:F0} min unload" : "❌ Off")</div></div>
                     <div><span class="form-label">Current Material</span><div>@(_machine.CurrentMaterial ?? "—")</div></div>
                     <div><span class="form-label">Supported Materials</span><div>@(_machine.SupportedMaterials ?? "—")</div></div>
                 </div>
@@ -836,6 +841,7 @@ else
             HourlyRate = _machine.HourlyRate,
             AutoChangeoverEnabled = _machine.AutoChangeoverEnabled,
             ChangeoverMinutes = _machine.ChangeoverMinutes,
+            OperatorUnloadMinutes = _machine.OperatorUnloadMinutes,
             IsAdditiveMachine = _machine.IsAdditiveMachine,
             CreatedBy = _machine.CreatedBy,
             LastModifiedBy = "System"
@@ -897,6 +903,7 @@ else
                 _machine.HourlyRate = _editModel.HourlyRate;
                 _machine.AutoChangeoverEnabled = _editModel.AutoChangeoverEnabled;
                 _machine.ChangeoverMinutes = _editModel.ChangeoverMinutes;
+                _machine.OperatorUnloadMinutes = _editModel.OperatorUnloadMinutes;
                 _machine.IsAdditiveMachine = _editModel.IsAdditiveMachine;
                 _machine.LastModifiedBy = "System";
                 _machine.LastModifiedDate = DateTime.UtcNow;

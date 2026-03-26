@@ -45,7 +45,8 @@ public class ProgramSchedulingServiceTests : IDisposable
         string name = "EOS M4 #1",
         bool autoChangeover = true,
         int changeoverMinutes = 30,
-        int priority = 1)
+        int priority = 1,
+        double operatorUnloadMinutes = 90)
     {
         var machine = new Machine
         {
@@ -57,6 +58,7 @@ public class ProgramSchedulingServiceTests : IDisposable
             IsAdditiveMachine = true,
             AutoChangeoverEnabled = autoChangeover,
             ChangeoverMinutes = changeoverMinutes,
+            OperatorUnloadMinutes = operatorUnloadMinutes,
             Priority = priority,
             CreatedBy = "test",
             LastModifiedBy = "test"
@@ -1169,5 +1171,92 @@ public class ProgramSchedulingServiceTests : IDisposable
         // Verify Notes contain the program number in the format the cleanup code searches for
         var perPartJob = perPartJobs.First();
         Assert.Contains($"(program {program.ProgramNumber})", perPartJob.Notes);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // Operator Unload Delay — FindEarliestSlot
+    // ══════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FindEarliestSlot_IncludesOperatorUnloadDelay_WhenChangeoverOffShift()
+    {
+        // Arrange: machine with 30min changeover + 90min unload, Mon-Fri 06:00-18:00 shift
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddShiftAsync("Day", TimeSpan.FromHours(6), TimeSpan.FromHours(18));
+
+        // Existing build: Fri 00:00 → Fri 20:00 (20h print, ends off-shift)
+        var fri = Mon.AddDays(4); // Friday
+        var prog = await AddScheduledBuildPlateProgramAsync(machine.Id, fri, 20, "Fri Build");
+        await AddProgramBlockAsync(machine.Id, prog.Id, fri, fri.AddHours(20));
+
+        // Act: find next slot starting from Friday (so it must go past this build)
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, 16, fri);
+
+        // Assert: changeover at Fri 20:00-20:30 is off-shift (shift ends 18:00).
+        // Machine DOWN until Mon 06:00 + 90min unload = Mon 07:30.
+        // Next slot should start at or after Mon 07:30.
+        var nextMon = Mon.AddDays(7).AddHours(6); // next Monday 06:00
+        var mondayWithUnload = nextMon.AddMinutes(90); // Monday 07:30
+        Assert.True(slot.PrintStart >= mondayWithUnload,
+            $"Expected slot after {mondayWithUnload:ddd HH:mm} but got {slot.PrintStart:ddd HH:mm}");
+    }
+
+    [Fact]
+    public async Task FindEarliestSlot_NoUnloadDelay_WhenChangeoverDuringShift()
+    {
+        // Arrange: same machine, but build ends during shift hours
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddShiftAsync("Day", TimeSpan.FromHours(6), TimeSpan.FromHours(18));
+
+        // Build ends Monday at 10:00 (during shift)
+        var prog = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 10, "Morning Build");
+        await AddProgramBlockAsync(machine.Id, prog.Id, Mon, Mon.AddHours(10));
+
+        // Act
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, 8, Mon);
+
+        // Assert: next slot starts at 10:00 + 30min changeover = 10:30 (NO unload delay)
+        Assert.Equal(Mon.AddHours(10).AddMinutes(30), slot.PrintStart);
+    }
+
+    [Fact]
+    public async Task FindEarliestSlot_ReturnsDowntimeFields_WhenChangeoverOffShift()
+    {
+        // Arrange
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+
+        // Act: schedule on empty machine starting Mon 00:00, 8h print ends Mon 08:00
+        // Changeover 08:00-08:30 — this IS within the shift (08:00-16:00)
+        var slotInShift = await _sut.FindEarliestSlotAsync(machine.Id, 8, Mon);
+        Assert.True(slotInShift.OperatorAvailableForChangeover);
+        Assert.Null(slotInShift.DowntimeStart);
+
+        // Now test: 20h print from Mon 00:00 ends Mon 20:00 — changeover 20:00-20:30 is OFF shift
+        var slotOffShift = await _sut.FindEarliestSlotAsync(machine.Id, 20, Mon);
+        Assert.False(slotOffShift.OperatorAvailableForChangeover);
+        Assert.NotNull(slotOffShift.DowntimeStart);
+        Assert.NotNull(slotOffShift.DowntimeEnd);
+
+        // Downtime should span from changeover end (Mon 20:30) to next shift + unload (Tue 08:00 + 90min = 09:30)
+        var expectedDowntimeEnd = Mon.AddDays(1).AddHours(8).AddMinutes(90); // Tue 09:30
+        Assert.Equal(expectedDowntimeEnd, slotOffShift.DowntimeEnd);
+    }
+
+    [Fact]
+    public async Task ChangeoverAnalysis_ReturnsDowntimeHours_WhenOffShift()
+    {
+        // Arrange
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+
+        // Act: build ends Monday at 22:00 (off shift)
+        var analysis = await _sut.AnalyzeChangeoverAsync(machine.Id, Mon.AddHours(22));
+
+        // Assert
+        Assert.False(analysis.OperatorAvailable);
+        Assert.NotNull(analysis.DowntimeHours);
+        Assert.True(analysis.DowntimeHours > 0);
+        Assert.Contains("downtime", analysis.SuggestedAction, StringComparison.OrdinalIgnoreCase);
     }
 }

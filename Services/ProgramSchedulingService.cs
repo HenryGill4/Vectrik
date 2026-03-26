@@ -211,6 +211,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         allExecutions.Add(printExecution);
 
         // ── Downstream build-level stages (depowder, heat-treat, EDM, etc.) ──
+        // These require operators and must respect shift schedules — parts are still
+        // on the plate until Wire EDM cuts them off, so no weekend/overnight work.
         var downstreamBuildStages = processes
             .SelectMany(p => p.Stages)
             .Where(s => s.ProcessingLevel == ProcessingLevel.Build && !s.DurationFromBuildConfig)
@@ -223,6 +225,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .Where(m => m.IsActive)
             .ToDictionaryAsync(m => m.MachineId, m => m.Id);
 
+        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
         var totalPartCount = program.TotalPartCount;
         var currentStart = slot.PrintEnd;
 
@@ -239,6 +242,9 @@ public class ProgramSchedulingService : IProgramSchedulingService
             {
                 stageMachineId = stageIntId;
             }
+
+            // Snap to next operator shift — downstream build stages require operators
+            currentStart = ShiftTimeHelper.SnapToNextShiftStart(currentStart, shifts);
 
             // Shared-resource collision avoidance
             if (stageMachineId.HasValue)
@@ -262,9 +268,13 @@ public class ProgramSchedulingService : IProgramSchedulingService
                     if (block.ScheduledEndAt!.Value > currentStart)
                         currentStart = block.ScheduledEndAt!.Value;
                 }
+
+                // Re-snap after collision avoidance may have moved us to off-shift
+                currentStart = ShiftTimeHelper.SnapToNextShiftStart(currentStart, shifts);
             }
 
-            var scheduledEnd = currentStart.AddHours(estimatedHours);
+            // Advance by work hours only — skip non-shift periods
+            var scheduledEnd = ShiftTimeHelper.AdvanceByWorkHours(currentStart, estimatedHours, shifts);
 
             var costEstimate = await _costService.EstimateCostAsync(
                 processStage.ProductionStageId, estimatedHours, totalPartCount, batchCount: 1);
@@ -895,16 +905,58 @@ public class ProgramSchedulingService : IProgramSchedulingService
         blocks = blocks.OrderBy(b => b.Start).ToList();
 
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
+        var operatorUnloadMinutes = machine.AutoChangeoverEnabled ? machine.OperatorUnloadMinutes : 0;
+        var plateCapacity = machine.BuildPlateCapacity;
         var candidateStart = isContinuous ? notBefore : ShiftTimeHelper.SnapToNextShiftStart(notBefore, shifts);
         var candidateEnd = isContinuous
             ? candidateStart.AddHours(durationHours)
             : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
 
+        // Track consecutive off-shift changeovers to model cooldown chamber state.
+        // With BuildPlateCapacity N, the chamber can absorb N-1 auto-changeovers
+        // without an operator. On the Nth consecutive off-shift changeover, the
+        // chamber is full and the machine goes DOWN until an operator arrives.
+        var consecutiveOffShiftChangeovers = 0;
+
         foreach (var block in blocks)
         {
-            var blockEnd = changeoverMinutes > 0
+            var autoChangeoverEnd = changeoverMinutes > 0
                 ? block.End.AddMinutes(changeoverMinutes)
                 : block.End;
+
+            DateTime blockEnd;
+            if (changeoverMinutes > 0)
+            {
+                var changeoverInShift = ShiftTimeHelper.IsWithinShiftWindow(block.End, autoChangeoverEnd, shifts);
+
+                if (changeoverInShift)
+                {
+                    // Operator present during changeover → they empty the chamber → reset counter
+                    consecutiveOffShiftChangeovers = 0;
+                    blockEnd = autoChangeoverEnd;
+                }
+                else
+                {
+                    consecutiveOffShiftChangeovers++;
+
+                    if (consecutiveOffShiftChangeovers >= plateCapacity)
+                    {
+                        // Chamber full — machine DOWN until operator arrives and unloads
+                        var nextShift = ShiftTimeHelper.FindNextShiftStart(block.End, shifts);
+                        blockEnd = (nextShift ?? autoChangeoverEnd).AddMinutes(operatorUnloadMinutes);
+                        consecutiveOffShiftChangeovers = 0; // operator empties everything on arrival
+                    }
+                    else
+                    {
+                        // Chamber has space — auto-changeover works, just add swap time
+                        blockEnd = autoChangeoverEnd;
+                    }
+                }
+            }
+            else
+            {
+                blockEnd = block.End;
+            }
 
             if (candidateEnd <= block.Start)
                 break;
@@ -922,10 +974,39 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
         var operatorAvailable = await IsOperatorAvailableDuringWindowAsync(changeoverStart, changeoverEnd);
 
+        // Compute downtime: only when chamber would be full on THIS build's changeover.
+        // If the previous changeover was during shift (operator emptied chamber),
+        // this overnight changeover is automatic — no downtime.
+        DateTime? downtimeStart = null, downtimeEnd = null;
+        if (!operatorAvailable && changeoverMinutes > 0)
+        {
+            // Check if the chamber would be full by counting how many consecutive
+            // off-shift changeovers precede this one (including this one)
+            var offShiftRun = 1; // this changeover is off-shift
+            for (var i = blocks.Count - 1; i >= 0; i--)
+            {
+                var prevEnd = blocks[i].End;
+                var prevChangeoverEnd = prevEnd.AddMinutes(changeoverMinutes);
+                if (ShiftTimeHelper.IsWithinShiftWindow(prevEnd, prevChangeoverEnd, shifts))
+                    break; // previous was in-shift, chamber was emptied
+                offShiftRun++;
+            }
+
+            if (offShiftRun >= plateCapacity)
+            {
+                // Chamber full — machine will go DOWN
+                downtimeStart = changeoverEnd;
+                var nextShift = ShiftTimeHelper.FindNextShiftStart(changeoverEnd, shifts);
+                downtimeEnd = (nextShift ?? changeoverEnd).AddMinutes(operatorUnloadMinutes);
+            }
+            // else: chamber has space, auto-changeover works overnight — no downtime
+        }
+
         return new ProgramScheduleSlot(
             candidateStart, candidateEnd,
             changeoverStart, changeoverEnd,
-            machineId, operatorAvailable);
+            machineId, operatorAvailable,
+            downtimeStart, downtimeEnd);
     }
 
     public async Task<BestProgramSlot> FindBestSlotAsync(
@@ -983,7 +1064,10 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .ToListAsync();
 
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
+        var plateCapacity = machine.BuildPlateCapacity;
+        var timelineShifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
         var entries = new List<ProgramTimelineEntry>();
+        var consecutiveOffShift = 0;
 
         foreach (var exec in programExecutions)
         {
@@ -996,11 +1080,32 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
             DateTime? changeoverStart = null;
             DateTime? changeoverEnd = null;
+            DateTime? downtimeStart = null;
+            DateTime? downtimeEnd = null;
 
             if (changeoverMinutes > 0)
             {
                 changeoverStart = printEnd;
                 changeoverEnd = printEnd.AddMinutes(changeoverMinutes);
+
+                var changeoverInShift = ShiftTimeHelper.IsWithinShiftWindow(changeoverStart.Value, changeoverEnd.Value, timelineShifts);
+
+                if (changeoverInShift)
+                {
+                    consecutiveOffShift = 0;
+                }
+                else
+                {
+                    consecutiveOffShift++;
+                    // Chamber full — machine goes DOWN until operator arrives
+                    if (consecutiveOffShift >= plateCapacity)
+                    {
+                        downtimeStart = changeoverEnd;
+                        var nextShift = ShiftTimeHelper.FindNextShiftStart(changeoverEnd.Value, timelineShifts);
+                        downtimeEnd = (nextShift ?? changeoverEnd).Value.AddMinutes(machine.OperatorUnloadMinutes);
+                        consecutiveOffShift = 0;
+                    }
+                }
             }
 
             var programName = exec.MachineProgram?.Name ?? exec.MachineProgram?.ProgramNumber ?? $"Program #{exec.MachineProgramId}";
@@ -1011,7 +1116,9 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 exec.MachineProgramId!.Value, programName, programType,
                 printStart, printEnd,
                 changeoverStart, changeoverEnd,
-                scheduleStatus, exec.Id));
+                scheduleStatus, exec.Id,
+                HasChangeoverConflict: downtimeStart.HasValue,
+                DowntimeStart: downtimeStart, DowntimeEnd: downtimeEnd));
         }
 
         // Fallback: include programs without stage executions but only if they
@@ -1183,6 +1290,14 @@ public class ProgramSchedulingService : IProgramSchedulingService
         if (slot.OperatorAvailableForChangeover)
             score += 30;
 
+        // Downtime penalty: penalize options that cause machine downtime
+        // Cost = downtimeHours * ~3 points per hour (weekend = ~36h downtime = -108 pts, capped)
+        if (!slot.OperatorAvailableForChangeover && slot.DowntimeStart.HasValue && slot.DowntimeEnd.HasValue)
+        {
+            var downtimeHours = (slot.DowntimeEnd.Value - slot.DowntimeStart.Value).TotalHours;
+            score -= Math.Min((int)(downtimeHours * 3), 40); // Cap at -40 to avoid always negative
+        }
+
         // Earliness: +20 if starts within 4 hours, scales down
         var hoursFromNow = (slot.PrintStart - DateTime.UtcNow).TotalHours;
         if (hoursFromNow < 4) score += 20;
@@ -1197,7 +1312,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
         // Weekend optimization: bonus if a longer build spans the weekend cleanly
         if (IsWeekendOptimal(slot, shifts))
-            score += 15;
+            score += 25;
 
         return Math.Clamp(score, 0, 100);
     }
@@ -1337,6 +1452,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         string? suggestedAction = null;
         double? suggestedDuration = null;
 
+        double? downtimeHours = null;
+
         if (!operatorAvailable)
         {
             var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
@@ -1344,16 +1461,22 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
             if (nextShiftStart.HasValue)
             {
+                // Machine is DOWN from changeover end until operator arrives + unload time
+                var machineReadyAt = nextShiftStart.Value.AddMinutes(machine.OperatorUnloadMinutes);
+                downtimeHours = (machineReadyAt - changeoverEnd).TotalHours;
+
                 var hoursUntilShift = (nextShiftStart.Value - buildEndTime).TotalHours;
                 if (hoursUntilShift > 0 && hoursUntilShift < 24)
                 {
                     suggestedDuration = hoursUntilShift;
-                    suggestedAction = $"Consider a {hoursUntilShift:F1}h build (double-stack) to sync completion with shift start at {nextShiftStart.Value:t}";
+                    var downtimeCost = downtimeHours.Value * (double)machine.HourlyRate;
+                    suggestedAction = $"Consider a {hoursUntilShift:F1}h build (double-stack) to sync completion with shift start at {nextShiftStart.Value:t}. " +
+                        $"Current schedule causes {downtimeHours.Value:F1}h downtime (${downtimeCost:F0} lost).";
                 }
             }
         }
 
-        return new ChangeoverAnalysis(operatorAvailable, changeoverStart, changeoverEnd, suggestedAction, suggestedDuration);
+        return new ChangeoverAnalysis(operatorAvailable, changeoverStart, changeoverEnd, suggestedAction, suggestedDuration, downtimeHours);
     }
 
     public async Task<List<ProgramChangeoverConflict>> DetectChangeoverConflictsAsync(int machineId, DateTime from, DateTime to)
