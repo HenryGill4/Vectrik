@@ -2,34 +2,34 @@
 
 <div class="sched-kpi-strip">
     <div class="sched-kpi" title="Stage executions currently in progress">
-        <span class="sched-kpi-value">@InProgressCount</span>
+        <span class="sched-kpi-value">@_inProgress</span>
         <span class="sched-kpi-label">In Progress</span>
     </div>
-    <div class="sched-kpi @(DueTodayCount > 0 ? "sched-kpi--warning" : "")" title="Work orders due today">
-        <span class="sched-kpi-value">@DueTodayCount</span>
+    <div class="sched-kpi @(_dueToday > 0 ? "sched-kpi--warning" : "")" title="Work orders due today">
+        <span class="sched-kpi-value">@_dueToday</span>
         <span class="sched-kpi-label">Due Today</span>
     </div>
-    <div class="sched-kpi @(OverdueCount > 0 ? "sched-kpi--danger" : "")" title="Work orders past due date with outstanding parts">
-        <span class="sched-kpi-value">@OverdueCount</span>
+    <div class="sched-kpi @(_overdue > 0 ? "sched-kpi--danger" : "")" title="Work orders past due date with outstanding parts">
+        <span class="sched-kpi-value">@_overdue</span>
         <span class="sched-kpi-label">Overdue</span>
     </div>
     <div class="sched-kpi" title="Percentage of machines currently occupied">
-        <span class="sched-kpi-value">@Utilization.ToString("F0")%</span>
+        <span class="sched-kpi-value">@_utilization.ToString("F0")%</span>
         <span class="sched-kpi-label">Utilization</span>
     </div>
-    <div class="sched-kpi @(UnassignedCount > 0 ? "sched-kpi--warning" : "")" title="Scheduled executions with no machine assigned">
-        <span class="sched-kpi-value">@UnassignedCount</span>
+    <div class="sched-kpi @(Unscheduled.Count > 0 ? "sched-kpi--warning" : "")" title="Scheduled executions with no machine assigned">
+        <span class="sched-kpi-value">@Unscheduled.Count</span>
         <span class="sched-kpi-label">Unassigned</span>
     </div>
-    @if (ConflictCount > 0)
+    @if (_conflicts > 0)
     {
         <div class="sched-kpi sched-kpi--danger" title="Overlapping executions on the same machine">
-            <span class="sched-kpi-value">@ConflictCount</span>
+            <span class="sched-kpi-value">@_conflicts</span>
             <span class="sched-kpi-label">Conflicts</span>
         </div>
     }
     <div class="sched-kpi sched-kpi--muted" title="Total scheduled hours in date range">
-        <span class="sched-kpi-value">@TotalHours.ToString("F0")h</span>
+        <span class="sched-kpi-value">@_totalHours.ToString("F0")h</span>
         <span class="sched-kpi-label">Scheduled</span>
     </div>
     @if (BottleneckReport != null && BottleneckReport.Items.Any(b => b.Severity != "ok"))
@@ -50,68 +50,58 @@
     [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
     [Parameter] public BottleneckReport? BottleneckReport { get; set; }
 
-    private int InProgressCount => Executions.Count(e => e.Status == StageExecutionStatus.InProgress);
+    // Cached KPI values — only recalculated when parameters change
+    private int _inProgress;
+    private int _dueToday;
+    private int _overdue;
+    private double _utilization;
+    private int _conflicts;
+    private double _totalHours;
 
-    private double TotalHours => Executions.Sum(e => e.EstimatedHours ?? 0);
-
-    private int DueTodayCount
+    protected override void OnParametersSet()
     {
-        get
-        {
-            var today = DateTime.UtcNow.Date;
-            return WorkOrders.Count(w => w.DueDate.Date == today);
-        }
-    }
+        var today = DateTime.UtcNow.Date;
 
-    private int OverdueCount
-    {
-        get
-        {
-            var today = DateTime.UtcNow.Date;
-            return WorkOrders.Count(w => w.DueDate.Date < today
-                && w.Lines.Any(l => l.Quantity > l.ProducedQuantity));
-        }
-    }
+        _inProgress = Executions.Count(e => e.Status == StageExecutionStatus.InProgress);
+        _totalHours = Executions.Sum(e => e.EstimatedHours ?? 0);
+        _dueToday = WorkOrders.Count(w => w.DueDate.Date == today);
+        _overdue = WorkOrders.Count(w => w.DueDate.Date < today
+            && w.Lines.Any(l => l.Quantity > l.ProducedQuantity));
 
-    private double Utilization
-    {
-        get
+        // Utilization
+        var schedulable = Machines.Count(m => m.IsAvailableForScheduling);
+        if (schedulable > 0)
         {
-            var schedulable = Machines.Count(m => m.IsAvailableForScheduling);
-            if (schedulable == 0) return 0;
             var occupied = Machines.Count(m => m.IsAvailableForScheduling
                 && Executions.Any(e => e.MachineId == m.Id && e.Status == StageExecutionStatus.InProgress));
-            return occupied * 100.0 / schedulable;
+            _utilization = occupied * 100.0 / schedulable;
         }
-    }
-
-    private int UnassignedCount => Unscheduled.Count;
-
-    private int ConflictCount
-    {
-        get
+        else
         {
-            var conflictingIds = new HashSet<int>();
-            var byMachine = Executions
-                .Where(e => e.MachineId.HasValue && e.ScheduledStartAt.HasValue && e.ScheduledEndAt.HasValue)
-                .GroupBy(e => e.MachineId!.Value);
-            foreach (var group in byMachine)
+            _utilization = 0;
+        }
+
+        // Conflict detection — all-pairs overlap check, cached
+        var conflictingIds = new HashSet<int>();
+        var byMachine = Executions
+            .Where(e => e.MachineId.HasValue && e.ScheduledStartAt.HasValue && e.ScheduledEndAt.HasValue)
+            .GroupBy(e => e.MachineId!.Value);
+        foreach (var group in byMachine)
+        {
+            var items = group.ToList();
+            for (int i = 0; i < items.Count; i++)
             {
-                var items = group.ToList();
-                for (int i = 0; i < items.Count; i++)
+                for (int j = i + 1; j < items.Count; j++)
                 {
-                    for (int j = i + 1; j < items.Count; j++)
+                    if (items[i].ScheduledStartAt < items[j].ScheduledEndAt &&
+                        items[j].ScheduledStartAt < items[i].ScheduledEndAt)
                     {
-                        if (items[i].ScheduledStartAt < items[j].ScheduledEndAt &&
-                            items[j].ScheduledStartAt < items[i].ScheduledEndAt)
-                        {
-                            conflictingIds.Add(items[i].Id);
-                            conflictingIds.Add(items[j].Id);
-                        }
+                        conflictingIds.Add(items[i].Id);
+                        conflictingIds.Add(items[j].Id);
                     }
                 }
             }
-            return conflictingIds.Count;
         }
+        _conflicts = conflictingIds.Count;
     }
 }
