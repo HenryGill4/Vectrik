@@ -93,6 +93,12 @@ public class RoutingTemplateStage
     public bool IsPlateReleaseTrigger { get; set; }
     public int? BatchCapacityOverride { get; set; }
 
+    /// <summary>Setup time in minutes. Overrides ProductionStage.DefaultSetupMinutes when set.</summary>
+    public double? SetupTimeMinutes { get; set; }
+
+    /// <summary>Run time in minutes. Overrides ProductionStage.DefaultDurationHours when set.</summary>
+    public double? RunTimeMinutes { get; set; }
+
     /// <summary>
     /// Machine DB Ids assigned to this stage. Supports multi-machine assignment.
     /// </summary>

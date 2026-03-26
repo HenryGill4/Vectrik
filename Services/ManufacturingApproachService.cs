@@ -140,6 +140,21 @@ public class ManufacturingApproachService : IManufacturingApproachService
                     if (existing.BatchCapacityOverride != entry.BatchCapacityOverride)
                     { existing.BatchCapacityOverride = entry.BatchCapacityOverride; changed = true; }
 
+                    // Sync template durations (override catalog defaults)
+                    if (entry.SetupTimeMinutes.HasValue && existing.SetupTimeMinutes != entry.SetupTimeMinutes)
+                    {
+                        existing.SetupTimeMinutes = entry.SetupTimeMinutes;
+                        existing.SetupDurationMode = entry.Level == ProcessingLevel.Build
+                            ? DurationMode.PerBuild : DurationMode.PerBatch;
+                        changed = true;
+                    }
+                    if (entry.RunTimeMinutes.HasValue && !entry.DurationFromBuildConfig
+                        && existing.RunTimeMinutes != entry.RunTimeMinutes)
+                    {
+                        existing.RunTimeMinutes = entry.RunTimeMinutes;
+                        changed = true;
+                    }
+
                     var newMachineIds = entry.MachineIds.Count > 0
                         ? string.Join(",", entry.MachineIds)
                         : null;
@@ -162,6 +177,12 @@ public class ManufacturingApproachService : IManufacturingApproachService
                 else
                 {
                     // Scaffold a new process stage from the template + catalog defaults
+                    // Template durations take precedence over catalog defaults
+                    var setupMins = entry.SetupTimeMinutes
+                        ?? (catalogStage.DefaultSetupMinutes > 0 ? catalogStage.DefaultSetupMinutes : (double?)null);
+                    var runMins = entry.RunTimeMinutes
+                        ?? (!entry.DurationFromBuildConfig ? catalogStage.DefaultDurationHours * 60 : (double?)null);
+
                     var newStage = new ProcessStage
                     {
                         ManufacturingProcessId = process.Id,
@@ -169,21 +190,17 @@ public class ManufacturingApproachService : IManufacturingApproachService
                         ExecutionOrder = order,
                         ProcessingLevel = entry.Level,
                         DurationFromBuildConfig = entry.DurationFromBuildConfig,
-                        SetupDurationMode = catalogStage.DefaultSetupMinutes > 0
+                        SetupDurationMode = setupMins.HasValue
                             ? (entry.Level == ProcessingLevel.Build ? DurationMode.PerBuild : DurationMode.PerBatch)
                             : DurationMode.None,
-                        SetupTimeMinutes = catalogStage.DefaultSetupMinutes > 0
-                            ? catalogStage.DefaultSetupMinutes
-                            : null,
+                        SetupTimeMinutes = setupMins,
                         RunDurationMode = entry.Level switch
                         {
                             ProcessingLevel.Build => DurationMode.PerBuild,
                             ProcessingLevel.Batch => DurationMode.PerBatch,
                             _ => DurationMode.PerPart
                         },
-                        RunTimeMinutes = !entry.DurationFromBuildConfig
-                            ? catalogStage.DefaultDurationHours * 60
-                            : null,
+                        RunTimeMinutes = runMins,
                         BatchCapacityOverride = entry.BatchCapacityOverride,
                         PreferredMachineIds = entry.MachineIds.Count > 0
                             ? string.Join(",", entry.MachineIds)

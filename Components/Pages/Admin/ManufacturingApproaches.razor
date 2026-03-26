@@ -16,67 +16,70 @@
 @if (_approaches == null) { <div class="loading"><span class="spinner"></span></div> }
 else if (!_approaches.Any())
 {
-    <div class="card" style="padding: 32px; text-align: center; color: var(--text-muted);">
-        No manufacturing approaches defined. Click "+ New Approach" to create approaches like SLS, CNC, etc.
+    <div class="empty-state">
+        <div class="empty-state-icon">🏭</div>
+        <div class="empty-state-text">No manufacturing approaches defined yet</div>
+        <p style="color:var(--text-muted);margin:8px 0 16px;">Approaches define reusable manufacturing recipes — stage routing, durations, and machine assignments that auto-apply when selected on a part.</p>
+        <button class="btn btn-primary" @onclick="NewApproach">+ Create First Approach</button>
     </div>
 }
 else
 {
-    <div class="card">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th style="width:60px;">Order</th>
-                    <th>Name</th>
-                    <th>Slug</th>
-                    <th>Flags</th>
-                    <th>Default Routing</th>
-                    <th style="width:80px;">Active</th>
-                    <th style="width:60px;"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var a in _approaches)
+    <div class="appr-grid">
+        @foreach (var a in _approaches)
+        {
+            var routingStages = a.ParsedRoutingTemplate;
+            <div class="appr-card @(!a.IsActive ? "appr-card-inactive" : "")">
+                <div class="appr-card-header">
+                    <div class="appr-card-icon">@(a.IconEmoji ?? "📦")</div>
+                    <div class="appr-card-title-group">
+                        <div class="appr-card-name">@a.Name</div>
+                        <div class="appr-card-slug">@a.Slug</div>
+                    </div>
+                    <div class="appr-card-actions">
+                        <span class="badge @(a.IsActive ? "badge-active" : "badge-cancelled")">@(a.IsActive ? "Active" : "Inactive")</span>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => Edit(a)">Edit</button>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(a.Description))
                 {
-                    var routingStages = a.ParsedRoutingTemplate;
-                    <tr>
-                        <td>@a.DisplayOrder</td>
-                        <td><span style="font-size:1.2em;">@(a.IconEmoji)</span> <strong>@a.Name</strong></td>
-                        <td style="font-family: monospace; color: #666;">@a.Slug</td>
-                        <td>
-                            @if (a.IsAdditive) { <span class="badge badge-info" title="Shows Stacking tab">🖨️ Additive</span> }
-                            @if (a.RequiresBuildPlate) { <span class="badge badge-warning" title="Parts added to MachinePrograms">📦 Build Plate</span> }
-                            @if (a.DefaultBatchCapacity > 0) { <span class="badge badge-secondary" title="Default batch capacity">📦 @(a.DefaultBatchCapacity)/batch</span> }
-                        </td>
-                        <td>
-                            @if (routingStages.Count == 0)
-                            {
-                                <span style="color:#999;font-style:italic;">No default routing</span>
-                            }
-                            else
-                            {
-                                <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                                    @foreach (var entry in routingStages)
-                                    {
-                                        var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
-                                        <span class="routing-chip" style="@(stage != null ? $"background:{stage.StageColor}20;border-color:{stage.StageColor};" : "")" title="@(entry.MachineIds.Count > 0 ? $"Machines: {string.Join(", ", entry.MachineIds.Select(mid => _machines?.FirstOrDefault(m => m.Id == mid)?.Name ?? mid.ToString()))}" : "No machines")">
-                                            @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
-                                            <span style="font-size:0.7em;color:var(--text-muted);margin-left:2px;">@entry.Level.ToString()[0]</span>
-                                            @if (entry.MachineIds.Count > 0)
-                                            {
-                                                <span style="font-size:0.65em;color:var(--text-muted);margin-left:2px;">🔧@entry.MachineIds.Count</span>
-                                            }
-                                        </span>
-                                    }
-                                </div>
-                            }
-                        </td>
-                        <td><span class="badge @(a.IsActive ? "badge-active" : "badge-cancelled")">@(a.IsActive ? "Yes" : "No")</span></td>
-                        <td><button class="btn btn-sm btn-secondary" @onclick="() => Edit(a)">Edit</button></td>
-                    </tr>
+                    <div class="appr-card-desc">@a.Description</div>
                 }
-            </tbody>
-        </table>
+
+                <div class="appr-card-flags">
+                    @if (a.IsAdditive) { <span class="appr-flag appr-flag-additive">🖨️ Additive</span> }
+                    @if (a.RequiresBuildPlate) { <span class="appr-flag appr-flag-plate">📦 Build Plate</span> }
+                    @if (a.DefaultBatchCapacity > 0) { <span class="appr-flag appr-flag-batch">📦 @(a.DefaultBatchCapacity)/batch</span> }
+                </div>
+
+                @if (routingStages.Count > 0)
+                {
+                    <div class="appr-card-routing">
+                        <div class="appr-routing-label">Routing</div>
+                        <div class="appr-routing-flow">
+                            @for (int i = 0; i < routingStages.Count; i++)
+                            {
+                                var entry = routingStages[i];
+                                var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                                if (i > 0) { <span class="appr-routing-arrow">→</span> }
+                                <span class="appr-routing-step" style="@(stage != null ? $"border-left: 3px solid {stage.StageColor};" : "")">
+                                    <span class="appr-routing-step-icon">@(stage?.StageIcon ?? "❓")</span>
+                                    <span class="appr-routing-step-name">@(stage?.Name ?? entry.Slug)</span>
+                                    <span class="appr-routing-step-level">@entry.Level.ToString()[0]</span>
+                                </span>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="appr-card-routing">
+                        <span style="color:var(--text-muted);font-style:italic;font-size:0.85rem;">No routing defined</span>
+                    </div>
+                }
+            </div>
+        }
     </div>
 } @* end list *@
 } @* end !_showForm *@
@@ -84,220 +87,366 @@ else
 @if (_showForm && _edit != null)
 {
     <div class="page-header">
-        <h1 class="page-title">@(_edit.Id == 0 ? "New Approach" : "Edit Approach")</h1>
+        <h1 class="page-title">@(_edit.Id == 0 ? "New Approach" : $"Edit: {_edit.Name}")</h1>
         <div style="display:flex;gap:8px;">
             <button class="btn btn-secondary" @onclick="() => _showForm = false">← Back</button>
-            <button class="btn btn-primary" @onclick="Save">💾 Save Approach</button>
+            <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
+                @if (_saving) { <span class="spinner" style="width:14px;height:14px;border-width:2px;margin-right:6px;"></span> }
+                Save Approach
+            </button>
         </div>
     </div>
 
     @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
 
-            <div class="approach-form">
-                @* ═══ BASIC INFO ═══ *@
-                <div class="card approach-section">
-                    <h4>📋 Basic Information</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <div class="form-group">
-                            <label class="form-label">Name <span class="required">*</span></label>
-                            <input class="form-control" @bind="_edit.Name" placeholder="e.g. SLS Printing" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Slug <span class="required">*</span></label>
-                            <input class="form-control" @bind="_edit.Slug" placeholder="e.g. sls-printing" style="font-family:monospace;" />
-                        </div>
-                        <div class="form-group" style="grid-column: span 2;">
-                            <label class="form-label">Description</label>
-                            <input class="form-control" @bind="_edit.Description" placeholder="Brief description of this manufacturing approach" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Icon (emoji)</label>
-                            <input class="form-control" @bind="_edit.IconEmoji" placeholder="🖨️" style="font-size:1.2em;" />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Display Order</label>
-                            <input class="form-control" type="number" @bind="_edit.DisplayOrder" />
+    <div class="appr-form">
+        @* ═══ BASIC INFO ═══ *@
+        <div class="card appr-section">
+            <div class="appr-section-header">
+                <span class="appr-section-icon">📋</span>
+                <div>
+                    <h4>Basic Information</h4>
+                    <p class="appr-section-hint">Core identity of this manufacturing approach</p>
+                </div>
+            </div>
+            <div class="appr-field-grid">
+                <div class="form-group">
+                    <label class="form-label">Name <span class="required">*</span></label>
+                    <input class="form-control" @bind="_edit.Name" @bind:event="oninput" placeholder="e.g. SLS Printing" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Slug <span class="required">*</span></label>
+                    <input class="form-control" @bind="_edit.Slug" placeholder="e.g. sls-printing" style="font-family:monospace;" />
+                    <small class="form-hint">Machine-readable identifier (lowercase, hyphens)</small>
+                </div>
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Description</label>
+                    <input class="form-control" @bind="_edit.Description" placeholder="Brief description of this manufacturing approach" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Icon (emoji)</label>
+                    <input class="form-control" @bind="_edit.IconEmoji" @bind:event="oninput" placeholder="🖨️" style="font-size:1.2em;text-align:center;max-width:100px;" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Display Order</label>
+                    <input class="form-control" type="number" @bind="_edit.DisplayOrder" style="max-width:100px;" />
+                </div>
+            </div>
+        </div>
+
+        @* ═══ BEHAVIOR FLAGS ═══ *@
+        <div class="card appr-section">
+            <div class="appr-section-header">
+                <span class="appr-section-icon">⚙️</span>
+                <div>
+                    <h4>Behavior &amp; Settings</h4>
+                    <p class="appr-section-hint">Control how this approach affects scheduling and part configuration</p>
+                </div>
+            </div>
+            <div class="appr-flag-grid">
+                <label class="appr-flag-toggle @(_edit.IsAdditive ? "active" : "")">
+                    <input type="checkbox" @bind="_edit.IsAdditive" />
+                    <div class="appr-flag-toggle-body">
+                        <span class="appr-flag-toggle-icon">🖨️</span>
+                        <div>
+                            <strong>Additive Manufacturing</strong>
+                            <small>Enable stacking configurations and slicer-based durations in Part editing</small>
                         </div>
                     </div>
-                </div>
-
-            @* ═══ BEHAVIOR FLAGS ═══ *@
-            <div class="card approach-section">
-                <h4>⚙️ Behavior Flags</h4>
-                <div class="flag-grid">
-                    <label class="flag-item @(_edit.IsAdditive ? "flag-active" : "")">
-                        <input type="checkbox" @bind="_edit.IsAdditive" />
-                        <div class="flag-content">
-                            <span class="flag-icon">🖨️</span>
-                            <div>
-                                <strong>Additive</strong>
-                                <small>Show Stacking & BatchDurations tabs in Part editing</small>
-                            </div>
+                </label>
+                <label class="appr-flag-toggle @(_edit.RequiresBuildPlate ? "active" : "")">
+                    <input type="checkbox" @bind="_edit.RequiresBuildPlate" />
+                    <div class="appr-flag-toggle-body">
+                        <span class="appr-flag-toggle-icon">📐</span>
+                        <div>
+                            <strong>Requires Build Plate</strong>
+                            <small>Parts are scheduled via build programs rather than direct jobs</small>
                         </div>
-                    </label>
-                    <label class="flag-item @(_edit.RequiresBuildPlate ? "flag-active" : "")">
-                        <input type="checkbox" @bind="_edit.RequiresBuildPlate" />
-                        <div class="flag-content">
-                            <span class="flag-icon">📦</span>
-                            <div>
-                                <strong>Requires Build Plate</strong>
-                                <small>Parts are scheduled via MachinePrograms, not direct jobs</small>
-                            </div>
+                    </div>
+                </label>
+                <label class="appr-flag-toggle @(_edit.IsActive ? "active" : "")">
+                    <input type="checkbox" @bind="_edit.IsActive" />
+                    <div class="appr-flag-toggle-body">
+                        <span class="appr-flag-toggle-icon">✅</span>
+                        <div>
+                            <strong>Active</strong>
+                            <small>Available for selection when configuring new parts</small>
                         </div>
-                    </label>
-                    <label class="flag-item @(_edit.IsActive ? "flag-active" : "")">
-                        <input type="checkbox" @bind="_edit.IsActive" />
-                        <div class="flag-content">
-                            <span class="flag-icon">✅</span>
-                            <div>
-                                <strong>Active</strong>
-                                <small>Available for selection on new parts</small>
-                            </div>
+                    </div>
+                </label>
+                <div class="appr-flag-toggle" style="cursor:default;">
+                    <div class="appr-flag-toggle-body" style="width:100%;">
+                        <span class="appr-flag-toggle-icon">📦</span>
+                        <div style="flex:1;">
+                            <strong>Default Batch Capacity</strong>
+                            <small>Parts per batch/crate for this approach</small>
+                            <input class="form-control" type="number" min="1" max="10000" @bind="_edit.DefaultBatchCapacity"
+                                   style="margin-top:8px;max-width:120px;height:32px;font-size:0.85rem;" />
                         </div>
-                    </label>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
-                    <div class="form-group">
-                        <label class="form-label">Default Batch Capacity</label>
-                        <input class="form-control" type="number" min="1" max="10000" @bind="_edit.DefaultBatchCapacity" />
-                        <small style="color:var(--text-muted);">Parts per batch/crate for this approach</small>
                     </div>
                 </div>
             </div>
+        </div>
 
-            @* ═══ DEFAULT ROUTING TEMPLATE ═══ *@
-            <div class="card approach-section">
-                <h4>🛤️ Default Routing Template</h4>
-                <p class="section-hint">When this approach is selected on a part, these stages will be auto-added to its routing.</p>
+        @* ═══ DEFAULT ROUTING TEMPLATE ═══ *@
+        <div class="card appr-section">
+            <div class="appr-section-header">
+                <span class="appr-section-icon">🛤️</span>
+                <div>
+                    <h4>Production Routing</h4>
+                    <p class="appr-section-hint">Define the stages, order, durations, and machine assignments. This template auto-applies when the approach is selected on a part.</p>
+                </div>
+            </div>
 
-                <div class="routing-builder">
-                            @* AVAILABLE STAGES *@
-                            <div class="routing-column">
-                                <div class="routing-header">Available Stages</div>
-                                <div class="routing-list">
-                                    @if (_allStages != null)
-                                    {
-                                        @foreach (var stage in _allStages.Where(s => !_selectedStages.Any(ss => ss.Slug == s.StageSlug)))
-                                        {
-                                            <div class="routing-stage-item" @onclick="() => AddStageToTemplate(stage.StageSlug)">
-                                                <span class="stage-icon" style="color:@stage.StageColor">@stage.StageIcon</span>
-                                                <span class="stage-name">@stage.Name</span>
-                                                <span class="add-btn">+</span>
-                                            </div>
-                                        }
-                                    }
-                                </div>
+            <div class="appr-routing-builder">
+                @* AVAILABLE STAGES *@
+                <div class="appr-rb-available">
+                    <div class="appr-rb-header">
+                        <span>Available Stages</span>
+                        <span class="appr-rb-count">@(_allStages?.Count(s => !_selectedStages.Any(ss => ss.Slug == s.StageSlug)) ?? 0)</span>
+                    </div>
+                    <div class="appr-rb-list">
+                        @if (_allStages != null)
+                        {
+                            var available = _allStages.Where(s => !_selectedStages.Any(ss => ss.Slug == s.StageSlug)).ToList();
+                            @if (available.Count == 0)
+                            {
+                                <div class="appr-rb-empty">All stages added</div>
+                            }
+                            else
+                            {
+                                @foreach (var stage in available)
+                                {
+                                    <div class="appr-rb-avail-item" @onclick="() => AddStageToTemplate(stage.StageSlug)">
+                                        <span class="appr-rb-avail-icon" style="color:@stage.StageColor">@stage.StageIcon</span>
+                                        <span class="appr-rb-avail-name">@stage.Name</span>
+                                        <span class="appr-rb-add-icon">+</span>
+                                    </div>
+                                }
+                            }
+                        }
+                    </div>
+                </div>
+
+                @* SELECTED STAGES *@
+                <div class="appr-rb-selected">
+                    <div class="appr-rb-header">
+                        <span>Production Stages (in order)</span>
+                        <span class="appr-rb-count">@_selectedStages.Count</span>
+                    </div>
+                    <div class="appr-rb-list appr-rb-list-selected @(_selectedStages.Count == 0 ? "appr-rb-list-empty" : "")">
+                        @if (_selectedStages.Count == 0)
+                        {
+                            <div class="appr-rb-empty">
+                                <div style="font-size:1.5rem;margin-bottom:8px;">🛤️</div>
+                                Click stages on the left to build your routing
                             </div>
+                        }
+                        else
+                        {
+                            @for (int i = 0; i < _selectedStages.Count; i++)
+                            {
+                                var idx = i;
+                                var entry = _selectedStages[i];
+                                var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                                var isExpanded = _expandedStageIndex == idx;
 
-                            @* ARROW *@
-                            <div class="routing-arrow">→</div>
-
-                            @* SELECTED STAGES (ORDERED) *@
-                            <div class="routing-column">
-                                <div class="routing-header">Selected Stages (in order)</div>
-                                <div class="routing-list @(_selectedStages.Count == 0 ? "routing-list-empty" : "")">
-                                    @if (_selectedStages.Count == 0)
-                                    {
-                                        <div class="routing-empty">Click stages on the left to add them</div>
-                                    }
-                                    else
-                                    {
-                                        @for (int i = 0; i < _selectedStages.Count; i++)
-                                        {
-                                            var idx = i;
-                                            var entry = _selectedStages[i];
-                                            var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
-                                            <div class="routing-stage-item routing-stage-selected" style="flex-direction:column;align-items:stretch;">
-                                                <div style="display:flex;align-items:center;gap:6px;">
-                                                    <span class="stage-order">@(idx + 1)</span>
-                                                    <span class="stage-icon" style="color:@(stage?.StageColor ?? "#666")">@(stage?.StageIcon ?? "❓")</span>
-                                                    <span class="stage-name">@(stage?.Name ?? entry.Slug)</span>
-                                                    <div class="stage-actions">
-                                                        <button class="move-btn" disabled="@(idx == 0)" @onclick="() => MoveStageUp(idx)" title="Move up">▲</button>
-                                                        <button class="move-btn" disabled="@(idx == _selectedStages.Count - 1)" @onclick="() => MoveStageDown(idx)" title="Move down">▼</button>
-                                                        <button class="remove-btn" @onclick="() => RemoveStageFromTemplate(entry.Slug)" title="Remove">×</button>
-                                                    </div>
-                                                </div>
-                                                <div style="display:flex;gap:6px;margin-top:4px;padding-left:30px;flex-wrap:wrap;">
-                                                    <select class="form-control" style="width:100px;height:28px;font-size:0.8em;padding:2px 4px;" value="@entry.Level" @onchange="e => entry.Level = Enum.Parse<ProcessingLevel>(e.Value?.ToString() ?? nameof(ProcessingLevel.Part))">
-                                                        <option value="@ProcessingLevel.Build">Build</option>
-                                                        <option value="@ProcessingLevel.Batch">Batch</option>
-                                                        <option value="@ProcessingLevel.Part">Part</option>
-                                                    </select>
-                                                    <label style="font-size:0.8em;display:flex;align-items:center;gap:3px;">
-                                                        <input type="checkbox" @bind="entry.DurationFromBuildConfig" /> Slicer
-                                                    </label>
-                                                    <label style="font-size:0.8em;display:flex;align-items:center;gap:3px;">
-                                                        <input type="checkbox" @bind="entry.IsPlateReleaseTrigger" /> Plate Release
-                                                    </label>
-                                                </div>
-                                                @if (_machines != null && _machines.Count > 0)
+                                <div class="appr-rb-stage @(isExpanded ? "expanded" : "")" style="@(stage != null ? $"border-left: 3px solid {stage.StageColor};" : "border-left: 3px solid var(--border);")">
+                                    <div class="appr-rb-stage-main" @onclick="() => ToggleExpand(idx)">
+                                        <span class="appr-rb-stage-num">@(idx + 1)</span>
+                                        <span class="appr-rb-stage-icon">@(stage?.StageIcon ?? "❓")</span>
+                                        <div class="appr-rb-stage-info">
+                                            <span class="appr-rb-stage-name">@(stage?.Name ?? entry.Slug)</span>
+                                            <div class="appr-rb-stage-meta">
+                                                <span class="appr-rb-level-badge appr-rb-level-@entry.Level.ToString().ToLower()">@entry.Level</span>
+                                                @if (entry.DurationFromBuildConfig)
                                                 {
-                                                    <div class="machine-picker">
-                                                        <span style="font-size:0.75em;color:var(--text-muted);width:100%;margin-bottom:2px;">🔧 Machines:</span>
-                                                        @foreach (var machine in _machines)
-                                                        {
-                                                            var mId = machine.Id;
-                                                            var isSelected = entry.MachineIds.Contains(mId);
-                                                            <span class="machine-chip @(isSelected ? "machine-chip-selected" : "")"
-                                                                  @onclick="() => ToggleMachine(entry, mId)">
-                                                                @machine.Name
-                                                                @if (isSelected) { <span class="machine-chip-remove">✕</span> }
-                                                            </span>
-                                                        }
-                                                    </div>
+                                                    <span class="appr-rb-meta-tag">Slicer</span>
+                                                }
+                                                else if (entry.RunTimeMinutes.HasValue)
+                                                {
+                                                    <span class="appr-rb-meta-tag">@FormatDuration(entry.RunTimeMinutes.Value)</span>
+                                                }
+                                                @if (entry.SetupTimeMinutes.HasValue)
+                                                {
+                                                    <span class="appr-rb-meta-tag">Setup: @FormatDuration(entry.SetupTimeMinutes.Value)</span>
+                                                }
+                                                @if (entry.IsPlateReleaseTrigger)
+                                                {
+                                                    <span class="appr-rb-meta-tag appr-rb-meta-release">Plate Release</span>
+                                                }
+                                                @if (entry.MachineIds.Count > 0)
+                                                {
+                                                    <span class="appr-rb-meta-tag">🔧 @entry.MachineIds.Count machine@(entry.MachineIds.Count != 1 ? "s" : "")</span>
                                                 }
                                             </div>
-                                        }
+                                        </div>
+                                        <div class="appr-rb-stage-actions">
+                                            <button class="appr-rb-move-btn" disabled="@(idx == 0)" @onclick="() => MoveStageUp(idx)" @onclick:stopPropagation="true" title="Move up">▲</button>
+                                            <button class="appr-rb-move-btn" disabled="@(idx == _selectedStages.Count - 1)" @onclick="() => MoveStageDown(idx)" @onclick:stopPropagation="true" title="Move down">▼</button>
+                                            <button class="appr-rb-remove-btn" @onclick="() => RemoveStageFromTemplate(entry.Slug)" @onclick:stopPropagation="true" title="Remove">×</button>
+                                        </div>
+                                    </div>
+
+                                    @if (isExpanded)
+                                    {
+                                        <div class="appr-rb-stage-detail">
+                                            <div class="appr-rb-detail-row">
+                                                <div class="appr-rb-detail-group">
+                                                    <label class="appr-rb-detail-label">Processing Level</label>
+                                                    <select class="form-control appr-rb-detail-input" value="@entry.Level"
+                                                            @onchange="e => entry.Level = Enum.Parse<ProcessingLevel>(e.Value?.ToString() ?? nameof(ProcessingLevel.Part))">
+                                                        <option value="@ProcessingLevel.Build">Build — entire build plate</option>
+                                                        <option value="@ProcessingLevel.Batch">Batch — group of parts</option>
+                                                        <option value="@ProcessingLevel.Part">Part — individual part</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div class="appr-rb-detail-row">
+                                                <div class="appr-rb-detail-group">
+                                                    <label class="appr-rb-detail-label">Setup Time</label>
+                                                    <div class="appr-rb-duration-input">
+                                                        <input class="form-control appr-rb-detail-input" type="number" min="0" step="1"
+                                                               value="@(entry.SetupTimeMinutes?.ToString() ?? "")"
+                                                               @onchange="e => entry.SetupTimeMinutes = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : double.TryParse(e.Value?.ToString(), out var v) ? v : null"
+                                                               placeholder="@(stage != null ? $"{stage.DefaultSetupMinutes} (default)" : "—")" />
+                                                        <span class="appr-rb-duration-unit">min</span>
+                                                    </div>
+                                                    <small class="form-hint">One-time setup cost per run. Leave blank for catalog default.</small>
+                                                </div>
+                                                <div class="appr-rb-detail-group">
+                                                    <label class="appr-rb-detail-label">Run Duration</label>
+                                                    @if (entry.DurationFromBuildConfig)
+                                                    {
+                                                        <div class="appr-rb-slicer-notice">
+                                                            <span>📊</span> Duration pulled from slicer/build config
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="appr-rb-duration-input">
+                                                            <input class="form-control appr-rb-detail-input" type="number" min="0" step="1"
+                                                                   value="@(entry.RunTimeMinutes?.ToString() ?? "")"
+                                                                   @onchange="e => entry.RunTimeMinutes = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : double.TryParse(e.Value?.ToString(), out var v) ? v : null"
+                                                                   placeholder="@(stage != null ? $"{(stage.DefaultDurationHours * 60):0} (default)" : "—")" />
+                                                            <span class="appr-rb-duration-unit">min</span>
+                                                        </div>
+                                                    }
+                                                    <small class="form-hint">Per-@(entry.Level.ToString().ToLower()) processing time.</small>
+                                                </div>
+                                            </div>
+
+                                            <div class="appr-rb-detail-row appr-rb-detail-checks">
+                                                <label class="appr-rb-check">
+                                                    <input type="checkbox" @bind="entry.DurationFromBuildConfig" />
+                                                    <span>Duration from slicer data</span>
+                                                </label>
+                                                <label class="appr-rb-check">
+                                                    <input type="checkbox" @bind="entry.IsPlateReleaseTrigger" />
+                                                    <span>Plate release trigger</span>
+                                                </label>
+                                            </div>
+
+                                            @if (entry.Level == ProcessingLevel.Batch)
+                                            {
+                                                <div class="appr-rb-detail-row">
+                                                    <div class="appr-rb-detail-group">
+                                                        <label class="appr-rb-detail-label">Batch Capacity Override</label>
+                                                        <input class="form-control appr-rb-detail-input" type="number" min="1" max="10000"
+                                                               value="@(entry.BatchCapacityOverride?.ToString() ?? "")"
+                                                               @onchange="e => entry.BatchCapacityOverride = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : int.TryParse(e.Value?.ToString(), out var v) ? v : null"
+                                                               placeholder="@(_edit.DefaultBatchCapacity) (approach default)" style="max-width:180px;" />
+                                                    </div>
+                                                </div>
+                                            }
+
+                                            @if (_machines != null && _machines.Count > 0)
+                                            {
+                                                <div class="appr-rb-detail-row">
+                                                    <div class="appr-rb-detail-group" style="flex:1;">
+                                                        <label class="appr-rb-detail-label">Machine Assignment</label>
+                                                        <div class="appr-rb-machine-grid">
+                                                            @foreach (var machine in _machines)
+                                                            {
+                                                                var mId = machine.Id;
+                                                                var isSelected = entry.MachineIds.Contains(mId);
+                                                                <button type="button" class="appr-rb-machine-chip @(isSelected ? "selected" : "")"
+                                                                        @onclick="() => ToggleMachine(entry, mId)">
+                                                                    @if (isSelected) { <span class="appr-rb-machine-check">✓</span> }
+                                                                    @machine.Name
+                                                                </button>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
                                     }
                                 </div>
-                            </div>
-                        </div>
+                            }
+                        }
                     </div>
+                </div>
+            </div>
+        </div>
 
-                    @* ═══ PREVIEW ═══ *@
-                    <div class="card approach-section approach-preview">
-                        <h4>👁️ Preview</h4>
-                        <div class="preview-card">
-                            <div class="preview-name">@(_edit.IconEmoji ?? "📦") @(_edit.Name ?? "Untitled")</div>
-                            <div class="preview-flags">
-                                @if (_edit.IsAdditive) { <span class="badge badge-info">Additive</span> }
-                                @if (_edit.RequiresBuildPlate) { <span class="badge badge-warning">Build Plate</span> }
-                                @if (_edit.DefaultBatchCapacity > 0) { <span class="badge badge-secondary">@(_edit.DefaultBatchCapacity)/batch</span> }
-                                @if (!_edit.IsActive) { <span class="badge badge-cancelled">Inactive</span> }
+        @* ═══ LIVE PREVIEW ═══ *@
+        <div class="card appr-section appr-preview-section">
+            <div class="appr-section-header">
+                <span class="appr-section-icon">👁️</span>
+                <div>
+                    <h4>Live Preview</h4>
+                    <p class="appr-section-hint">How this approach will appear throughout the system</p>
+                </div>
+            </div>
+            <div class="appr-preview-card">
+                <div class="appr-preview-hero">
+                    <span class="appr-preview-emoji">@(_edit.IconEmoji ?? "📦")</span>
+                    <span class="appr-preview-name">@(!string.IsNullOrWhiteSpace(_edit.Name) ? _edit.Name : "Untitled Approach")</span>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_edit.Description))
+                {
+                    <div class="appr-preview-desc">@_edit.Description</div>
+                }
+                <div class="appr-preview-badges">
+                    @if (_edit.IsAdditive) { <span class="appr-flag appr-flag-additive">🖨️ Additive</span> }
+                    @if (_edit.RequiresBuildPlate) { <span class="appr-flag appr-flag-plate">📐 Build Plate</span> }
+                    @if (_edit.DefaultBatchCapacity > 0) { <span class="appr-flag appr-flag-batch">📦 @(_edit.DefaultBatchCapacity)/batch</span> }
+                    @if (!_edit.IsActive) { <span class="badge badge-cancelled">Inactive</span> }
+                </div>
+                @if (_selectedStages.Count > 0)
+                {
+                    <div class="appr-preview-pipeline">
+                        @for (int i = 0; i < _selectedStages.Count; i++)
+                        {
+                            var entry = _selectedStages[i];
+                            var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
+                            if (i > 0) { <span class="appr-preview-arrow">→</span> }
+                            <div class="appr-preview-step" style="@(stage != null ? $"border-color:{stage.StageColor};" : "")">
+                                <span class="appr-preview-step-icon">@(stage?.StageIcon ?? "❓")</span>
+                                <span class="appr-preview-step-name">@(stage?.Name ?? entry.Slug)</span>
+                                <span class="appr-preview-step-level">@entry.Level</span>
                             </div>
-                            <div class="preview-routing">
-                                @if (_selectedStages.Count == 0)
-                                {
-                                    <span style="color:#999;">No default routing</span>
-                                }
-                                else
-                                {
-                                    @for (int i = 0; i < _selectedStages.Count; i++)
-                                    {
-                                        var entry = _selectedStages[i];
-                                        var stage = _allStages?.FirstOrDefault(s => s.StageSlug == entry.Slug);
-                                        if (i > 0) { <span class="preview-arrow">→</span> }
-                                        <span class="preview-stage" style="border-color:@(stage?.StageColor ?? "#ccc")">
-                                            @(stage?.StageIcon ?? "❓") @(stage?.Name ?? entry.Slug)
-                                            <span style="font-size:0.7em;color:var(--text-muted);">(@entry.Level.ToString()[0])</span>
-                                            @if (entry.MachineIds.Count > 0)
-                                            {
-                                                <span style="font-size:0.65em;color:var(--text-muted);">🔧@entry.MachineIds.Count</span>
-                                            }
-                                        </span>
-                                    }
-                                }
-                            </div>
-                        </div>
+                        }
                     </div>
+                }
+                else
+                {
+                    <div class="appr-preview-empty">No routing stages defined</div>
+                }
+            </div>
+        </div>
 
-                    <div class="form-actions">
-                        <button class="btn btn-primary" @onclick="Save">💾 Save Approach</button>
-                        <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
-                    </div>
-                </div> @* end approach-form *@
-            }
+        <div class="appr-form-actions">
+            <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
+                @if (_saving) { <span class="spinner" style="width:14px;height:14px;border-width:2px;margin-right:6px;"></span> }
+                Save Approach
+            </button>
+            <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+        </div>
+    </div> @* end appr-form *@
+}
 
 @code {
     private List<ManufacturingApproach>? _approaches;
@@ -306,7 +455,9 @@ else
     private ManufacturingApproach? _edit;
     private List<RoutingTemplateStage> _selectedStages = new();
     private bool _showForm;
+    private bool _saving;
     private string? _error;
+    private int? _expandedStageIndex;
 
     protected override async Task OnInitializedAsync()
     {
@@ -330,6 +481,7 @@ else
         _edit = new ManufacturingApproach { DefaultRoutingTemplate = "[]", IsActive = true };
         _selectedStages = [];
         _error = null;
+        _expandedStageIndex = null;
         _showForm = true;
     }
 
@@ -338,18 +490,23 @@ else
         _edit = a;
         _selectedStages = a.ParsedRoutingTemplate;
         _error = null;
+        _expandedStageIndex = null;
         _showForm = true;
     }
 
     private void AddStageToTemplate(string slug)
     {
         if (!_selectedStages.Any(s => s.Slug == slug))
+        {
             _selectedStages.Add(new RoutingTemplateStage { Slug = slug });
+            _expandedStageIndex = _selectedStages.Count - 1;
+        }
     }
 
     private void RemoveStageFromTemplate(string slug)
     {
         _selectedStages.RemoveAll(s => s.Slug == slug);
+        _expandedStageIndex = null;
     }
 
     private void MoveStageUp(int index)
@@ -358,6 +515,8 @@ else
         {
             (_selectedStages[index - 1], _selectedStages[index]) =
                 (_selectedStages[index], _selectedStages[index - 1]);
+            if (_expandedStageIndex == index) _expandedStageIndex = index - 1;
+            else if (_expandedStageIndex == index - 1) _expandedStageIndex = index;
         }
     }
 
@@ -367,7 +526,14 @@ else
         {
             (_selectedStages[index], _selectedStages[index + 1]) =
                 (_selectedStages[index + 1], _selectedStages[index]);
+            if (_expandedStageIndex == index) _expandedStageIndex = index + 1;
+            else if (_expandedStageIndex == index + 1) _expandedStageIndex = index;
         }
+    }
+
+    private void ToggleExpand(int index)
+    {
+        _expandedStageIndex = _expandedStageIndex == index ? null : index;
     }
 
     private void ToggleMachine(RoutingTemplateStage entry, int machineId)
@@ -378,11 +544,18 @@ else
             entry.MachineIds.Add(machineId);
     }
 
+    private static string FormatDuration(double minutes)
+    {
+        if (minutes < 60) return $"{minutes:0}m";
+        var h = (int)(minutes / 60);
+        var m = (int)(minutes % 60);
+        return m > 0 ? $"{h}h {m}m" : $"{h}h";
+    }
+
     private async Task Save()
     {
         _error = null;
 
-        // Validation
         if (string.IsNullOrWhiteSpace(_edit!.Name))
         {
             _error = "Name is required.";
@@ -394,8 +567,8 @@ else
             return;
         }
 
-        // Update routing template from selected stages
         _edit.SetRoutingTemplate(_selectedStages);
+        _saving = true;
 
         try
         {
@@ -416,6 +589,10 @@ else
         catch (Exception ex)
         {
             _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
         }
     }
 }
