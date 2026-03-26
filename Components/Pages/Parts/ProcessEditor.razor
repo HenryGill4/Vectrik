@@ -38,7 +38,7 @@ else if (_process != null)
         }
 
         @* ── Process Header ── *@
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;">
             <div class="form-group">
                 <label class="form-label">Process Name</label>
                 <input class="form-control" @bind="_process.Name" />
@@ -99,6 +99,7 @@ else if (_process != null)
             var orderedStages = _stages.OrderBy(s => s.ExecutionOrder).ToList();
             var batchCap = _process.DefaultBatchCapacity;
 
+            <div style="overflow-x: auto;">
             <table class="data-table">
                 <thead>
                     <tr>
@@ -257,6 +258,7 @@ else if (_process != null)
                     }
                 </tbody>
             </table>
+            </div>
 
             @* ── Setup Time Editor ── *@
             <details style="margin-top: 12px;">
@@ -327,6 +329,7 @@ else if (_process != null)
                 </div>
                 @if (_previewResults.Any())
                 {
+                    <div style="overflow-x: auto;">
                     <table class="data-table" style="margin-top: 12px; font-size: 0.85rem;">
                         <thead><tr><th>Stage</th><th>Level</th><th>Setup</th><th>Run</th><th>Total</th><th>Breakdown</th></tr></thead>
                         <tbody>
@@ -348,6 +351,7 @@ else if (_process != null)
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 }
             </div>
         }
