@@ -2498,7 +2498,7 @@ public class DataSeedingService : IDataSeedingService
         var masterBrk96 = await CreateProgram("BP-00003", "Bracket 96x Double Stack", ProgramType.BuildPlate,
             ProgramScheduleStatus.Ready, ssMat?.Id, 22.0, 3400, 132.0, 17.6, "Bracket_96x_DS_v1.sli",
             false, null, null, null, null, null);
-        await LinkParts(masterBrk96, [(bracketPart, 96, 2, wo5)]);
+        await LinkParts(masterBrk96, [(bracketPart, 48, 2, wo5)]); // 48 positions × 2 stack = 96 parts
 
         var masterMan24 = await CreateProgram("BP-00004", "Manifold 24x Build", ProgramType.BuildPlate,
             ProgramScheduleStatus.Ready, tiMat?.Id, 26.8, 4100, 155.0, 22.5, "Manifold_24x_v1.sli",
@@ -2546,7 +2546,7 @@ public class DataSeedingService : IDataSeedingService
         var comp4 = await CreateProgram("BP-00032", "Bracket 96x DS — Run #1", ProgramType.BuildPlate,
             ProgramScheduleStatus.Completed, ssMat?.Id, 22.0, 3400, 132.0, 17.6, "Bracket_96x_DS_v1.sli",
             true, compBuild4Start, compBuild4Start, compBuild4End, compBuild4End.AddHours(1.5), masterBrk96.Id, "M4-2");
-        await LinkParts(comp4, [(bracketPart, 96, 2, wo3)]);
+        await LinkParts(comp4, [(bracketPart, 48, 2, wo3)]); // 48 positions × 2 stack = 96 parts
 
         // Build 6: Manifold 24x on M4-2 — in POST-PRINT, starts 30min after Build4 ends
         var activeBuild2Start = compBuild4End.AddMinutes(30); // 30min auto-changeover gap

@@ -56,7 +56,7 @@
         var changeoverWidthPx = ChangeoverMinutes / 60.0 * PixelsPerHour;
         <div class="gantt-changeover-segment @(HasChangeoverConflict ? "gantt-changeover-segment--conflict" : "")"
              style="left: @(FormatPx(BarWidthPx))px; width: @(FormatPx(changeoverWidthPx))px;"
-             title="Auto-changeover: @ChangeoverMinutes min @(HasChangeoverConflict ? "⚠️ NO OPERATOR AVAILABLE" : "✓ Safe")">
+             title="Auto-changeover: @ChangeoverMinutes min @(HasChangeoverConflict ? "⚠️ No operator available" : "✓ Safe")">
             @if (changeoverWidthPx > 20)
             {
                 <span class="gantt-changeover-label">@((int)ChangeoverMinutes)m</span>
@@ -84,7 +84,7 @@
                 {
                     <div class="gantt-build-popover-row">
                         <span class="gantt-build-popover-label">Changeover</span>
-                        <span>@((int)ChangeoverMinutes) min @(HasChangeoverConflict ? "⚠️ Conflict" : "✓ Safe")</span>
+                        <span>@((int)ChangeoverMinutes) min @(HasChangeoverConflict ? "⚠️ No operator" : "✓ Safe")</span>
                     </div>
                 }
                 @if (Build.EstimatedPowderKg.HasValue)
@@ -102,7 +102,7 @@
                         {
                             <div class="gantt-build-popover-part">
                                 <span class="gantt-build-popover-part-num">@(pp.Part?.PartNumber ?? $"Part #{pp.PartId}")</span>
-                                <span class="gantt-build-popover-part-qty">@pp.Quantity × @pp.StackLevel stack</span>
+                                <span class="gantt-build-popover-part-qty">@(pp.Quantity * pp.StackLevel) parts (@pp.Quantity pos × @pp.StackLevel high)</span>
                             </div>
                         }
                     </div>
@@ -172,7 +172,7 @@
         var duration = Build.EstimatedPrintHours?.ToString("F1") ?? "?";
         var tip = $"{Build.Name}\n{Build.ScheduleStatus} · {parts} parts ({unique} types) · {duration}h\n{Start.ToLocalTime():ddd MMM d, h:mm tt} → {End.ToLocalTime():ddd MMM d, h:mm tt}";
         if (ChangeoverMinutes > 0)
-            tip += $"\nChangeover: {(int)ChangeoverMinutes} min {(HasChangeoverConflict ? "⚠️ CONFLICT" : "✓ Safe")}";
+            tip += $"\nChangeover: {(int)ChangeoverMinutes} min {(HasChangeoverConflict ? "⚠️ No operator available" : "✓ Safe")}";
         if (HasChangeoverConflict)
             tip += "\n⚠️ Machine will STOP until an operator removes the cooled build.";
         return tip;
