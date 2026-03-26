@@ -1,0 +1,313 @@
+@page "/parts/estimate"
+@inject IManufacturingApproachService ApproachService
+@inject IStageService StageService
+@inject IStageCostService StageCostService
+@inject NavigationManager Nav
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>Cost Estimator - OpCentrix</PageTitle>
+
+<div class="page-header">
+    <div>
+        <button class="btn btn-sm btn-secondary" @onclick='() => Nav.NavigateTo("/parts")' style="margin-bottom: 8px;">← Parts Library</button>
+        <h1 class="page-title" style="margin: 0;">Cost Estimator</h1>
+        <span style="color: var(--text-muted); font-size: 0.85rem;">Estimate manufacturing cost for a proposed part before creating it</span>
+    </div>
+    <button class="btn btn-primary" @onclick='() => Nav.NavigateTo("/parts/new")'>+ Create Part</button>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading approaches...</div>
+}
+else
+{
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
+        @* ── Configuration Panel ── *@
+        <div class="card">
+            <h3 class="card-title">Configuration</h3>
+
+            <div class="form-group">
+                <label class="form-label">Manufacturing Approach *</label>
+                <select class="form-control" @bind="_selectedApproachId" @bind:after="OnApproachChanged">
+                    <option value="0">— Select approach —</option>
+                    @foreach (var a in _approaches)
+                    {
+                        <option value="@a.Id">@(a.IconEmoji) @a.Name</option>
+                    }
+                </select>
+            </div>
+
+            @if (_selectedApproach != null)
+            {
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+                    @_selectedApproach.Description
+                </div>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;">
+                    @if (_selectedApproach.IsAdditive)
+                    {
+                        <span class="badge badge-info">Additive</span>
+                    }
+                    @if (_selectedApproach.RequiresBuildPlate)
+                    {
+                        <span class="badge badge-info">Build Plate</span>
+                    }
+                    <span class="badge" style="background: var(--bg-secondary); color: var(--text-secondary);">
+                        Batch: @_selectedApproach.DefaultBatchCapacity
+                    </span>
+                    <span class="badge" style="background: var(--bg-secondary); color: var(--text-secondary);">
+                        @_templateStages.Count stages
+                    </span>
+                </div>
+            }
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Quantity</label>
+                    <input class="form-control" type="number" min="1" max="100000" @bind="_quantity" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Material Cost/Unit ($)</label>
+                    <input class="form-control" type="number" step="0.01" min="0" @bind="_materialCostPerUnit" />
+                </div>
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%; margin-top: 8px;" @onclick="Calculate" disabled="@(_calculating || _selectedApproachId == 0)">
+                @if (_calculating) { <span class="spinner" style="width:14px;height:14px;margin-right:6px;"></span> }
+                Calculate Cost
+            </button>
+        </div>
+
+        @* ── Results Panel ── *@
+        <div class="card">
+            <h3 class="card-title">Estimated Cost</h3>
+
+            @if (!_results.Any())
+            {
+                <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
+                    Select an approach and click Calculate to see estimated costs.
+                </div>
+            }
+            else
+            {
+                @* KPI Summary *@
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Cost Per Part</div>
+                        <div style="font-weight: 700; font-size: 1.4rem; color: var(--primary);">@_costPerPart.ToString("C2")</div>
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Total (@_quantity pcs)</div>
+                        <div style="font-weight: 700; font-size: 1.4rem;">@_grandTotal.ToString("C2")</div>
+                    </div>
+                </div>
+
+                @* Cost breakdown *@
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin-bottom: 16px; font-size: 0.85rem;">
+                    <div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Labor</div>
+                        <div style="font-weight: 600;">@_results.Sum(r => r.LaborCost).ToString("C2")</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Equipment</div>
+                        <div style="font-weight: 600;">@_results.Sum(r => r.EquipmentCost).ToString("C2")</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Overhead</div>
+                        <div style="font-weight: 600;">@_results.Sum(r => r.OverheadCost).ToString("C2")</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Material</div>
+                        <div style="font-weight: 600;">@((_materialCostPerUnit * _quantity).ToString("C2"))</div>
+                    </div>
+                </div>
+
+                @* Stage breakdown table *@
+                <div style="overflow-x: auto;">
+                    <table class="data-table" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Stage</th>
+                                <th>Level</th>
+                                <th style="text-align: right;">Time</th>
+                                <th style="text-align: right;">Rate/hr</th>
+                                <th style="text-align: right;">Cost</th>
+                                <th style="text-align: right;">Per Part</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in _results)
+                            {
+                                <tr>
+                                    <td>
+                                        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:@r.StageColor;margin-right:4px;"></span>
+                                        @r.StageName
+                                        @if (!r.UsedCostProfile)
+                                        {
+                                            <span style="font-size: 0.65rem; color: var(--warning);">est.</span>
+                                        }
+                                    </td>
+                                    <td><span class="badge @(r.Level == "Build" ? "badge-primary" : r.Level == "Batch" ? "badge-warning" : "badge-active")">@r.Level</span></td>
+                                    <td style="text-align: right;">@FormatDuration(r.DurationMinutes)</td>
+                                    <td style="text-align: right;">@r.HourlyRate.ToString("C2")</td>
+                                    <td style="text-align: right; font-weight: 600;">@r.TotalCost.ToString("C2")</td>
+                                    <td style="text-align: right; color: var(--primary);">@r.CostPerPart.ToString("C2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                @* Quick price breaks *@
+                <div style="margin-top: 16px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">Quantity Price Breaks</div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        @foreach (var pb in _priceBreaks)
+                        {
+                            var qty = pb.Key;
+                            <div style="background: var(--bg-tertiary); padding: 6px 12px; border-radius: 6px; text-align: center; min-width: 70px; cursor: pointer; @(qty == _quantity ? "border: 2px solid var(--primary);" : "")"
+                                 @onclick="async () => { _quantity = qty; await Calculate(); }">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">@qty pcs</div>
+                                <div style="font-weight: 600; font-size: 0.85rem;">@pb.Value.ToString("C2")</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @if (_results.Any(r => !r.UsedCostProfile))
+                {
+                    <div style="margin-top: 16px; padding: 10px; background: color-mix(in srgb, var(--warning) 15%, transparent); border: 1px solid var(--warning); border-radius: 6px; font-size: 0.8rem;">
+                        Some stages use estimated rates. <a href="/admin/operation-costs" style="color: var(--primary);">Configure Operation Costs</a> for accuracy.
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _calculating;
+    private List<ManufacturingApproach> _approaches = [];
+    private List<ProductionStage> _allStages = [];
+    private int _selectedApproachId;
+    private ManufacturingApproach? _selectedApproach;
+    private List<RoutingTemplateStage> _templateStages = [];
+    private int _quantity = 100;
+    private decimal _materialCostPerUnit;
+
+    private List<EstimateRow> _results = [];
+    private decimal _costPerPart;
+    private decimal _grandTotal;
+    private Dictionary<int, decimal> _priceBreaks = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _approaches = await ApproachService.GetAllAsync();
+        _allStages = await StageService.GetAllStagesAsync();
+        _loading = false;
+    }
+
+    private void OnApproachChanged()
+    {
+        _selectedApproach = _approaches.FirstOrDefault(a => a.Id == _selectedApproachId);
+        _templateStages = _selectedApproach?.ParsedRoutingTemplate ?? [];
+        _results.Clear();
+        _priceBreaks.Clear();
+    }
+
+    private async Task Calculate()
+    {
+        if (_selectedApproach == null || !_templateStages.Any() || _quantity <= 0) return;
+
+        _calculating = true;
+        StateHasChanged();
+
+        try
+        {
+            _results = await CalculateForQuantity(_quantity);
+
+            var processCost = _results.Sum(r => r.TotalCost);
+            var materialTotal = _materialCostPerUnit * _quantity;
+            _grandTotal = processCost + materialTotal;
+            _costPerPart = _quantity > 0 ? _grandTotal / _quantity : 0;
+
+            // Price breaks
+            _priceBreaks.Clear();
+            foreach (var qty in new[] { 1, 10, 25, 50, 100, 250, 500, 1000 })
+            {
+                var rows = await CalculateForQuantity(qty);
+                var total = rows.Sum(r => r.TotalCost) + _materialCostPerUnit * qty;
+                _priceBreaks[qty] = qty > 0 ? total / qty : 0;
+            }
+        }
+        finally
+        {
+            _calculating = false;
+        }
+    }
+
+    private async Task<List<EstimateRow>> CalculateForQuantity(int qty)
+    {
+        var batchCapacity = _selectedApproach!.DefaultBatchCapacity;
+        var batchCount = batchCapacity > 0 ? (int)Math.Ceiling((double)qty / batchCapacity) : 1;
+        var rows = new List<EstimateRow>();
+
+        foreach (var tmpl in _templateStages)
+        {
+            var stage = _allStages.FirstOrDefault(s => s.StageSlug == tmpl.Slug);
+            if (stage == null) continue;
+
+            var durationHours = (stage.DefaultDurationHours) * tmpl.Level switch
+            {
+                ProcessingLevel.Build => 1.0,
+                ProcessingLevel.Batch => batchCount,
+                _ => qty
+            };
+            // Clamp: build-level stages run once regardless of quantity
+            if (tmpl.Level == ProcessingLevel.Build) durationHours = stage.DefaultDurationHours;
+
+            var estimate = await StageCostService.EstimateCostAsync(stage.Id, durationHours, qty, batchCount);
+
+            rows.Add(new EstimateRow
+            {
+                StageName = stage.Name,
+                StageColor = stage.StageColor ?? "var(--accent)",
+                Level = tmpl.Level.ToString(),
+                DurationMinutes = durationHours * 60,
+                HourlyRate = estimate.FullyLoadedHourlyRate,
+                LaborCost = estimate.LaborCost,
+                EquipmentCost = estimate.EquipmentCost,
+                OverheadCost = estimate.OverheadCost,
+                TotalCost = estimate.TotalCost,
+                CostPerPart = qty > 0 ? estimate.TotalCost / qty : 0,
+                UsedCostProfile = estimate.UsedCostProfile
+            });
+        }
+
+        return rows;
+    }
+
+    private static string FormatDuration(double minutes)
+    {
+        if (minutes < 1) return "<1m";
+        var hours = (int)(minutes / 60);
+        var mins = (int)(minutes % 60);
+        return hours > 0 ? $"{hours}h {mins}m" : $"{mins}m";
+    }
+
+    private record EstimateRow
+    {
+        public string StageName { get; init; } = "";
+        public string StageColor { get; init; } = "";
+        public string Level { get; init; } = "";
+        public double DurationMinutes { get; init; }
+        public decimal HourlyRate { get; init; }
+        public decimal LaborCost { get; init; }
+        public decimal EquipmentCost { get; init; }
+        public decimal OverheadCost { get; init; }
+        public decimal TotalCost { get; init; }
+        public decimal CostPerPart { get; init; }
+        public bool UsedCostProfile { get; init; }
+    }
+}
