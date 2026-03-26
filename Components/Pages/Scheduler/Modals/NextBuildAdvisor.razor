@@ -56,57 +56,78 @@
                 @if (!_loading && _step == 0)
                 {
                     <div class="wizard-content">
-                        @* ── Machine Selector ── *@
-                        <div class="form-group" style="margin-bottom: 8px;">
-                            <label>Machine</label>
-                            <select class="form-control" @bind="_selectedMachineId" @bind:after="OnMachineChanged">
-                                @foreach (var m in SlsMachines)
-                                {
-                                    <option value="@m.Id">@m.Name — @m.Status</option>
-                                }
-                            </select>
+                        @* ── Machine Selector with status ── *@
+                        <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 12px;">
+                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                <label style="font-weight: 600; font-size: 0.82rem;">Machine</label>
+                                <select class="form-control" @bind="_selectedMachineId" @bind:after="OnMachineChanged">
+                                    @foreach (var m in SlsMachines)
+                                    {
+                                        <option value="@m.Id">@m.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            @if (_selectedMachine != null)
+                            {
+                                <div style="padding: 6px 10px; border-radius: 6px; font-size: 0.78rem; background: var(--bg-secondary); white-space: nowrap;">
+                                    <span class="gantt-machine-status gantt-status-@_selectedMachine.Status.ToString().ToLower()" style="margin-right: 4px;"></span>
+                                    @_selectedMachine.Status
+                                    @if (_currentBuild != null)
+                                    {
+                                        <span style="color: var(--text-muted); margin-left: 6px;">Printing until @_currentBuild.PrintEnd.ToLocalTime().ToString("ddd h:mm tt")</span>
+                                    }
+                                </div>
+                            }
                         </div>
 
-                        @* ── Recommended Build (prominent) ── *@
+                        @* ── Outstanding Demand Summary ── *@
                         @{
-                            var topDemand = _demand.Where(d => d.IsAdditive && d.NetRemaining > 0).OrderByDescending(d => d.HighestPriority).ThenBy(d => d.EarliestDueDate).FirstOrDefault();
+                            var activeDemand = _demand.Where(d => d.IsAdditive && d.NetRemaining > 0)
+                                .OrderByDescending(d => d.HighestPriority).ThenBy(d => d.EarliestDueDate).ToList();
+                            var totalRemaining = activeDemand.Sum(d => d.NetRemaining);
+                            var overdueCount = activeDemand.Count(d => d.IsOverdue);
                         }
-                        @if (_recommendation != null)
+                        @if (activeDemand.Any())
                         {
-                            var recAligned = _selectedMachine?.AutoChangeoverEnabled == true ? _recommendation.Plate.OperatorAvailable : true;
-                            <div style="padding: 12px; border-radius: 8px; font-size: 0.82rem; background: @(recAligned ? "rgba(var(--success-rgb, 46,160,67), 0.08)" : "rgba(var(--danger-rgb, 218,54,51), 0.08)"); border-left: 4px solid @(recAligned ? "var(--success)" : "var(--danger)"); margin-bottom: 12px;">
-                                <div style="font-weight: 700; font-size: 0.92rem; margin-bottom: 6px;">Recommended Build</div>
-                                @if (topDemand != null)
-                                {
-                                    <div style="margin-bottom: 4px;">
-                                        <strong>@topDemand.PartNumber</strong> — @topDemand.NetRemaining remaining, due @topDemand.EarliestDueDate.ToString("MMM d")
-                                    </div>
-                                }
-                                @if (!string.IsNullOrEmpty(_recommendation.Rationale))
-                                {
-                                    <div style="color: var(--text-secondary); margin-bottom: 4px;">@_recommendation.Rationale</div>
-                                }
-                                <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px;">
-                                    <span>Start: <strong>@_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</strong></span>
-                                    @if (_selectedMachine?.AutoChangeoverEnabled == true)
+                            <div style="margin-bottom: 12px;">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+                                    <div style="font-weight: 600; font-size: 0.85rem;">Outstanding Demand</div>
+                                    <span style="font-size: 0.78rem; color: var(--text-muted);">@totalRemaining parts across @activeDemand.Count @(activeDemand.Count == 1 ? "part type" : "part types")</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;">
+                                    @foreach (var d in activeDemand)
                                     {
-                                        <span>Changeover: <strong>@_recommendation.Slot.ChangeoverStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</strong></span>
-                                        @if (recAligned)
-                                        {
-                                            <span style="color: var(--success);">&#x2713; Safe changeover</span>
-                                        }
-                                        else
-                                        {
-                                            <span style="color: var(--danger);">&#x2717; Machine stops until operator</span>
-                                        }
+                                        var woList = string.Join(", ", d.SourceLines.Select(s => s.WorkOrderNumber).Distinct().Take(3));
+                                        <div style="display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--bg-secondary); border-radius: 4px; font-size: 0.78rem; @(d.IsOverdue ? "border-left: 3px solid var(--danger);" : "")">
+                                            <span style="font-weight: 600; min-width: 100px;">@d.PartNumber</span>
+                                            <span class="badge badge-@d.HighestPriority.ToString().ToLower()" style="font-size: 0.65rem;">@d.HighestPriority</span>
+                                            <span style="color: var(--text-primary); font-weight: 500;">@d.NetRemaining remaining</span>
+                                            <span style="color: var(--text-muted);">due @d.EarliestDueDate.ToString("MMM d")</span>
+                                            @if (d.IsOverdue) { <span style="color: var(--danger); font-weight: 600; font-size: 0.72rem;">OVERDUE</span> }
+                                            <span style="color: var(--text-muted); margin-left: auto; font-size: 0.72rem;">@woList</span>
+                                        </div>
                                     }
                                 </div>
                             </div>
                         }
-                        else if (topDemand != null)
+
+                        @* ── Recommendation ── *@
+                        @if (_recommendation != null)
                         {
-                            <div style="padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.82rem; margin-bottom: 12px;">
-                                <strong>Top demand:</strong> @topDemand.PartNumber — @topDemand.NetRemaining remaining, due @topDemand.EarliestDueDate.ToString("MMM d")
+                            var recAligned = _selectedMachine?.AutoChangeoverEnabled == true ? _recommendation.Plate.OperatorAvailable : true;
+                            <div style="padding: 10px 12px; border-radius: 8px; font-size: 0.82rem; background: @(recAligned ? "rgba(var(--success-rgb, 46,160,67), 0.08)" : "rgba(var(--danger-rgb, 218,54,51), 0.08)"); border-left: 4px solid @(recAligned ? "var(--success)" : "var(--danger)"); margin-bottom: 12px;">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                    <div style="font-weight: 700; font-size: 0.88rem;">💡 Recommended Next Build</div>
+                                    <div style="font-size: 0.78rem; color: var(--text-muted);">
+                                        @_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")
+                                        @if (recAligned) { <span style="color: var(--success); margin-left: 4px;">✓ Safe changeover</span> }
+                                        else { <span style="color: var(--danger); margin-left: 4px;">⚠️ Machine stops</span> }
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(_recommendation.Rationale))
+                                {
+                                    <div style="color: var(--text-secondary); margin-top: 4px;">@_recommendation.Rationale</div>
+                                }
                             </div>
                         }
 
@@ -117,8 +138,7 @@
                                 <span style="font-size: 0.78rem; color: var(--text-muted);">@FilteredPrograms.Count of @_availablePrograms.Count programs</span>
                             </div>
 
-                            @* ── Search ── *@
-                            <input class="form-control form-control-sm" type="text" placeholder="Search programs..."
+                            <input class="form-control form-control-sm" type="text" placeholder="Search programs by name, part number, or program number..."
                                    style="margin-bottom: 8px;" @bind="_programSearch" @bind:event="oninput" />
 
                             @if (FilteredPrograms.Any())
@@ -141,36 +161,53 @@
                                         {
                                             var isSelected = _selectedExistingProgram?.Id == prog.Id;
                                             var totalParts = prog.TotalPartCount;
+                                            var baseParts = prog.BasePartCount;
+                                            var stackLevel = prog.ProgramParts?.FirstOrDefault()?.StackLevel ?? 1;
                                             var printHours = prog.EstimatedPrintHours ?? 0;
-                                            var isReady = prog.ScheduleStatus == ProgramScheduleStatus.Ready
-                                                || (prog.EstimatedPrintHours.HasValue && prog.EstimatedPrintHours > 0);
+                                            var hasSlicer = prog.HasSlicerData;
                                             var assignedMachines = prog.MachineAssignments?.Select(a => a.Machine?.Name).Where(n => n != null).ToList() ?? [];
                                             var isForThisMachine = prog.MachineId == _selectedMachineId
                                                 || assignedMachines.Any(n => n == _selectedMachine?.Name);
+                                            var materialName = prog.Material?.Name?.Split(' ').FirstOrDefault() ?? prog.MachineType ?? "";
 
                                             <div class="advisor-option-card @(isSelected ? "advisor-option-card--selected" : "")"
-                                                 style="padding: 8px 10px;"
+                                                 style="padding: 10px 12px;"
                                                  @onclick="() => OnExistingProgramSelected(prog)">
-                                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                                                    <div style="font-weight: 600; font-size: 0.85rem;">@prog.Name</div>
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <div style="font-weight: 600; font-size: 0.88rem;">@prog.Name</div>
                                                     <div style="display: flex; gap: 4px; align-items: center;">
-                                                        @if (isReady)
+                                                        @if (hasSlicer)
                                                         {
-                                                            <span class="badge badge-success" style="font-size: 0.7rem;">Ready</span>
+                                                            <span class="badge badge-success" style="font-size: 0.68rem;">Ready</span>
                                                         }
                                                         else
                                                         {
-                                                            <span class="badge badge-warning" style="font-size: 0.7rem;">Draft</span>
+                                                            <span class="badge badge-warning" style="font-size: 0.68rem;">Needs Slicer</span>
                                                         }
                                                     </div>
                                                 </div>
-                                                <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
-                                                    <span>@totalParts @(totalParts == 1 ? "part" : "parts")</span>
-                                                    @if (printHours > 0)
-                                                    {
-                                                        <span>@printHours.ToString("F1")h</span>
-                                                    }
+                                                <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.78rem; margin-top: 4px; align-items: center;">
+                                                    <span style="font-weight: 500; color: var(--text-primary);">@totalParts @(totalParts == 1 ? "part" : "parts")</span>
+                                                    @if (stackLevel > 1) { <span class="badge badge-info" style="font-size: 0.65rem;">@(stackLevel)× stack</span> }
+                                                    @if (printHours > 0) { <span style="color: var(--text-muted);">@printHours.ToString("F1")h print</span> }
+                                                    @if (!string.IsNullOrEmpty(materialName)) { <span style="color: var(--text-muted);">@materialName</span> }
+                                                </div>
+                                                @if (prog.ProgramParts?.Any() == true)
+                                                {
+                                                    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+                                                        @foreach (var pp in prog.ProgramParts)
+                                                        {
+                                                            var ppTotal = pp.Quantity * pp.StackLevel;
+                                                            <span style="font-size: 0.72rem; padding: 1px 6px; background: var(--bg-tertiary); border-radius: 3px; color: var(--text-secondary);">
+                                                                @(pp.Part?.PartNumber ?? $"#{pp.PartId}") ×@ppTotal
+                                                            </span>
+                                                        }
+                                                    </div>
+                                                }
+                                                <div style="display: flex; gap: 8px; font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;">
                                                     <span>@prog.ProgramNumber</span>
+                                                    @if (prog.LayerCount.HasValue) { <span>@prog.LayerCount.Value.ToString("N0") layers</span> }
+                                                    @if (prog.BuildHeightMm.HasValue) { <span>@prog.BuildHeightMm.Value.ToString("F0")mm</span> }
                                                     @if (assignedMachines.Any())
                                                     {
                                                         <span style="@(isForThisMachine ? "color: var(--success);" : "")">@string.Join(", ", assignedMachines)</span>
@@ -183,14 +220,14 @@
                             }
                             else
                             {
-                                <div style="padding: 12px; font-size: 0.85rem; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px; text-align: center;">
+                                <div style="padding: 16px; font-size: 0.85rem; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px; text-align: center;">
                                     @if (!string.IsNullOrEmpty(_programSearch))
                                     {
                                         <text>No programs matching "@_programSearch"</text>
                                     }
                                     else
                                     {
-                                        <text>No existing programs available for scheduling.</text>
+                                        <text>No existing programs available. Create a new one below.</text>
                                     }
                                 </div>
                             }
@@ -198,10 +235,10 @@
                             <div style="margin-top: 8px;">
                                 @if (_creatingNewProgram)
                                 {
-                                    <div class="advisor-option-card advisor-option-card--selected">
-                                        <div style="font-weight: 600; font-size: 0.88rem;">Create New Program</div>
-                                        <div style="font-size: 0.82rem; color: var(--text-muted);">
-                                            Define a new plate composition and schedule it. A new program file will need to be sliced.
+                                    <div class="advisor-option-card advisor-option-card--selected" style="padding: 10px 12px;">
+                                        <div style="font-weight: 600; font-size: 0.88rem;">+ Create New Program</div>
+                                        <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">
+                                            Define a new plate composition and schedule it. The slicer file will need to be prepared separately.
                                         </div>
                                     </div>
                                 }
