@@ -72,22 +72,19 @@ else
     <!-- Overview Tab -->
     @if (_tab == "overview")
     {
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
             <div class="card">
                 <h3 class="card-title">Part Information</h3>
                 <div class="detail-grid">
-                    <div class="detail-label">Part Number</div><div class="detail-value">@_part.PartNumber</div>
+                    <div class="detail-label">Part Number</div><div class="detail-value" style="font-weight:600;">@_part.PartNumber</div>
                     <div class="detail-label">Name</div><div class="detail-value">@_part.Name</div>
-                    <div class="detail-label">Description</div><div class="detail-value">@(_part.Description ?? "—")</div>
-                    <div class="detail-label">Material</div><div class="detail-value">@_part.Material</div>
+                    <div class="detail-label">Material</div><div class="detail-value">@(_part.Material ?? "—")</div>
                     <div class="detail-label">Raw Material Spec</div><div class="detail-value">@(_part.RawMaterialSpec ?? "—")</div>
                     <div class="detail-label">Approach</div>
                     <div class="detail-value">
                         @if (_part.ManufacturingApproach != null)
                         {
-                            <a href="/admin/manufacturing-approaches" style="text-decoration:none; color:var(--primary);">
-                                @(_part.ManufacturingApproach.IconEmoji) @_part.ManufacturingApproach.Name
-                            </a>
+                            <span>@(_part.ManufacturingApproach.IconEmoji) @_part.ManufacturingApproach.Name</span>
                         }
                         else
                         {
@@ -101,6 +98,13 @@ else
                         <div class="detail-label">Defense Part</div><div class="detail-value">@(_part.IsDefensePart ? "Yes" : "No")</div>
                     }
                 </div>
+                @if (!string.IsNullOrWhiteSpace(_part.Description))
+                {
+                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Description</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5;">@_part.Description</div>
+                    </div>
+                }
             </div>
 
             <div class="card">
@@ -112,10 +116,16 @@ else
                     <div class="detail-label">Customer P/N</div><div class="detail-value">@(_part.CustomerPartNumber ?? "—")</div>
                     <div class="detail-label">Drawings</div><div class="detail-value">@_drawings.Count file(s)</div>
                 </div>
+                @if (string.IsNullOrEmpty(_part.DrawingNumber) && string.IsNullOrEmpty(_part.Revision) && _drawings.Count == 0)
+                {
+                    <div style="margin-top: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 6px; text-align: center;">
+                        <span style="color: var(--text-muted); font-size: 0.8rem;">No drawings or revision info yet. <a href="/parts/@Id/edit" style="color: var(--primary);">Add details</a></span>
+                    </div>
+                }
             </div>
 
             @* Manufacturing Process Summary *@
-            <div class="card" style="grid-column: span 2;">
+            <div class="card" style="grid-column: 1 / -1;">
                 <h3 class="card-title">⚙️ Manufacturing Process</h3>
                 @if (_process != null)
                 {
@@ -205,7 +215,7 @@ else
                 </div>
             }
 
-            <div class="card" @((_bomItems != null && _bomItems.Any()) ? "" : "style=\"grid-column: span 2;\"")>
+            <div class="card" @((_bomItems != null && _bomItems.Any()) ? "" : "style=\"grid-column: 1 / -1;\"")>
                 <h3 class="card-title">Audit</h3>
                 <div class="detail-grid">
                     <div class="detail-label">Created</div><div class="detail-value">@_part.CreatedDate.ToString("yyyy-MM-dd HH:mm")</div>
@@ -217,7 +227,7 @@ else
 
             @if (_customFieldDefs.Count > 0 && _customFieldValues.Any())
             {
-                <div class="card" style="grid-column: span 2;">
+                <div class="card" style="grid-column: 1 / -1;">
                     <h3 class="card-title">Custom Fields</h3>
                     <div class="detail-grid">
                         @foreach (var def in _customFieldDefs)
@@ -964,7 +974,7 @@ else
             @* Build Comparison Section *@
             @if (_buildsForPart?.Any() == true)
             {
-                <div class="card" style="grid-column: span 2;">
+                <div class="card" style="grid-column: 1 / -1;">
                     <h3 class="card-title">📊 Build Comparison</h3>
                     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
                         <label class="form-label" style="margin: 0; white-space: nowrap;">
