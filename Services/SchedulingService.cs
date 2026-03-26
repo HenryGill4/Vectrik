@@ -91,9 +91,11 @@ public class SchedulingService : ISchedulingService
         // This allows re-scheduling old jobs to benefit from new-system machine routing
         if (job.ManufacturingProcessId.HasValue)
         {
-            var processStageLookup = await _db.ProcessStages
+            var processStageLookup = (await _db.ProcessStages
                 .Where(ps => ps.ManufacturingProcessId == job.ManufacturingProcessId.Value)
-                .ToDictionaryAsync(ps => ps.ProductionStageId, ps => ps);
+                .ToListAsync())
+                .GroupBy(ps => ps.ProductionStageId)
+                .ToDictionary(g => g.Key, g => g.First());
 
             foreach (var exec in executions.Where(e => e.ProcessStage == null && e.ProcessStageId == null))
             {
