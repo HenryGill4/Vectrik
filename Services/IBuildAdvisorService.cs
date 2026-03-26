@@ -35,6 +35,12 @@ public interface IBuildAdvisorService
     /// Used by the Dispatch view to show machine availability at a glance.
     /// </summary>
     Task<List<MachineAvailabilitySummary>> GetMachineAvailabilitySummaryAsync();
+
+    /// <summary>
+    /// Estimates when all outstanding demand for a part will be complete,
+    /// based on build durations and downstream stage estimates.
+    /// </summary>
+    Task<DateTime?> EstimateCompletionDateAsync(int partId, int quantity);
 }
 
 // ══════════════════════════════════════════════════════════

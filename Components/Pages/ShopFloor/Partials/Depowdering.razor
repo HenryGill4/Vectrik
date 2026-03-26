@@ -48,9 +48,9 @@ else
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">🧹 Depowdering Parameters</div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-        <div class="form-group"><label class="form-label">Batch Quantity</label><input class="form-control" type="number" inputmode="numeric" min="1" /></div>
-        <div class="form-group"><label class="form-label">Powder Recovered (kg)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" min="0" /></div>
-        <div class="form-group"><label class="form-label">Duration (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" /></div>
+        <div class="form-group"><label class="form-label">Batch Quantity</label><input class="form-control" type="number" inputmode="numeric" min="1" @bind="_batchQuantity" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Powder Recovered (kg)</label><input class="form-control" type="number" step="0.1" inputmode="decimal" min="0" @bind="_powderRecoveredKg" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Duration (min)</label><input class="form-control" type="number" inputmode="numeric" min="0" @bind="_durationMin" @bind:after="NotifyDataChanged" /></div>
     </div>
 </div>
 
@@ -59,9 +59,15 @@ else
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
+    [Parameter] public EventCallback<Dictionary<string, object?>> OnDataChanged { get; set; }
+    [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
     private MachineProgram? _program;
     private string _operatorName => Execution?.OperatorName ?? "Operator";
+
+    private int? _batchQuantity;
+    private double? _powderRecoveredKg;
+    private int? _durationMin;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -80,5 +86,25 @@ else
         {
             _program = null;
         }
+
+        HydrateFromInitialValues();
+    }
+
+    private void HydrateFromInitialValues()
+    {
+        if (InitialValues == null) return;
+        if (InitialValues.TryGetValue("batchQuantity", out var v1) && int.TryParse(v1?.ToString(), out var n1)) _batchQuantity = n1;
+        if (InitialValues.TryGetValue("powderRecoveredKg", out var v2) && double.TryParse(v2?.ToString(), out var n2)) _powderRecoveredKg = n2;
+        if (InitialValues.TryGetValue("durationMin", out var v3) && int.TryParse(v3?.ToString(), out var n3)) _durationMin = n3;
+    }
+
+    private async Task NotifyDataChanged()
+    {
+        await OnDataChanged.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["batchQuantity"] = _batchQuantity,
+            ["powderRecoveredKg"] = _powderRecoveredKg,
+            ["durationMin"] = _durationMin
+        });
     }
 }

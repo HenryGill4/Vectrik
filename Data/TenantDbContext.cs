@@ -36,8 +36,6 @@ public class TenantDbContext : DbContext
     public DbSet<UserShiftAssignment> UserShiftAssignments { get; set; }
 
     // Production Tracking
-    public DbSet<BuildJob> BuildJobs { get; set; }
-    public DbSet<BuildJobPart> BuildJobParts { get; set; }
     public DbSet<StageExecution> StageExecutions { get; set; }
     public DbSet<DelayLog> DelayLogs { get; set; }
 
@@ -145,6 +143,10 @@ public class TenantDbContext : DbContext
 
     // Part Pricing
     public DbSet<PartPricing> PartPricings { get; set; }
+
+    // Shipping
+    public DbSet<Shipment> Shipments { get; set; }
+    public DbSet<ShipmentLine> ShipmentLines { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -408,30 +410,6 @@ public class TenantDbContext : DbContext
                 .HasForeignKey(e => e.JobId);
         });
 
-        // BuildJob
-        modelBuilder.Entity<BuildJob>(entity =>
-        {
-            entity.HasKey(e => e.BuildId);
-            entity.HasOne(e => e.User)
-                .WithMany()
-                .HasForeignKey(e => e.UserId);
-            entity.HasOne(e => e.Job)
-                .WithMany()
-                .HasForeignKey(e => e.JobId);
-        });
-
-        // BuildJobPart
-        modelBuilder.Entity<BuildJobPart>(entity =>
-        {
-            entity.HasOne(e => e.BuildJob)
-                .WithMany(e => e.Parts)
-                .HasForeignKey(e => e.BuildJobId)
-                .HasPrincipalKey(e => e.BuildId);
-            entity.HasOne(e => e.Part)
-                .WithMany()
-                .HasForeignKey(e => e.PartId);
-        });
-
         // PartInstance
         modelBuilder.Entity<PartInstance>(entity =>
         {
@@ -467,10 +445,6 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Job)
                 .WithMany()
                 .HasForeignKey(e => e.JobId);
-            entity.HasOne(e => e.BuildJob)
-                .WithMany()
-                .HasForeignKey(e => e.BuildJobId)
-                .HasPrincipalKey(e => e.BuildId);
             entity.HasOne(e => e.Part)
                 .WithMany()
                 .HasForeignKey(e => e.PartId);
@@ -493,10 +467,6 @@ public class TenantDbContext : DbContext
         // DelayLog
         modelBuilder.Entity<DelayLog>(entity =>
         {
-            entity.HasOne(e => e.BuildJob)
-                .WithMany(e => e.Delays)
-                .HasForeignKey(e => e.BuildJobId)
-                .HasPrincipalKey(e => e.BuildId);
             entity.HasOne(e => e.Job)
                 .WithMany()
                 .HasForeignKey(e => e.JobId);
@@ -917,6 +887,11 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.ScheduledJob)
                 .WithMany()
                 .HasForeignKey(e => e.ScheduledJobId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.SourceTemplate)
+                .WithMany()
+                .HasForeignKey(e => e.SourceTemplateId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasIndex(e => e.ScheduleStatus);

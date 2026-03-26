@@ -3,6 +3,7 @@
 @inject IMachineProgramService ProgramService
 @inject ToastService Toast
 @using System.Security.Claims
+@using System.Text.Json
 @using Microsoft.AspNetCore.Components.Authorization
 @using Opcentrix_V3.Models.Enums
 
@@ -69,6 +70,13 @@ else
                     <div class="card-header">@exec.Job?.Part?.PartNumber — Job #@exec.JobId</div>
                     <div style="margin-bottom: 12px;">
                         <span class="form-label">Operator: @exec.OperatorName</span> | Started: @exec.StartedAt?.ToString("HH:mm")
+                        @if (exec.StartedAt.HasValue)
+                        {
+                            var elapsed = DateTime.UtcNow - exec.StartedAt.Value;
+                            <span style="margin-left: 8px; font-weight: 600; color: var(--accent);">
+                                @((int)elapsed.TotalHours)h @(elapsed.Minutes)m elapsed
+                            </span>
+                        }
                         @if (exec.EstimatedHours.HasValue && exec.StartedAt.HasValue)
                         {
                             var elapsed = (DateTime.UtcNow - exec.StartedAt.Value).TotalHours;
@@ -84,8 +92,74 @@ else
                             📄 Program: <strong>@exec.MachineProgram.ProgramNumber</strong> — @exec.MachineProgram.Name
                         </div>
                     }
+
+                    @* ── Stage-Specific Partial ── *@
+                    @{ var stageSlug = _stage.StageSlug?.ToLower(); }
+                    @switch (stageSlug)
+                    {
+                        case "sls-printing":
+                            <ShopFloor.Partials.SLSPrinting Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        case "cnc-machining":
+                            <ShopFloor.Partials.CNCMachining Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        case "quality-control":
+                            <ShopFloor.Partials.QualityControl Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        case "shipping":
+                            <ShopFloor.Partials.Shipping Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        case "wire-edm":
+                            <ShopFloor.Partials.WireEDM Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        case "heat-treatment":
+                            <ShopFloor.Partials.HeatTreatment Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        case "surface-finishing":
+                            <ShopFloor.Partials.SurfaceFinishing Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        case "depowdering":
+                            <ShopFloor.Partials.Depowdering Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        case "laser-engraving":
+                            <ShopFloor.Partials.LaserEngraving Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                        default:
+                            <ShopFloor.Partials.GenericStage Execution="exec" Stage="_stage" OnDataChanged="HandlePartialDataChanged" InitialValues="GetInitialValues(exec)" />
+                            break;
+                    }
+
+                    @* ── Sign-Off Checklist ── *@
+                    @if (_signOffItems.ContainsKey(exec.Id) && _signOffItems[exec.Id].Any())
+                    {
+                        <div class="card" style="margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px;">
+                            <div style="font-weight: 600; margin-bottom: 8px;">📋 Sign-Off Checklist</div>
+                            @foreach (var item in _signOffItems[exec.Id])
+                            {
+                                <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+                                    <input type="checkbox" checked="@item.SignedOff" disabled="@(item.SignedOff || _actionInProgress)"
+                                           @onchange="() => SignOffItem(exec.Id, item)" style="width: 18px; height: 18px;" />
+                                    <span style="@(item.SignedOff ? "text-decoration: line-through; color: var(--text-muted);" : "")">
+                                        @item.Title @(item.Required ? "*" : "")
+                                    </span>
+                                    @if (item.SignedOff)
+                                    {
+                                        <span style="font-size: 0.75em; color: var(--text-muted);">✓ @item.SignedBy @item.SignedAt?.ToString("HH:mm")</span>
+                                    }
+                                </div>
+                            }
+                            @{ var requiredUnsigned = _signOffItems[exec.Id].Where(i => i.Required && !i.SignedOff).Count(); }
+                            @if (requiredUnsigned > 0)
+                            {
+                                <div style="font-size: 0.8em; color: var(--warning); margin-top: 6px;">⚠️ @requiredUnsigned required item(s) must be signed off before completing</div>
+                            }
+                        </div>
+                    }
+
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-success" @onclick="() => ShowCompleteModal(exec)" disabled="@_actionInProgress">Complete</button>
+                        @{ var canComplete = !_signOffItems.ContainsKey(exec.Id) || !_signOffItems[exec.Id].Any(i => i.Required && !i.SignedOff); }
+                        <button class="btn btn-success" @onclick="() => ShowCompleteModal(exec)" disabled="@(_actionInProgress || !canComplete)"
+                                title="@(!canComplete ? "Complete all required sign-off items first" : "")">Complete</button>
                         <button class="btn btn-danger btn-sm" @onclick="() => FailWork(exec.Id)" disabled="@_actionInProgress">Fail</button>
                     </div>
                 </div>
@@ -132,7 +206,7 @@ else
                 @if (_completingExecution.MachineProgramId.HasValue && _completingExecution.MachineProgram != null)
                 {
                     <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 4px;">
-                        📄 Program: <strong>@_completingExecution.MachineProgram.ProgramNumber</strong> v@_completingExecution.MachineProgram.Version
+                        📄 Program: <strong>@_completingExecution.MachineProgram.ProgramNumber</strong> v@(_completingExecution.MachineProgram.Version)
                     </div>
                 }
             </div>
@@ -182,6 +256,19 @@ else
                 </div>
             }
 
+            @if (_siblingExecutions?.Any() == true)
+            {
+                <div style="border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-top: 12px; background: var(--bg-secondary);">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" @bind="_completeBatchMode" style="width: 18px; height: 18px;" />
+                        <span>Complete all @(_siblingExecutions.Count + 1) jobs in this build at once</span>
+                    </label>
+                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                        This will also complete: @string.Join(", ", _siblingExecutions.Select(e => $"Job #{e.JobId}"))
+                    </div>
+                </div>
+            }
+
             <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
                 <button class="btn btn-secondary" @onclick="CloseCompleteModal">Cancel</button>
                 <button class="btn btn-success" @onclick="ConfirmComplete" disabled="@_actionInProgress">
@@ -208,6 +295,12 @@ else
     private string _currentUserName = "";
     private bool _actionInProgress;
 
+    // Partial form data collected from stage-specific partials
+    private Dictionary<string, object?>? _partialData;
+
+    // Sign-off checklist per execution
+    private Dictionary<int, List<SignOffChecklistItem>> _signOffItems = new();
+
     // Completion modal
     private bool _showCompleteModal;
     private StageExecution? _completingExecution;
@@ -215,6 +308,11 @@ else
     private string _feedbackCategory = "";
     private ProgramFeedbackSeverity _feedbackSeverity = ProgramFeedbackSeverity.Low;
     private string? _feedbackComment;
+
+    // Batch completion for build-level stages
+    private bool IsBuildLevelStage => _stage?.StageSlug?.ToLower() is "sls-printing" or "depowdering" or "wire-edm";
+    private List<StageExecution>? _siblingExecutions;
+    private bool _completeBatchMode;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -232,6 +330,19 @@ else
         _queue = queue.OrderByDescending(e => e.Job?.Priority).ThenBy(e => e.Job?.ScheduledEnd).ToList();
         _active = await StageService.GetActiveWorkForStageAsync(_stage.Id);
         _history = await StageService.GetRecentCompletionsAsync(_stage.Id, 20);
+
+        // Load sign-off checklists for active executions
+        _signOffItems.Clear();
+        foreach (var exec in _active)
+        {
+            try
+            {
+                var items = await StageService.GetSignOffChecklistAsync(exec.Id);
+                if (items.Any())
+                    _signOffItems[exec.Id] = items;
+            }
+            catch { /* Checklist not available — skip */ }
+        }
     }
 
     private async Task StartWork(int executionId)
@@ -249,6 +360,41 @@ else
         finally { _actionInProgress = false; }
     }
 
+    private void HandlePartialDataChanged(Dictionary<string, object?> data)
+    {
+        _partialData = data;
+    }
+
+    private async Task SignOffItem(int executionId, SignOffChecklistItem item)
+    {
+        if (item.SignedOff || _actionInProgress) return;
+        _actionInProgress = true;
+        try
+        {
+            await StageService.SignOffChecklistItemAsync(executionId, item.StepId, _currentUserName);
+            item.SignedOff = true;
+            item.SignedBy = _currentUserName;
+            item.SignedAt = DateTime.UtcNow;
+            Toast.ShowSuccess($"Signed off: {item.Title}");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
+    }
+
+    private Dictionary<string, object?>? GetInitialValues(StageExecution exec)
+    {
+        if (string.IsNullOrWhiteSpace(exec.CustomFieldValues) || exec.CustomFieldValues == "{}")
+            return null;
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(exec.CustomFieldValues);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private void ShowCompleteModal(StageExecution exec)
     {
         _completingExecution = exec;
@@ -256,6 +402,20 @@ else
         _feedbackCategory = "";
         _feedbackSeverity = ProgramFeedbackSeverity.Low;
         _feedbackComment = null;
+
+        // Check for sibling build executions
+        if (IsBuildLevelStage && exec.MachineProgramId.HasValue)
+        {
+            _siblingExecutions = _active
+                .Where(e => e.MachineProgramId == exec.MachineProgramId && e.Id != exec.Id)
+                .ToList();
+        }
+        else
+        {
+            _siblingExecutions = null;
+        }
+
+        _completeBatchMode = false;
         _showCompleteModal = true;
     }
 
@@ -263,6 +423,7 @@ else
     {
         _showCompleteModal = false;
         _completingExecution = null;
+        _partialData = null;
     }
 
     private async Task ConfirmComplete()
@@ -279,7 +440,8 @@ else
         _actionInProgress = true;
         try
         {
-            await StageService.CompleteStageExecutionAsync(_completingExecution.Id, notes: _completionNotes);
+            var cfv = _partialData != null ? JsonSerializer.Serialize(_partialData) : null;
+            await StageService.CompleteStageExecutionAsync(_completingExecution.Id, customFieldValues: cfv, notes: _completionNotes);
 
             // Submit program feedback if provided
             if (!string.IsNullOrEmpty(_feedbackCategory)
@@ -300,9 +462,23 @@ else
                 await ProgramService.SubmitFeedbackAsync(feedback);
                 Toast.ShowSuccess("Stage completed. Feedback submitted — thank you!");
             }
-            else
+            else if (!_completeBatchMode || _siblingExecutions == null || !_siblingExecutions.Any())
             {
                 Toast.ShowSuccess("Stage completed");
+            }
+
+            // Batch complete sibling executions in the same build
+            if (_completeBatchMode && _siblingExecutions?.Any() == true)
+            {
+                foreach (var sibling in _siblingExecutions)
+                {
+                    try
+                    {
+                        await StageService.CompleteStageExecutionAsync(sibling.Id, customFieldValues: cfv, notes: _completionNotes);
+                    }
+                    catch { /* Log but continue — don't block other completions */ }
+                }
+                Toast.ShowSuccess($"Build completed: {_siblingExecutions.Count + 1} jobs finished");
             }
 
             CloseCompleteModal();

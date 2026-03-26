@@ -25,7 +25,7 @@ public class MachineProviderFactory
         {
             // Future: "EOS" => new EosMachineProvider(...),
             // Future: "Trumpf" => new TrumpfMachineProvider(...),
-            _ => new MockMachineProvider()
+            _ => new MockMachineProvider(_db)
         };
     }
 }

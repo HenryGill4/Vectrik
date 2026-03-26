@@ -7,7 +7,6 @@ public class DelayLog
 {
     public int Id { get; set; }
 
-    public int? BuildJobId { get; set; }
     public int? JobId { get; set; }
     public int? StageExecutionId { get; set; }
 
@@ -36,7 +35,6 @@ public class DelayLog
     public string? Notes { get; set; }
 
     // Navigation
-    public virtual BuildJob? BuildJob { get; set; }
     public virtual Job? Job { get; set; }
     public virtual StageExecution? StageExecution { get; set; }
 }

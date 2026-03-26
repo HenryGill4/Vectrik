@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Opcentrix_V3.Data;
 
@@ -10,9 +11,11 @@ using Opcentrix_V3.Data;
 namespace Opcentrix_V3.Data.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    partial class TenantDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260325224126_AddShippingModule")]
+    partial class AddShippingModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.4");
@@ -56,6 +59,115 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("PartInstanceId", "Timestamp");
 
                     b.ToTable("BatchPartAssignments");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildJob", b =>
+                {
+                    b.Property<int>("BuildId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ActualEndTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ActualStartTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EndReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<float?>("GasUsedLiters")
+                        .HasColumnType("REAL");
+
+                    b.Property<int?>("JobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LaserRunTime")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Material")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("OperatorActualHours")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("OperatorEstimatedHours")
+                        .HasColumnType("TEXT");
+
+                    b.Property<float?>("PowderUsedLiters")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("PrinterName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ScheduledEndTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ScheduledStartTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TotalPartsInBuild")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("BuildId");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("BuildJobs");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildJobPart", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BuildJobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PartNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BuildJobId");
+
+                    b.HasIndex("PartId");
+
+                    b.ToTable("BuildJobParts");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplate", b =>
@@ -361,6 +473,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("BuildJobId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Category")
                         .HasColumnType("INTEGER");
 
@@ -408,6 +523,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BuildJobId");
 
                     b.HasIndex("JobId");
 
@@ -1438,9 +1555,6 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Property<int?>("SourceProgramId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int?>("SourceTemplateId")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 
@@ -1482,8 +1596,6 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasIndex("ScheduledJobId");
 
                     b.HasIndex("SourceProgramId");
-
-                    b.HasIndex("SourceTemplateId");
 
                     b.HasIndex("WorkInstructionId");
 
@@ -3566,6 +3678,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("BuildJobId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("CorrectiveActionText")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
@@ -3612,6 +3727,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BuildJobId");
 
                     b.HasIndex("InspectionPlanId");
 
@@ -5032,6 +5149,42 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("ProductionBatch");
                 });
 
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildJob", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.Job", "Job")
+                        .WithMany()
+                        .HasForeignKey("JobId");
+
+                    b.HasOne("Opcentrix_V3.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Job");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildJobPart", b =>
+                {
+                    b.HasOne("Opcentrix_V3.Models.BuildJob", "BuildJob")
+                        .WithMany("Parts")
+                        .HasForeignKey("BuildJobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BuildJob");
+
+                    b.Navigation("Part");
+                });
+
             modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplate", b =>
                 {
                     b.HasOne("Opcentrix_V3.Models.Material", "Material")
@@ -5074,6 +5227,10 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
             modelBuilder.Entity("Opcentrix_V3.Models.DelayLog", b =>
                 {
+                    b.HasOne("Opcentrix_V3.Models.BuildJob", "BuildJob")
+                        .WithMany("Delays")
+                        .HasForeignKey("BuildJobId");
+
                     b.HasOne("Opcentrix_V3.Models.Job", "Job")
                         .WithMany()
                         .HasForeignKey("JobId");
@@ -5085,6 +5242,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasOne("Opcentrix_V3.Models.StageExecution", "StageExecution")
                         .WithMany("DelayLogs")
                         .HasForeignKey("StageExecutionId");
+
+                    b.Navigation("BuildJob");
 
                     b.Navigation("Job");
 
@@ -5286,11 +5445,6 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .HasForeignKey("SourceProgramId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("Opcentrix_V3.Models.BuildTemplate", "SourceTemplate")
-                        .WithMany()
-                        .HasForeignKey("SourceTemplateId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Opcentrix_V3.Models.WorkInstruction", "WorkInstruction")
                         .WithMany()
                         .HasForeignKey("WorkInstructionId")
@@ -5313,8 +5467,6 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("ScheduledJob");
 
                     b.Navigation("SourceProgram");
-
-                    b.Navigation("SourceTemplate");
 
                     b.Navigation("WorkInstruction");
                 });
@@ -5845,6 +5997,10 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 
             modelBuilder.Entity("Opcentrix_V3.Models.QCInspection", b =>
                 {
+                    b.HasOne("Opcentrix_V3.Models.BuildJob", "BuildJob")
+                        .WithMany()
+                        .HasForeignKey("BuildJobId");
+
                     b.HasOne("Opcentrix_V3.Models.InspectionPlan", "InspectionPlan")
                         .WithMany()
                         .HasForeignKey("InspectionPlanId");
@@ -5866,6 +6022,8 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.HasOne("Opcentrix_V3.Models.PartInstance", "PartInstance")
                         .WithMany("Inspections")
                         .HasForeignKey("PartInstanceId");
+
+                    b.Navigation("BuildJob");
 
                     b.Navigation("InspectionPlan");
 
@@ -6206,6 +6364,13 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                         .IsRequired();
 
                     b.Navigation("WorkflowDefinition");
+                });
+
+            modelBuilder.Entity("Opcentrix_V3.Models.BuildJob", b =>
+                {
+                    b.Navigation("Delays");
+
+                    b.Navigation("Parts");
                 });
 
             modelBuilder.Entity("Opcentrix_V3.Models.BuildTemplate", b =>

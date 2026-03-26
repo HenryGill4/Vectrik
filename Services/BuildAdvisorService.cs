@@ -406,6 +406,52 @@ public class BuildAdvisorService : IBuildAdvisorService
     }
 
     // ══════════════════════════════════════════════════════════
+    // Completion Estimation
+    // ══════════════════════════════════════════════════════════
+
+    public async Task<DateTime?> EstimateCompletionDateAsync(int partId, int quantity)
+    {
+        if (quantity <= 0) return null;
+
+        var buildConfig = await _db.PartAdditiveBuildConfigs
+            .FirstOrDefaultAsync(c => c.PartId == partId);
+        if (buildConfig == null) return null;
+
+        var partsPerBuild = buildConfig.PlannedPartsPerBuildSingle > 0
+            ? buildConfig.PlannedPartsPerBuildSingle : 1;
+        var buildsNeeded = (int)Math.Ceiling((double)quantity / partsPerBuild);
+
+        var hoursPerBuild = buildConfig.SingleStackDurationHours ?? 24.0;
+        var totalPrintHours = buildsNeeded * hoursPerBuild;
+
+        // Estimate downstream processing (depowder + EDM + CNC + finishing)
+        // Use process stage estimates if available, otherwise default 48h
+        var downstreamHours = 48.0;
+        var part = await _db.Parts
+            .Include(p => p.ManufacturingProcess)
+                .ThenInclude(mp => mp!.Stages)
+                    .ThenInclude(ps => ps.ProductionStage)
+            .FirstOrDefaultAsync(p => p.Id == partId);
+
+        if (part?.ManufacturingProcess?.Stages?.Any() == true)
+        {
+            // Sum estimated run time for non-print stages
+            var nonPrintStages = part.ManufacturingProcess.Stages
+                .Where(ps => ps.ProductionStage?.Department != "SLS"
+                    && ps.ProductionStage?.Department != "Additive"
+                    && !ps.DurationFromBuildConfig)
+                .ToList();
+
+            var stageMinutes = nonPrintStages.Sum(ps =>
+                (ps.SetupTimeMinutes ?? 0) + (ps.RunTimeMinutes ?? 0));
+            if (stageMinutes > 0)
+                downstreamHours = (stageMinutes / 60.0) * quantity;
+        }
+
+        return DateTime.UtcNow.AddHours(totalPrintHours + downstreamHours);
+    }
+
+    // ══════════════════════════════════════════════════════════
     // Private Helpers
     // ══════════════════════════════════════════════════════════
 

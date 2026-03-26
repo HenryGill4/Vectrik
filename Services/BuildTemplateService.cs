@@ -344,6 +344,7 @@ public class BuildTemplateService : IBuildTemplateService
         var program = new MachineProgram
         {
             ProgramType = ProgramType.BuildPlate,
+            SourceTemplateId = templateId,
             MachineId = machineId,
             ProgramNumber = $"BT-{templateId}-{DateTime.UtcNow:yyyyMMddHHmmss}",
             Name = template.Name,

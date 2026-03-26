@@ -14,12 +14,12 @@
     <hr style="margin: 0 0 12px; border-color: var(--border);" />
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
         <div class="form-group"><label class="form-label">Carrier</label>
-            <select class="form-control"><option>FedEx</option><option>UPS</option><option>DHL</option><option>USPS</option><option>Customer Pickup</option></select>
+            <select class="form-control" @bind="_carrier" @bind:after="NotifyDataChanged"><option>FedEx</option><option>UPS</option><option>DHL</option><option>USPS</option><option>Customer Pickup</option></select>
         </div>
-        <div class="form-group"><label class="form-label">Tracking Number</label><input class="form-control" /></div>
-        <div class="form-group"><label class="form-label">Package Count</label><input class="form-control" type="number" min="1" value="1" inputmode="numeric" /></div>
+        <div class="form-group"><label class="form-label">Tracking Number</label><input class="form-control" @bind="_trackingNumber" @bind:after="NotifyDataChanged" /></div>
+        <div class="form-group"><label class="form-label">Package Count</label><input class="form-control" type="number" min="1" inputmode="numeric" @bind="_packageCount" @bind:after="NotifyDataChanged" /></div>
     </div>
-    <div class="form-group"><label class="form-label">Packing List (serial numbers, one per line)</label><textarea class="form-control" rows="4" placeholder="SN-2026-00001&#10;SN-2026-00002"></textarea></div>
+    <div class="form-group"><label class="form-label">Packing List (serial numbers, one per line)</label><textarea class="form-control" rows="4" placeholder="SN-2026-00001&#10;SN-2026-00002" @bind="_packingList" @bind:after="NotifyDataChanged"></textarea></div>
 </div>
 
 <LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
@@ -27,6 +27,37 @@
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
+    [Parameter] public EventCallback<Dictionary<string, object?>> OnDataChanged { get; set; }
+    [Parameter] public Dictionary<string, object?>? InitialValues { get; set; }
 
+    private string _carrier = "FedEx";
+    private string _trackingNumber = "";
+    private int _packageCount = 1;
+    private string _packingList = "";
     private string _operatorName => Execution?.OperatorName ?? "Operator";
+
+    protected override void OnParametersSet()
+    {
+        HydrateFromInitialValues();
+    }
+
+    private void HydrateFromInitialValues()
+    {
+        if (InitialValues == null) return;
+        if (InitialValues.TryGetValue("carrier", out var c) && c is string cStr) _carrier = cStr;
+        if (InitialValues.TryGetValue("trackingNumber", out var tn) && tn is string tnStr) _trackingNumber = tnStr;
+        if (InitialValues.TryGetValue("packageCount", out var pc) && pc is int pcInt) _packageCount = pcInt;
+        if (InitialValues.TryGetValue("packingList", out var pl) && pl is string plStr) _packingList = plStr;
+    }
+
+    private async Task NotifyDataChanged()
+    {
+        await OnDataChanged.InvokeAsync(new Dictionary<string, object?>
+        {
+            ["carrier"] = _carrier,
+            ["trackingNumber"] = _trackingNumber,
+            ["packageCount"] = _packageCount,
+            ["packingList"] = _packingList
+        });
+    }
 }

@@ -11,12 +11,14 @@ public class StageService : IStageService
     private readonly TenantDbContext _db;
     private readonly IWorkOrderService _workOrderService;
     private readonly ILearningService _learning;
+    private readonly IInventoryService _inventory;
 
-    public StageService(TenantDbContext db, IWorkOrderService workOrderService, ILearningService learning)
+    public StageService(TenantDbContext db, IWorkOrderService workOrderService, ILearningService learning, IInventoryService inventory)
     {
         _db = db;
         _workOrderService = workOrderService;
         _learning = learning;
+        _inventory = inventory;
     }
 
     // ── Stage CRUD ──────────────────────────────────────────────
@@ -242,6 +244,32 @@ public class StageService : IStageService
                 var qty = execution.Job.Quantity > 0 ? execution.Job.Quantity : 1;
                 await _workOrderService.UpdateFulfillmentAsync(
                     execution.Job.WorkOrderLineId.Value, producedDelta: qty, shippedDelta: 0);
+            }
+
+            // Auto-receipt to inventory when job completes
+            if (execution.Job.Status == JobStatus.Completed && execution.Job.Part != null)
+            {
+                try
+                {
+                    var partNumber = execution.Job.Part.PartNumber;
+                    var invItem = await _db.InventoryItems
+                        .FirstOrDefaultAsync(i => i.ItemNumber == partNumber && i.IsActive);
+                    if (invItem != null)
+                    {
+                        var qty = execution.Job.Quantity > 0 ? execution.Job.Quantity : 1;
+                        await _inventory.ReceiveStockAsync(
+                            invItem.Id, qty,
+                            lotNumber: null,
+                            certNumber: null,
+                            locationId: null,
+                            userId: execution.OperatorUserId?.ToString() ?? "System",
+                            reference: $"Job #{execution.JobId} completed");
+                    }
+                }
+                catch
+                {
+                    // Inventory receipt is non-critical — don't fail the completion
+                }
             }
         }
 
