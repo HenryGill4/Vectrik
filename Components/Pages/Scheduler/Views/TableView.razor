@@ -337,12 +337,14 @@
     {
         var rows = SortedTableExecutions.ToList();
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Priority,Scope,WO#,Part,Stage,Machine,Operator,Start,End,Est.Hours,Status");
+        sb.AppendLine("Priority,Scope,WO#,Customer,Due Date,Part,Stage,Machine,Operator,Start,End,Est.Hours,Status");
         foreach (var e in rows)
         {
             var priority = e.Job?.Priority ?? JobPriority.Normal;
             var jobScope = e.Job?.Scope ?? (e.MachineProgramId != null ? JobScope.Build : JobScope.Part);
             var wo = Escape(e.Job?.WorkOrderLine?.WorkOrder?.OrderNumber ?? "");
+            var customer = Escape(e.Job?.WorkOrderLine?.WorkOrder?.CustomerName ?? "");
+            var dueDate = e.Job?.WorkOrderLine?.WorkOrder?.DueDate.ToString("yyyy-MM-dd") ?? "";
             var part = e.MachineProgramId != null
                 ? Escape(e.MachineProgram?.Name ?? $"Build #{e.MachineProgramId}")
                 : Escape(e.Job?.Part?.PartNumber ?? "");
@@ -352,7 +354,7 @@
             var start = (e.ScheduledStartAt ?? e.Job?.ScheduledStart)?.ToString("yyyy-MM-dd HH:mm") ?? "";
             var end = (e.ScheduledEndAt ?? e.Job?.ScheduledEnd)?.ToString("yyyy-MM-dd HH:mm") ?? "";
             var hours = e.EstimatedHours?.ToString("F1") ?? "";
-            sb.AppendLine($"{priority},{jobScope},{wo},{part},{stage},{machine},{op},{start},{end},{hours},{e.Status}");
+            sb.AppendLine($"{priority},{jobScope},{wo},{customer},{dueDate},{part},{stage},{machine},{op},{start},{end},{hours},{e.Status}");
         }
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
