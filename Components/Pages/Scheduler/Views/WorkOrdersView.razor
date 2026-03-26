@@ -343,11 +343,17 @@
     private List<ScheduleDiagnosticReport> _diagnosticReports = [];
     private List<string> _diagnosticWarnings = [];
 
-    // Completion estimates per part
+    // Completion estimates per part (with hash to avoid redundant recalculation)
     private Dictionary<int, DateTime?> _completionEstimates = new();
+    private int _lastWoHash;
 
     protected override async Task OnParametersSetAsync()
     {
+        // Skip recalculation if work orders haven't changed (avoids re-querying on viewport scroll/zoom)
+        var woHash = WorkOrders.Count > 0 ? WorkOrders.Sum(w => w.Id * 31 + w.Lines.Sum(l => l.Id * 17 + l.Quantity)) : 0;
+        if (woHash == _lastWoHash && _completionEstimates.Count > 0) return;
+        _lastWoHash = woHash;
+
         // Load completion estimates for SLS lines with outstanding demand
         var slsLines = WorkOrders
             .SelectMany(w => w.Lines)

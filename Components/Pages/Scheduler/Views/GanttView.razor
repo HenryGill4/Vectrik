@@ -8,7 +8,7 @@
         {
             <div class="gantt-batch-bar">
                 <span class="gantt-batch-count">@SelectionCount selected</span>
-                <button class="btn btn-sm btn-danger" @onclick="OnBatchDelete">Delete Selected</button>
+                <button class="btn btn-sm btn-danger" @onclick="OnBatchDelete">@(_confirmBatchDelete ? $"Confirm Delete {_selectedBuildIds.Count}?" : "Delete Selected")</button>
                 <button class="btn btn-sm btn-secondary" @onclick="OnBatchReschedule">Reschedule Selected</button>
                 <button class="btn btn-sm btn-secondary" @onclick="ClearSelection">Clear</button>
             </div>
@@ -248,10 +248,18 @@
         _selectedBuildIds.Clear();
     }
 
+    private bool _confirmBatchDelete;
+
     private async Task OnBatchDelete()
     {
-        if (_selectedBuildIds.Count > 0)
-            await OnBatchDeleteBuilds.InvokeAsync(_selectedBuildIds.ToList());
+        if (_selectedBuildIds.Count == 0) return;
+        if (!_confirmBatchDelete)
+        {
+            _confirmBatchDelete = true;
+            return;
+        }
+        _confirmBatchDelete = false;
+        await OnBatchDeleteBuilds.InvokeAsync(_selectedBuildIds.ToList());
         ClearSelection();
     }
 

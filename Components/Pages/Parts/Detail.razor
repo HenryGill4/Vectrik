@@ -7,6 +7,7 @@
 @inject IManufacturingProcessService ProcessService
 @inject IMachineService MachineService
 @inject IMachineProgramService MachineProgramService
+@inject IStageCostService StageCostService
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using System.Security.Claims
@@ -665,7 +666,10 @@ else
     @if (_tab == "costing")
     {
         <div class="card">
-            <h3 class="card-title">💰 Cost Calculator</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 class="card-title" style="margin: 0;">💰 Cost Calculator</h3>
+                <a href="/reports" class="btn btn-sm btn-secondary">📑 Reports</a>
+            </div>
 
             @if (_process == null || !_processStages.Any())
             {
@@ -695,6 +699,15 @@ else
                     </div>
                 </div>
 
+                @* Unconfigured stages warning *@
+                @if (_costLines.Any(l => !l.UsedCostProfile))
+                {
+                    <div style="padding: 10px 14px; background: color-mix(in srgb, var(--warning) 15%, transparent); border: 1px solid var(--warning); border-radius: 6px; margin-bottom: 16px; font-size: 0.85rem;">
+                        <strong>@(_costLines.Count(l => !l.UsedCostProfile)) stage(s) using estimated rates.</strong>
+                        <a href="/admin/operation-costs" style="color: var(--primary); margin-left: 4px;">Configure Operation Costs</a> for accurate costing.
+                    </div>
+                }
+
                 @* Cost breakdown table *@
                 @if (_costLines.Any())
                 {
@@ -702,14 +715,14 @@ else
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Order</th>
                                 <th>Stage</th>
                                 <th>Level</th>
-                                <th>Setup</th>
-                                <th>Run</th>
-                                <th style="text-align: right;">Total Time</th>
+                                <th>Time</th>
                                 <th style="text-align: right;">Rate/hr</th>
-                                <th style="text-align: right;">Labor Cost</th>
+                                <th style="text-align: right;">Labor</th>
+                                <th style="text-align: right;">Equipment</th>
+                                <th style="text-align: right;">Overhead</th>
+                                <th style="text-align: right;">External</th>
                                 <th style="text-align: right;">Material</th>
                                 <th style="text-align: right;">Stage Total</th>
                                 <th style="text-align: right;">Per Part</th>
@@ -718,11 +731,14 @@ else
                         <tbody>
                             @foreach (var line in _costLines)
                             {
-                                <tr>
-                                    <td>@line.ExecutionOrder</td>
+                                <tr style="@(!line.UsedCostProfile ? "opacity: 0.7;" : "")">
                                     <td>
                                         <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:@line.StageColor;margin-right:6px;"></span>
                                         @line.StageName
+                                        @if (!line.UsedCostProfile)
+                                        {
+                                            <span style="font-size: 0.65rem; color: var(--warning);" title="Using estimated rate — no cost profile configured">est.</span>
+                                        }
                                         @if (line.IsPlateRelease)
                                         {
                                             <span style="margin-left: 4px; font-size: 0.7rem; background: var(--warning); color: white; padding: 1px 4px; border-radius: 3px;">RELEASE</span>
@@ -733,11 +749,12 @@ else
                                             @line.Level
                                         </span>
                                     </td>
-                                    <td>@(line.SetupMinutes > 0 ? FormatDuration(line.SetupMinutes) : "—")</td>
-                                    <td>@(line.RunMinutes > 0 ? FormatDuration(line.RunMinutes) : "—")</td>
-                                    <td style="text-align: right; font-weight: 600;">@FormatDuration(line.TotalMinutes)</td>
+                                    <td>@FormatDuration(line.TotalMinutes)</td>
                                     <td style="text-align: right;">@line.HourlyRate.ToString("C2")</td>
                                     <td style="text-align: right;">@line.LaborCost.ToString("C2")</td>
+                                    <td style="text-align: right;">@(line.EquipmentCost > 0 ? line.EquipmentCost.ToString("C2") : "—")</td>
+                                    <td style="text-align: right;">@(line.OverheadCost > 0 ? line.OverheadCost.ToString("C2") : "—")</td>
+                                    <td style="text-align: right;">@(line.ExternalCost > 0 ? line.ExternalCost.ToString("C2") : "—")</td>
                                     <td style="text-align: right;">@(line.MaterialCost > 0 ? line.MaterialCost.ToString("C2") : "—")</td>
                                     <td style="text-align: right; font-weight: 600;">@line.StageTotalCost.ToString("C2")</td>
                                     <td style="text-align: right; color: var(--primary);">@line.CostPerPart.ToString("C2")</td>
@@ -749,46 +766,67 @@ else
 
                     @* Grand total summary *@
                     <div style="margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;">
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px;">
+                        <div style="font-size: 0.8rem; font-weight: 600; margin-bottom: 10px; color: var(--text-secondary);">Cost Breakdown (@_costQuantity parts)</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px;">
                             <div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted);">Total Process Time</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Labor</div>
+                                <div style="font-weight: 600;">@_costLines.Sum(l => l.LaborCost).ToString("C2")</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Equipment</div>
+                                <div style="font-weight: 600;">@_costLines.Sum(l => l.EquipmentCost).ToString("C2")</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Overhead</div>
+                                <div style="font-weight: 600;">@_costLines.Sum(l => l.OverheadCost).ToString("C2")</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">External</div>
+                                <div style="font-weight: 600;">@_costLines.Sum(l => l.ExternalCost).ToString("C2")</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Stage Material</div>
+                                <div style="font-weight: 600;">@_costLines.Sum(l => l.MaterialCost).ToString("C2")</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">BOM Material</div>
+                                <div style="font-weight: 600;">@_costBomTotal.ToString("C2")</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px;">
+                            <div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Total Process Time</div>
                                 <div style="font-weight: 700; font-size: 1.1rem;">@FormatDuration(_costTotalMinutes)</div>
                             </div>
                             <div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted);">Process Cost (@_costQuantity pcs)</div>
-                                <div style="font-weight: 700; font-size: 1.1rem;">@_costLines.Sum(l => l.StageTotalCost).ToString("C2")</div>
-                            </div>
-                            <div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted);">BOM Material (@_costQuantity pcs)</div>
-                                <div style="font-weight: 700; font-size: 1.1rem;">@_costBomTotal.ToString("C2")</div>
-                            </div>
-                            <div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted);">Grand Total (@_costQuantity pcs)</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Grand Total</div>
                                 <div style="font-weight: 700; font-size: 1.3rem; color: var(--primary);">@_costGrandTotal.ToString("C2")</div>
                             </div>
                             <div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted);">Cost Per Part</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Cost Per Part</div>
                                 <div style="font-weight: 700; font-size: 1.3rem; color: var(--primary);">@(_costQuantity > 0 ? (_costGrandTotal / _costQuantity).ToString("C2") : "—")</div>
                             </div>
                         </div>
                     </div>
 
                     @* Quick quantity comparison *@
-                    <div style="margin-top: 16px;">
-                        <h4 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 8px;">📊 Quantity Price Breaks</h4>
-                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            @foreach (var qty in new[] { 1, 10, 25, 50, 100, 250, 500 }.Where(q => q != _costQuantity))
-                            {
-                                var qtyBatches = _costBatchCapacity > 0 ? (int)Math.Ceiling((double)qty / _costBatchCapacity) : 1;
-                                var qtyPerPartCost = CalculateQuickCostPerPart(qty, qtyBatches);
-                                <div style="background: var(--bg-tertiary); padding: 8px 14px; border-radius: 6px; text-align: center; min-width: 80px; cursor: pointer;" @onclick="() => { _costQuantity = qty; RecalculateCost(); }">
-                                    <div style="font-size: 0.7rem; color: var(--text-muted);">@qty pcs</div>
-                                    <div style="font-weight: 600; font-size: 0.9rem;">@qtyPerPartCost.ToString("C2")</div>
-                                    <div style="font-size: 0.65rem; color: var(--text-muted);">/part</div>
-                                </div>
-                            }
+                    @if (_priceBreaks.Any())
+                    {
+                        <div style="margin-top: 16px;">
+                            <h4 style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 8px;">Quantity Price Breaks</h4>
+                            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                                @foreach (var pb in _priceBreaks)
+                                {
+                                    var capturedQty = pb.Key;
+                                    <div style="background: var(--bg-tertiary); padding: 8px 14px; border-radius: 6px; text-align: center; min-width: 80px; cursor: pointer;" @onclick="async () => { _costQuantity = capturedQty; await RecalculateCost(); }">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted);">@pb.Key pcs</div>
+                                        <div style="font-weight: 600; font-size: 0.9rem;">@pb.Value.ToString("C2")</div>
+                                        <div style="font-size: 0.65rem; color: var(--text-muted);">/part</div>
+                                    </div>
+                                }
+                            </div>
                         </div>
-                    </div>
+                    }
                 }
             }
         </div>
@@ -1483,6 +1521,7 @@ else
     private decimal _costBomTotal;
     private decimal _costGrandTotal;
     private double _costTotalMinutes;
+    private Dictionary<int, decimal> _priceBreaks = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -1529,7 +1568,7 @@ else
             {
                 _processStages = _process.Stages?.OrderBy(s => s.ExecutionOrder).ToList() ?? [];
                 _costBatchCapacity = _process.DefaultBatchCapacity;
-                RecalculateCost();
+                await RecalculateCost();
             }
         }
         _loading = false;
@@ -1814,7 +1853,7 @@ else
     /// <summary>
     /// Recalculates the full cost breakdown for the Cost Calculation tab.
     /// </summary>
-    private void RecalculateCost()
+    private async Task RecalculateCost()
     {
         _costLines.Clear();
         _costTotalMinutes = 0;
@@ -1828,10 +1867,13 @@ else
         foreach (var stage in _processStages)
         {
             var dur = ProcessService.CalculateStageDuration(stage, _costQuantity, batchCount, buildConfigHours: null);
-            var rate = stage.HourlyRateOverride ?? stage.ProductionStage?.DefaultHourlyRate ?? 85.00m;
-            var laborCost = rate * (decimal)(dur.TotalMinutes / 60.0);
+            var durationHours = dur.TotalMinutes / 60.0;
+            var stageId = stage.ProductionStageId;
+
+            // Use the full cost engine (labor, equipment, overhead, external, tooling)
+            var estimate = await StageCostService.EstimateCostAsync(stageId, durationHours, _costQuantity, batchCount);
             var materialCost = (stage.MaterialCost ?? 0) * _costQuantity;
-            var stageTotal = laborCost + materialCost;
+            var stageTotal = estimate.TotalCost + materialCost;
             var costPerPart = _costQuantity > 0 ? stageTotal / _costQuantity : 0;
 
             _costLines.Add(new CostLineItem
@@ -1844,11 +1886,15 @@ else
                 SetupMinutes = dur.SetupMinutes,
                 RunMinutes = dur.RunMinutes,
                 TotalMinutes = dur.TotalMinutes,
-                HourlyRate = rate,
-                LaborCost = laborCost,
+                HourlyRate = estimate.FullyLoadedHourlyRate,
+                LaborCost = estimate.LaborCost,
+                EquipmentCost = estimate.EquipmentCost,
+                OverheadCost = estimate.OverheadCost,
+                ExternalCost = estimate.ExternalCost + estimate.ToolingCost + estimate.PerPartCost,
                 MaterialCost = materialCost,
                 StageTotalCost = stageTotal,
-                CostPerPart = costPerPart
+                CostPerPart = costPerPart,
+                UsedCostProfile = estimate.UsedCostProfile
             });
 
             _costTotalMinutes += dur.TotalMinutes;
@@ -1857,12 +1903,21 @@ else
         var processCostTotal = _costLines.Sum(l => l.StageTotalCost);
         _costBomTotal = (_bomCost?.TotalBomCost ?? 0) * _costQuantity;
         _costGrandTotal = processCostTotal + _costBomTotal;
+
+        // Pre-compute price breaks
+        _priceBreaks.Clear();
+        foreach (var qty in new[] { 1, 10, 25, 50, 100, 250, 500 })
+        {
+            if (qty == _costQuantity) continue;
+            var qtyBatches = batchCapacity > 0 ? (int)Math.Ceiling((double)qty / batchCapacity) : 1;
+            _priceBreaks[qty] = await CalculateQuickCostPerPartAsync(qty, qtyBatches);
+        }
     }
 
     /// <summary>
     /// Quick calculation of cost per part for the price-break display.
     /// </summary>
-    private decimal CalculateQuickCostPerPart(int quantity, int batchCount)
+    private async Task<decimal> CalculateQuickCostPerPartAsync(int quantity, int batchCount)
     {
         if (_process == null || !_processStages.Any() || quantity <= 0) return 0;
 
@@ -1870,8 +1925,8 @@ else
         foreach (var stage in _processStages)
         {
             var dur = ProcessService.CalculateStageDuration(stage, quantity, batchCount, buildConfigHours: null);
-            var rate = stage.HourlyRateOverride ?? stage.ProductionStage?.DefaultHourlyRate ?? 85.00m;
-            total += rate * (decimal)(dur.TotalMinutes / 60.0);
+            var estimate = await StageCostService.EstimateCostAsync(stage.ProductionStageId, dur.TotalMinutes / 60.0, quantity, batchCount);
+            total += estimate.TotalCost;
             total += (stage.MaterialCost ?? 0) * quantity;
         }
         total += (_bomCost?.TotalBomCost ?? 0) * quantity;
@@ -1964,8 +2019,12 @@ else
         public double TotalMinutes { get; init; }
         public decimal HourlyRate { get; init; }
         public decimal LaborCost { get; init; }
+        public decimal EquipmentCost { get; init; }
+        public decimal OverheadCost { get; init; }
+        public decimal ExternalCost { get; init; }
         public decimal MaterialCost { get; init; }
         public decimal StageTotalCost { get; init; }
         public decimal CostPerPart { get; init; }
+        public bool UsedCostProfile { get; init; }
     }
 }

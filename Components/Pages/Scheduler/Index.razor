@@ -335,12 +335,16 @@ else if (_viewMode == "data")
         {
             if (_disposed || !_autoRefreshEnabled || _loading || _refreshing || _scheduling
                 || _showBuildAdvisor || _showScheduleWizard || _showReschedule) return;
-            await InvokeAsync(async () =>
+            try
             {
-                if (_disposed) return;
-                await LoadData(isBackgroundRefresh: true);
-                StateHasChanged();
-            });
+                await InvokeAsync(async () =>
+                {
+                    if (_disposed) return;
+                    await LoadData(isBackgroundRefresh: true);
+                    StateHasChanged();
+                });
+            }
+            catch (ObjectDisposedException) { /* Component disposed during refresh — safe to ignore */ }
         }, null, TimeSpan.FromSeconds(_autoRefreshSeconds), TimeSpan.FromSeconds(_autoRefreshSeconds));
     }
 
@@ -663,6 +667,20 @@ else if (_viewMode == "data")
                 if (cascade.ShiftedCount > 0)
                     msg += $" — {cascade.ShiftedCount} build(s) shifted";
                 Toast.ShowSuccess(msg);
+
+                // Check changeover safety — warn if build ends outside operator shift
+                try
+                {
+                    var program = _programs.FirstOrDefault(p => p.Id == drag.EntityId);
+                    var buildEnd = program?.ScheduledDate?.AddHours(program.EstimatedPrintHours ?? 0);
+                    if (buildEnd.HasValue)
+                    {
+                        var changeover = await ProgramScheduling.AnalyzeChangeoverAsync(targetMachineId, buildEnd.Value);
+                        if (!changeover.OperatorAvailable)
+                            Toast.ShowWarning($"Changeover conflict: no operator available at {changeover.ChangeoverStart:MMM d HH:mm}. Machine may go DOWN until next shift.");
+                    }
+                }
+                catch { /* changeover check is advisory, don't block */ }
             }
 
             await LoadData(isBackgroundRefresh: true);
