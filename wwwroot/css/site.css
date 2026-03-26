@@ -1860,10 +1860,9 @@ select.form-control {
 .gantt-row {
     display: flex;
     border-bottom: 1px solid var(--border);
-    min-height: 64px;
-    align-items: stretch; /* Changed from center to stretch for full-height sticky label */
+    min-height: 56px;
+    align-items: stretch;
     transition: background 0.15s;
-    /* Ensure row spans full width of gantt-inner for horizontal scroll */
     min-width: max-content;
 }
 
@@ -1983,11 +1982,10 @@ select.form-control {
 
 .gantt-track {
     position: relative;
-    height: 48px;
-    margin: 6px 8px 6px 0;
+    height: 44px;
+    margin: 5px 8px 5px 0;
     flex: 1;
     min-width: 0;
-    /* Ensure the track allows positioning of bars relative to the full timeline */
     align-self: center;
 }
 
@@ -2030,8 +2028,8 @@ select.form-control {
 
 .gantt-bar {
     position: absolute;
-    top: 3px;
-    height: 42px;
+    top: 0;
+    height: 44px;
     border-radius: 5px;
     display: flex;
     align-items: center;
@@ -2135,28 +2133,59 @@ select.form-control {
     top: 0;
     left: 0;
     width: 100%;
-    height: 48px;
+    height: 44px;
     border-radius: 6px;
-    opacity: 0.55;
     z-index: 0;
     border-left: 4px solid;
     cursor: pointer;
     pointer-events: auto;
-    transition: opacity var(--transition-fast);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    overflow: hidden;
 }
 .gantt-build-bar:hover {
-    opacity: 0.75;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 .gantt-build-bar .gantt-bar-text {
     font-size: 0.7rem;
     font-weight: 500;
-    opacity: 0.9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+.gantt-build-bar-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 1px;
+}
+.gantt-build-bar-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+.gantt-build-bar-detail {
+    font-size: 0.62rem;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: rgba(255,255,255,0.75);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
 }
 
 /* Build bar popover */
 .gantt-build-popover {
     position: absolute;
-    top: 52px;
+    top: 48px;
     left: 0;
     z-index: 150;
     min-width: 260px;
@@ -2208,29 +2237,75 @@ select.form-control {
     gap: 6px;
     flex-wrap: wrap;
 }
-.gantt-build-scheduled {
-    background: linear-gradient(135deg, #8B5CF6, #7C3AED);
-    border-left-color: #6D28D9;
+.gantt-build-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
 }
+.gantt-build-status-scheduled { background: rgba(124,58,237,0.2); color: #A78BFA; }
+.gantt-build-status-printing { background: rgba(16,185,129,0.2); color: #34D399; }
+.gantt-build-status-postprint { background: rgba(245,158,11,0.2); color: #FBBF24; }
+.gantt-build-status-completed { background: rgba(107,114,128,0.2); color: #9CA3AF; }
+.gantt-build-popover-parts {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.gantt-build-popover-part {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.78rem;
+}
+.gantt-build-popover-part-num {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.gantt-build-popover-part-qty {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+}
+.gantt-build-scheduled {
+    background: linear-gradient(135deg, #7C3AED, #6D28D9);
+    border-left-color: #5B21B6;
+    opacity: 0.7;
+}
+.gantt-build-scheduled:hover { opacity: 0.85; }
+
 .gantt-build-printing {
-    background: linear-gradient(135deg, #8B5CF6, #7C3AED);
-    border-left-color: #6D28D9;
-    opacity: 0.6;
+    background: linear-gradient(135deg, #10B981, #059669);
+    border-left-color: #047857;
+    opacity: 0.85;
     animation: gantt-build-pulse 2s ease-in-out infinite;
 }
+
 .gantt-build-postprint {
-    background: linear-gradient(135deg, #A78BFA, #8B5CF6);
-    border-left-color: #7C3AED;
+    background: linear-gradient(135deg, #F59E0B, #D97706);
+    border-left-color: #B45309;
+    opacity: 0.75;
 }
+.gantt-build-postprint:hover { opacity: 0.85; }
+
 .gantt-build-completed {
-    background: linear-gradient(135deg, #6B7280, #4B5563);
-    border-left-color: #374151;
-    opacity: 0.2;
+    background: linear-gradient(135deg, #4B5563, #374151);
+    border-left-color: #1F2937;
+    opacity: 0.4;
+}
+.gantt-build-completed:hover { opacity: 0.55; }
+.gantt-build-completed .gantt-build-bar-title,
+.gantt-build-completed .gantt-build-bar-detail,
+.gantt-build-completed .gantt-bar-text {
+    color: rgba(255,255,255,0.6);
 }
 
 @keyframes gantt-build-pulse {
-    0%, 100% { opacity: 0.6; }
-    50% { opacity: 0.8; }
+    0%, 100% { opacity: 0.85; }
+    50% { opacity: 1; }
 }
 
 /* Changeover conflict: pulsing amber border + stripe overlay */
@@ -2258,22 +2333,39 @@ select.form-control {
 /* Changeover time segment (extends beyond the build bar) */
 .gantt-changeover-segment {
     position: absolute;
-    top: 8px;
-    height: 32px;
-    background: rgba(var(--success-rgb), 0.25);
+    top: 0;
+    height: 44px;
+    background: repeating-linear-gradient(
+        -45deg,
+        rgba(var(--success-rgb), 0.08),
+        rgba(var(--success-rgb), 0.08) 4px,
+        rgba(var(--success-rgb), 0.18) 4px,
+        rgba(var(--success-rgb), 0.18) 8px
+    );
     border: 1px dashed rgba(var(--success-rgb), 0.5);
-    border-left: none;
+    border-left: 2px solid rgba(var(--success-rgb), 0.4);
     border-radius: 0 4px 4px 0;
     pointer-events: auto;
     cursor: help;
     z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3px;
+}
+.gantt-changeover-label {
+    font-size: 0.58rem;
+    font-weight: 600;
+    color: var(--success);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+    white-space: nowrap;
 }
 /* "+" zone for scheduling next SLS build */
 .gantt-next-build-zone {
     position: absolute;
-    top: 4px;
+    top: 0;
     width: 48px;
-    height: 40px;
+    height: 44px;
     border: 2px dashed rgba(var(--accent-rgb), 0.4);
     border-radius: 6px;
     display: flex;
@@ -2338,9 +2430,19 @@ select.form-control {
 }
 
 .gantt-changeover-segment--conflict {
-    background: rgba(var(--danger-rgb), 0.2);
+    background: repeating-linear-gradient(
+        -45deg,
+        rgba(var(--danger-rgb), 0.1),
+        rgba(var(--danger-rgb), 0.1) 4px,
+        rgba(var(--danger-rgb), 0.25) 4px,
+        rgba(var(--danger-rgb), 0.25) 8px
+    );
     border-color: rgba(var(--danger-rgb), 0.6);
+    border-left-color: rgba(var(--danger-rgb), 0.6);
     animation: gantt-conflict-pulse 1.5s ease-in-out infinite;
+}
+.gantt-changeover-segment--conflict .gantt-changeover-label {
+    color: var(--danger);
 }
 
 /* ── Gantt Legend ── */
@@ -6354,16 +6456,19 @@ select.form-control {
         display: none;
     }
     .gantt-bar {
-        height: 34px;
+        height: 36px;
         font-size: 0.72rem;
         padding: 0 6px;
     }
+    .gantt-build-bar { height: 36px; }
+    .gantt-changeover-segment { height: 36px; }
+    .gantt-next-build-zone { height: 36px; }
     .gantt-track {
-        height: 40px;
+        height: 36px;
         margin: 4px 4px 4px 0;
     }
     .gantt-row {
-        min-height: 52px;
+        min-height: 48px;
     }
 }
 
@@ -6516,6 +6621,9 @@ select.form-control {
         padding: 0 6px;
         border-radius: 4px;
     }
+    .gantt-build-bar { height: 32px; }
+    .gantt-changeover-segment { height: 32px; }
+    .gantt-next-build-zone { height: 32px; }
     .gantt-build-bar .gantt-bar-text {
         font-size: 0.65rem;
     }
@@ -6523,11 +6631,11 @@ select.form-control {
         display: none;
     }
     .gantt-track {
-        height: 36px;
+        height: 32px;
         margin: 2px 4px 2px 0;
     }
     .gantt-row {
-        min-height: 44px;
+        min-height: 40px;
     }
     .gantt-group-header {
         min-height: 28px;
