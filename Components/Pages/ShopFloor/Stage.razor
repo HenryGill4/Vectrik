@@ -39,13 +39,23 @@ else
         }
         else
         {
+            @if (_selectedQueueIds.Any())
+            {
+                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                    <button class="btn btn-sm btn-primary" @onclick="BatchStart" disabled="@_actionInProgress">
+                        Start @_selectedQueueIds.Count Selected
+                    </button>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => _selectedQueueIds.Clear()">Clear Selection</button>
+                </div>
+            }
             <div class="card">
                 <table class="data-table">
-                    <thead><tr><th>Part</th><th>Job</th><th>Priority</th><th>Due</th><th></th></tr></thead>
+                    <thead><tr><th style="width:32px;"><input type="checkbox" @onchange="ToggleSelectAll" /></th><th>Part</th><th>Job</th><th>Priority</th><th>Due</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var exec in _queue)
                         {
                             <tr>
+                                <td><input type="checkbox" checked="@_selectedQueueIds.Contains(exec.Id)" @onchange="e => ToggleQueueSelection(exec.Id, (bool)(e.Value ?? false))" /></td>
                                 <td>@exec.Job?.Part?.PartNumber</td>
                                 <td>#@exec.JobId</td>
                                 <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
@@ -94,6 +104,12 @@ else
                         <div style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 8px;">
                             📄 Program: <strong>@exec.MachineProgram.ProgramNumber</strong> — @exec.MachineProgram.Name
                         </div>
+                    }
+
+                    @* ── Part Context Panel ── *@
+                    @if (_uiConfig.ShowPartContext)
+                    {
+                        <ShopFloor.Partials.PartContextPanel Execution="exec" ShowPreviousNotes="_uiConfig.ShowPreviousStageNotes" />
                     }
 
                     @* ── Stage-Specific Partial ── *@
@@ -322,6 +338,9 @@ else
     private ProgramFeedbackSeverity _feedbackSeverity = ProgramFeedbackSeverity.Low;
     private string? _feedbackComment;
 
+    // Batch queue selection
+    private HashSet<int> _selectedQueueIds = new();
+
     // Batch completion for build-level stages
     private bool IsBuildLevelStage => _stage?.StageSlug?.ToLower() is "sls-printing" or "depowdering" or "wire-edm";
     private List<StageExecution>? _siblingExecutions;
@@ -370,6 +389,45 @@ else
         {
             await StageService.StartStageExecutionAsync(executionId, _currentUserId, _currentUserName);
             Toast.ShowSuccess("Stage started");
+            await LoadData();
+            _tab = "active";
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _actionInProgress = false; }
+    }
+
+    private void ToggleQueueSelection(int id, bool selected)
+    {
+        if (selected) _selectedQueueIds.Add(id);
+        else _selectedQueueIds.Remove(id);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        if ((bool)(e.Value ?? false))
+            _selectedQueueIds = _queue.Select(q => q.Id).ToHashSet();
+        else
+            _selectedQueueIds.Clear();
+    }
+
+    private async Task BatchStart()
+    {
+        if (_actionInProgress || !_selectedQueueIds.Any()) return;
+        _actionInProgress = true;
+        try
+        {
+            var started = 0;
+            foreach (var id in _selectedQueueIds.ToList())
+            {
+                try
+                {
+                    await StageService.StartStageExecutionAsync(id, _currentUserId, _currentUserName);
+                    started++;
+                }
+                catch { /* Some might fail if max concurrent exceeded */ }
+            }
+            Toast.ShowSuccess($"Started {started} item(s)");
+            _selectedQueueIds.Clear();
             await LoadData();
             _tab = "active";
         }
@@ -500,6 +558,19 @@ else
 
             CloseCompleteModal();
             await LoadData();
+
+            // Auto-advance: start next queue item if configured
+            if (_uiConfig.AutoAdvanceToNext && _queue.Any() && !_active.Any())
+            {
+                var next = _queue.First();
+                try
+                {
+                    await StageService.StartStageExecutionAsync(next.Id, _currentUserId, _currentUserName);
+                    Toast.ShowSuccess($"Auto-started next item: Job #{next.JobId}");
+                    await LoadData();
+                }
+                catch { /* Next item might not be startable — that's fine */ }
+            }
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
         finally { _actionInProgress = false; }

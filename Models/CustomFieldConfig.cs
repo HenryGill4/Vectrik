@@ -32,7 +32,8 @@ public class CustomFieldDefinition
     public string Label { get; set; } = string.Empty;
 
     /// <summary>
-    /// text, number, decimal, date, select, multiselect, checkbox, textarea
+    /// Field types: text, number, decimal, date, select, multiselect, checkbox, textarea,
+    /// measurement, photo, file, signature
     /// </summary>
     public string FieldType { get; set; } = "text";
 
@@ -47,6 +48,18 @@ public class CustomFieldDefinition
     public double? MinValue { get; set; }
     public double? MaxValue { get; set; }
     public string? ValidationRegex { get; set; }
+
+    /// <summary>Unit label for measurement fields (e.g., "mm", "µm", "°C", "Ra").</summary>
+    public string? Unit { get; set; }
+
+    /// <summary>Tolerance range for measurement fields. Values within tolerance show green.</summary>
+    public double? ToleranceMin { get; set; }
+
+    /// <summary>Upper tolerance limit. Values outside show red.</summary>
+    public double? ToleranceMax { get; set; }
+
+    /// <summary>Help text shown below the field for operator guidance.</summary>
+    public string? HelpText { get; set; }
 
     /// <summary>
     /// Optional conditional visibility: show this field only when another field has a specific value.
