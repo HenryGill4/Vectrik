@@ -86,7 +86,9 @@ public class TenantService : ITenantService
 
     public async Task SeedTenantDatabaseAsync(string tenantCode)
     {
-        var dbPath = Path.Combine("data", "tenants", $"{tenantCode}.db");
+        var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
+            ? Path.Combine(home, "data") : "data";
+        var dbPath = Path.Combine(dataRoot, "tenants", $"{tenantCode}.db");
         var directory = Path.GetDirectoryName(dbPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
@@ -213,7 +215,9 @@ public class TenantService : ITenantService
 
     private TenantDbContext CreateTenantDbContext(string tenantCode)
     {
-        var dbPath = Path.Combine("data", "tenants", $"{tenantCode}.db");
+        var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
+            ? Path.Combine(home, "data") : "data";
+        var dbPath = Path.Combine(dataRoot, "tenants", $"{tenantCode}.db");
         var options = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlite($"Data Source={dbPath}")
             .Options;

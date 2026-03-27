@@ -32,7 +32,9 @@ public class TenantDbContextFactory
             return new TenantDbContext(fallbackOptions);
         }
 
-        var dbPath = Path.Combine("data", "tenants", $"{tenantCode}.db");
+        var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
+            ? Path.Combine(home, "data") : "data";
+        var dbPath = Path.Combine(dataRoot, "tenants", $"{tenantCode}.db");
         var directory = Path.GetDirectoryName(dbPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
@@ -65,7 +67,9 @@ public class TenantDbContextFactory
     /// </summary>
     public static TenantDbContext CreateDbContext(string tenantCode)
     {
-        var dbPath = Path.Combine("data", "tenants", $"{tenantCode}.db");
+        var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
+            ? Path.Combine(home, "data") : "data";
+        var dbPath = Path.Combine(dataRoot, "tenants", $"{tenantCode}.db");
         var directory = Path.GetDirectoryName(dbPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
