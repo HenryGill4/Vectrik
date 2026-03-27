@@ -43,6 +43,9 @@ public class ProductionStage
     /// <summary>JSON-serialized StageUiConfig controlling operator shop floor UI.</summary>
     public string StageUiConfigJson { get; set; } = "{}";
 
+    /// <summary>JSON-serialized StagePageLayout controlling widget layout on operator page.</summary>
+    public string PageLayoutJson { get; set; } = "{}";
+
     [MaxLength(500)]
     public string? AssignedMachineIds { get; set; }
 
@@ -107,6 +110,18 @@ public class ProductionStage
     public void SetUiConfig(StageUiConfig config)
     {
         StageUiConfigJson = JsonSerializer.Serialize(config);
+    }
+
+    public StagePageLayout GetPageLayout()
+    {
+        if (string.IsNullOrWhiteSpace(PageLayoutJson) || PageLayoutJson == "{}")
+            return StagePageLayout.Default;
+        return JsonSerializer.Deserialize<StagePageLayout>(PageLayoutJson) ?? StagePageLayout.Default;
+    }
+
+    public void SetPageLayout(StagePageLayout layout)
+    {
+        PageLayoutJson = JsonSerializer.Serialize(layout);
     }
 
     public List<string> GetAssignedMachineIds()

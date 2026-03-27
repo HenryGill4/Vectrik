@@ -1,0 +1,104 @@
+@* Machine Status Card — Shows live machine telemetry on stage pages *@
+@inject Vectrik.Data.TenantDbContext Db
+@using Microsoft.EntityFrameworkCore
+
+@if (_state != null && _machine != null)
+{
+    <div class="card" style="margin-bottom: 16px; border-left: 4px solid @StatusColor;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 600;">
+                <VIcon Name="monitor" /> @_machine.Name
+                <span class="badge" style="background: @StatusColor; color: #fff; margin-left: 8px;">@_state.Status</span>
+            </span>
+            <span style="color: var(--text-muted); font-size: 0.8rem;">
+                Updated @_state.Timestamp.ToString("HH:mm:ss")
+            </span>
+        </div>
+
+        @if (_state.BuildProgress.HasValue)
+        {
+            <div style="margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px;">
+                    <span>Build Progress</span>
+                    <span style="font-weight: 600;">@_state.BuildProgress?.ToString("F0")%</span>
+                </div>
+                <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                    <div style="height: 100%; width: @(_state.BuildProgress ?? 0)%; background: linear-gradient(90deg, #3B82F6, #06B6D4); border-radius: 3px; transition: width 0.5s;"></div>
+                </div>
+                @if (_state.CurrentLayer.HasValue && _state.TotalLayers.HasValue)
+                {
+                    <small style="color: var(--text-muted);">Layer @_state.CurrentLayer / @_state.TotalLayers</small>
+                }
+            </div>
+        }
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin-top: 10px;">
+            @if (_state.BedTemperature.HasValue)
+            {
+                <div style="text-align: center; padding: 6px; background: var(--bg-tertiary); border-radius: 6px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Bed Temp</div>
+                    <div style="font-weight: 700; font-size: 1rem;">@_state.BedTemperature?.ToString("F0")°C</div>
+                </div>
+            }
+            @if (_state.ChamberTemperature.HasValue)
+            {
+                <div style="text-align: center; padding: 6px; background: var(--bg-tertiary); border-radius: 6px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Chamber</div>
+                    <div style="font-weight: 700; font-size: 1rem;">@_state.ChamberTemperature?.ToString("F0")°C</div>
+                </div>
+            }
+            @if (_state.LaserPower.HasValue)
+            {
+                <div style="text-align: center; padding: 6px; background: var(--bg-tertiary); border-radius: 6px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Laser</div>
+                    <div style="font-weight: 700; font-size: 1rem;">@_state.LaserPower?.ToString("F0")W</div>
+                </div>
+            }
+            @if (_state.OxygenLevel.HasValue)
+            {
+                <div style="text-align: center; padding: 6px; background: var(--bg-tertiary); border-radius: 6px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">O₂</div>
+                    <div style="font-weight: 700; font-size: 1rem;">@_state.OxygenLevel?.ToString("F1")%</div>
+                </div>
+            }
+            @if (_state.GasFlow.HasValue)
+            {
+                <div style="text-align: center; padding: 6px; background: var(--bg-tertiary); border-radius: 6px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Gas Flow</div>
+                    <div style="font-weight: 700; font-size: 1rem;">@_state.GasFlow?.ToString("F1")</div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int? MachineId { get; set; }
+
+    private Machine? _machine;
+    private MachineStateRecord? _state;
+
+    private string StatusColor => _state?.Status?.ToLower() switch
+    {
+        "running" => "var(--success)",
+        "idle" or "ready" => "var(--accent)",
+        "error" or "down" => "var(--danger)",
+        "changeover" => "var(--warning)",
+        _ => "var(--text-muted)"
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!MachineId.HasValue) return;
+        try
+        {
+            _machine = await Db.Machines.FindAsync(MachineId.Value);
+            var machineIdStr = MachineId.Value.ToString();
+            _state = await Db.MachineStateRecords
+                .Where(r => r.MachineId == machineIdStr)
+                .OrderByDescending(r => r.Timestamp)
+                .FirstOrDefaultAsync();
+        }
+        catch { /* Machine status is optional */ }
+    }
+}

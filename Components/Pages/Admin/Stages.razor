@@ -67,6 +67,7 @@ else
                 <button class="tab @(_tab == "options" ? "active" : "")" @onclick='() => _tab = "options"'>Options</button>
                 <button class="tab @(_tab == "fields" ? "active" : "")" @onclick='() => _tab = "fields"'>Custom Fields (@_customFields.Count)</button>
                 <button class="tab @(_tab == "ui" ? "active" : "")" @onclick='() => _tab = "ui"'>Operator UI</button>
+                <button class="tab @(_tab == "layout" ? "active" : "")" @onclick='() => _tab = "layout"'>Page Layout</button>
             </div>
 
             @if (_tab == "info")
@@ -124,14 +125,79 @@ else
 
             @if (_tab == "fields")
             {
-                <p style="color: var(--text-muted); margin-bottom: 12px;">Define the operator form fields for this stage. These appear on the shop floor when an operator processes work.</p>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <p style="color: var(--text-muted); margin: 0;">Define the operator form fields for this stage. These appear on the shop floor when an operator processes work.</p>
+                    <button class="btn btn-sm @(_previewFields ? "btn-primary" : "btn-secondary")" @onclick="() => _previewFields = !_previewFields">
+                        @(_previewFields ? "Edit Mode" : "Preview")
+                    </button>
+                </div>
+
+                @if (_previewFields)
+                {
+                    <div class="card" style="padding: 16px;">
+                        <div class="card-header" style="margin-bottom: 12px;">📝 Form Preview (as operator sees it)</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                            @foreach (var f in _customFields)
+                            {
+                                <div class="form-group">
+                                    <label class="form-label">@f.Label @(f.IsRequired ? "*" : "")</label>
+                                    @switch (f.FieldType?.ToLower())
+                                    {
+                                        case "checkbox":
+                                            <div><input type="checkbox" disabled style="width: 20px; height: 20px;" /></div>
+                                            break;
+                                        case "dropdown":
+                                        case "select":
+                                            <select class="form-control" disabled><option>Select...</option></select>
+                                            break;
+                                        case "textarea":
+                                            <textarea class="form-control" rows="2" disabled placeholder="@(f.HelpText ?? "")"></textarea>
+                                            break;
+                                        case "measurement":
+                                            <div style="display: flex; gap: 4px; align-items: center;">
+                                                <input class="form-control" type="number" disabled placeholder="0.00" style="flex:1" />
+                                                <span style="color: var(--text-muted); font-size: 0.85rem;">@(f.Unit ?? "")</span>
+                                            </div>
+                                            break;
+                                        case "photo":
+                                            <div style="padding: 8px; border: 1px dashed var(--border); border-radius: 6px; text-align: center; color: var(--text-muted);">📷 Photo capture</div>
+                                            break;
+                                        case "file":
+                                            <div style="padding: 8px; border: 1px dashed var(--border); border-radius: 6px; text-align: center; color: var(--text-muted);">📎 File upload</div>
+                                            break;
+                                        case "signature":
+                                            <input class="form-control" disabled placeholder="Type name to sign" />
+                                            break;
+                                        default:
+                                            <input class="form-control" disabled placeholder="@(f.HelpText ?? "")" />
+                                            break;
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(f.HelpText) && f.FieldType != "textarea")
+                                    {
+                                        <small style="color: var(--text-muted);">@f.HelpText</small>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        @if (!_customFields.Any())
+                        {
+                            <div class="empty-state"><div class="empty-state-text">No fields configured</div></div>
+                        }
+                    </div>
+                }
+                else
+                {
 
                 @for (var i = 0; i < _customFields.Count; i++)
                 {
                     var idx = i;
                     var f = _customFields[idx];
                     <div class="card" style="padding: 12px; margin-bottom: 8px;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: end;">
+                        <div style="display: grid; grid-template-columns: auto 1fr 1fr 1fr auto; gap: 8px; align-items: end;">
+                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                <button class="btn btn-sm btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;" disabled="@(idx == 0)" @onclick="() => MoveFieldUp(idx)">▲</button>
+                                <button class="btn btn-sm btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;" disabled="@(idx == _customFields.Count - 1)" @onclick="() => MoveFieldDown(idx)">▼</button>
+                            </div>
                             <div class="form-group" style="margin: 0;"><label class="form-label">Label</label><input class="form-control" value="@f.Label" @onchange="e => UpdateFieldLabel(idx, e)" /></div>
                             <div class="form-group" style="margin: 0;"><label class="form-label">Name (key)</label><input class="form-control" value="@f.Name" @onchange="e => UpdateFieldName(idx, e)" /></div>
                             <div class="form-group" style="margin: 0;"><label class="form-label">Type</label>
@@ -168,10 +234,16 @@ else
                                 <div class="form-group" style="margin: 0;"><label class="form-label">Tol Max</label><input class="form-control" type="number" step="any" style="width: 80px;" value="@f.ToleranceMax" @onchange="e => _customFields[idx].ToleranceMax = double.TryParse(e.Value?.ToString(), out var v) ? v : null" /></div>
                             }
                         </div>
+                        <div style="display: flex; gap: 8px; margin-top: 8px; align-items: end;">
+                            <div class="form-group" style="margin: 0; flex: 1;"><label class="form-label">Help Text</label><input class="form-control" value="@(f.HelpText ?? "")" @onchange="e => _customFields[idx].HelpText = e.Value?.ToString()" placeholder="Guidance shown below the field" /></div>
+                            <button class="btn btn-sm btn-secondary" style="height: 38px;" @onclick="() => DuplicateField(idx)" title="Duplicate">⧉</button>
+                        </div>
                     </div>
                 }
 
                 <button class="btn btn-sm btn-secondary" @onclick="AddField">+ Add Field</button>
+
+                }
             }
 
             @if (_tab == "ui")
@@ -224,6 +296,77 @@ else
                 </div>
             }
 
+            @if (_tab == "layout")
+            {
+                <p style="color: var(--text-muted); margin-bottom: 12px; font-size: 0.85rem;">
+                    Configure which widgets appear on the operator stage page and in what order. Drag to reorder.
+                </p>
+
+                <div class="form-group" style="max-width: 200px; margin-bottom: 16px;">
+                    <label class="form-label">Layout Columns</label>
+                    <select class="form-control" @bind="_pageLayout.Columns">
+                        <option value="1">1 Column</option>
+                        <option value="2">2 Columns</option>
+                        <option value="3">3 Columns</option>
+                    </select>
+                </div>
+
+                @for (var i = 0; i < _pageLayout.Widgets.Count; i++)
+                {
+                    var idx = i;
+                    var w = _pageLayout.Widgets[idx];
+                    <div class="card" style="padding: 10px; margin-bottom: 6px; display: flex; align-items: center; gap: 10px;">
+                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                            <button class="btn btn-sm btn-secondary" style="padding: 1px 5px; font-size: 0.65rem;" disabled="@(idx == 0)" @onclick="() => MoveWidgetUp(idx)">▲</button>
+                            <button class="btn btn-sm btn-secondary" style="padding: 1px 5px; font-size: 0.65rem;" disabled="@(idx == _pageLayout.Widgets.Count - 1)" @onclick="() => MoveWidgetDown(idx)">▼</button>
+                        </div>
+                        <select class="form-control" style="width: 180px;" value="@w.Type" @onchange="e => SetWidgetType(w, e)">
+                            <option value="queue">Queue</option>
+                            <option value="active-work">Active Work</option>
+                            <option value="custom-form">Custom Form</option>
+                            <option value="work-instructions">Work Instructions</option>
+                            <option value="machine-status">Machine Status</option>
+                            <option value="part-context">Part Context</option>
+                            <option value="timer">Timer</option>
+                            <option value="checklist">Sign-Off Checklist</option>
+                            <option value="history">History</option>
+                            <option value="shift-info">Shift Schedule</option>
+                            <option value="notes">Completion Notes</option>
+                        </select>
+                        <input class="form-control" style="flex: 1;" value="@w.Title" @onchange="e => SetWidgetTitle(w, e)" placeholder="Widget title" />
+                        <select class="form-control" style="width: 100px;" value="@w.Size" @onchange="e => SetWidgetSize(w, e)">
+                            <option value="small">Small</option>
+                            <option value="medium">Medium</option>
+                            <option value="large">Large</option>
+                            <option value="full">Full Width</option>
+                        </select>
+                        @if (_pageLayout.Columns > 1)
+                        {
+                            <select class="form-control" style="width: 80px;" value="@w.Column" @onchange="e => w.Column = int.TryParse(e.Value?.ToString(), out var c) ? c : 1">
+                                @for (var c = 1; c <= _pageLayout.Columns; c++)
+                                {
+                                    <option value="@c">Col @c</option>
+                                }
+                            </select>
+                        }
+                        <label style="font-size: 0.8rem; white-space: nowrap;"><input type="checkbox" @bind="w.CollapsedByDefault" style="margin-right: 4px;" />Collapsed</label>
+                        <button class="btn btn-sm btn-danger" style="padding: 4px 8px;" @onclick="() => _pageLayout.Widgets.RemoveAt(idx)">✕</button>
+                    </div>
+                }
+
+                <button class="btn btn-sm btn-secondary" @onclick="AddWidget" style="margin-top: 4px;">+ Add Widget</button>
+
+                <div class="card" style="padding: 12px; margin-top: 12px; background: var(--bg-tertiary);">
+                    <div style="font-weight: 600; margin-bottom: 8px;">Quick Templates</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-secondary" @onclick="ApplyManualTemplate">Manual Stage</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="ApplyMachineTemplate">Machine Stage</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="ApplyInspectionTemplate">Inspection</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="ApplyMinimalTemplate">Minimal</button>
+                    </div>
+                </div>
+            }
+
             <div style="display: flex; gap: 8px; margin-top: 16px;">
                 <button class="btn btn-primary" @onclick="Save">Save</button>
                 <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
@@ -242,6 +385,7 @@ else
     private List<CustomFieldDefinition> _customFields = new();
     private HashSet<int> _selectedMachineIds = new();
     private StageUiConfig _uiConfig = new();
+    private StagePageLayout _pageLayout = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -259,6 +403,7 @@ else
         _customFields = new();
         _selectedMachineIds = new();
         _uiConfig = new StageUiConfig();
+        _pageLayout = new StagePageLayout();
         _tab = "info";
         _showForm = true;
     }
@@ -271,11 +416,97 @@ else
         catch { _customFields = new(); }
         _selectedMachineIds = s.GetAssignedMachineIntIds().ToHashSet();
         _uiConfig = s.GetUiConfig();
+        _pageLayout = s.GetPageLayout();
         _showForm = true;
     }
 
+    private bool _previewFields;
+
     private void AddField() => _customFields.Add(new CustomFieldDefinition { FieldType = "text" });
     private void RemoveField(int idx) => _customFields.RemoveAt(idx);
+
+    private void DuplicateField(int idx)
+    {
+        var src = _customFields[idx];
+        var copy = new CustomFieldDefinition
+        {
+            Label = src.Label + " (copy)", Name = src.Name + "_copy", FieldType = src.FieldType,
+            IsRequired = src.IsRequired, Options = src.Options, MinValue = src.MinValue,
+            MaxValue = src.MaxValue, Unit = src.Unit, ToleranceMin = src.ToleranceMin,
+            ToleranceMax = src.ToleranceMax, HelpText = src.HelpText
+        };
+        _customFields.Insert(idx + 1, copy);
+    }
+
+    private void MoveFieldUp(int idx)
+    {
+        if (idx <= 0) return;
+        (_customFields[idx - 1], _customFields[idx]) = (_customFields[idx], _customFields[idx - 1]);
+    }
+
+    private void MoveFieldDown(int idx)
+    {
+        if (idx >= _customFields.Count - 1) return;
+        (_customFields[idx], _customFields[idx + 1]) = (_customFields[idx + 1], _customFields[idx]);
+    }
+
+    // ── Layout Builder ──
+    private void SetWidgetType(LayoutWidget w, ChangeEventArgs e) => w.Type = e.Value?.ToString() ?? "queue";
+    private void SetWidgetTitle(LayoutWidget w, ChangeEventArgs e) => w.Title = e.Value?.ToString() ?? "";
+    private void SetWidgetSize(LayoutWidget w, ChangeEventArgs e) => w.Size = e.Value?.ToString() ?? "full";
+    private void ApplyManualTemplate() => ApplyTemplate("manual");
+    private void ApplyMachineTemplate() => ApplyTemplate("machine");
+    private void ApplyInspectionTemplate() => ApplyTemplate("inspection");
+    private void ApplyMinimalTemplate() => ApplyTemplate("minimal");
+
+    private void AddWidget() => _pageLayout.Widgets.Add(new LayoutWidget { Type = "queue", Title = "New Widget" });
+
+    private void MoveWidgetUp(int idx)
+    {
+        if (idx <= 0) return;
+        (_pageLayout.Widgets[idx - 1], _pageLayout.Widgets[idx]) = (_pageLayout.Widgets[idx], _pageLayout.Widgets[idx - 1]);
+    }
+
+    private void MoveWidgetDown(int idx)
+    {
+        if (idx >= _pageLayout.Widgets.Count - 1) return;
+        (_pageLayout.Widgets[idx], _pageLayout.Widgets[idx + 1]) = (_pageLayout.Widgets[idx + 1], _pageLayout.Widgets[idx]);
+    }
+
+    private void ApplyTemplate(string template)
+    {
+        _pageLayout.Widgets = template switch
+        {
+            "manual" => new()
+            {
+                new() { Type = "work-instructions", Title = "Work Instructions", Size = "full" },
+                new() { Type = "custom-form", Title = "Stage Data", Size = "full" },
+                new() { Type = "checklist", Title = "Sign-Off", Size = "full" },
+                new() { Type = "timer", Title = "Timer", Size = "medium" },
+                new() { Type = "notes", Title = "Notes", Size = "medium" },
+            },
+            "machine" => new()
+            {
+                new() { Type = "machine-status", Title = "Machine Status", Size = "full" },
+                new() { Type = "active-work", Title = "Active Work", Size = "full" },
+                new() { Type = "custom-form", Title = "Stage Data", Size = "full" },
+                new() { Type = "queue", Title = "Queue", Size = "full", CollapsedByDefault = true },
+            },
+            "inspection" => new()
+            {
+                new() { Type = "part-context", Title = "Part Info", Size = "full" },
+                new() { Type = "custom-form", Title = "Inspection Form", Size = "full" },
+                new() { Type = "checklist", Title = "Inspection Checklist", Size = "full" },
+                new() { Type = "notes", Title = "Inspector Notes", Size = "full" },
+            },
+            "minimal" => new()
+            {
+                new() { Type = "queue", Title = "Queue", Size = "full" },
+                new() { Type = "active-work", Title = "Active Work", Size = "full" },
+            },
+            _ => StagePageLayout.Default.Widgets
+        };
+    }
 
     private void UpdateFieldLabel(int idx, ChangeEventArgs e) =>
         _customFields[idx].Label = e.Value?.ToString() ?? string.Empty;
@@ -305,6 +536,7 @@ else
         {
             _edit!.CustomFieldsConfig = JsonSerializer.Serialize(_customFields);
             _edit.SetUiConfig(_uiConfig);
+            _edit.SetPageLayout(_pageLayout);
             _edit.AssignedMachineIds = _selectedMachineIds.Count > 0
                 ? string.Join(",", _selectedMachineIds.Order())
                 : null;

@@ -25,6 +25,15 @@
 
         <div class="page-header">
             <h1 class="page-title">👋 Welcome, @userName</h1>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <div style="position: relative;">
+                    <input class="form-control" type="text" placeholder="Scan barcode or enter job #..."
+                           style="width: 250px; padding-left: 32px;"
+                           @bind="_scanInput" @bind:event="oninput"
+                           @onkeydown="HandleScanKeydown" />
+                    <VIcon Name="search" Class="v-icon-inline" style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); opacity: 0.5;" />
+                </div>
+            </div>
         </div>
 
         @if (_loading)
@@ -290,6 +299,9 @@
     // UI config for current stage (loaded from ProductionStage)
     private StageUiConfig _currentUiConfig => _currentExecution?.ProductionStage?.GetUiConfig() ?? new StageUiConfig();
 
+    // Scan-to-start
+    private string _scanInput = "";
+
     // Dialog state
     private bool _showPauseDialog, _showCompleteDialog, _showFailDialog;
     private int _dialogExecutionId;
@@ -319,6 +331,40 @@
                 _elapsedTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
                 StateHasChanged();
             }
+        }
+    }
+
+    private async Task HandleScanKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(_scanInput)) return;
+        var input = _scanInput.Trim();
+        _scanInput = "";
+
+        // Try to find a matching execution by job ID or part number
+        var match = _myQueue.FirstOrDefault(q =>
+            q.JobId.ToString() == input ||
+            q.Job?.Part?.PartNumber?.Contains(input, StringComparison.OrdinalIgnoreCase) == true);
+
+        if (match == null)
+        {
+            match = _availableWork.FirstOrDefault(q =>
+                q.JobId.ToString() == input ||
+                q.Job?.Part?.PartNumber?.Contains(input, StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        if (match != null)
+        {
+            try
+            {
+                await StageService.StartStageExecutionAsync(match.Id, _currentUserId, _currentUserName);
+                Toast.ShowSuccess($"Scan matched — started Job #{match.JobId}");
+                await LoadData();
+            }
+            catch (Exception ex) { Toast.ShowError($"Could not start: {ex.Message}"); }
+        }
+        else
+        {
+            Toast.ShowError($"No matching work found for '{input}'");
         }
     }
 
