@@ -1,20 +1,54 @@
-@* Work Instruction Banner - Shows at top of stage partials when instructions exist *@
+@* Work Instruction Banner - Shows instructions inline with expandable steps *@
 @inject IWorkInstructionService WorkInstructionService
 
 @if (_instruction != null)
 {
     <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--accent);">
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
-            <span style="font-weight: 600;">
-                📋 Work Instructions — Rev @_instruction.RevisionNumber
+            <span style="font-weight: 600; cursor: pointer;" @onclick="ToggleExpanded">
+                <VIcon Name="book" Class="@(_expanded ? "" : "")" />
+                Work Instructions — Rev @_instruction.RevisionNumber
                 <span style="color: var(--text-muted); font-weight: 400; font-size: 0.85rem; margin-left: 8px;">
                     @_instruction.Title (@_instruction.Steps.Count steps)
                 </span>
+                <span style="color: var(--text-muted); margin-left: 6px; font-size: 0.8rem;">@(_expanded ? "▾" : "›")</span>
             </span>
-            <a href="/shopfloor/instructions/@_instruction.Id" target="_blank" class="btn btn-sm btn-primary">
-                Open Full View →
-            </a>
+            <div style="display: flex; gap: 6px;">
+                <button class="btn btn-sm btn-secondary" @onclick="ToggleExpanded">@(_expanded ? "Collapse" : "Show Steps")</button>
+                <a href="/shopfloor/instructions/@_instruction.Id" target="_blank" class="btn btn-sm btn-primary">
+                    Full View →
+                </a>
+            </div>
         </div>
+
+        @if (_expanded && _instruction.Steps.Any())
+        {
+            <div style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
+                @foreach (var step in _instruction.Steps.OrderBy(s => s.StepOrder))
+                {
+                    <div style="display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(var(--border-rgb, 55,65,81), 0.3);">
+                        <div style="min-width: 28px; height: 28px; background: var(--accent); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; flex-shrink: 0;">
+                            @step.StepOrder
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; font-size: 0.9rem;">@step.Title</div>
+                            @if (!string.IsNullOrWhiteSpace(step.Body))
+                            {
+                                <div style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px; white-space: pre-line;">@step.Body</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(step.WarningText))
+                            {
+                                <div style="color: var(--warning); font-size: 0.85rem; margin-top: 4px;">⚠️ @step.WarningText</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(step.TipText))
+                            {
+                                <div style="color: var(--success); font-size: 0.85rem; margin-top: 4px;">💡 @step.TipText</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
     </div>
 }
 
@@ -23,6 +57,7 @@
     [Parameter] public int? StageId { get; set; }
 
     private WorkInstruction? _instruction;
+    private bool _expanded;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -35,4 +70,6 @@
             catch { /* Instruction lookup is optional — don't break stage view */ }
         }
     }
+
+    private void ToggleExpanded() => _expanded = !_expanded;
 }

@@ -137,9 +137,15 @@ else
                             <div class="form-group" style="margin: 0;"><label class="form-label">Type</label>
                                 <select class="form-control" value="@f.FieldType" @onchange="e => UpdateFieldType(idx, e)">
                                     <option value="text">Text</option>
+                                    <option value="textarea">Text Area</option>
                                     <option value="number">Number</option>
+                                    <option value="measurement">Measurement</option>
                                     <option value="dropdown">Dropdown</option>
                                     <option value="checkbox">Checkbox</option>
+                                    <option value="date">Date</option>
+                                    <option value="photo">Photo</option>
+                                    <option value="file">File Upload</option>
+                                    <option value="signature">Signature</option>
                                 </select>
                             </div>
                             <button class="btn btn-sm btn-danger" style="height: 38px;" @onclick="() => RemoveField(idx)">✕</button>
@@ -150,10 +156,16 @@ else
                             {
                                 <div class="form-group" style="margin: 0; flex: 1;"><label class="form-label">Options (comma-separated)</label><input class="form-control" value="@(f.Options ?? "")" @onchange="e => UpdateFieldOptions(idx, e)" /></div>
                             }
-                            @if (f.FieldType == "number")
+                            @if (f.FieldType is "number" or "measurement")
                             {
                                 <div class="form-group" style="margin: 0;"><label class="form-label">Min</label><input class="form-control" type="number" style="width: 80px;" value="@f.MinValue" @onchange="e => UpdateFieldMin(idx, e)" /></div>
                                 <div class="form-group" style="margin: 0;"><label class="form-label">Max</label><input class="form-control" type="number" style="width: 80px;" value="@f.MaxValue" @onchange="e => UpdateFieldMax(idx, e)" /></div>
+                            }
+                            @if (f.FieldType == "measurement")
+                            {
+                                <div class="form-group" style="margin: 0;"><label class="form-label">Unit</label><input class="form-control" style="width: 70px;" value="@(f.Unit ?? "")" @onchange="e => _customFields[idx].Unit = e.Value?.ToString()" placeholder="mm" /></div>
+                                <div class="form-group" style="margin: 0;"><label class="form-label">Tol Min</label><input class="form-control" type="number" step="any" style="width: 80px;" value="@f.ToleranceMin" @onchange="e => _customFields[idx].ToleranceMin = double.TryParse(e.Value?.ToString(), out var v) ? v : null" /></div>
+                                <div class="form-group" style="margin: 0;"><label class="form-label">Tol Max</label><input class="form-control" type="number" step="any" style="width: 80px;" value="@f.ToleranceMax" @onchange="e => _customFields[idx].ToleranceMax = double.TryParse(e.Value?.ToString(), out var v) ? v : null" /></div>
                             }
                         </div>
                     </div>

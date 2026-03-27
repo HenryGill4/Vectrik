@@ -1,0 +1,125 @@
+@* Part Context Panel — Shows part specs, WO context, and previous stage notes *@
+@inject Vectrik.Data.TenantDbContext Db
+@using Microsoft.EntityFrameworkCore
+
+@if (_expanded && Execution?.Job != null)
+{
+    <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--accent);">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 600; cursor: pointer;" @onclick="Toggle">
+                <VIcon Name="search" /> Part Context
+                <span style="color: var(--text-muted); margin-left: 6px; font-size: 0.8rem;">▾</span>
+            </span>
+            <button class="btn btn-sm btn-secondary" @onclick="Toggle">Collapse</button>
+        </div>
+
+        <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            @if (Execution.Job.Part != null)
+            {
+                <div>
+                    <span class="form-label">Part Number</span>
+                    <div style="font-weight: 600;">@Execution.Job.Part.PartNumber</div>
+                </div>
+                <div>
+                    <span class="form-label">Part Name</span>
+                    <div>@Execution.Job.Part.Name</div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(Execution.Job.Part.Material))
+                {
+                    <div>
+                        <span class="form-label">Material</span>
+                        <div>@Execution.Job.Part.Material</div>
+                    </div>
+                }
+            }
+            @if (Execution.Job.WorkOrderLine?.WorkOrder != null)
+            {
+                var wo = Execution.Job.WorkOrderLine.WorkOrder;
+                <div>
+                    <span class="form-label">Work Order</span>
+                    <div style="font-weight: 600;">@wo.OrderNumber</div>
+                </div>
+                <div>
+                    <span class="form-label">Customer</span>
+                    <div>@wo.CustomerName</div>
+                </div>
+                <div>
+                    <span class="form-label">Due Date</span>
+                    <div style="@(wo.DueDate < DateTime.UtcNow ? "color: var(--danger); font-weight: 600;" : "")">
+                        @wo.DueDate.ToString("MMM dd, yyyy")
+                    </div>
+                </div>
+                <div>
+                    <span class="form-label">Priority</span>
+                    <div><span class="badge badge-@wo.Priority.ToString().ToLower()">@wo.Priority</span></div>
+                </div>
+            }
+        </div>
+
+        @if (ShowPreviousNotes && _previousNotes.Any())
+        {
+            <div style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
+                <div style="font-weight: 600; margin-bottom: 8px; font-size: 0.9rem;">Previous Stage Notes</div>
+                @foreach (var note in _previousNotes)
+                {
+                    <div style="padding: 6px 0; border-bottom: 1px solid rgba(var(--border-rgb, 55,65,81), 0.3); font-size: 0.85rem;">
+                        <span style="font-weight: 600; color: var(--accent);">@note.StageName</span>
+                        <span style="color: var(--text-muted); margin-left: 8px;">@note.Operator — @note.CompletedAt?.ToString("MMM dd HH:mm")</span>
+                        <div style="color: var(--text-secondary); margin-top: 2px;">@note.Notes</div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+else if (Execution?.Job != null)
+{
+    <div style="margin-bottom: 8px;">
+        <button class="btn btn-sm btn-secondary" @onclick="Toggle">
+            <VIcon Name="search" Class="v-icon-inline" /> Show Part Context
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public StageExecution? Execution { get; set; }
+    [Parameter] public bool ShowPreviousNotes { get; set; }
+
+    private bool _expanded;
+    private List<PreviousNote> _previousNotes = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ShowPreviousNotes && Execution?.JobId != null)
+        {
+            try
+            {
+                _previousNotes = await Db.StageExecutions
+                    .Where(se => se.JobId == Execution.JobId
+                        && se.Id != Execution.Id
+                        && se.Status == Models.Enums.StageExecutionStatus.Completed
+                        && se.CompletionNotes != null && se.CompletionNotes != "")
+                    .OrderBy(se => se.CompletedAt)
+                    .Select(se => new PreviousNote
+                    {
+                        StageName = se.ProductionStage.Name,
+                        Operator = se.OperatorName ?? "—",
+                        CompletedAt = se.CompletedAt,
+                        Notes = se.CompletionNotes ?? ""
+                    })
+                    .ToListAsync();
+            }
+            catch { _previousNotes = new(); }
+        }
+    }
+
+    private void Toggle() => _expanded = !_expanded;
+
+    private class PreviousNote
+    {
+        public string StageName { get; set; } = "";
+        public string Operator { get; set; } = "";
+        public DateTime? CompletedAt { get; set; }
+        public string Notes { get; set; } = "";
+    }
+}
