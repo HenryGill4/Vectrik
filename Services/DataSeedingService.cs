@@ -1323,11 +1323,11 @@ public class DataSeedingService : IDataSeedingService
         var admin = new User
         {
             Username = "admin",
-            FullName = "Tenant Admin",
-            Email = "admin@company.com",
+            FullName = "Henry Gill",
+            Email = "henry@politesocietyind.com",
             PasswordHash = _authService.HashPassword("admin123"),
             Role = "Admin",
-            Department = "Administration",
+            Department = "Operations",
             CreatedBy = "System",
             LastModifiedBy = "System"
         };
@@ -1346,8 +1346,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Username = "operator1",
-                FullName = "Mike Johnson",
-                Email = "mike@testcompany.com",
+                FullName = "Jake Marshall",
+                Email = "jake@politesocietyind.com",
                 PasswordHash = _authService.HashPassword("test123"),
                 Role = "Operator",
                 Department = "SLS",
@@ -1357,8 +1357,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Username = "operator2",
-                FullName = "Sarah Chen",
-                Email = "sarah@testcompany.com",
+                FullName = "Ryan Cole",
+                Email = "ryan@politesocietyind.com",
                 PasswordHash = _authService.HashPassword("test123"),
                 Role = "Operator",
                 Department = "Machining",
@@ -1368,8 +1368,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Username = "manager",
-                FullName = "Tom Bradley",
-                Email = "tom@testcompany.com",
+                FullName = "Derek Simmons",
+                Email = "derek@politesocietyind.com",
                 PasswordHash = _authService.HashPassword("test123"),
                 Role = "Manager",
                 Department = "Operations",
@@ -1379,8 +1379,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Username = "qcinspector",
-                FullName = "Lisa Park",
-                Email = "lisa@testcompany.com",
+                FullName = "Ana Reyes",
+                Email = "ana@politesocietyind.com",
                 PasswordHash = _authService.HashPassword("test123"),
                 Role = "QualityInspector",
                 Department = "Quality",

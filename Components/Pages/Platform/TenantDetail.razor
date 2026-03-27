@@ -1,0 +1,348 @@
+@page "/platform/tenants/new"
+@page "/platform/tenants/{Code}"
+@inject ITenantService TenantService
+@inject NavigationManager Nav
+@inject ToastService Toast
+@inject IJSRuntime JS
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "SuperAdmin")]
+
+<PageTitle>@(_isNew ? "New Customer" : _tenant?.CompanyName ?? Code) - OpCentrix Platform</PageTitle>
+
+<div class="page-header">
+    <div>
+        <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Back to Customers</button>
+        <h1 class="page-title">@(_isNew ? "New Customer" : _tenant?.CompanyName ?? "Loading...")</h1>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_notFound)
+{
+    <div class="alert alert-danger">Tenant "@Code" not found.</div>
+}
+else if (_tenant != null)
+{
+    @* ─── HEADER: Logo + Name + Status ─── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div style="padding: 20px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+            <div class="tenant-logo-upload" @onclick="TriggerLogoUpload">
+                @if (!string.IsNullOrWhiteSpace(_tenant.LogoUrl))
+                {
+                    <img src="@_tenant.LogoUrl" alt="Logo" class="tenant-logo-img"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                    <div class="tenant-logo-initials-lg" style="display:none; background: @(_tenant.PrimaryColor ?? "#6366f1");">
+                        @(_tenant.CompanyName?.FirstOrDefault())
+                    </div>
+                }
+                else
+                {
+                    <div class="tenant-logo-initials-lg" style="background: @(_tenant.PrimaryColor ?? "#6366f1");">
+                        @(_tenant.CompanyName?.FirstOrDefault())
+                    </div>
+                }
+                <div class="tenant-logo-overlay">📷</div>
+                <InputFile OnChange="OnLogoSelected" accept="image/*" @ref="_fileInput"
+                           style="display: none;" id="logo-file-input" />
+            </div>
+            <div style="flex: 1; min-width: 200px;">
+                <div style="font-size: 1.5rem; font-weight: 600; color: var(--text);">@_tenant.CompanyName</div>
+                <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 2px;">@_tenant.Code</div>
+                @if (!_isNew)
+                {
+                    <div style="margin-top: 8px;">
+                        <span class="badge @(_tenant.IsActive ? "badge-active" : "badge-cancelled")">
+                            @(_tenant.IsActive ? "Active" : "Inactive")
+                        </span>
+                        @if (!string.IsNullOrWhiteSpace(_tenant.SubscriptionTier))
+                        {
+                            <span class="tier-badge tier-badge-@(_tenant.SubscriptionTier?.ToLowerInvariant().Replace(" ", ""))" style="margin-left: 6px;">
+                                @_tenant.SubscriptionTier
+                            </span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (_uploadError != null)
+    {
+        <div class="alert alert-danger" style="margin-bottom: 12px;">@_uploadError</div>
+    }
+
+    @* ─── COMPANY INFO ─── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header">Company Information</div>
+        <div style="padding: 16px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Tenant Code</label>
+                    <input class="form-control" @bind="_tenant.Code" disabled="@(!_isNew)"
+                           placeholder="lowercase, no spaces" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Company Name</label>
+                    <input class="form-control" @bind="_tenant.CompanyName" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Contact Email</label>
+                    <input class="form-control" type="email" @bind="_tenant.ContactEmail" placeholder="admin@company.com" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Contact Phone</label>
+                    <input class="form-control" @bind="_tenant.ContactPhone" placeholder="+1 (555) 123-4567" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Primary Color</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="color" @bind="_tenant.PrimaryColor" style="width: 40px; height: 34px; padding: 2px; border-radius: 4px; border: 1px solid var(--border); cursor: pointer;" />
+                        <input class="form-control" @bind="_tenant.PrimaryColor" placeholder="#6366f1" style="width: 120px;" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Subscription Tier</label>
+                    <select class="form-control" @bind="_tenant.SubscriptionTier">
+                        <option value="">— Select —</option>
+                        <option value="Free">Free</option>
+                        <option value="Starter">Starter</option>
+                        <option value="Professional">Professional</option>
+                        <option value="Enterprise">Enterprise</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 12px;">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" rows="2" @bind="_tenant.Notes" placeholder="Internal notes about this customer..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    @* ─── FEATURE FLAGS ─── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Feature Flags</span>
+            <div style="display: flex; gap: 6px;">
+                <button class="btn btn-sm btn-secondary" @onclick="SelectAllFeatures">Select All</button>
+                <button class="btn btn-sm btn-secondary" @onclick="SelectEssentials">Essentials</button>
+                <button class="btn btn-sm btn-secondary" @onclick="SelectFullSuite">Full Suite</button>
+                <button class="btn btn-sm btn-secondary" @onclick="ClearAllFeatures">Clear</button>
+            </div>
+        </div>
+        <div style="padding: 16px;">
+            @foreach (var category in _featureKeys.GroupBy(f => f.Category))
+            {
+                <div class="feature-category">
+                    <div class="feature-category-label">@category.Key</div>
+                    <div class="feature-grid">
+                        @foreach (var feat in category)
+                        {
+                            <label class="feature-toggle">
+                                <input type="checkbox" checked="@(_featureFlags.GetValueOrDefault(feat.Key))"
+                                       @onchange="e => _featureFlags[feat.Key] = (bool)(e.Value ?? false)" />
+                                <span class="feature-toggle-label">@feat.Label</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (!_isNew)
+    {
+        @* ─── USERS ─── *@
+        <div class="card" style="margin-bottom: 16px;">
+            <div style="padding: 16px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="font-weight: 600; color: var(--text);">Users</span>
+                    <span style="color: var(--text-muted); margin-left: 8px;">@_userCount active user@(_userCount == 1 ? "" : "s")</span>
+                </div>
+                <button class="btn btn-sm btn-secondary" @onclick="ManageUsers">
+                    Manage Users →
+                </button>
+            </div>
+        </div>
+
+        @* ─── DANGER ZONE ─── *@
+        <div class="card" style="margin-bottom: 16px; border: 1px solid var(--danger);">
+            <div style="padding: 16px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="font-weight: 600; color: var(--danger);">Danger Zone</span>
+                    <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 2px;">
+                        @(_tenant.IsActive ? "Deactivating will prevent all users from logging in." : "Reactivating will restore login access for all users.")
+                    </div>
+                </div>
+                @if (_tenant.IsActive)
+                {
+                    <button class="btn btn-sm btn-danger" @onclick="ToggleActive">Deactivate</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm btn-success" @onclick="ToggleActive">Reactivate</button>
+                }
+            </div>
+        </div>
+    }
+
+    @* ─── SAVE BAR ─── *@
+    <div class="tenant-save-bar">
+        <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
+            @(_saving ? "Saving..." : _isNew ? "Create Customer" : "Save Changes")
+        </button>
+        <button class="btn btn-secondary" @onclick="GoBack">Cancel</button>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <span style="color: var(--danger); margin-left: 12px;">@_error</span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? Code { get; set; }
+
+    private Opcentrix_V3.Models.Platform.Tenant? _tenant;
+    private bool _isNew, _loading = true, _notFound, _saving;
+    private string? _error, _uploadError;
+    private int _userCount;
+    private Dictionary<string, bool> _featureFlags = new();
+    private List<(string Key, string Category, string Label)> _featureKeys = new();
+    private InputFile? _fileInput;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _featureKeys = TenantService.GetAllFeatureKeys();
+        _isNew = string.IsNullOrEmpty(Code) || Code == "new";
+
+        if (_isNew)
+        {
+            _tenant = new Opcentrix_V3.Models.Platform.Tenant
+            {
+                IsActive = true,
+                CreatedBy = "SuperAdmin",
+                PrimaryColor = "#6366f1"
+            };
+            // Default all features off
+            foreach (var fk in _featureKeys) _featureFlags[fk.Key] = false;
+        }
+        else
+        {
+            _tenant = await TenantService.GetTenantByCodeAsync(Code!);
+            if (_tenant == null)
+            {
+                _notFound = true;
+                _loading = false;
+                return;
+            }
+            _featureFlags = await TenantService.GetTenantFeatureFlagsAsync(Code!);
+            try { _userCount = await TenantService.GetTenantUserCountAsync(Code!); } catch { }
+        }
+        _loading = false;
+    }
+
+    private void GoBack() => Nav.NavigateTo("/platform/tenants");
+    private void ManageUsers() => Nav.NavigateTo($"/platform/tenants/{Code}/users");
+
+    private async Task Save()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            if (_isNew)
+            {
+                if (string.IsNullOrWhiteSpace(_tenant!.Code)) { _error = "Tenant code is required."; _saving = false; return; }
+                if (string.IsNullOrWhiteSpace(_tenant.CompanyName)) { _error = "Company name is required."; _saving = false; return; }
+
+                var created = await TenantService.CreateTenantAsync(
+                    _tenant.Code, _tenant.CompanyName, "SuperAdmin",
+                    _tenant.LogoUrl, _tenant.PrimaryColor);
+
+                // Update extra fields
+                created.ContactEmail = _tenant.ContactEmail;
+                created.ContactPhone = _tenant.ContactPhone;
+                created.Notes = _tenant.Notes;
+                created.SubscriptionTier = _tenant.SubscriptionTier;
+                await TenantService.UpdateTenantAsync(created);
+
+                // Save feature flags
+                await TenantService.SetTenantFeatureFlagsAsync(created.Code, _featureFlags);
+
+                Toast.ShowSuccess($"Customer '{created.CompanyName}' created.");
+                Nav.NavigateTo($"/platform/tenants/{created.Code}");
+            }
+            else
+            {
+                await TenantService.UpdateTenantAsync(_tenant!);
+                await TenantService.SetTenantFeatureFlagsAsync(Code!, _featureFlags);
+                Toast.ShowSuccess("Customer updated.");
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task ToggleActive()
+    {
+        if (_tenant!.IsActive)
+            await TenantService.DeactivateTenantAsync(_tenant.Id);
+        else
+            await TenantService.ActivateTenantAsync(_tenant.Id);
+        _tenant.IsActive = !_tenant.IsActive;
+    }
+
+    private async Task TriggerLogoUpload()
+    {
+        await JS.InvokeVoidAsync("eval", "document.getElementById('logo-file-input').click()");
+    }
+
+    private async Task OnLogoSelected(InputFileChangeEventArgs e)
+    {
+        _uploadError = null;
+        var file = e.File;
+        if (file.Size > 2 * 1024 * 1024) { _uploadError = "File too large (max 2MB)."; return; }
+
+        var allowedTypes = new[] { "image/png", "image/jpeg", "image/svg+xml", "image/webp" };
+        if (!allowedTypes.Contains(file.ContentType)) { _uploadError = "Invalid file type. Use PNG, JPG, SVG, or WebP."; return; }
+
+        var tenantCode = _isNew ? (_tenant?.Code ?? "temp") : Code!;
+        if (string.IsNullOrWhiteSpace(tenantCode) || tenantCode == "new") tenantCode = "temp";
+
+        try
+        {
+            var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+            if (string.IsNullOrEmpty(ext)) ext = ".png";
+            var fileName = $"{tenantCode}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{ext}";
+
+            var uploadsDir = Path.Combine(Env.WebRootPath, "uploads", "logos");
+            if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
+
+            var filePath = Path.Combine(uploadsDir, fileName);
+            await using var stream = new FileStream(filePath, FileMode.Create);
+            await file.OpenReadStream(2 * 1024 * 1024).CopyToAsync(stream);
+
+            _tenant!.LogoUrl = $"/uploads/logos/{fileName}";
+        }
+        catch (Exception ex) { _uploadError = $"Upload error: {ex.Message}"; }
+    }
+
+    // Feature flag presets
+    private void SelectAllFeatures() { foreach (var k in _featureKeys) _featureFlags[k.Key] = true; }
+    private void ClearAllFeatures() { foreach (var k in _featureKeys) _featureFlags[k.Key] = false; }
+
+    private void SelectEssentials()
+    {
+        ClearAllFeatures();
+        var essentials = new[] { "module.workorders", "module.shopfloor", "module.quality", "module.inventory", "module.shipping", "sls" };
+        foreach (var k in essentials) _featureFlags[k] = true;
+    }
+
+    private void SelectFullSuite()
+    {
+        foreach (var k in _featureKeys)
+            _featureFlags[k.Key] = !k.Key.StartsWith("dlms."); // Enable all except DLMS sub-modules
+    }
+}
