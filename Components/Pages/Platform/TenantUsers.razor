@@ -7,7 +7,7 @@
 
 <div class="page-header">
     <div>
-        <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Back to Tenants</button>
+        <button class="btn btn-sm btn-secondary" @onclick="GoBack" style="margin-bottom: 8px;">← Back to @Code</button>
         <h1 class="page-title">Users — @Code</h1>
     </div>
     <button class="btn btn-primary" @onclick="NewUser">+ New User</button>
@@ -23,7 +23,7 @@ else if (_notFound)
 }
 else
 {
-    <div class="card">
+    <div class="card" style="overflow-x: auto;">
         <table class="data-table">
             <thead>
                 <tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Department</th><th>Active</th><th></th></tr>
@@ -35,7 +35,7 @@ else
                         <td>@u.Username</td>
                         <td>@u.FullName</td>
                         <td>@(u.Email ?? "—")</td>
-                        <td><span class="badge">@u.Role</span></td>
+                        <td><span class="badge">@FormatRole(u.Role)</span></td>
                         <td>@(u.Department ?? "—")</td>
                         <td><span class="badge @(u.IsActive ? "badge-active" : "badge-cancelled")">@(u.IsActive ? "Yes" : "No")</span></td>
                         <td><button class="btn btn-sm btn-secondary" @onclick="() => EditUser(u)">Edit</button></td>
@@ -63,7 +63,7 @@ else
                 <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" @bind="_edit.Email" /></div>
                 <div class="form-group"><label class="form-label">Role</label>
                     <select class="form-control" @bind="_edit.Role">
-                        @foreach (var r in _roles) { <option>@r</option> }
+                        @foreach (var r in _roles) { <option value="@r">@FormatRole(r)</option> }
                     </select>
                 </div>
                 <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
@@ -94,7 +94,14 @@ else
 @code {
     [Parameter] public string Code { get; set; } = "";
 
-    private void GoBack() => Nav.NavigateTo("/platform/tenants");
+    private void GoBack() => Nav.NavigateTo($"/platform/tenants/{Code}");
+
+    private static string FormatRole(string? role) => role switch
+    {
+        "MaintenanceTech" => "Maintenance Tech",
+        "QCSpecialist" => "QC Specialist",
+        _ => role ?? "—"
+    };
 
     private List<User> _users = new();
     private User? _edit;
