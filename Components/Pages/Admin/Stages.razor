@@ -66,6 +66,7 @@ else
                 <button class="tab @(_tab == "info" ? "active" : "")" @onclick='() => _tab = "info"'>Info</button>
                 <button class="tab @(_tab == "options" ? "active" : "")" @onclick='() => _tab = "options"'>Options</button>
                 <button class="tab @(_tab == "fields" ? "active" : "")" @onclick='() => _tab = "fields"'>Custom Fields (@_customFields.Count)</button>
+                <button class="tab @(_tab == "ui" ? "active" : "")" @onclick='() => _tab = "ui"'>Operator UI</button>
             </div>
 
             @if (_tab == "info")
@@ -161,6 +162,56 @@ else
                 <button class="btn btn-sm btn-secondary" @onclick="AddField">+ Add Field</button>
             }
 
+            @if (_tab == "ui")
+            {
+                <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.85rem;">
+                    Control what operators see and can do on the shop floor for this stage.
+                </p>
+
+                <div class="card" style="padding: 16px; margin-bottom: 12px;">
+                    <h4 style="margin: 0 0 12px; font-size: 0.9rem; color: var(--text-primary); font-weight: 600;">Visible Sections</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowWorkInstructions" style="margin-right: 6px;" />Work Instructions</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowTimer" style="margin-right: 6px;" />Timer / Duration</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowSignOffChecklist" style="margin-right: 6px;" />Sign-Off Checklist</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowMachineStatus" style="margin-right: 6px;" />Machine Status</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowPartContext" style="margin-right: 6px;" />Part Context</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowMaterialLotTracking" style="margin-right: 6px;" />Material Lot Tracking</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowPreviousStageNotes" style="margin-right: 6px;" />Previous Stage Notes</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowPhotoCapture" style="margin-right: 6px;" />Photo Capture</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.ShowHistory" style="margin-right: 6px;" />History Tab</label>
+                    </div>
+                </div>
+
+                <div class="card" style="padding: 16px; margin-bottom: 12px;">
+                    <h4 style="margin: 0 0 12px; font-size: 0.9rem; color: var(--text-primary); font-weight: 600;">Required Before Completion</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.RequireChecklist" style="margin-right: 6px;" />All Checklist Items Signed</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.RequireQualityCheck" style="margin-right: 6px;" />Quality Check</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.RequireNotes" style="margin-right: 6px;" />Completion Notes</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.RequirePhoto" style="margin-right: 6px;" />Photo Evidence</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.RequireAllCustomFields" style="margin-right: 6px;" />All Custom Fields</label>
+                    </div>
+                </div>
+
+                <div class="card" style="padding: 16px; margin-bottom: 12px;">
+                    <h4 style="margin: 0 0 12px; font-size: 0.9rem; color: var(--text-primary); font-weight: 600;">Operator Actions</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.AllowPause" style="margin-right: 6px;" />Pause / Delay</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.AllowLogDelay" style="margin-right: 6px;" />Log Delay</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.AllowFail" style="margin-right: 6px;" />Fail / NCR</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.AllowTransfer" style="margin-right: 6px;" />Transfer to Operator</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.AllowBatchComplete" style="margin-right: 6px;" />Batch Complete</label>
+                        <label class="form-label"><input type="checkbox" @bind="_uiConfig.AllowSkip" style="margin-right: 6px;" />Skip Stage</label>
+                    </div>
+                </div>
+
+                <div class="card" style="padding: 16px;">
+                    <h4 style="margin: 0 0 12px; font-size: 0.9rem; color: var(--text-primary); font-weight: 600;">Workflow</h4>
+                    <label class="form-label"><input type="checkbox" @bind="_uiConfig.AutoAdvanceToNext" style="margin-right: 6px;" />Auto-advance to next queue item after completion</label>
+                </div>
+            }
+
             <div style="display: flex; gap: 8px; margin-top: 16px;">
                 <button class="btn btn-primary" @onclick="Save">Save</button>
                 <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
@@ -178,6 +229,7 @@ else
     private string _tab = "info";
     private List<CustomFieldDefinition> _customFields = new();
     private HashSet<int> _selectedMachineIds = new();
+    private StageUiConfig _uiConfig = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -194,6 +246,7 @@ else
         _edit = new ProductionStage { CreatedBy = "System", LastModifiedBy = "System", CustomFieldsConfig = "[]" };
         _customFields = new();
         _selectedMachineIds = new();
+        _uiConfig = new StageUiConfig();
         _tab = "info";
         _showForm = true;
     }
@@ -205,6 +258,7 @@ else
         try { _customFields = JsonSerializer.Deserialize<List<CustomFieldDefinition>>(s.CustomFieldsConfig) ?? new(); }
         catch { _customFields = new(); }
         _selectedMachineIds = s.GetAssignedMachineIntIds().ToHashSet();
+        _uiConfig = s.GetUiConfig();
         _showForm = true;
     }
 
@@ -238,6 +292,7 @@ else
         try
         {
             _edit!.CustomFieldsConfig = JsonSerializer.Serialize(_customFields);
+            _edit.SetUiConfig(_uiConfig);
             _edit.AssignedMachineIds = _selectedMachineIds.Count > 0
                 ? string.Join(",", _selectedMachineIds.Order())
                 : null;

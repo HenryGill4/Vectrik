@@ -40,6 +40,9 @@ public class ProductionStage
 
     public string CustomFieldsConfig { get; set; } = "[]";
 
+    /// <summary>JSON-serialized StageUiConfig controlling operator shop floor UI.</summary>
+    public string StageUiConfigJson { get; set; } = "{}";
+
     [MaxLength(500)]
     public string? AssignedMachineIds { get; set; }
 
@@ -92,6 +95,18 @@ public class ProductionStage
     public void SetCustomFields(List<CustomFieldDefinition> fields)
     {
         CustomFieldsConfig = JsonSerializer.Serialize(fields);
+    }
+
+    public StageUiConfig GetUiConfig()
+    {
+        if (string.IsNullOrWhiteSpace(StageUiConfigJson) || StageUiConfigJson == "{}")
+            return new StageUiConfig();
+        return JsonSerializer.Deserialize<StageUiConfig>(StageUiConfigJson) ?? new StageUiConfig();
+    }
+
+    public void SetUiConfig(StageUiConfig config)
+    {
+        StageUiConfigJson = JsonSerializer.Serialize(config);
     }
 
     public List<string> GetAssignedMachineIds()
