@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 
 namespace Vectrik.Models;
 
@@ -29,6 +30,9 @@ public class User
     [MaxLength(500)]
     public string? AssignedStageIds { get; set; }
 
+    /// <summary>JSON-serialized OperatorPermissions for fine-grained operator control.</summary>
+    public string PermissionsJson { get; set; } = "{}";
+
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginDate { get; set; }
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
@@ -42,4 +46,17 @@ public class User
     public virtual UserSettings? Settings { get; set; }
     public virtual ICollection<UserOperatorRole> OperatorRoles { get; set; } = new List<UserOperatorRole>();
     public virtual ICollection<UserShiftAssignment> ShiftAssignments { get; set; } = new List<UserShiftAssignment>();
+
+    // Helper methods
+    public OperatorPermissions GetPermissions()
+    {
+        if (string.IsNullOrWhiteSpace(PermissionsJson) || PermissionsJson == "{}")
+            return new OperatorPermissions();
+        return JsonSerializer.Deserialize<OperatorPermissions>(PermissionsJson) ?? new OperatorPermissions();
+    }
+
+    public void SetPermissions(OperatorPermissions permissions)
+    {
+        PermissionsJson = JsonSerializer.Serialize(permissions);
+    }
 }
