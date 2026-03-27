@@ -19,7 +19,7 @@
         <nav class="sidebar-nav">
             <!-- Quick search / filter -->
             <div class="nav-search">
-                <span class="nav-search-icon">🔎</span>
+                <span class="nav-search-icon"><VIcon Name="search" Class="nav-search-v-icon" /></span>
                 <input type="text"
                        class="nav-search-input"
                        placeholder="Filter menu..."
@@ -33,7 +33,7 @@
 
             <!-- Dashboard — always pinned at top -->
             <NavLink class="nav-item nav-item-pinned" href="dashboard" Match="NavLinkMatch.All">
-                <span class="nav-icon">📊</span> Dashboard
+                <VIcon Name="dashboard" /> Dashboard
             </NavLink>
 
             @* ──────────── PRODUCTION ──────────── *@
@@ -45,31 +45,31 @@
                         @if (ItemVisible("Production Scheduler"))
                         {
                             <NavLink class="nav-item" href="scheduler">
-                                <span class="nav-icon">📅</span> Production Scheduler
+                                <VIcon Name="calendar" /> Production Scheduler
                             </NavLink>
                         }
                         @if (ItemVisible("Capacity Dashboard"))
                         {
                             <NavLink class="nav-item" href="scheduler/capacity">
-                                <span class="nav-icon">📊</span> Capacity Dashboard
+                                <VIcon Name="capacity" /> Capacity Dashboard
                             </NavLink>
                         }
                         @if (ItemVisible("Work Orders"))
                         {
                             <NavLink class="nav-item" href="workorders">
-                                <span class="nav-icon">📋</span> Work Orders
+                                <VIcon Name="clipboard" /> Work Orders
                             </NavLink>
                         }
                         @if (ItemVisible("Quotes"))
                         {
                             <NavLink class="nav-item" href="quotes">
-                                <span class="nav-icon">💰</span> Quotes
+                                <VIcon Name="dollar" /> Quotes
                             </NavLink>
                         }
                         @if (isAdminOrManager && ItemVisible("RFQ Inbox"))
                         {
                             <NavLink class="nav-item" href="quotes/rfq-inbox">
-                                <span class="nav-icon">📥</span> RFQ Inbox
+                                <VIcon Name="inbox" /> RFQ Inbox
                             </NavLink>
                         }
                         @if (Features.IsEnabled("sls"))
@@ -77,26 +77,26 @@
                             @if (ItemVisible("SLS Builds"))
                             {
                                 <NavLink class="nav-item" href="programs">
-                                    <span class="nav-icon">🏗️</span> SLS Builds
+                                    <VIcon Name="layers" /> SLS Builds
                                 </NavLink>
                             }
                             @if (ItemVisible("Production Batches"))
                             {
                                 <NavLink class="nav-item" href="production/batches">
-                                    <span class="nav-icon">📦</span> Production Batches
+                                    <VIcon Name="package" /> Production Batches
                                 </NavLink>
                             }
                         }
                         @if (isAdminOrManager && ItemVisible("Operation Costs"))
                         {
                             <NavLink class="nav-item nav-item-admin" href="admin/operation-costs">
-                                <span class="nav-icon">💲</span> Operation Costs
+                                <VIcon Name="dollar" /> Operation Costs
                             </NavLink>
                         }
                         @if (isAdmin && ItemVisible("Workflows"))
                         {
                             <NavLink class="nav-item nav-item-admin" href="admin/workflows">
-                                <span class="nav-icon">🔄</span> Workflows
+                                <VIcon Name="workflow" /> Workflows
                             </NavLink>
                         }
                     </NavSection>
@@ -109,43 +109,43 @@
                         @if (ItemVisible("Parts Library"))
                         {
                             <NavLink class="nav-item" href="parts">
-                                <span class="nav-icon">🔩</span> Parts Library
+                                <VIcon Name="bolt" /> Parts Library
                             </NavLink>
                         }
                         @if (ItemVisible("Machine Programs"))
                         {
                             <NavLink class="nav-item" href="programs">
-                                <span class="nav-icon">📄</span> Machine Programs
+                                <VIcon Name="file" /> Machine Programs
                             </NavLink>
                         }
                         @if (ItemVisible("Work Instructions"))
                         {
                             <NavLink class="nav-item" href="admin/work-instructions">
-                                <span class="nav-icon">📖</span> Work Instructions
+                                <VIcon Name="book" /> Work Instructions
                             </NavLink>
                         }
                         @if (ItemVisible("Approaches"))
                         {
                             <NavLink class="nav-item" href="admin/manufacturing-approaches">
-                                <span class="nav-icon">🏭</span> Approaches
+                                <VIcon Name="factory" /> Approaches
                             </NavLink>
                         }
                         @if (ItemVisible("Production Stages"))
                         {
                             <NavLink class="nav-item" href="admin/stages">
-                                <span class="nav-icon">📋</span> Production Stages
+                                <VIcon Name="clipboard" /> Production Stages
                             </NavLink>
                         }
                         @if (ItemVisible("Materials"))
                         {
                             <NavLink class="nav-item" href="admin/materials">
-                                <span class="nav-icon">🧪</span> Materials
+                                <VIcon Name="flask" /> Materials
                             </NavLink>
                         }
                         @if (isAdmin && ItemVisible("Custom Fields"))
                         {
                             <NavLink class="nav-item nav-item-admin" href="admin/custom-fields">
-                                <span class="nav-icon">🧩</span> Custom Fields
+                                <VIcon Name="puzzle" /> Custom Fields
                             </NavLink>
                         }
                     </NavSection>
@@ -159,7 +159,7 @@
                     @if (ItemVisible("Operator Queue"))
                     {
                         <NavLink class="nav-item" href="shopfloor">
-                            <span class="nav-icon">🏭</span> Operator Queue
+                            <VIcon Name="factory" /> Operator Queue
                         </NavLink>
                     }
                     @if (_stages is not null)
@@ -169,7 +169,7 @@
                             @if ((!isOperator || IsAssignedStage(context.User, stage.Id)) && ItemVisible(stage.Name))
                             {
                                 <NavLink class="nav-item" href="@($"shopfloor/stage/{stage.StageSlug}")">
-                                    <span class="nav-icon" style="color: @stage.StageColor">@ResolveStageIcon(stage.StageIcon)</span> @stage.Name
+                                    <VIcon Name="@ResolveStageVIcon(stage.StageSlug)" /> @stage.Name
                                 </NavLink>
                             }
                         }
@@ -186,52 +186,52 @@
                         @if (ItemVisible("Part Tracker"))
                         {
                             <NavLink class="nav-item" href="tracking">
-                                <span class="nav-icon">🔍</span> Part Tracker
+                                <VIcon Name="search" /> Part Tracker
                             </NavLink>
                         }
                         @if (ItemVisible("Analytics"))
                         {
                             <NavLink class="nav-item" href="analytics">
-                                <span class="nav-icon">📈</span> Analytics
+                                <VIcon Name="chart-line" /> Analytics
                             </NavLink>
                         }
                         @if (ItemVisible("On-Time Delivery"))
                         {
                             <NavLink class="nav-item" href="analytics/on-time-delivery">
-                                <span class="nav-icon">⏱️</span> On-Time Delivery
+                                <VIcon Name="clock" /> On-Time Delivery
                             </NavLink>
                         }
                         @if (ItemVisible("Quality Metrics"))
                         {
                             <NavLink class="nav-item" href="analytics/quality">
-                                <span class="nav-icon">✅</span> Quality Metrics
+                                <VIcon Name="check-circle" /> Quality Metrics
                             </NavLink>
                         }
                         @if (ItemVisible("Machine OEE"))
                         {
                             <NavLink class="nav-item" href="analytics/oee">
-                                <span class="nav-icon">⚙️</span> Machine OEE
+                                <VIcon Name="gear" /> Machine OEE
                             </NavLink>
                         }
                         @if (ItemVisible("Cost Analysis"))
                         {
                             <NavLink class="nav-item" href="analytics/cost">
-                                <span class="nav-icon">💲</span> Cost Analysis
+                                <VIcon Name="dollar" /> Cost Analysis
                             </NavLink>
                         }
                         @if (ItemVisible("Profit Dashboard"))
                         {
                             <NavLink class="nav-item" href="analytics/profit">
-                                <span class="nav-icon">💰</span> Profit Dashboard
+                                <VIcon Name="chart-line" /> Profit Dashboard
                             </NavLink>
                         }
                         <NavLink class="nav-item nav-item-admin" href="reports">
-                            <span class="nav-icon">📑</span> Reports
+                            <VIcon Name="document" /> Reports
                         </NavLink>
                         @if (ItemVisible("Search"))
                         {
                             <NavLink class="nav-item" href="search">
-                                <span class="nav-icon">🔎</span> Search
+                                <VIcon Name="search" /> Search
                             </NavLink>
                         }
                     </NavSection>
@@ -244,13 +244,13 @@
                         @if (ItemVisible("Machines"))
                         {
                             <NavLink class="nav-item" href="machines">
-                                <span class="nav-icon">🖥️</span> Machines
+                                <VIcon Name="monitor" /> Machines
                             </NavLink>
                         }
                         @if (ItemVisible("Machine Programs"))
                         {
                             <NavLink class="nav-item" href="programs">
-                                <span class="nav-icon">📄</span> Programs
+                                <VIcon Name="file" /> Programs
                             </NavLink>
                         }
                         @if (Features.IsEnabled("module.maintenance"))
@@ -258,19 +258,19 @@
                             @if (ItemVisible("Maintenance Alerts"))
                             {
                                 <NavLink class="nav-item" href="maintenance">
-                                    <span class="nav-icon">🔧</span> Maintenance Alerts
+                                    <VIcon Name="wrench" /> Maintenance Alerts
                                 </NavLink>
                             }
                             @if (ItemVisible("Maintenance Work Orders"))
                             {
                                 <NavLink class="nav-item" href="maintenance/workorders">
-                                    <span class="nav-icon">📝</span> Work Orders
+                                    <VIcon Name="pencil" /> Work Orders
                                 </NavLink>
                             }
                             @if (ItemVisible("Maintenance Rules"))
                             {
                                 <NavLink class="nav-item" href="maintenance/rules">
-                                    <span class="nav-icon">📐</span> Rules
+                                    <VIcon Name="ruler" /> Rules
                                 </NavLink>
                             }
                         }
@@ -284,19 +284,19 @@
                         @if (ItemVisible("Inventory"))
                         {
                             <NavLink class="nav-item" href="inventory">
-                                <span class="nav-icon">📦</span> Inventory
+                                <VIcon Name="package" /> Inventory
                             </NavLink>
                         }
                         @if (ItemVisible("Inventory Items"))
                         {
                             <NavLink class="nav-item" href="inventory/items">
-                                <span class="nav-icon">📋</span> Inventory Items
+                                <VIcon Name="clipboard" /> Inventory Items
                             </NavLink>
                         }
                         @if (ItemVisible("Receive Stock"))
                         {
                             <NavLink class="nav-item" href="inventory/receive">
-                                <span class="nav-icon">📥</span> Receive Stock
+                                <VIcon Name="inbox" /> Receive Stock
                             </NavLink>
                         }
                     </NavSection>
@@ -309,25 +309,25 @@
                         @if (ItemVisible("Quality Dashboard"))
                         {
                             <NavLink class="nav-item" href="quality">
-                                <span class="nav-icon">🔍</span> Quality Dashboard
+                                <VIcon Name="shield-check" /> Quality Dashboard
                             </NavLink>
                         }
                         @if (ItemVisible("NCR Management"))
                         {
                             <NavLink class="nav-item" href="quality/ncr">
-                                <span class="nav-icon">📋</span> NCR Management
+                                <VIcon Name="clipboard" /> NCR Management
                             </NavLink>
                         }
                         @if (ItemVisible("CAPA Board"))
                         {
                             <NavLink class="nav-item" href="quality/capa">
-                                <span class="nav-icon">🔧</span> CAPA Board
+                                <VIcon Name="wrench" /> CAPA Board
                             </NavLink>
                         }
                         @if (ItemVisible("SPC Charts"))
                         {
                             <NavLink class="nav-item" href="quality/spc">
-                                <span class="nav-icon">📈</span> SPC Charts
+                                <VIcon Name="chart-line" /> SPC Charts
                             </NavLink>
                         }
                     </NavSection>
@@ -338,7 +338,7 @@
                 @if (ItemVisible("Part Tracker"))
                 {
                     <NavLink class="nav-item" href="tracking">
-                        <span class="nav-icon">🔍</span> Part Tracker
+                        <VIcon Name="search" /> Part Tracker
                     </NavLink>
                 }
             }
@@ -350,19 +350,19 @@
                     @if (ItemVisible("Users"))
                     {
                         <NavLink class="nav-item" href="admin/users">
-                            <span class="nav-icon">👥</span> Users
+                            <VIcon Name="users" /> Users
                         </NavLink>
                     }
                     @if (ItemVisible("Operator Roles"))
                     {
                         <NavLink class="nav-item" href="admin/operator-roles">
-                            <span class="nav-icon">🎭</span> Operator Roles
+                            <VIcon Name="mask" /> Operator Roles
                         </NavLink>
                     }
                     @if (ItemVisible("Shifts"))
                     {
                         <NavLink class="nav-item" href="admin/shifts">
-                            <span class="nav-icon">🕐</span> Shifts
+                            <VIcon Name="shifts" /> Shifts
                         </NavLink>
                     }
                 </NavSection>
@@ -375,7 +375,7 @@
                     @if (ItemVisible("Display"))
                     {
                         <NavLink class="nav-item" href="settings/display">
-                            <span class="nav-icon">🎨</span> Display
+                            <VIcon Name="palette" /> Display
                         </NavLink>
                     }
                     @if (isAdmin)
@@ -383,25 +383,25 @@
                         @if (ItemVisible("Settings"))
                         {
                             <NavLink class="nav-item nav-item-admin" href="admin/settings">
-                                <span class="nav-icon">⚙️</span> System Settings
+                                <VIcon Name="gear" /> System Settings
                             </NavLink>
                         }
                         @if (ItemVisible("Feature Flags"))
                         {
                             <NavLink class="nav-item nav-item-admin" href="admin/features">
-                                <span class="nav-icon">🎛️</span> Feature Flags
+                                <VIcon Name="toggles" /> Feature Flags
                             </NavLink>
                         }
                         @if (ItemVisible("Numbering"))
                         {
                             <NavLink class="nav-item nav-item-admin" href="admin/numbering">
-                                <span class="nav-icon">🔢</span> Numbering
+                                <VIcon Name="hash" /> Numbering
                             </NavLink>
                         }
                         @if (ItemVisible("Branding"))
                         {
                             <NavLink class="nav-item nav-item-admin" href="admin/branding">
-                                <span class="nav-icon">🏷️</span> Branding
+                                <VIcon Name="tag" /> Branding
                             </NavLink>
                         }
                     }
@@ -415,25 +415,25 @@
                     @if (ItemVisible("Machines Admin"))
                     {
                         <NavLink class="nav-item nav-item-admin" href="admin/machines">
-                            <span class="nav-icon">🖥️</span> Machines Admin
+                            <VIcon Name="monitor" /> Machines Admin
                         </NavLink>
                     }
                     @if (ItemVisible("Machine Connections"))
                     {
                         <NavLink class="nav-item nav-item-admin" href="admin/machine-connections">
-                            <span class="nav-icon">🔌</span> Machine Connections
+                            <VIcon Name="plug" /> Machine Connections
                         </NavLink>
                     }
                     @if (ItemVisible("Debug Tools"))
                     {
                         <NavLink class="nav-item nav-item-admin" href="admin/debug">
-                            <span class="nav-icon">🛠️</span> Debug Tools
+                            <VIcon Name="tool" /> Debug Tools
                         </NavLink>
                     }
                     @if (ItemVisible("Issue Tracker"))
                     {
                         <NavLink class="nav-item nav-item-admin" href="admin/issues">
-                            <span class="nav-icon">🎯</span> Issue Tracker
+                            <VIcon Name="target" /> Issue Tracker
                         </NavLink>
                     }
                 </NavSection>
@@ -448,13 +448,13 @@
                         @if (ItemVisible("Tenants"))
                         {
                             <NavLink class="nav-item" href="platform/tenants">
-                                <span class="nav-icon">🏢</span> Tenants
+                                <VIcon Name="building" /> Tenants
                             </NavLink>
                         }
                         @if (ItemVisible("Platform Users"))
                         {
                             <NavLink class="nav-item" href="platform/users">
-                                <span class="nav-icon">👤</span> Platform Users
+                                <VIcon Name="user" /> Platform Users
                             </NavLink>
                         }
                     </NavSection>
@@ -465,7 +465,7 @@
     <NotAuthorized>
         <nav class="sidebar-nav">
             <NavLink class="nav-item" href="account/login" Match="NavLinkMatch.All">
-                <span class="nav-icon">🔑</span> Login
+                <VIcon Name="key" /> Login
             </NavLink>
         </nav>
     </NotAuthorized>
@@ -611,22 +611,26 @@
         return assignedIds.Split(',').Any(id => id.Trim() == stageId.ToString());
     }
 
-    private static string ResolveStageIcon(string? icon)
+    private static string ResolveStageVIcon(string? stageSlug)
     {
-        if (string.IsNullOrEmpty(icon)) return "⚙️";
-        if (!icon.StartsWith("fas ") && !icon.StartsWith("far ") && !icon.StartsWith("fa-")) return icon;
-        return icon switch
+        return stageSlug switch
         {
-            "fas fa-print"           => "🖨️",
-            "fas fa-wind"            => "💨",
-            "fas fa-fire"            => "🔥",
-            "fas fa-bolt"            => "⚡",
-            "fas fa-cog"             => "⚙️",
-            "fas fa-pen-nib"         => "✒️",
-            "fas fa-spray-can"       => "🎨",
-            "fas fa-clipboard-check" => "✅",
-            "fas fa-truck"           => "🚚",
-            _                        => "⚙️"
+            "sls-printing"     => "printer-3d",
+            "depowdering"      => "depowder",
+            "heat-treatment"   => "flame",
+            "wire-edm"         => "zap",
+            "cnc-machining"    => "cnc",
+            "cnc-turning"      => "cnc",
+            "laser-engraving"  => "laser",
+            "surface-finishing" => "sparkles",
+            "sandblasting"     => "sandblast",
+            "assembly"         => "assembly",
+            "external-coating" => "coating",
+            "oil-sleeve-assembly" => "sleeve",
+            "packaging-shipping" => "packing",
+            "qc"               => "shield-check",
+            "shipping"         => "truck",
+            _                  => "gear"
         };
     }
 }
