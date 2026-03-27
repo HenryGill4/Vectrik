@@ -242,7 +242,7 @@ app.MapGet("/healthz", () => Results.Ok(new { status = "healthy", timestamp = Da
     .AllowAnonymous();
 
 // Temporary diagnostic endpoint to check tenant auth state
-app.MapGet("/api/debug/auth-check", (PlatformDbContext platformDb) =>
+app.MapGet("/healthz/auth", (PlatformDbContext platformDb) =>
 {
     var debugDataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } debugHome
         ? Path.Combine(debugHome, "data") : "data";
@@ -264,7 +264,7 @@ app.MapGet("/api/debug/auth-check", (PlatformDbContext platformDb) =>
         results.Add(new { tenant = code, dbPath, exists, users });
     }
     return Results.Ok(new { dataRoot = debugDataRoot, tenants = results });
-}).AllowAnonymous();
+});
 
 // Logo upload endpoint
 var uploadsDir = Path.Combine(app.Environment.WebRootPath, "uploads", "logos");
