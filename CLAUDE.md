@@ -109,5 +109,6 @@ See `docs/BUGS-tracking.md` for the full bug tracker with 38 pages tested (2026-
 See `docs/FEEDBACK-scheduler-wizard.md` for detailed scheduler bug reports and UX recommendations.
 
 ### Active Bugs (as of 2026-03-27)
-- **BUG-001** [CRITICAL]: `/shopfloor` landing page crashes with 500 error for admin users
-- **BUG-002** [MEDIUM]: Machine Detail OEE KPI shows raw `0.ToString("F1")%` instead of formatted number
+- ~~**BUG-001** [CRITICAL]: `/shopfloor` landing page crashes — FIXED (VIcon missing CaptureUnmatchedValues)~~
+- ~~**BUG-002** [MEDIUM]: Razor `.ToString()` rendering as literal text — FIXED (78+ instances across 8 files)~~
+- All bugs from initial testing are now resolved. 400/400 tests pass.

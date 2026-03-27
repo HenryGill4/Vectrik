@@ -78,7 +78,7 @@
                                     @_selectedMachine.Status
                                     @if (_currentBuild != null)
                                     {
-                                        <span style="color: var(--text-muted); margin-left: 6px;">Printing until @_currentBuild.PrintEnd.ToLocalTime().ToString("ddd h:mm tt")</span>
+                                        <span style="color: var(--text-muted); margin-left: 6px;">Printing until @(_currentBuild.PrintEnd.ToLocalTime().ToString("ddd h:mm tt"))</span>
                                     }
                                 </div>
                             }
@@ -137,7 +137,7 @@
                             <div style="padding: 8px 10px; border-radius: 6px; font-size: 0.8rem; background: @(recAligned ? "rgba(var(--success-rgb, 46,160,67), 0.08)" : "rgba(var(--danger-rgb, 218,54,51), 0.08)"); border-left: 3px solid @(recAligned ? "var(--success)" : "var(--danger)");">
                                 <span style="font-weight: 600;">💡 Recommended:</span>
                                 @_recommendation.Rationale
-                                <span style="color: var(--text-muted); margin-left: 4px;">@_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d")</span>
+                                <span style="color: var(--text-muted); margin-left: 4px;">@(_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d"))</span>
                             </div>
                         }
                     </div>
@@ -295,9 +295,9 @@
                         {
                             <div style="margin-top: 12px; padding: 8px 10px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.78rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                 <span style="font-weight: 600;">Start:</span>
-                                <span>@ActiveSlot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                                <span>@(ActiveSlot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt"))</span>
                                 <span style="color: var(--text-muted);">→</span>
-                                <span>@ActiveSlot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                                <span>@(ActiveSlot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt"))</span>
                                 @if (ActiveChangeoverAligned)
                                 {
                                     <span style="color: var(--success); font-weight: 500;">✓ Safe</span>
@@ -524,8 +524,8 @@
                                     <div><span style="color: var(--text-muted);">Program:</span> <span style="font-weight: 600;">@(_selectedExistingProgram?.Name ?? _programName)</span></div>
                                     <div><span style="color: var(--text-muted);">Machine:</span> @(_selectedMachine?.Name ?? "Machine")</div>
                                     <div><span style="color: var(--text-muted);">Print Time:</span> @EffectivePrintHours.ToString("F1")h</div>
-                                    <div><span style="color: var(--text-muted);">Start:</span> @ActiveSlot?.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</div>
-                                    <div><span style="color: var(--text-muted);">Est. End:</span> @ActiveSlot?.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")</div>
+                                    <div><span style="color: var(--text-muted);">Start:</span> @(ActiveSlot?.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt"))</div>
+                                    <div><span style="color: var(--text-muted);">Est. End:</span> @(ActiveSlot?.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt"))</div>
                                     @{ var _confirmTotalParts = _plateAllocations.Sum(a => a.TotalParts); }
                                     <div><span style="color: var(--text-muted);">Total Parts:</span> @_confirmTotalParts @(_confirmTotalParts == 1 ? "part" : "parts")</div>
                                     <div><span style="color: var(--text-muted);">Part Types:</span> @_plateAllocations.Count</div>
@@ -589,7 +589,7 @@
                                                     <span style="color: var(--text-muted);">@opt.DurationHours.ToString("F1")h</span>
                                                 </div>
                                                 <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
-                                                    @opt.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt") → @opt.Slot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")
+                                                    @(opt.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")) → @(opt.Slot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt"))
                                                     @if (opt.ChangeoverAligned) { <span style="color: var(--success);">✓ Safe</span> }
                                                     else { <span style="color: var(--danger);">✗ No operator</span> }
                                                 </div>
