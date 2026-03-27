@@ -105,4 +105,9 @@ The scheduler should:
 6. Stack levels (single/double/triple) affect print duration and thus when changeover lands
 
 ## Known Bugs & Issues
-See `docs/FEEDBACK-scheduler-wizard.md` for detailed bug reports and UX recommendations.
+See `docs/BUGS-tracking.md` for the full bug tracker with 38 pages tested (2026-03-27).
+See `docs/FEEDBACK-scheduler-wizard.md` for detailed scheduler bug reports and UX recommendations.
+
+### Active Bugs (as of 2026-03-27)
+- **BUG-001** [CRITICAL]: `/shopfloor` landing page crashes with 500 error for admin users
+- **BUG-002** [MEDIUM]: Machine Detail OEE KPI shows raw `0.ToString("F1")%` instead of formatted number
