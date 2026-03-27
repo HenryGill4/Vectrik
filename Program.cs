@@ -233,18 +233,21 @@ app.UseMiddleware<TenantMiddleware>();
 app.UseAntiforgery();
 
 // Health check endpoint for Azure App Service monitoring
-app.MapGet("/healthz", (PlatformDbContext platformDb) =>
+app.MapGet("/healthz", () =>
 {
     var debugDataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } debugHome
         ? Path.Combine(debugHome, "data") : "data";
-    var tenants = platformDb.Tenants.Where(t => t.IsActive).Select(t => t.Code).ToList();
+    var tenantsDir = Path.Combine(debugDataRoot, "tenants");
+    var tenantFiles = Directory.Exists(tenantsDir)
+        ? Directory.GetFiles(tenantsDir, "*.db").Select(Path.GetFileName).ToList()
+        : new List<string?>();
+
     var results = new List<object>();
-    foreach (var code in tenants)
+    foreach (var file in tenantFiles)
     {
-        var dbPath = Path.Combine(debugDataRoot, "tenants", $"{code}.db");
-        var exists = File.Exists(dbPath);
+        var dbPath = Path.Combine(tenantsDir, file!);
         var users = new List<string>();
-        if (exists)
+        try
         {
             var opts = new DbContextOptionsBuilder<TenantDbContext>()
                 .UseSqlite($"Data Source={dbPath}")
@@ -252,7 +255,8 @@ app.MapGet("/healthz", (PlatformDbContext platformDb) =>
             using var tdb = new TenantDbContext(opts);
             users = tdb.Users.Select(u => $"{u.Username} (active={u.IsActive}, role={u.Role})").ToList();
         }
-        results.Add(new { tenant = code, dbPath, exists, users });
+        catch (Exception ex) { users.Add($"ERROR: {ex.Message}"); }
+        results.Add(new { file, dbPath, users });
     }
     return Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, dataRoot = debugDataRoot, tenants = results });
 }).AllowAnonymous();
