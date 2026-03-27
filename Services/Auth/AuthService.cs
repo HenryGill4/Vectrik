@@ -45,9 +45,12 @@ public class AuthService : IAuthService
             .Where(t => t.IsActive)
             .ToListAsync();
 
+        var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
+            ? Path.Combine(home, "data") : "data";
+
         foreach (var tenant in tenants)
         {
-            var dbPath = Path.Combine("data", "tenants", $"{tenant.Code}.db");
+            var dbPath = Path.Combine(dataRoot, "tenants", $"{tenant.Code}.db");
             if (!File.Exists(dbPath)) continue;
 
             var options = new DbContextOptionsBuilder<TenantDbContext>()
