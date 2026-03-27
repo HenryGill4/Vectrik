@@ -15,8 +15,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Platform DB
-var platformDbPath = Path.Combine("data", "platform.db");
+// Platform DB — use HOME path on Azure for writable storage, fallback to local "data" dir
+var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
+    ? Path.Combine(home, "data")
+    : "data";
+var platformDbPath = Path.Combine(dataRoot, "platform.db");
 var platformDir = Path.GetDirectoryName(platformDbPath);
 if (!string.IsNullOrEmpty(platformDir) && !Directory.Exists(platformDir))
     Directory.CreateDirectory(platformDir);
