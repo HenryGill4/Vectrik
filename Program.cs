@@ -145,10 +145,10 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
-        // Seed super admin if none exists
-        if (!platformDb.PlatformUsers.Any())
+        // Ensure platform admin exists
+        var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
+        if (!platformDb.PlatformUsers.Any(u => u.Username == "henry"))
         {
-            var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
             platformDb.PlatformUsers.Add(new Vectrik.Models.Platform.PlatformUser
             {
                 Username = "henry",
