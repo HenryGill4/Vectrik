@@ -62,14 +62,7 @@ public class MachineSyncService : BackgroundService
 
     private async Task PollTenantMachinesAsync(IServiceScope scope, string tenantCode, CancellationToken stoppingToken)
     {
-        var dbPath = Path.Combine("data", "tenants", $"{tenantCode}.db");
-        if (!File.Exists(dbPath)) return;
-
-        var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
-            .Options;
-
-        using var tenantDb = new TenantDbContext(options);
+        using var tenantDb = TenantDbContextFactory.CreateDbContext(tenantCode);
 
         var connectionSettings = await tenantDb.MachineConnectionSettings
             .Where(c => c.IsEnabled)
