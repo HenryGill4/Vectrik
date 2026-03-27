@@ -105,6 +105,64 @@ window.vectrik.debugFab = {
     }
 };
 
+// ── Navigation loading overlay ──
+(function () {
+    var overlay = null;
+    var timer = null;
+    var minTimer = null;
+    var showing = false;
+    // Minimum display time so the overlay doesn't just flash for 1 frame
+    var MIN_SHOW_MS = 250;
+    var showTime = 0;
+
+    function getOverlay() {
+        if (!overlay) overlay = document.getElementById('nav-loading');
+        return overlay;
+    }
+
+    window.vectrik.navLoading = {
+        show: function () {
+            var el = getOverlay();
+            if (!el || showing) return;
+            showing = true;
+            showTime = Date.now();
+            el.classList.add('nav-loading-active');
+            // Safety timeout — hide after 5s no matter what
+            clearTimeout(timer);
+            timer = setTimeout(function () { window.vectrik.navLoading.hide(); }, 5000);
+        },
+        hide: function () {
+            var el = getOverlay();
+            if (!el || !showing) return;
+            // Enforce minimum display time so fast navigations still show a brief flash
+            var elapsed = Date.now() - showTime;
+            if (elapsed < MIN_SHOW_MS) {
+                clearTimeout(minTimer);
+                minTimer = setTimeout(function () { window.vectrik.navLoading.hide(); }, MIN_SHOW_MS - elapsed);
+                return;
+            }
+            showing = false;
+            clearTimeout(timer);
+            clearTimeout(minTimer);
+            el.classList.remove('nav-loading-active');
+        }
+    };
+
+    // Auto-hide on Blazor enhanced navigation completion
+    if (typeof Blazor !== 'undefined' && Blazor.addEventListener) {
+        Blazor.addEventListener('enhancedload', function () { window.vectrik.navLoading.hide(); });
+    }
+    document.addEventListener('blazor:enhancedload', function () { window.vectrik.navLoading.hide(); });
+
+    // Intercept sidebar nav clicks to show overlay instantly (before Blazor round-trip)
+    document.addEventListener('click', function (e) {
+        var link = e.target.closest('.sidebar-nav a[href], .nav-item[href]');
+        if (link && link.getAttribute('href') && !link.getAttribute('href').startsWith('#')) {
+            window.vectrik.navLoading.show();
+        }
+    }, true);
+})();
+
 // ── Vectrik public site utilities ──
 window.vectrik = window.vectrik || {};
 

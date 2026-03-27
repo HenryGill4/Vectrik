@@ -108,6 +108,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Dismiss navigation loading overlay after every page render
+        try { await JS.InvokeVoidAsync("vectrik.navLoading.hide"); }
+        catch (JSDisconnectedException) { return; }
+        catch { }
+
         if (!firstRender) return;
 
         try

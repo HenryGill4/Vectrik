@@ -1624,6 +1624,68 @@ dialog#components-reconnect-modal button:hover {
     letter-spacing: 1px;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Navigation loading overlay — click shield during page transitions
+   ═══════════════════════════════════════════════════════════════ */
+.nav-loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(17, 24, 39, 0.55);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+[data-theme="light"] .nav-loading-overlay {
+    background: rgba(249, 250, 251, 0.6);
+}
+
+.nav-loading-overlay.nav-loading-active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: all;
+    cursor: wait;
+}
+
+.nav-loading-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 28px 36px;
+    background: var(--bg-secondary, #1F2937);
+    border: 1px solid var(--border, #374151);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    animation: nav-card-in 0.2s ease-out;
+}
+
+@keyframes nav-card-in {
+    from { opacity: 0; transform: scale(0.95) translateY(6px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.nav-loading-card .page-loading-spinner {
+    width: 44px;
+    height: 44px;
+}
+
+.nav-loading-card .page-loading-v {
+    width: 16px;
+    height: 16px;
+}
+
+.nav-loading-card .page-loading-text {
+    font-size: 13px;
+    margin: 0;
+}
+
 /* Tabs */
 .tab-bar {
     display: flex;

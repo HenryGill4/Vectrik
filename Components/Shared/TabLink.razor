@@ -1,5 +1,6 @@
 @inject TabManagerService Tabs
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <a href="@Url" class="@CssClass" @onclick="HandleClick" @onclick:preventDefault>@ChildContent</a>
 
@@ -19,10 +20,11 @@
     /// <summary>Content rendered inside the link.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    private void HandleClick()
+    private async Task HandleClick()
     {
         var title = string.IsNullOrWhiteSpace(Title) ? Url : Title;
         Tabs.Open(title, Icon, Url);
+        try { await JS.InvokeVoidAsync("vectrik.navLoading.show"); } catch { }
         Nav.NavigateTo(Url);
     }
 }
