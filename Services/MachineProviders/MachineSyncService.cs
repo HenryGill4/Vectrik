@@ -53,6 +53,10 @@ public class MachineSyncService : BackgroundService
             {
                 await PollTenantMachinesAsync(scope, tenant.Code, stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Error polling machines for tenant {TenantCode}.", tenant.Code);
