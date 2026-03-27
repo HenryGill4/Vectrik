@@ -2,7 +2,10 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @inject Vectrik.Data.TenantDbContext Db
 @inject ToastService Toast
+@inject Opcentrix_V3.Services.Platform.ITenantContext TenantContext
+@inject IWebHostEnvironment Env
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Forms
 @using System.Text.RegularExpressions
 
 <PageTitle>Company Branding - Admin - Vectrik</PageTitle>
@@ -29,15 +32,32 @@ else
                 <textarea class="form-control" rows="3" @bind="_companyAddress"></textarea>
             </div>
             <div class="form-group">
-                <label class="form-label">Logo URL</label>
-                <input class="form-control" @bind="_logoUrl" placeholder="/uploads/branding/logo.png" />
+                <label class="form-label">Company Logo</label>
                 @if (!string.IsNullOrWhiteSpace(_logoUrl))
                 {
-                    <div style="margin-top: 8px;">
-                        <img src="@_logoUrl" alt="Company Logo" style="max-height: 60px; border: 1px solid var(--border); border-radius: 4px; padding: 4px;"
-                             onerror="this.style.display='none'" />
+                    <div class="branding-logo-preview">
+                        <img src="@_logoUrl" alt="Company Logo" onerror="this.style.display='none'" />
+                        <button class="btn btn-sm btn-danger" @onclick="RemoveLogo" title="Remove logo">Remove</button>
                     </div>
                 }
+                <div class="file-upload-zone" style="margin-top: 8px;">
+                    <InputFile OnChange="UploadLogo" accept=".jpg,.jpeg,.png,.gif,.webp,.svg" />
+                    <div class="file-upload-label">
+                        @if (_uploadingLogo)
+                        {
+                            <span class="spinner" style="width: 16px; height: 16px;"></span> <span>Uploading...</span>
+                        }
+                        else
+                        {
+                            <span>Drop logo here or click to browse</span>
+                            <small style="display: block; color: var(--text-muted); margin-top: 4px;">JPG, PNG, GIF, WebP, or SVG (max 5MB)</small>
+                        }
+                    </div>
+                </div>
+                <details style="margin-top: 6px;">
+                    <summary style="font-size: 0.8rem; color: var(--text-muted); cursor: pointer;">Or enter URL manually</summary>
+                    <input class="form-control" style="margin-top: 4px;" @bind="_logoUrl" placeholder="/uploads/branding/logo.png" />
+                </details>
             </div>
         </div>
     </div>
@@ -74,7 +94,7 @@ else
 }
 
 @code {
-    private bool _loading = true, _saving;
+    private bool _loading = true, _saving, _uploadingLogo;
     private string _companyName = "";
     private string _companyAddress = "";
     private string _logoUrl = "";
@@ -82,6 +102,9 @@ else
     private string _dodaac = "";
     private string _duns = "";
     private Dictionary<string, string> _validationErrors = new();
+
+    private static readonly HashSet<string> AllowedLogoExts = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
+    private const long MaxLogoSizeBytes = 5 * 1024 * 1024; // 5MB
 
     protected override async Task OnInitializedAsync()
     {
@@ -129,6 +152,67 @@ else
         }
         catch (Exception ex) { Toast.ShowError($"Save failed: {ex.Message}"); }
         finally { _saving = false; }
+    }
+
+    private async Task UploadLogo(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+
+        if (!AllowedLogoExts.Contains(ext))
+        {
+            Toast.ShowError("Invalid file type. Use JPG, PNG, GIF, WebP, or SVG.");
+            return;
+        }
+        if (file.Size > MaxLogoSizeBytes)
+        {
+            Toast.ShowError("File too large. Maximum 5MB.");
+            return;
+        }
+
+        _uploadingLogo = true;
+        try
+        {
+            var tenantCode = TenantContext.TenantCode;
+            var uploadDir = Path.Combine(Env.WebRootPath, "uploads", "branding", tenantCode);
+            Directory.CreateDirectory(uploadDir);
+
+            var safeFileName = $"{Guid.NewGuid()}{ext}";
+            var filePath = Path.Combine(uploadDir, safeFileName);
+            var relativeUrl = $"/uploads/branding/{tenantCode}/{safeFileName}";
+
+            await using var stream = new FileStream(filePath, FileMode.Create);
+            await file.OpenReadStream(MaxLogoSizeBytes).CopyToAsync(stream);
+
+            // Delete old logo file if it was an uploaded file
+            DeleteOldLogoFile();
+
+            _logoUrl = relativeUrl;
+            Toast.ShowSuccess("Logo uploaded.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Upload failed: {ex.Message}");
+        }
+        finally
+        {
+            _uploadingLogo = false;
+        }
+    }
+
+    private void RemoveLogo()
+    {
+        DeleteOldLogoFile();
+        _logoUrl = "";
+    }
+
+    private void DeleteOldLogoFile()
+    {
+        if (string.IsNullOrWhiteSpace(_logoUrl) || !_logoUrl.StartsWith("/uploads/"))
+            return;
+        var fullPath = Path.Combine(Env.WebRootPath, _logoUrl.TrimStart('/'));
+        if (File.Exists(fullPath))
+            File.Delete(fullPath);
     }
 
     private async Task UpsertSetting(string key, string value, string category, string description)

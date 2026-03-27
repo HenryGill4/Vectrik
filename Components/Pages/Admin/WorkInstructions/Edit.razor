@@ -2,6 +2,7 @@
 @inject IWorkInstructionService InstructionService
 @inject ToastService Toast
 @inject NavigationManager Nav
+@inject Opcentrix_V3.Services.Platform.ITenantContext TenantContext
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
 
 <PageTitle>Edit Work Instruction - Vectrik</PageTitle>
@@ -111,30 +112,49 @@ else
 
                     @* ── Media ── *@
                     <div style="margin-top: 8px;">
-                        <label class="form-label">📎 Media (@step.Media.Count)</label>
+                        <label class="form-label">Media (@step.Media.Count)</label>
                         @if (step.Media.Any())
                         {
                             <div class="wi-media-grid">
                                 @foreach (var media in step.Media.OrderBy(m => m.DisplayOrder))
                                 {
-                                    <div class="wi-media-item">
+                                    <div class="wi-media-card">
                                         @if (media.MediaType == MediaType.Image)
                                         {
-                                            <img src="@media.FileUrl" alt="@(media.AltText ?? media.FileName)" style="max-width: 120px; max-height: 80px; border-radius: 4px; object-fit: cover;" />
+                                            <img src="@media.FileUrl" alt="@(media.AltText ?? media.FileName)" class="wi-media-thumb" />
+                                        }
+                                        else if (media.MediaType == MediaType.Video)
+                                        {
+                                            <div class="wi-media-file-icon">
+                                                <span style="font-size: 1.4rem;">🎬</span>
+                                                <span class="wi-media-file-name">@media.FileName</span>
+                                            </div>
                                         }
                                         else
                                         {
-                                            <div style="padding: 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.8rem;">
-                                                @(media.MediaType == MediaType.Video ? "🎬" : "📄") @media.FileName
+                                            <div class="wi-media-file-icon">
+                                                <span style="font-size: 1.4rem;">📄</span>
+                                                <span class="wi-media-file-name">@media.FileName</span>
                                             </div>
                                         }
-                                        <button class="btn btn-sm btn-danger" style="padding: 2px 6px; font-size: 0.7rem;" @onclick="() => DeleteMedia(media.Id)">✕</button>
+                                        <button class="btn btn-sm btn-danger wi-media-delete" @onclick="() => DeleteMedia(media.Id)" title="Remove">✕</button>
                                     </div>
                                 }
                             </div>
                         }
-                        <div style="margin-top: 6px;">
+                        <div class="file-upload-zone wi-upload-zone" style="margin-top: 8px;">
                             <InputFile OnChange="(e) => UploadMedia(step.Id, e)" accept=".jpg,.jpeg,.png,.gif,.webp,.mp4,.webm,.pdf" />
+                            <div class="file-upload-label">
+                                @if (_uploadingStepId == step.Id)
+                                {
+                                    <span class="spinner" style="width: 16px; height: 16px;"></span> <span>Uploading...</span>
+                                }
+                                else
+                                {
+                                    <span>Drop photos, videos, or PDFs here</span>
+                                    <small style="display: block; color: var(--text-muted); margin-top: 2px;">Max 50MB per file</small>
+                                }
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -290,18 +310,24 @@ else
         }
     }
 
+    private int? _uploadingStepId;
+
     private async Task UploadMedia(int stepId, InputFileChangeEventArgs e)
     {
+        _uploadingStepId = stepId;
         try
         {
-            // TODO: Get tenantCode from circuit/session — using "default" for now
-            await InstructionService.UploadMediaAsync(stepId, e.File, "default");
+            await InstructionService.UploadMediaAsync(stepId, e.File, TenantContext.TenantCode);
             _instruction = await InstructionService.GetByIdAsync(Id);
             Toast.ShowSuccess($"Uploaded {e.File.Name}");
         }
         catch (Exception ex)
         {
             Toast.ShowError($"Upload failed: {ex.Message}");
+        }
+        finally
+        {
+            _uploadingStepId = null;
         }
     }
 
