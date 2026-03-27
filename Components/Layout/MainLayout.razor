@@ -3,11 +3,13 @@
 @inject IUserSettingsService SettingsService
 @inject TabManagerService TabManager
 @inject NavigationManager Nav
+@inject Vectrik.Data.TenantDbContext Db
 @implements IDisposable
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
 
-<div class="app-container @(_sidebarCollapsed ? "sidebar-collapsed" : "")">
+<div class="app-container @(_sidebarCollapsed ? "sidebar-collapsed" : "")" style="@_iconColorStyle">
     <aside class="sidebar">
         <div class="sidebar-header">
             <img src="/uploads/logos/vectrik-icon.svg" alt="Vectrik" class="sidebar-brand-icon" />
@@ -61,6 +63,7 @@
 
     private bool _sidebarCollapsed;
     private string _themePreference = "dark";
+    private string _iconColorStyle = "";
     private int _userId;
 
     /// <summary>
@@ -99,11 +102,23 @@
         ["admin/stages"] = ("Stage Config", "🔧"),
     };
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         TabManager.EnsureHomeTab();
         SyncTabFromCurrentUrl();
         Nav.LocationChanged += OnLocationChanged;
+
+        // Load tenant-custom icon color
+        try
+        {
+            var iconColor = await Db.SystemSettings
+                .Where(s => s.Key == "branding.nav_icon_color")
+                .Select(s => s.Value)
+                .FirstOrDefaultAsync();
+            if (!string.IsNullOrWhiteSpace(iconColor))
+                _iconColorStyle = $"--nav-icon-color: {iconColor};";
+        }
+        catch { /* In-memory DB or no tenant — use default */ }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
