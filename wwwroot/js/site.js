@@ -108,6 +108,14 @@ window.vectrik.debugFab = {
 // ── Vectrik public site utilities ──
 window.vectrik = window.vectrik || {};
 
+window.vectrik.toggleMobileMenu = function () {
+    var btn = document.getElementById('pub-hamburger-btn');
+    var menu = document.getElementById('pub-mobile-menu');
+    if (!btn || !menu) return;
+    var isOpen = menu.classList.toggle('pub-nav-links-open');
+    btn.classList.toggle('pub-hamburger-open', isOpen);
+};
+
 window.vectrik.initPublicNav = function () {
     var nav = document.querySelector('.pub-nav');
     if (!nav) return;
