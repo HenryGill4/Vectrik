@@ -144,7 +144,7 @@
     }
 
     private static bool IsHomeDashboard(TabInfo tab) =>
-        tab.Pinned && tab.Url.TrimStart('/') is "" or "/";
+        tab.Pinned && tab.Url.TrimStart('/').ToLowerInvariant() is "" or "/" or "dashboard";
 
     private async Task ActivateTab(TabInfo tab)
     {
@@ -179,17 +179,16 @@
         Tabs.CloseAll();
         var active = Tabs.ActiveTab;
         try { await JS.InvokeVoidAsync("vectrik.navLoading.show"); } catch { }
-        Nav.NavigateTo(active?.Url ?? "/");
+        Nav.NavigateTo(active?.Url ?? "/dashboard");
         _showOverflow = false;
     }
 
     private void ToggleOverflowMenu() => _showOverflow = !_showOverflow;
     private void CloseOverflowMenu() => _showOverflow = false;
 
-    private void OverflowActivate(TabInfo tab)
+    private async Task OverflowActivate(TabInfo tab)
     {
-        ActivateTab(tab);
-        _showOverflow = false;
+        await ActivateTab(tab);
     }
 
     private void OverflowClose(TabInfo tab)
@@ -259,7 +258,7 @@
     private void NavigateToActiveOrHome()
     {
         var active = Tabs.ActiveTab;
-        Nav.NavigateTo(active?.Url ?? "/");
+        Nav.NavigateTo(active?.Url ?? "/dashboard");
     }
 
     private async void HandleTabChange()

@@ -174,7 +174,7 @@ public sealed class TabManagerService
         if (tab is null) return;
 
         // Don't allow unpinning the home/dashboard tab
-        if (tab.Pinned && NormalizeUrl(tab.Url) == "")
+        if (tab.Pinned && NormalizeUrl(tab.Url) == "dashboard")
             return;
 
         tab.Pinned = !tab.Pinned;
@@ -230,7 +230,7 @@ public sealed class TabManagerService
     public void EnsureHomeTab()
     {
         if (_tabs.Count != 0) return;
-        Open("Dashboard", "📊", "/", pinned: true);
+        Open("Dashboard", "📊", "/dashboard", pinned: true);
     }
 
     /// <summary>
@@ -251,7 +251,10 @@ public sealed class TabManagerService
     private static string NormalizeUrl(string url)
     {
         var trimmed = url.TrimStart('/').ToLowerInvariant();
-        return string.IsNullOrEmpty(trimmed) ? "" : trimmed;
+        // Treat root "/" and "/dashboard" as equivalent
+        if (string.IsNullOrEmpty(trimmed) || trimmed == "dashboard")
+            return "dashboard";
+        return trimmed;
     }
 
     private void ActivateNearestAfterBulkClose()
