@@ -28,7 +28,7 @@
     --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
     --transition-fast: 0.15s ease;
     --transition-normal: 0.25s ease;
-    --gantt-label-w: 180px;
+    --gantt-label-w: 200px;
 
     /* Bootstrap overrides for dark theme */
     --bs-body-color: #F9FAFB;
@@ -2090,12 +2090,24 @@ select.form-control {
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* Priority colors */
+/* Priority colors — use per-part hue when --job-hue is set, fall back to priority gradient */
 .gantt-bar-emergency { background: linear-gradient(135deg, #DC2626, #B91C1C); }
 .gantt-bar-rush { background: linear-gradient(135deg, #EF4444, #DC2626); }
 .gantt-bar-high { background: linear-gradient(135deg, #F97316, #EA580C); }
 .gantt-bar-normal { background: linear-gradient(135deg, #3B82F6, #2563EB); }
 .gantt-bar-low { background: linear-gradient(135deg, #6B7280, #4B5563); }
+
+/* When --job-hue is set, use per-part color so all stages of the same part share a hue */
+.gantt-bar[style*="--job-hue"] {
+    background: linear-gradient(135deg,
+        hsl(var(--job-hue), 55%, 45%),
+        hsl(var(--job-hue), 60%, 35%));
+}
+.gantt-bar-emergency[style*="--job-hue"] {
+    background: linear-gradient(135deg,
+        hsl(var(--job-hue), 80%, 40%),
+        hsl(var(--job-hue), 85%, 30%));
+}
 .gantt-bar-unassigned {
     background: linear-gradient(135deg, #4B5563, #374151);
     border: 2px dashed var(--warning);
@@ -2162,6 +2174,7 @@ select.form-control {
     margin-right: auto;
 }
 .gantt-build-bar {
+    position: relative;
     top: 0;
     left: 0;
     width: 100%;
@@ -2174,7 +2187,7 @@ select.form-control {
     transition: opacity var(--transition-fast), transform var(--transition-fast);
     display: flex;
     align-items: center;
-    padding: 0 8px;
+    padding: 0 8px 4px;
     overflow: hidden;
 }
 .gantt-build-bar:hover {
@@ -2212,6 +2225,64 @@ select.form-control {
     text-overflow: ellipsis;
     color: rgba(255,255,255,0.75);
     text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+}
+
+/* Build bar — use primary part hue when set (scheduled builds only) */
+.gantt-build-scheduled[style*="--build-hue"] {
+    background: linear-gradient(135deg,
+        hsl(var(--build-hue), 45%, 35%),
+        hsl(var(--build-hue), 50%, 25%));
+    border-left-color: hsl(var(--build-hue), 55%, 20%);
+}
+
+/* Part composition stripe at bottom of build bar */
+.gantt-build-stripe {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    display: flex;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    overflow: hidden;
+}
+.gantt-build-stripe-seg {
+    height: 100%;
+    min-width: 3px;
+}
+
+/* Inline part tags in build bar detail line */
+.gantt-build-parts-inline {
+    display: inline-flex;
+    gap: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+.gantt-build-part-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 0.58rem;
+    font-weight: 600;
+    line-height: 1.4;
+    background: hsla(var(--part-hue), 60%, 45%, 0.5);
+    color: hsl(var(--part-hue), 70%, 90%);
+    white-space: nowrap;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gantt-build-part-qty {
+    opacity: 0.75;
+    font-weight: 400;
+    font-size: 0.55rem;
+}
+.gantt-build-part-more {
+    font-size: 0.55rem;
+    opacity: 0.65;
+    white-space: nowrap;
 }
 
 /* Build bar popover */
@@ -2301,6 +2372,24 @@ select.form-control {
 .gantt-build-popover-part-qty {
     color: var(--text-muted);
     font-size: 0.72rem;
+}
+.gantt-build-popover-part-wo {
+    font-size: 0.7rem;
+    color: var(--accent);
+    width: 100%;
+    margin-top: 1px;
+}
+.gantt-build-popover-part {
+    flex-wrap: wrap;
+}
+.gantt-build-popover-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 149;
+    background: transparent;
 }
 .gantt-build-scheduled {
     background: linear-gradient(135deg, #7C3AED, #6D28D9);
@@ -7087,6 +7176,22 @@ select.form-control {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Wizard Step Indicator */
+/* Advisor modal: fixed header+steps, scrollable body */
+.advisor-modal {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* disable default modal-content scroll */
+}
+.advisor-modal-fixed {
+    flex-shrink: 0;
+}
+.advisor-modal-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0; /* allow flex child to shrink below content */
+    padding-bottom: 8px;
+}
+
 .wizard-steps {
     display: flex;
     align-items: center;

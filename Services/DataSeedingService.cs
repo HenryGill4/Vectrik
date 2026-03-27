@@ -457,6 +457,197 @@ public class DataSeedingService : IDataSeedingService
         if (stagesAdded > 0 || stagesUpdated > 0)
             await db.SaveChangesAsync();
 
+        // ── Fix: correct duration modes to match processing level ──
+        // Duration modes must align: Build→PerBuild, Batch→PerBatch, Part→PerPart.
+        // Mismatches cause wildly inflated durations (e.g., 50h depowder instead of 50min).
+        var allProcessStages = await db.ProcessStages
+            .Where(ps => !ps.DurationFromBuildConfig)
+            .ToListAsync();
+
+        var fixCount = 0;
+        foreach (var ps in allProcessStages)
+        {
+            var expectedRunMode = ps.ProcessingLevel switch
+            {
+                ProcessingLevel.Build => DurationMode.PerBuild,
+                ProcessingLevel.Batch => DurationMode.PerBatch,
+                ProcessingLevel.Part => DurationMode.PerPart,
+                _ => ps.RunDurationMode
+            };
+
+            if (ps.RunDurationMode != DurationMode.None && ps.RunDurationMode != expectedRunMode)
+            {
+                ps.RunDurationMode = expectedRunMode;
+                ps.LastModifiedDate = DateTime.UtcNow;
+                fixCount++;
+            }
+
+            // Also fix setup mode if it's mismatched (setup should match level or be None)
+            if (ps.SetupDurationMode != DurationMode.None && ps.SetupDurationMode != expectedRunMode
+                && ps.SetupTimeMinutes.HasValue)
+            {
+                ps.SetupDurationMode = expectedRunMode;
+                ps.LastModifiedDate = DateTime.UtcNow;
+            }
+        }
+
+        if (fixCount > 0)
+            await db.SaveChangesAsync();
+
+        // Also recalculate EstimatedHours on existing StageExecutions that used the
+        // broken PerPart durations for build-level stages. These have inflated hours
+        // (e.g., 50h depowder for 60 parts when it should be ~1h per build).
+        {
+            var inflatedExecutions = await db.StageExecutions
+                .Include(se => se.ProcessStage)
+                .Where(se => se.ProcessStageId != null
+                    && se.ProcessStage!.ProcessingLevel == ProcessingLevel.Build
+                    && !se.ProcessStage.DurationFromBuildConfig
+                    && se.Status == StageExecutionStatus.NotStarted
+                    && se.ProcessStage.RunTimeMinutes.HasValue)
+                .ToListAsync();
+
+            foreach (var se in inflatedExecutions)
+            {
+                var ps = se.ProcessStage!;
+                var setupMins = ps.SetupTimeMinutes ?? 0;
+                var runMins = ps.RunTimeMinutes ?? 0;
+                // PerBuild: duration = setup + run (flat, not multiplied by part count)
+                var correctHours = (setupMins + runMins) / 60.0;
+
+                if (se.EstimatedHours.HasValue && Math.Abs(se.EstimatedHours.Value - correctHours) > 0.5)
+                {
+                    se.EstimatedHours = correctHours;
+                    // Recalculate end time based on corrected duration
+                    if (se.ScheduledStartAt.HasValue)
+                        se.ScheduledEndAt = se.ScheduledStartAt.Value.AddHours(correctHours);
+                    se.LastModifiedDate = DateTime.UtcNow;
+                }
+            }
+
+            if (inflatedExecutions.Any())
+                await db.SaveChangesAsync();
+        }
+
+        // ── Restore SLS print execution times from MachineProgram schedule ──
+        // The re-sequencing pass may have moved SLS print stage times. Restore them
+        // to match the MachineProgram.ScheduledDate + EstimatedPrintHours.
+        {
+            var slsPrintExecs = await db.StageExecutions
+                .Include(se => se.MachineProgram)
+                .Where(se => se.MachineProgramId != null
+                    && se.MachineProgram!.ProgramType == ProgramType.BuildPlate
+                    && se.MachineProgram.ScheduledDate != null
+                    && se.MachineProgram.EstimatedPrintHours != null
+                    && se.Status == StageExecutionStatus.NotStarted)
+                .ToListAsync();
+
+            foreach (var se in slsPrintExecs)
+            {
+                var expectedStart = se.MachineProgram!.ScheduledDate!.Value;
+                var expectedEnd = expectedStart.AddHours(se.MachineProgram.EstimatedPrintHours!.Value);
+                if (se.ScheduledStartAt != expectedStart || se.ScheduledEndAt != expectedEnd)
+                {
+                    se.ScheduledStartAt = expectedStart;
+                    se.ScheduledEndAt = expectedEnd;
+                    se.EstimatedHours = se.MachineProgram.EstimatedPrintHours;
+                    se.LastModifiedDate = DateTime.UtcNow;
+                }
+            }
+            if (slsPrintExecs.Any(se => db.Entry(se).State == Microsoft.EntityFrameworkCore.EntityState.Modified))
+                await db.SaveChangesAsync();
+        }
+
+        // ── Re-sequence downstream build-level stages ──
+        // The duration fix above corrected EstimatedHours but left ScheduledStartAt
+        // based on old collision chains (inflated predecessor blocks). Rebuild the
+        // schedule so depowder/heat-treatment/wire-EDM stack back-to-back.
+        {
+            var shifts = await db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+
+            // Load all jobs that have NotStarted downstream build-level stages
+            var jobsWithDownstream = await db.Jobs
+                .Include(j => j.Stages.OrderBy(se => se.SortOrder))
+                .Where(j => j.Scope == JobScope.Build
+                    && j.Stages.Any(se => se.Status == StageExecutionStatus.NotStarted
+                        && se.ProcessStageId != null))
+                .ToListAsync();
+
+            // Track the end watermark for each machine (when that machine is next free)
+            // Only seed from actively-running executions (InProgress) — not old completed/paused ones
+            var machineWatermarks = new Dictionary<int, DateTime>();
+            var activeBlocks = await db.StageExecutions
+                .Where(se => se.MachineId != null && se.ScheduledEndAt != null
+                    && se.Status == StageExecutionStatus.InProgress)
+                .GroupBy(se => se.MachineId!.Value)
+                .Select(g => new { MachineId = g.Key, LatestEnd = g.Max(se => se.ScheduledEndAt!.Value) })
+                .ToListAsync();
+            foreach (var b in activeBlocks)
+                machineWatermarks[b.MachineId] = b.LatestEnd;
+
+            // Sort jobs by their SLS print end time (earliest builds get post-processed first)
+            var sortedJobs = jobsWithDownstream
+                .OrderBy(j => j.Stages
+                    .Where(se => se.Status != StageExecutionStatus.NotStarted && se.ScheduledEndAt.HasValue)
+                    .Select(se => se.ScheduledEndAt!.Value)
+                    .DefaultIfEmpty(j.ScheduledEnd)
+                    .Max())
+                .ToList();
+
+            var resequenced = 0;
+            foreach (var job in sortedJobs)
+            {
+                // Find the chain start: SLS print end (which may be NotStarted but has correct times),
+                // or last completed/in-progress stage end
+                var predecessorEnd = job.Stages
+                    .Where(se => se.MachineProgramId.HasValue && se.ScheduledEndAt.HasValue) // SLS print stage
+                    .Select(se => se.ScheduledEndAt!.Value)
+                    .Concat(job.Stages
+                        .Where(se => se.Status != StageExecutionStatus.NotStarted && se.ScheduledEndAt.HasValue)
+                        .Select(se => se.ScheduledEndAt!.Value))
+                    .DefaultIfEmpty(job.ScheduledEnd)
+                    .Max();
+
+                var jobCursor = predecessorEnd;
+
+                foreach (var se in job.Stages.Where(se => se.Status == StageExecutionStatus.NotStarted))
+                {
+                    if (!se.MachineId.HasValue || !se.EstimatedHours.HasValue) continue;
+
+                    // Skip SLS print stages — their timing is set by the program scheduler
+                    // and must match the MachineProgram.ScheduledDate
+                    if (se.MachineProgramId.HasValue) continue;
+
+                    var machineId = se.MachineId.Value;
+                    var hours = se.EstimatedHours.Value;
+
+                    // Start = later of (previous stage in this job ended) and (machine is free)
+                    var earliest = jobCursor;
+                    if (machineWatermarks.TryGetValue(machineId, out var machineEnd) && machineEnd > earliest)
+                        earliest = machineEnd;
+
+                    // Snap to shift (operators required for post-process)
+                    var start = ShiftTimeHelper.SnapToNextShiftStart(earliest, shifts);
+                    var end = ShiftTimeHelper.AdvanceByWorkHours(start, hours, shifts);
+
+                    if (se.ScheduledStartAt != start || se.ScheduledEndAt != end)
+                    {
+                        se.ScheduledStartAt = start;
+                        se.ScheduledEndAt = end;
+                        se.LastModifiedDate = DateTime.UtcNow;
+                        resequenced++;
+                    }
+
+                    // Update watermarks
+                    machineWatermarks[machineId] = end;
+                    jobCursor = end;
+                }
+            }
+
+            if (resequenced > 0)
+                await db.SaveChangesAsync();
+        }
+
         return new SeedResult(machinesAdded, machinesUpdated, stagesAdded, stagesUpdated);
     }
 
