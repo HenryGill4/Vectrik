@@ -233,11 +233,7 @@ app.UseMiddleware<TenantMiddleware>();
 app.UseAntiforgery();
 
 // Health check endpoint for Azure App Service monitoring
-app.MapGet("/healthz", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
-    .AllowAnonymous();
-
-// Temporary diagnostic endpoint to check tenant auth state
-app.MapGet("/debug-auth-9x7k", (PlatformDbContext platformDb) =>
+app.MapGet("/healthz", (PlatformDbContext platformDb) =>
 {
     var debugDataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } debugHome
         ? Path.Combine(debugHome, "data") : "data";
@@ -258,7 +254,7 @@ app.MapGet("/debug-auth-9x7k", (PlatformDbContext platformDb) =>
         }
         results.Add(new { tenant = code, dbPath, exists, users });
     }
-    return Results.Ok(new { dataRoot = debugDataRoot, tenants = results });
+    return Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, dataRoot = debugDataRoot, tenants = results });
 }).AllowAnonymous();
 
 app.MapStaticAssets().AllowAnonymous();
