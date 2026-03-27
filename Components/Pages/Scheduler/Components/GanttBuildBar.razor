@@ -20,12 +20,19 @@
     var durationStr = Build.EstimatedPrintHours.HasValue ? $"{Build.EstimatedPrintHours.Value:F1}h" : "";
     var partLabel = Build.TotalPartCount == 1 ? "part" : "parts";
     var isNarrow = BarWidthPx < 120;
+    var isMedium = BarWidthPx >= 120 && BarWidthPx < 200;
+    var parts = Build.ProgramParts?.OrderByDescending(p => p.Quantity * p.StackLevel).ToList() ?? [];
+    var primaryHue = parts.FirstOrDefault()?.PartId is int pid ? GetPartHue(pid) : -1;
+    var hueStyle = primaryHue >= 0 && Build.ScheduleStatus == ProgramScheduleStatus.Scheduled
+        ? $"--build-hue: {primaryHue};"
+        : "";
 }
 <div class="gantt-build-bar-wrapper @(_showPopover ? "popover-open" : "")" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
      data-program-id="@Build.Id"
      data-bar-type="build"
      data-machine-id="@Build.MachineId">
     <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "")"
+         style="@hueStyle"
          title="@ComputeTooltip()"
          @onclick="TogglePopover"
          @onclick:stopPropagation="true">
@@ -45,7 +52,34 @@
         {
             <div class="gantt-build-bar-content">
                 <span class="gantt-build-bar-title">@statusIcon @Build.Name</span>
-                <span class="gantt-build-bar-detail">@Build.TotalPartCount @partLabel · @durationStr</span>
+                <span class="gantt-build-bar-detail">
+                    @Build.TotalPartCount @partLabel · @durationStr
+                    @if (!isMedium && parts.Count > 0)
+                    {
+                        <span class="gantt-build-parts-inline">
+                            @foreach (var pp in parts.Take(3))
+                            {
+                                <span class="gantt-build-part-tag" style="--part-hue: @GetPartHue(pp.PartId);" title="@(pp.Part?.PartNumber ?? "?") ×@(pp.Quantity * pp.StackLevel)">@(pp.Part?.PartNumber ?? "?")<span class="gantt-build-part-qty">×@(pp.Quantity * pp.StackLevel)</span></span>
+                            }
+                            @if (parts.Count > 3)
+                            {
+                                <span class="gantt-build-part-more">+@(parts.Count - 3)</span>
+                            }
+                        </span>
+                    }
+                </span>
+            </div>
+        }
+        @* ── Part composition stripe at bottom of bar ── *@
+        @if (parts.Count > 0)
+        {
+            var totalQty = parts.Sum(p => p.Quantity * p.StackLevel);
+            <div class="gantt-build-stripe">
+                @foreach (var pp in parts)
+                {
+                    var pct = totalQty > 0 ? (pp.Quantity * pp.StackLevel * 100.0 / totalQty) : 0;
+                    <div class="gantt-build-stripe-seg" style="width: @(pct.ToString("F1", CultureInfo.InvariantCulture))%; background: hsl(@GetPartHue(pp.PartId), 65%, 50%);" title="@(pp.Part?.PartNumber ?? "?") — @(pp.Quantity * pp.StackLevel) parts (@(pct.ToString("F0"))%)"></div>
+                }
             </div>
         }
     </div>
@@ -87,10 +121,11 @@
 
     @if (_showPopover)
     {
+        <div class="gantt-build-popover-backdrop" @onclick="() => _showPopover = false" @onclick:stopPropagation="true"></div>
         <div class="gantt-build-popover" @onclick:stopPropagation="true">
             <div class="gantt-build-popover-header">
                 <strong>@statusIcon @Build.Name</strong>
-                <button class="gantt-build-popover-close" @onclick="() => _showPopover = false">✕</button>
+                <button class="gantt-build-popover-close" @onclick="() => _showPopover = false" @onclick:stopPropagation="true">✕</button>
             </div>
             <div class="gantt-build-popover-body">
                 <div class="gantt-build-popover-row">
@@ -101,6 +136,12 @@
                 <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Print Time</span><span>@(Build.EstimatedPrintHours?.ToString("F1") ?? "?")h</span></div>
                 <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Start</span><span>@Start.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span></div>
                 <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">End</span><span>@End.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span></div>
+                @if (Build.EstimatedPrintHours.HasValue)
+                {
+                    var costPerHour = 200m; // EOS M4 Onyx hourly rate
+                    var estCost = (decimal)Build.EstimatedPrintHours.Value * costPerHour;
+                    <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Est. Cost</span><span>@estCost.ToString("C0")</span></div>
+                }
                 @if (ChangeoverMinutes > 0)
                 {
                     <div class="gantt-build-popover-row">
@@ -129,9 +170,14 @@
                     <div class="gantt-build-popover-parts">
                         @foreach (var pp in Build.ProgramParts)
                         {
+                            var woRefs = pp.WorkOrderLine?.WorkOrder;
                             <div class="gantt-build-popover-part">
                                 <span class="gantt-build-popover-part-num">@(pp.Part?.PartNumber ?? $"Part #{pp.PartId}")</span>
                                 <span class="gantt-build-popover-part-qty">@(pp.Quantity * pp.StackLevel) parts (@pp.Quantity pos × @pp.StackLevel high)</span>
+                                @if (woRefs != null)
+                                {
+                                    <span class="gantt-build-popover-part-wo">@woRefs.OrderNumber — @woRefs.CustomerName</span>
+                                }
                             </div>
                         }
                     </div>
@@ -180,6 +226,9 @@
     private bool _showPopover;
 
     private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
+
+    /// <summary>Same golden-angle hue as GanttBar.GetJobHue — ensures build bars match their downstream stage bars.</summary>
+    private static int GetPartHue(int partId) => partId > 0 ? (int)((partId * 137.508) % 360) : -1;
 
     private void TogglePopover() => _showPopover = !_showPopover;
 

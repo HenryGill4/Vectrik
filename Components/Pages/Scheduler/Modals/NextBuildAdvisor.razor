@@ -7,6 +7,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using Opcentrix_V3.Components.Pages.Scheduler.Models
 @using Opcentrix_V3.Components.Pages.Scheduler.Components
+@inject IJSRuntime JS
 @inject IBuildAdvisorService Advisor
 @inject IProgramSchedulingService ProgramScheduling
 @inject IProgramPlanningService ProgramPlanning
@@ -18,17 +19,17 @@
 @if (IsVisible)
 {
     <div class="modal-overlay" @onclick="Close">
-        <div class="modal-content modal-lg" @onclick:stopPropagation>
-            <div class="modal-header">
-                <h3 class="modal-title">@StepTitle</h3>
-                @if (_sessionBuilds > 0)
-                {
-                    <span class="badge badge-success" style="margin-left: 8px;">@_sessionBuilds scheduled this session</span>
-                }
-                <button class="btn-icon" @onclick="Close">&#x2715;</button>
-            </div>
+        <div class="modal-content modal-lg advisor-modal" @onclick:stopPropagation>
+            <div class="advisor-modal-fixed">
+                <div class="modal-header">
+                    <h3 class="modal-title">@StepTitle</h3>
+                    @if (_sessionBuilds > 0)
+                    {
+                        <span class="badge badge-success" style="margin-left: 8px;">@_sessionBuilds scheduled this session</span>
+                    }
+                    <button class="btn-icon" @onclick="Close">&#x2715;</button>
+                </div>
 
-            <div class="modal-body">
                 @* ── Step Indicator ── *@
                 <div class="wizard-steps">
                     @for (var i = 0; i < ActiveSteps.Length; i++)
@@ -47,12 +48,15 @@
                     }
                 </div>
 
+            </div>@* end advisor-modal-fixed *@
+
+            <div class="advisor-modal-scroll">
                 @if (_loading)
                 {
                     <div class="wizard-loading"><span class="spinner"></span> Analyzing demand and available programs...</div>
                 }
 
-                @* ══════════ Step 0: Machine & Program Selection ══════════ *@
+                @* ══════════ Step 0: Machine & Demand Overview ══════════ *@
                 @if (!_loading && _step == 0)
                 {
                     <div class="wizard-content">
@@ -80,7 +84,7 @@
                             }
                         </div>
 
-                        @* ── Outstanding Demand Summary ── *@
+                        @* ── Outstanding Demand Summary (compact) ── *@
                         @{
                             var activeDemand = _demand.Where(d => d.IsAdditive && d.NetRemaining > 0)
                                 .OrderByDescending(d => d.HighestPriority).ThenBy(d => d.EarliestDueDate).ToList();
@@ -94,87 +98,90 @@
                         @if (activeDemand.Any())
                         {
                             <div style="margin-bottom: 12px;">
-                                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
                                     <div style="font-weight: 600; font-size: 0.85rem;">Outstanding Demand</div>
-                                    <span style="font-size: 0.78rem; color: var(--text-muted);">@totalRemaining parts · @totalBuildsNeeded builds needed · @activeDemand.Count @(activeDemand.Count == 1 ? "type" : "types")</span>
+                                    <span style="font-size: 0.75rem; color: var(--text-muted);">@totalRemaining parts · @totalBuildsNeeded builds · @activeDemand.Count types</span>
                                 </div>
                                 @if (overdueCount > 0)
                                 {
-                                    <div style="padding: 4px 8px; background: rgba(var(--danger-rgb), 0.1); border-radius: 4px; margin-bottom: 6px; font-size: 0.78rem; color: var(--danger); font-weight: 600;">
-                                        ⚠ @overdueCount overdue @(overdueCount == 1 ? "order" : "orders")
+                                    <div style="padding: 3px 8px; background: rgba(var(--danger-rgb), 0.1); border-radius: 4px; margin-bottom: 4px; font-size: 0.75rem; color: var(--danger); font-weight: 600;">
+                                        ⚠ @overdueCount overdue
                                     </div>
                                 }
-                                <div style="display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto;">
+                                <div style="display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow-y: auto;">
                                     @foreach (var d in activeDemand)
                                     {
-                                        var woList = string.Join(", ", d.SourceLines.Select(s => s.WorkOrderNumber).Distinct().Take(4));
                                         var perBuild = d.BuildConfig?.PlannedPartsPerBuildSingle ?? 0;
                                         var buildsNeeded = perBuild > 0 ? (int)Math.Ceiling((double)d.NetRemaining / perBuild) : 0;
                                         var daysUntilDue = (d.EarliestDueDate - DateTime.UtcNow).Days;
                                         var dueDateColor = d.IsOverdue ? "var(--danger)" : daysUntilDue <= 7 ? "var(--warning)" : "var(--text-muted)";
+                                        var woList = string.Join(", ", d.SourceLines.Select(s => s.WorkOrderNumber).Distinct().Take(3));
 
-                                        <div style="padding: 6px 10px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.78rem; @(d.IsOverdue ? "border-left: 3px solid var(--danger);" : "")">
-                                            <div style="display: flex; align-items: center; gap: 8px;">
-                                                <span style="font-weight: 700; min-width: 105px;">@d.PartNumber</span>
-                                                <span class="badge badge-@d.HighestPriority.ToString().ToLower()" style="font-size: 0.62rem;">@d.HighestPriority</span>
-                                                <span style="color: var(--text-primary); font-weight: 600;">@d.NetRemaining remaining</span>
-                                                @if (d.IsOverdue) { <span style="color: var(--danger); font-weight: 700; font-size: 0.72rem;">OVERDUE</span> }
-                                                <span style="color: @dueDateColor; margin-left: auto; font-size: 0.72rem; white-space: nowrap;">due @d.EarliestDueDate.ToString("MMM d")</span>
-                                            </div>
-                                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 3px; color: var(--text-muted); font-size: 0.72rem;">
-                                                @if (perBuild > 0)
-                                                {
-                                                    <span>@perBuild/build</span>
-                                                    <span>·</span>
-                                                    <span style="font-weight: 500; color: var(--text-secondary);">@buildsNeeded @(buildsNeeded == 1 ? "build" : "builds") needed</span>
-                                                }
-                                                @if (d.TotalOrdered > d.NetRemaining)
-                                                {
-                                                    <span>·</span>
-                                                    <span>@d.TotalProduced produced</span>
-                                                    @if (d.InPrograms > 0) { <span>· @d.InPrograms in programs</span> }
-                                                }
-                                                <span style="margin-left: auto;">@woList</span>
-                                            </div>
+                                        <div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--bg-secondary); border-radius: 4px; font-size: 0.75rem; @(d.IsOverdue ? "border-left: 3px solid var(--danger);" : "")"
+                                             title="@d.NetRemaining remaining · @buildsNeeded builds needed · @woList">
+                                            <span style="font-weight: 700; min-width: 90px;">@d.PartNumber</span>
+                                            <span class="badge badge-@d.HighestPriority.ToString().ToLower()" style="font-size: 0.6rem; padding: 1px 4px;">@d.HighestPriority</span>
+                                            <span style="font-weight: 600;">@d.NetRemaining</span>
+                                            @if (buildsNeeded > 0) { <span style="color: var(--text-muted);">(@buildsNeeded builds)</span> }
+                                            <span style="color: @dueDateColor; margin-left: auto; font-size: 0.7rem; white-space: nowrap;">@d.EarliestDueDate.ToString("MMM d")</span>
                                         </div>
                                     }
                                 </div>
                             </div>
                         }
 
-                        @* ── Recommendation ── *@
+                        @* ── Recommendation one-liner ── *@
                         @if (_recommendation != null)
                         {
                             var recAligned = _selectedMachine?.AutoChangeoverEnabled == true ? _recommendation.Plate.OperatorAvailable : true;
-                            <div style="padding: 10px 12px; border-radius: 8px; font-size: 0.82rem; background: @(recAligned ? "rgba(var(--success-rgb, 46,160,67), 0.08)" : "rgba(var(--danger-rgb, 218,54,51), 0.08)"); border-left: 4px solid @(recAligned ? "var(--success)" : "var(--danger)"); margin-bottom: 12px;">
-                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                                    <div style="font-weight: 700; font-size: 0.88rem;">💡 Recommended Next Build</div>
-                                    <div style="font-size: 0.78rem; color: var(--text-muted);">
-                                        @_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")
-                                        @if (recAligned) { <span style="color: var(--success); margin-left: 4px;">✓ Safe changeover</span> }
-                                        else { <span style="color: var(--danger); margin-left: 4px;">⚠️ Machine stops</span> }
-                                    </div>
-                                </div>
-                                @if (!string.IsNullOrEmpty(_recommendation.Rationale))
-                                {
-                                    <div style="color: var(--text-secondary); margin-top: 4px;">@_recommendation.Rationale</div>
-                                }
+                            <div style="padding: 8px 10px; border-radius: 6px; font-size: 0.8rem; background: @(recAligned ? "rgba(var(--success-rgb, 46,160,67), 0.08)" : "rgba(var(--danger-rgb, 218,54,51), 0.08)"); border-left: 3px solid @(recAligned ? "var(--success)" : "var(--danger)");">
+                                <span style="font-weight: 600;">💡 Recommended:</span>
+                                @_recommendation.Rationale
+                                <span style="color: var(--text-muted); margin-left: 4px;">@_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d")</span>
                             </div>
                         }
+                    </div>
+                }
 
+                @* ══════════ Step 1: Select Program ══════════ *@
+                @if (!_loading && _step == 1)
+                {
+                    <div class="wizard-content">
                         @* ── Program Selection ── *@
                         <div>
                             <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
                                 <div style="font-weight: 600; font-size: 0.85rem;">Choose a Program</div>
-                                <span style="font-size: 0.78rem; color: var(--text-muted);">@FilteredPrograms.Count of @_availablePrograms.Count programs</span>
+                                <span style="font-size: 0.78rem; color: var(--text-muted);">@FilteredPrograms.Count of @_availablePrograms.Count</span>
                             </div>
 
-                            <input class="form-control form-control-sm" type="text" placeholder="Search programs by name, part number, or program number..."
-                                   style="margin-bottom: 8px;" @bind="_programSearch" @bind:event="oninput" />
+                            @* ── Search + Filters (sticky within scroll area) ── *@
+                            <div style="position: sticky; top: 0; z-index: 5; background: var(--bg-secondary); padding: 8px 0 8px; margin: 0 0 8px;">
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <input class="form-control form-control-sm" type="text" placeholder="Search..."
+                                           style="flex: 1; min-width: 120px;" @bind="_programSearch" @bind:event="oninput" />
+                                    <select class="form-control form-control-sm" style="width: auto; min-width: 90px;"
+                                            @bind="_filterStatus">
+                                        <option value="all">All Status</option>
+                                        <option value="ready">Ready</option>
+                                        <option value="needs-slicer">Needs Slicer</option>
+                                    </select>
+                                    @if (AvailableMaterials.Count > 1)
+                                    {
+                                        <select class="form-control form-control-sm" style="width: auto; min-width: 90px;"
+                                                @bind="_filterMaterial">
+                                            <option value="all">All Materials</option>
+                                            @foreach (var mat in AvailableMaterials)
+                                            {
+                                                <option value="@mat">@mat</option>
+                                            }
+                                        </select>
+                                    }
+                                </div>
+                            </div>
 
                             @if (FilteredPrograms.Any())
                             {
-                                <div style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+                                <div id="advisor-program-list" style="display: flex; flex-direction: column; gap: 6px;">
                                     @{
                                         var grouped = FilteredPrograms
                                             .GroupBy(p => p.ProgramParts.FirstOrDefault()?.Part?.PartNumber ?? "Unknown")
@@ -202,6 +209,7 @@
                                             var materialName = prog.Material?.Name?.Split(' ').FirstOrDefault() ?? prog.MachineType ?? "";
 
                                             <div class="advisor-option-card @(isSelected ? "advisor-option-card--selected" : "")"
+                                                 id="advisor-prog-@prog.Id"
                                                  style="padding: 10px 12px;"
                                                  @onclick="() => OnExistingProgramSelected(prog)">
                                                 <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -282,94 +290,29 @@
                             </div>
                         </div>
 
-                        @* ── Timing Options (shown when a program is selected) ── *@
-                        @if ((_selectedExistingProgram != null || _creatingNewProgram) && _scheduleOptions.Any())
+                        @* ── Compact timing preview (auto-selected, shown after program pick) ── *@
+                        @if ((_selectedExistingProgram != null || _creatingNewProgram) && ActiveSlot != null)
                         {
-                            <div style="margin-top: 16px;">
-                                <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 4px;">When should this build run?</div>
-                                <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
-                                    Choose when to start. The changeover time is when an operator must remove the previous build from the cooldown chamber.
-                                </div>
-                                @foreach (var opt in _scheduleOptions)
+                            <div style="margin-top: 12px; padding: 8px 10px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.78rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <span style="font-weight: 600;">Start:</span>
+                                <span>@ActiveSlot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                                <span style="color: var(--text-muted);">→</span>
+                                <span>@ActiveSlot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                                @if (ActiveChangeoverAligned)
                                 {
-                                    var isSelected = _selectedOption == opt;
-                                    <div class="advisor-option-card @(isSelected ? "advisor-option-card--selected" : "")"
-                                         @onclick="() => OnOptionSelected(opt)">
-                                        @if (opt.IsRecommended)
-                                        {
-                                            <span class="advisor-option-badge">Recommended</span>
-                                        }
-                                        <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                                            <div style="font-weight: 600; font-size: 0.88rem;">
-                                                @opt.Label
-                                            </div>
-                                            <div style="font-size: 0.82rem; color: var(--text-muted);">
-                                                @opt.DurationHours.ToString("F1")h
-                                            </div>
-                                        </div>
-                                        <div class="advisor-option-detail" style="margin-top: 4px;">
-                                            <strong>Print:</strong> @opt.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt") &rarr; @opt.Slot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")
-                                        </div>
-                                        <div class="advisor-option-detail">
-                                            <strong>Changeover needed:</strong> @opt.Slot.ChangeoverStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")
-                                            @if (opt.ChangeoverAligned)
-                                            {
-                                                <span style="color: var(--success); margin-left: 6px;">&#x2713; During operator shift</span>
-                                            }
-                                            else
-                                            {
-                                                <span style="color: var(--danger); margin-left: 6px;">&#x2717; No operator on shift</span>
-                                            }
-                                        </div>
-                                        <div class="advisor-option-tags" style="margin-top: 4px;">
-                                            @if (opt.ChangeoverAligned)
-                                            {
-                                                <span class="advisor-option-tag advisor-option-tag--safe">Safe changeover</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="advisor-option-tag advisor-option-tag--danger">Machine stops until operator arrives</span>
-                                            }
-                                            @if (opt.IsWeekendOptimal)
-                                            {
-                                                <span class="advisor-option-tag advisor-option-tag--info">Spans weekend</span>
-                                            }
-                                        </div>
-                                    </div>
+                                    <span style="color: var(--success); font-weight: 500;">✓ Safe</span>
+                                }
+                                else
+                                {
+                                    <span style="color: var(--danger); font-weight: 500;">⚠ Changeover conflict</span>
                                 }
                             </div>
-                        }
-                        else if ((_selectedExistingProgram != null || _creatingNewProgram) && _recommendation != null && !(_selectedMachine?.AutoChangeoverEnabled == true))
-                        {
-                            @* ── Simple slot display for non-changeover machines ── *@
-                            <div class="card" style="padding: 12px; margin-top: 12px;">
-                                <div style="font-weight: 600; margin-bottom: 8px;">Next Available Slot</div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
-                                    <div><span style="color: var(--text-muted);">Start:</span> @_recommendation.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</div>
-                                    <div><span style="color: var(--text-muted);">Machine:</span> @_recommendation.MachineName</div>
-                                </div>
-                            </div>
-                        }
-
-                        @* ── Override start ── *@
-                        @if (_selectedExistingProgram != null || _creatingNewProgram)
-                        {
-                            <details style="margin-top: 12px;">
-                                <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 500; color: var(--text-secondary);">
-                                    Override start time
-                                </summary>
-                                <div class="form-group" style="margin-top: 8px;">
-                                    <label>Start after (optional)</label>
-                                    <input type="datetime-local" class="form-control" style="max-width: 250px;"
-                                           @bind="_startAfterOverride" @bind:after="RefreshTimingOptions" />
-                                </div>
-                            </details>
                         }
                     </div>
                 }
 
-                @* ══════════ Step 1: Slicer Data for Existing Program ══════════ *@
-                @if (!_loading && _step == 1 && _existingNeedsSlicerData && _selectedExistingProgram != null)
+                @* ══════════ Step 2: Slicer Data for Existing Program ══════════ *@
+                @if (!_loading && _step == 2 && _existingNeedsSlicerData && _selectedExistingProgram != null)
                 {
                     <div class="wizard-content">
                         <div style="padding: 12px 16px; background: rgba(var(--warning-rgb), 0.08); border: 1px solid rgba(var(--warning-rgb), 0.25); border-radius: 8px; margin-bottom: 16px;">
@@ -425,8 +368,8 @@
                     </div>
                 }
 
-                @* ══════════ Step 1: New Program (Full Form) ══════════ *@
-                @if (!_loading && _step == 1 && !_existingNeedsSlicerData)
+                @* ══════════ Step 2: New Program (Full Form) ══════════ *@
+                @if (!_loading && _step == 2 && !_existingNeedsSlicerData)
                 {
                     <div class="wizard-content">
                         @* ── Program Name ── *@
@@ -569,8 +512,8 @@
                     </div>
                 }
 
-                @* ══════════ Step 2: Review & Schedule ══════════ *@
-                @if (!_loading && _step == 2)
+                @* ══════════ Step 3: Review & Schedule ══════════ *@
+                @if (!_loading && _step == 3)
                 {
                     <div class="wizard-content">
                         @if (_plateAllocations.Any())
@@ -626,6 +569,41 @@
 
                             </div>
 
+                            @* ── Timing options (expandable on Review step) ── *@
+                            @if (_scheduleOptions.Count > 1 || !ActiveChangeoverAligned)
+                            {
+                                <details style="margin-top: 12px;" @(ActiveChangeoverAligned ? "" : "open")>
+                                    <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 600; color: @(ActiveChangeoverAligned ? "var(--text-secondary)" : "var(--danger)");">
+                                        @if (!ActiveChangeoverAligned) { <text>⚠ Changeover conflict — choose a different time</text> }
+                                        else { <text>Change timing (@_scheduleOptions.Count options)</text> }
+                                    </summary>
+                                    <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+                                        @foreach (var opt in _scheduleOptions)
+                                        {
+                                            var isSelected = _selectedOption == opt;
+                                            <div class="advisor-option-card @(isSelected ? "advisor-option-card--selected" : "")"
+                                                 style="padding: 8px 10px;"
+                                                 @onclick="() => OnOptionSelected(opt)">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                                    <span style="font-weight: 600;">@opt.Label @(opt.IsRecommended ? "★" : "")</span>
+                                                    <span style="color: var(--text-muted);">@opt.DurationHours.ToString("F1")h</span>
+                                                </div>
+                                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                                                    @opt.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt") → @opt.Slot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")
+                                                    @if (opt.ChangeoverAligned) { <span style="color: var(--success);">✓ Safe</span> }
+                                                    else { <span style="color: var(--danger);">✗ No operator</span> }
+                                                </div>
+                                            </div>
+                                        }
+                                        <div class="form-group" style="margin-top: 4px; margin-bottom: 0;">
+                                            <label style="font-size: 0.75rem; color: var(--text-muted);">Override start time</label>
+                                            <input type="datetime-local" class="form-control form-control-sm" style="max-width: 220px;"
+                                                   @bind="_startAfterOverride" @bind:after="RefreshTimingOptions" />
+                                        </div>
+                                    </div>
+                                </details>
+                            }
+
                             @* ── Downstream preview ── *@
                             <div style="margin-top: 12px; padding: 10px; background: var(--bg-secondary); border-radius: 8px; font-size: 0.82rem;">
                                 <strong>After this build:</strong> Depowder + Wire EDM stages will be auto-scheduled.
@@ -644,7 +622,7 @@
                 }
                 <div style="flex:1;"></div>
 
-                @if (_step < 2)
+                @if (_step < 3)
                 {
                     <button class="btn btn-primary" @onclick="AdvanceStep" disabled="@DisableNext">Next</button>
                 }
@@ -690,6 +668,8 @@
     private DateTime? _startAfterOverride;
     private bool _showPartPicker;
     private string _programSearch = "";
+    private string _filterStatus = "all";   // "all", "ready", "needs-slicer"
+    private string _filterMaterial = "all"; // "all" or material name
 
     private BuildRecommendation? _recommendation;
     private List<DemandSummary> _demand = [];
@@ -734,28 +714,30 @@
     private Machine? OtherMachine => SlsMachines.FirstOrDefault(m => m.Id != _selectedMachineId);
 
     /// Dynamic step labels based on flow
-    private string[] ActiveSteps => _selectedExistingProgram != null
-        ? (_existingNeedsSlicerData
-            ? ["Select Program", "Slicer Data", "Review & Schedule"]
-            : ["Select Program", "Review & Schedule"])
-        : ["Select Program", "New Program", "Review & Schedule"];
+    private string[] ActiveSteps => _creatingNewProgram
+        ? ["Machine", "Program", "Build Plate", "Schedule"]
+        : _existingNeedsSlicerData
+            ? ["Machine", "Program", "Slicer", "Schedule"]
+            : ["Machine", "Program", "Schedule"];
 
-    /// Maps internal _step (0,1,2) to the visual step index for the step indicator
+    /// Maps internal _step (0,1,2,3) to the visual step index for the step indicator
     private int VisualStep => _step switch
     {
         0 => 0,
         1 => 1,
-        2 => (_selectedExistingProgram != null && !_existingNeedsSlicerData) ? 1 : 2,
+        2 => 2,
+        3 => (_selectedExistingProgram != null && !_existingNeedsSlicerData) ? 2 : 3,
         _ => 0
     };
 
     private string StepTitle => _step switch
     {
-        0 => "Next Build Advisor — Select Program",
-        1 => _existingNeedsSlicerData
-            ? "Next Build Advisor — Enter Slicer Data"
-            : "Next Build Advisor — New Program",
-        2 => "Next Build Advisor — Review & Schedule",
+        0 => "Next Build Advisor — Select Machine",
+        1 => "Next Build Advisor — Select Program",
+        2 => _existingNeedsSlicerData
+            ? "Next Build Advisor — Slicer Data"
+            : "Next Build Advisor — Build Plate",
+        3 => "Next Build Advisor — Review & Schedule",
         _ => "Next Build Advisor"
     };
 
@@ -763,18 +745,39 @@
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(_programSearch))
-                return _availablePrograms;
+            IEnumerable<MachineProgram> result = _availablePrograms;
 
-            var search = _programSearch.Trim();
-            return _availablePrograms.Where(p =>
-                (p.Name?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)
-                || (p.ProgramNumber?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)
-                || p.ProgramParts.Any(pp =>
-                    pp.Part?.PartNumber?.Contains(search, StringComparison.OrdinalIgnoreCase) == true))
-                .ToList();
+            // Status filter
+            if (_filterStatus == "ready")
+                result = result.Where(p => p.HasSlicerData);
+            else if (_filterStatus == "needs-slicer")
+                result = result.Where(p => !p.HasSlicerData);
+
+            // Material filter
+            if (_filterMaterial != "all")
+                result = result.Where(p => (p.Material?.Name ?? "").Equals(_filterMaterial, StringComparison.OrdinalIgnoreCase));
+
+            // Text search
+            if (!string.IsNullOrWhiteSpace(_programSearch))
+            {
+                var search = _programSearch.Trim();
+                result = result.Where(p =>
+                    (p.Name?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)
+                    || (p.ProgramNumber?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)
+                    || p.ProgramParts.Any(pp =>
+                        pp.Part?.PartNumber?.Contains(search, StringComparison.OrdinalIgnoreCase) == true));
+            }
+
+            return result.ToList();
         }
     }
+
+    private List<string> AvailableMaterials => _availablePrograms
+        .Select(p => p.Material?.Name)
+        .Where(n => !string.IsNullOrEmpty(n))
+        .Distinct()
+        .OrderBy(n => n)
+        .ToList()!;
 
     private List<DemandSummary> AvailablePartsForPlate => _demand
         .Where(d => d.IsAdditive && d.NetRemaining > 0 && d.BuildConfig != null
@@ -854,8 +857,9 @@
 
     private bool DisableNext => _step switch
     {
-        0 => (_selectedExistingProgram == null && !_creatingNewProgram) || _selectedOption == null,
-        1 => _existingNeedsSlicerData
+        0 => false, // Machine is always pre-selected
+        1 => (_selectedExistingProgram == null && !_creatingNewProgram),
+        2 => _existingNeedsSlicerData
             ? !(_slicerPrintHours.HasValue && _slicerPrintHours > 0)
             : !_plateAllocations.Any(),
         _ => true
@@ -1292,16 +1296,24 @@
     {
         if (_step == 0)
         {
+            // Machine & Demand → Program Selection
+            _step = 1;
+            await ScrollToSelectedProgramAsync();
+            return;
+        }
+
+        if (_step == 1)
+        {
             if (_selectedExistingProgram != null)
             {
                 if (_existingNeedsSlicerData)
                 {
                     // Existing program missing slicer data — go to slicer entry step
-                    _step = 1;
+                    _step = 2;
                     return;
                 }
                 // Existing program with slicer data — skip to review
-                _step = 2;
+                _step = 3;
                 await CalculateBuildCostAsync();
                 return;
             }
@@ -1315,29 +1327,46 @@
                     _programName = string.Join("+", _plateAllocations.Select(a => a.PartNumber))
                         + $"-{DateTime.UtcNow:yyMMdd}";
                 }
-                // Create draft program immediately so file uploads work on Step 1
+                // Create draft program immediately so file uploads work on Step 2
                 await CreateDraftProgramAsync();
-                _step = 1;
+                _step = 2;
                 return;
             }
         }
         _step++;
         // Calculate build cost when entering the review step
-        if (_step == 2)
+        if (_step == 3)
             await CalculateBuildCostAsync();
     }
 
-    private void GoBack()
+    private async Task GoBack()
     {
-        if (_step == 2 && _selectedExistingProgram != null && !_existingNeedsSlicerData)
+        if (_step == 3 && _selectedExistingProgram != null && !_existingNeedsSlicerData)
         {
-            // Existing program with slicer data: jump back to step 0 (skip plate composition)
-            _step = 0;
+            _step = 1;
+            await ScrollToSelectedProgramAsync();
         }
         else if (_step > 0)
         {
             _step--;
+            if (_step == 1) await ScrollToSelectedProgramAsync();
         }
+    }
+
+    /// <summary>After render, scroll the program list to show the selected program card.</summary>
+    private async Task ScrollToSelectedProgramAsync()
+    {
+        if (_selectedExistingProgram == null) return;
+        // Wait for Blazor render, then scroll
+        await Task.Yield();
+        StateHasChanged();
+        await Task.Delay(50);
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                $"document.getElementById('advisor-prog-{_selectedExistingProgram.Id}')?.scrollIntoView({{behavior:'smooth',block:'center'}})");
+        }
+        catch { /* JS interop may fail if component not rendered yet */ }
     }
 
     // ── Program creation (new programs only) ──

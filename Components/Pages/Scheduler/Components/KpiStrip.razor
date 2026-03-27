@@ -13,9 +13,9 @@
         <span class="sched-kpi-value">@_overdue</span>
         <span class="sched-kpi-label">Overdue</span>
     </div>
-    <div class="sched-kpi" title="Percentage of machines currently occupied">
-        <span class="sched-kpi-value">@_utilization.ToString("F0")%</span>
-        <span class="sched-kpi-label">Utilization</span>
+    <div class="sched-kpi" title="@($"Active now: {_activeCount}/{_schedulableCount} machines | Committed: {_scheduledCount}/{_schedulableCount} machines (next 7 days)")">
+        <span class="sched-kpi-value">@(_scheduledUtilization > 0 ? _scheduledUtilization.ToString("F0") : _utilization.ToString("F0"))%</span>
+        <span class="sched-kpi-label">@(_scheduledUtilization > 0 ? "Committed" : "Utilization")</span>
     </div>
     <div class="sched-kpi @(Unscheduled.Count > 0 ? "sched-kpi--warning" : "")" title="Scheduled executions with no machine assigned">
         <span class="sched-kpi-value">@Unscheduled.Count</span>
@@ -55,12 +55,17 @@
     private int _dueToday;
     private int _overdue;
     private double _utilization;
+    private double _scheduledUtilization;
+    private int _activeCount;
+    private int _scheduledCount;
+    private int _schedulableCount;
     private int _conflicts;
     private double _totalHours;
 
     protected override void OnParametersSet()
     {
         var today = DateTime.UtcNow.Date;
+        var weekAhead = today.AddDays(7);
 
         _inProgress = Executions.Count(e => e.Status == StageExecutionStatus.InProgress);
         _totalHours = Executions.Sum(e => e.EstimatedHours ?? 0);
@@ -68,17 +73,35 @@
         _overdue = WorkOrders.Count(w => w.DueDate.Date < today
             && w.Lines.Any(l => l.Quantity > l.ProducedQuantity));
 
-        // Utilization
-        var schedulable = Machines.Count(m => m.IsAvailableForScheduling);
-        if (schedulable > 0)
+        // Utilization: show scheduled/committed utilization over the next 7 days
+        _schedulableCount = Machines.Count(m => m.IsAvailableForScheduling);
+        if (_schedulableCount > 0)
         {
-            var occupied = Machines.Count(m => m.IsAvailableForScheduling
+            _activeCount = Machines.Count(m => m.IsAvailableForScheduling
                 && Executions.Any(e => e.MachineId == m.Id && e.Status == StageExecutionStatus.InProgress));
-            _utilization = occupied * 100.0 / schedulable;
+            _utilization = _activeCount * 100.0 / _schedulableCount;
+
+            // Scheduled utilization: total scheduled hours / total available hours (next 7 days)
+            var scheduledHoursInRange = Executions
+                .Where(e => e.MachineId.HasValue && e.ScheduledStartAt.HasValue && e.ScheduledEndAt.HasValue
+                    && e.ScheduledEndAt.Value > today && e.ScheduledStartAt.Value < weekAhead)
+                .Sum(e =>
+                {
+                    var start = e.ScheduledStartAt!.Value < today ? today : e.ScheduledStartAt.Value;
+                    var end = e.ScheduledEndAt!.Value > weekAhead ? weekAhead : e.ScheduledEndAt.Value;
+                    return Math.Max(0, (end - start).TotalHours);
+                });
+            var totalAvailableHours = _schedulableCount * 7 * 24.0; // 7 days × 24h per machine
+            _scheduledUtilization = totalAvailableHours > 0 ? scheduledHoursInRange * 100.0 / totalAvailableHours : 0;
+            _scheduledCount = Machines.Count(m => m.IsAvailableForScheduling
+                && Executions.Any(e => e.MachineId == m.Id
+                    && e.ScheduledStartAt.HasValue && e.ScheduledEndAt.HasValue
+                    && e.ScheduledEndAt.Value > today && e.ScheduledStartAt.Value < weekAhead));
         }
         else
         {
             _utilization = 0;
+            _scheduledUtilization = 0;
         }
 
         // Conflict detection — all-pairs overlap check, cached
