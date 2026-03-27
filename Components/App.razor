@@ -30,9 +30,73 @@
 </head>
 
 <body>
+    <!-- Branded boot loading screen — visible instantly, hidden when Blazor connects -->
+    <div id="vectrik-boot" class="vectrik-boot">
+        <svg class="boot-v" viewBox="0 0 200 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="bootGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#3B82F6"/>
+                    <stop offset="50%" stop-color="#06B6D4"/>
+                    <stop offset="100%" stop-color="#22D3EE"/>
+                </linearGradient>
+            </defs>
+            <g class="boot-v-group" transform="translate(100, 5)">
+                <polygon class="boot-v-outline"
+                    points="0,200 -90,0 -55,0 0,164 55,0 90,0"
+                    fill="none" stroke="url(#bootGrad)" stroke-width="2" stroke-linejoin="round"/>
+                <polygon class="boot-v-fill"
+                    points="0,200 -90,0 -55,0 0,164 55,0 90,0"
+                    fill="url(#bootGrad)"/>
+                <circle class="boot-v-dot" cx="0" cy="196" r="3.5" fill="#22D3EE"/>
+                <circle class="boot-v-ring" cx="0" cy="196" r="3" fill="none" stroke="#22D3EE" stroke-width="1"/>
+            </g>
+        </svg>
+        <div class="boot-wordmark">VECTRIK</div>
+        <div class="boot-dots">
+            <span></span><span></span><span></span>
+        </div>
+    </div>
+
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>
+        // Hide boot screen once Blazor circuit is active
+        (function () {
+            var boot = document.getElementById('vectrik-boot');
+            if (!boot) return;
+
+            // Blazor enhancedload fires after SSR navigation completes
+            // For initial load, we watch for the circuit to start
+            var hidden = false;
+            function hide() {
+                if (hidden) return;
+                hidden = true;
+                boot.classList.add('boot-hidden');
+                setTimeout(function () { boot.remove(); }, 500);
+            }
+
+            // Hide when Blazor Server circuit connects (interactive mode ready)
+            if (window.Blazor) {
+                Blazor.addEventListener('enhancedload', hide);
+            }
+
+            // Fallback: hide after circuit scripts have loaded + a beat
+            document.addEventListener('DOMContentLoaded', function () {
+                // Wait for Blazor to boot — the _framework/blazor.web.js sets up the circuit
+                setTimeout(hide, 4000); // safety net — 4s max
+            });
+
+            // If the page has already rendered interactive content, hide immediately
+            var observer = new MutationObserver(function () {
+                if (document.querySelector('.app-container, .login-card')) {
+                    hide();
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        })();
+    </script>
     <script src="@Assets["js/site.js"]"></script>
     <script src="@Assets["js/dynamic-form-renderer.js"]"></script>
     <script src="@Assets["js/machine-state-client.js"]"></script>
