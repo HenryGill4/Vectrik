@@ -241,6 +241,31 @@ app.MapHub<MachineStateHub>("/hubs/machine-state");
 app.MapGet("/healthz", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
     .AllowAnonymous();
 
+// Temporary diagnostic endpoint to check tenant auth state
+app.MapGet("/api/debug/auth-check", (PlatformDbContext platformDb) =>
+{
+    var debugDataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } debugHome
+        ? Path.Combine(debugHome, "data") : "data";
+    var tenants = platformDb.Tenants.Where(t => t.IsActive).Select(t => t.Code).ToList();
+    var results = new List<object>();
+    foreach (var code in tenants)
+    {
+        var dbPath = Path.Combine(debugDataRoot, "tenants", $"{code}.db");
+        var exists = File.Exists(dbPath);
+        var users = new List<string>();
+        if (exists)
+        {
+            var opts = new DbContextOptionsBuilder<TenantDbContext>()
+                .UseSqlite($"Data Source={dbPath}")
+                .Options;
+            using var tdb = new TenantDbContext(opts);
+            users = tdb.Users.Select(u => $"{u.Username} (active={u.IsActive}, role={u.Role})").ToList();
+        }
+        results.Add(new { tenant = code, dbPath, exists, users });
+    }
+    return Results.Ok(new { dataRoot = debugDataRoot, tenants = results });
+}).AllowAnonymous();
+
 // Logo upload endpoint
 var uploadsDir = Path.Combine(app.Environment.WebRootPath, "uploads", "logos");
 if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
