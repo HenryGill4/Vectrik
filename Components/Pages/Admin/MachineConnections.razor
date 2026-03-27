@@ -1,10 +1,10 @@
 @page "/admin/machine-connections"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
-@inject Opcentrix_V3.Data.TenantDbContext Db
+@inject Vectrik.Data.TenantDbContext Db
 @inject IMachineService MachineService
 @inject ToastService Toast
 @using Microsoft.EntityFrameworkCore
-@using Opcentrix_V3.Services.MachineProviders
+@using Vectrik.Services.MachineProviders
 
 <PageTitle>Machine Connections - Admin - Vectrik</PageTitle>
 
@@ -354,7 +354,7 @@ else
             IMachineProvider provider = conn.ProviderType switch
             {
                 // Future: "OPC UA" => new OpcUaMachineProvider(...),
-                _ => new Opcentrix_V3.Services.MachineProviders.MockMachineProvider(Db)
+                _ => new Vectrik.Services.MachineProviders.MockMachineProvider(Db)
             };
 
             var result = await provider.TestConnectionAsync(conn.MachineId);

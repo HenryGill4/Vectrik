@@ -1,10 +1,10 @@
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Enums;
-using Opcentrix_V3.Services.Auth;
+using Vectrik.Data;
+using Vectrik.Models;
+using Vectrik.Models.Enums;
+using Vectrik.Services.Auth;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public class DataSeedingService : IDataSeedingService
 {
@@ -1411,7 +1411,7 @@ public class DataSeedingService : IDataSeedingService
                 </div>
                 <table>
                     <tr><td style="width:50%;border:none;padding:0;">
-                        <strong>From:</strong><br/>OpCentrix Manufacturing<br/>{{CompanyAddress}}
+                        <strong>From:</strong><br/>Vectrik Manufacturing<br/>{{CompanyAddress}}
                     </td><td style="border:none;padding:0;">
                         <strong>To:</strong><br/>{{CustomerName}}<br/>{{CustomerEmail}}<br/>{{CustomerPhone}}
                     </td></tr>

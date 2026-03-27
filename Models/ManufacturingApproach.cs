@@ -2,9 +2,9 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Opcentrix_V3.Models.Enums;
+using Vectrik.Models.Enums;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Defines a manufacturing approach (process template) such as "SLS-Based" or "CNC Machining".

@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Revision history for MachineProgram changes.

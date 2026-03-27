@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 
-namespace Opcentrix_V3.Services.Platform;
+namespace Vectrik.Services.Platform;
 
 /// <summary>
 /// Populates the scoped TenantContext from auth claims when a Blazor Server

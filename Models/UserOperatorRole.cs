@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Junction table linking users to operator roles. One user can hold multiple roles.

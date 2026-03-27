@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
+using Vectrik.Data;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public class LearningService : ILearningService
 {

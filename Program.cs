@@ -1,13 +1,13 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Components;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Hubs;
-using Opcentrix_V3.Middleware;
-using Opcentrix_V3.Services;
-using Opcentrix_V3.Services.Auth;
-using Opcentrix_V3.Services.MachineProviders;
-using Opcentrix_V3.Services.Platform;
+using Vectrik.Components;
+using Vectrik.Data;
+using Vectrik.Hubs;
+using Vectrik.Middleware;
+using Vectrik.Services;
+using Vectrik.Services.Auth;
+using Vectrik.Services.MachineProviders;
+using Vectrik.Services.Platform;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,7 +35,7 @@ builder.Services.AddScoped(sp => sp.GetRequiredService<TenantDbContextFactory>()
 // Populate TenantContext from auth claims when a Blazor interactive circuit opens
 // (TenantMiddleware only runs on HTTP requests, not SignalR circuit connections)
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler,
-    Opcentrix_V3.Services.Platform.TenantCircuitHandler>();
+    Vectrik.Services.Platform.TenantCircuitHandler>();
 
 // Authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -137,73 +137,83 @@ builder.Services.AddHostedService<MachineSyncService>();
 var app = builder.Build();
 
 // Ensure platform DB is created and seeded
+// Wrapped in try-catch to handle concurrent startup (Azure may start multiple workers)
 using (var scope = app.Services.CreateScope())
 {
     var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
     platformDb.Database.Migrate();
 
-    // Seed super admin if none exists
-    if (!platformDb.PlatformUsers.Any())
+    try
     {
-        var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
-        platformDb.PlatformUsers.Add(new Opcentrix_V3.Models.Platform.PlatformUser
+        // Seed super admin if none exists
+        if (!platformDb.PlatformUsers.Any())
         {
-            Username = "superadmin",
-            PasswordHash = authService.HashPassword("admin123"),
-            Role = "SuperAdmin"
-        });
-        platformDb.SaveChanges();
-    }
-
-    // Seed demo tenant if none exists
-    if (!platformDb.Tenants.Any())
-    {
-        var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
-        tenantService.CreateTenantAsync("demo", "Polite Society Industries", "System",
-            logoUrl: "/uploads/logos/psi-shield.svg", primaryColor: "#a1a1aa").GetAwaiter().GetResult();
-    }
-    else
-    {
-        // Ensure existing tenants have seeded data (handles deleted/recreated tenant DBs)
-        var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
-        foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
-        {
-            tenantService.SeedTenantDatabaseAsync(tenant.Code).GetAwaiter().GetResult();
-        }
-    }
-
-    // Seed default feature flags for demo tenant
-    if (!platformDb.TenantFeatureFlags.Any(f => f.TenantCode == "demo"))
-    {
-        var coreFlags = new[]
-        {
-            "module.quoting", "module.workorders", "module.instructions",
-            "module.shopfloor", "module.quality", "module.inventory",
-            "module.analytics", "module.pdm", "module.costing",
-            "module.tools", "module.maintenance", "module.purchasing",
-            "module.timeclock", "module.documents", "module.shipping",
-            "module.crm", "module.compliance", "module.training",
-            "sls", "advanced.spc", "advanced.workflows", "advanced.custom_fields",
-            "dlms", "dlms.iuid", "dlms.wawf", "dlms.gfm", "dlms.cdrl"
-        };
-        var enabledByDefault = new HashSet<string>
-        {
-            "module.quoting", "module.workorders", "module.shopfloor",
-            "module.quality", "module.inventory", "module.analytics",
-            "module.pdm", "module.maintenance", "sls",
-            "advanced.spc", "advanced.workflows", "advanced.custom_fields"
-        };
-        foreach (var key in coreFlags)
-        {
-            platformDb.TenantFeatureFlags.Add(new Opcentrix_V3.Models.Platform.TenantFeatureFlag
+            var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
+            platformDb.PlatformUsers.Add(new Vectrik.Models.Platform.PlatformUser
             {
-                TenantCode = "demo",
-                FeatureKey = key,
-                IsEnabled = enabledByDefault.Contains(key),
-                EnabledAt = enabledByDefault.Contains(key) ? DateTime.UtcNow : null
+                Username = "superadmin",
+                PasswordHash = authService.HashPassword("admin123"),
+                Role = "SuperAdmin"
             });
+            platformDb.SaveChanges();
         }
-        platformDb.SaveChanges();
+
+        // Seed demo tenant if none exists
+        if (!platformDb.Tenants.Any())
+        {
+            var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
+            tenantService.CreateTenantAsync("demo", "Polite Society Industries", "System",
+                logoUrl: "/uploads/logos/psi-shield.svg", primaryColor: "#a1a1aa").GetAwaiter().GetResult();
+        }
+        else
+        {
+            // Ensure existing tenants have seeded data (handles deleted/recreated tenant DBs)
+            var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
+            foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
+            {
+                tenantService.SeedTenantDatabaseAsync(tenant.Code).GetAwaiter().GetResult();
+            }
+        }
+
+        // Seed default feature flags for demo tenant
+        if (!platformDb.TenantFeatureFlags.Any(f => f.TenantCode == "demo"))
+        {
+            var coreFlags = new[]
+            {
+                "module.quoting", "module.workorders", "module.instructions",
+                "module.shopfloor", "module.quality", "module.inventory",
+                "module.analytics", "module.pdm", "module.costing",
+                "module.tools", "module.maintenance", "module.purchasing",
+                "module.timeclock", "module.documents", "module.shipping",
+                "module.crm", "module.compliance", "module.training",
+                "sls", "advanced.spc", "advanced.workflows", "advanced.custom_fields",
+                "dlms", "dlms.iuid", "dlms.wawf", "dlms.gfm", "dlms.cdrl"
+            };
+            var enabledByDefault = new HashSet<string>
+            {
+                "module.quoting", "module.workorders", "module.shopfloor",
+                "module.quality", "module.inventory", "module.analytics",
+                "module.pdm", "module.maintenance", "sls",
+                "advanced.spc", "advanced.workflows", "advanced.custom_fields"
+            };
+            foreach (var key in coreFlags)
+            {
+                platformDb.TenantFeatureFlags.Add(new Vectrik.Models.Platform.TenantFeatureFlag
+                {
+                    TenantCode = "demo",
+                    FeatureKey = key,
+                    IsEnabled = enabledByDefault.Contains(key),
+                    EnabledAt = enabledByDefault.Contains(key) ? DateTime.UtcNow : null
+                });
+            }
+            platformDb.SaveChanges();
+        }
+    }
+    catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
+        when (ex.InnerException?.Message.Contains("UNIQUE constraint") == true)
+    {
+        // Another process already seeded — safe to ignore
+        app.Logger.LogWarning("Seed data already exists (concurrent startup). Continuing.");
     }
 }
 
@@ -226,6 +236,10 @@ app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapHub<MachineStateHub>("/hubs/machine-state");
+
+// Health check endpoint for Azure App Service monitoring
+app.MapGet("/healthz", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
+    .AllowAnonymous();
 
 // Logo upload endpoint
 var uploadsDir = Path.Combine(app.Environment.WebRootPath, "uploads", "logos");

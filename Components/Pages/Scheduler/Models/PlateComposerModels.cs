@@ -1,6 +1,6 @@
-using Opcentrix_V3.Services;
+using Vectrik.Services;
 
-namespace Opcentrix_V3.Components.Pages.Scheduler.Models;
+namespace Vectrik.Components.Pages.Scheduler.Models;
 
 /// <summary>
 /// Editable plate allocation used by the PlateComposer and NextBuildAdvisor.

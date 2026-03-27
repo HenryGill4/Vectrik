@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Models.Enums;
+namespace Vectrik.Models.Enums;
 
 public enum JobStatus
 {

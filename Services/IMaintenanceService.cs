@@ -1,7 +1,7 @@
-using Opcentrix_V3.Models.Enums;
-using Opcentrix_V3.Models.Maintenance;
+using Vectrik.Models.Enums;
+using Vectrik.Models.Maintenance;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public interface IMaintenanceService
 {

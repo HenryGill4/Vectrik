@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public interface IMaterialPlanningService
 {

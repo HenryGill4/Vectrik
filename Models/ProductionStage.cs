@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 public class ProductionStage
 {

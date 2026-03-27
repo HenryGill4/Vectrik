@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Opcentrix_V3.Models.Platform;
+namespace Vectrik.Models.Platform;
 
 public class TenantFeatureFlag
 {

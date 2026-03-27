@@ -1,6 +1,6 @@
-using Opcentrix_V3.Models;
+using Vectrik.Models;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public interface IPartService
 {
@@ -73,7 +73,7 @@ public class BomTreeNode
     public string PartName { get; set; } = string.Empty;
     public decimal QuantityPer { get; set; } = 1m;
     public int Level { get; set; }
-    public bool IsLeaf => Children.Count == 0 && BomItems.All(b => b.ItemType != Opcentrix_V3.Models.Enums.BomItemType.SubPart);
+    public bool IsLeaf => Children.Count == 0 && BomItems.All(b => b.ItemType != Vectrik.Models.Enums.BomItemType.SubPart);
 
     /// <summary>Direct BOM items for this part (materials, inventory items, and sub-part references).</summary>
     public List<PartBomItem> BomItems { get; set; } = [];

@@ -1,7 +1,7 @@
-# OpCentrix V3 — Claude Code Guide
+# Vectrik — Claude Code Guide
 
 ## Project Overview
-OpCentrix is a Manufacturing Execution System (MES) for SLS additive manufacturing. Built with Blazor Server (.NET 10), EF Core, SQLite. It manages the full production lifecycle from work orders through SLS printing, depowdering, wire EDM, CNC machining, finishing, QC, and shipping.
+Vectrik is a Manufacturing Execution System (MES) for SLS additive manufacturing. Built with Blazor Server (.NET 10), EF Core, SQLite. It manages the full production lifecycle from work orders through SLS printing, depowdering, wire EDM, CNC machining, finishing, QC, and shipping.
 
 ## Tech Stack
 - **Framework**: Blazor Server (interactive SSR), .NET 10

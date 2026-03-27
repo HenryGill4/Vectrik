@@ -1,11 +1,11 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Enums;
+using Vectrik.Data;
+using Vectrik.Models;
+using Vectrik.Models.Enums;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public class WorkInstructionService : IWorkInstructionService
 {

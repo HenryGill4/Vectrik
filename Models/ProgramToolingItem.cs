@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Opcentrix_V3.Models.Maintenance;
+using Vectrik.Models.Maintenance;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// A structured tooling or fixture entry for a MachineProgram.

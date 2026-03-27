@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 public class InspectionPlan
 {

@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Services.Platform;
+namespace Vectrik.Services.Platform;
 
 public class TenantContext : ITenantContext
 {

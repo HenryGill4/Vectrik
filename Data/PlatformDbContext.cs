@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Models.Platform;
+using Vectrik.Models.Platform;
 
-namespace Opcentrix_V3.Data;
+namespace Vectrik.Data;
 
 public class PlatformDbContext : DbContext
 {

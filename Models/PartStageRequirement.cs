@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Legacy per-part stage routing. Use ManufacturingProcess/ProcessStage for new work.

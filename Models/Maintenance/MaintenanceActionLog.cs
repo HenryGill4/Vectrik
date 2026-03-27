@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Opcentrix_V3.Models.Maintenance;
+namespace Vectrik.Models.Maintenance;
 
 public class MaintenanceActionLog
 {

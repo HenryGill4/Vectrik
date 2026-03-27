@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Models;
+using Vectrik.Data;
+using Vectrik.Models;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public class PartPricingService : IPartPricingService
 {

@@ -1,7 +1,7 @@
 @page "/admin/debug"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Components.Authorization
-@using Opcentrix_V3.Data
+@using Vectrik.Data
 @inject IUserSettingsService SettingsService
 @inject ISchedulingService SchedulingService
 @inject IDataSeedingService SeedingService
@@ -303,7 +303,7 @@
 
         try
         {
-            await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", _debugFabEnabled);
+            await JS.InvokeVoidAsync("vectrik.debugFab.setEnabled", _debugFabEnabled);
         }
         catch (JSDisconnectedException) { }
     }
@@ -316,7 +316,7 @@
         try
         {
             await SettingsService.SaveDebugFabAsync(_userId, _debugFabEnabled);
-            await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", _debugFabEnabled);
+            await JS.InvokeVoidAsync("vectrik.debugFab.setEnabled", _debugFabEnabled);
             Toast.ShowSuccess(_debugFabEnabled
                 ? "Debug button enabled — navigate to any page to see it"
                 : "Debug button disabled");
@@ -338,7 +338,7 @@
 
         try
         {
-            var ctx = await JS.InvokeAsync<Dictionary<string, string>>("opcentrix.debugFab.getContext");
+            var ctx = await JS.InvokeAsync<Dictionary<string, string>>("vectrik.debugFab.getContext");
             _testText = $"""
 ## 🛠️ DEBUG TEST
 
@@ -353,7 +353,7 @@ This is a test capture from the Debug Tools admin page.
 - User Agent: {ctx.GetValueOrDefault("userAgent", "unknown")}
 """;
 
-            await JS.InvokeVoidAsync("opcentrix.debugFab.copyText", _testText);
+            await JS.InvokeVoidAsync("vectrik.debugFab.copyText", _testText);
             _testCopied = true;
         }
         catch

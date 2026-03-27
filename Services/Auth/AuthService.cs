@@ -2,9 +2,9 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
+using Vectrik.Data;
 
-namespace Opcentrix_V3.Services.Auth;
+namespace Vectrik.Services.Auth;
 
 public class AuthService : IAuthService
 {

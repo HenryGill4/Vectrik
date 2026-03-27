@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Join entity linking a <see cref="MachineProgram"/> to one or more <see cref="Machine"/>s.

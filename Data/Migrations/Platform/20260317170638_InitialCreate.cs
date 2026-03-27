@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Opcentrix_V3.Data.Migrations.Platform
+namespace Vectrik.Data.Migrations.Platform
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration

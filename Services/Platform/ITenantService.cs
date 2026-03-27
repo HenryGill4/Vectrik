@@ -1,7 +1,7 @@
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Platform;
+using Vectrik.Models;
+using Vectrik.Models.Platform;
 
-namespace Opcentrix_V3.Services.Platform;
+namespace Vectrik.Services.Platform;
 
 public interface ITenantService
 {

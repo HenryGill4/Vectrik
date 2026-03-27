@@ -1,6 +1,6 @@
 using System.Security.Claims;
 
-namespace Opcentrix_V3.Services.Auth;
+namespace Vectrik.Services.Auth;
 
 public interface IAuthService
 {

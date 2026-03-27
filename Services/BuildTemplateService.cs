@@ -1,11 +1,11 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Enums;
+using Vectrik.Data;
+using Vectrik.Models;
+using Vectrik.Models.Enums;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public class BuildTemplateService : IBuildTemplateService
 {
