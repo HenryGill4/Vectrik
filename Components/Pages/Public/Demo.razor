@@ -1,0 +1,184 @@
+@page "/demo"
+@layout Components.Layout.PublicLayout
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using System.ComponentModel.DataAnnotations
+
+<section class="pub-page-hero pub-page-hero-sm">
+    <h1 class="pub-gradient-text">Request a Demo</h1>
+    <p class="pub-page-hero-sub">See how Vectrik can streamline your additive manufacturing operation.</p>
+</section>
+
+<section class="pub-section">
+    <div class="pub-demo-layout">
+        <!-- Form Column -->
+        <div class="pub-demo-form-col">
+            @if (_submitted)
+            {
+                <div class="pub-demo-success">
+                    <div class="pub-demo-success-icon">
+                        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="24" cy="24" r="22" stroke="url(#successGrad)" stroke-width="2.5"/>
+                            <polyline points="15 24 21 30 33 18" fill="none" stroke="url(#successGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            <defs>
+                                <linearGradient id="successGrad" x1="0" y1="0" x2="1" y2="1">
+                                    <stop offset="0%" stop-color="#3B82F6"/>
+                                    <stop offset="100%" stop-color="#22D3EE"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <h2>Thanks! We'll be in touch within 24 hours.</h2>
+                    <p>A member of our team will reach out to schedule a personalized demo based on your manufacturing setup.</p>
+                    <a href="/" class="pub-btn pub-btn-ghost">Back to Home</a>
+                </div>
+            }
+            else
+            {
+                <EditForm Model="_model" OnValidSubmit="HandleSubmit" FormName="demo-request">
+                    <DataAnnotationsValidator />
+
+                    <div class="pub-form-group">
+                        <label class="pub-label" for="fullName">Full Name <span class="pub-required">*</span></label>
+                        <InputText id="fullName" @bind-Value="_model.FullName" class="pub-input" placeholder="Jane Smith" />
+                        <ValidationMessage For="() => _model.FullName" class="pub-validation" />
+                    </div>
+
+                    <div class="pub-form-group">
+                        <label class="pub-label" for="email">Work Email <span class="pub-required">*</span></label>
+                        <InputText id="email" @bind-Value="_model.Email" class="pub-input" type="email" placeholder="jane@company.com" />
+                        <ValidationMessage For="() => _model.Email" class="pub-validation" />
+                    </div>
+
+                    <div class="pub-form-group">
+                        <label class="pub-label" for="company">Company Name <span class="pub-required">*</span></label>
+                        <InputText id="company" @bind-Value="_model.Company" class="pub-input" placeholder="Acme Manufacturing" />
+                        <ValidationMessage For="() => _model.Company" class="pub-validation" />
+                    </div>
+
+                    <div class="pub-form-group">
+                        <label class="pub-label" for="phone">Phone <span class="pub-optional">(optional)</span></label>
+                        <InputText id="phone" @bind-Value="_model.Phone" class="pub-input" placeholder="+1 (555) 123-4567" />
+                    </div>
+
+                    <div class="pub-form-row">
+                        <div class="pub-form-group">
+                            <label class="pub-label" for="machines">Number of Machines</label>
+                            <InputSelect id="machines" @bind-Value="_model.MachineCount" class="pub-input pub-select">
+                                <option value="">Select...</option>
+                                <option value="1-2">1 - 2</option>
+                                <option value="3-5">3 - 5</option>
+                                <option value="6-10">6 - 10</option>
+                                <option value="10+">10+</option>
+                            </InputSelect>
+                        </div>
+                        <div class="pub-form-group">
+                            <label class="pub-label" for="process">Primary Process</label>
+                            <InputSelect id="process" @bind-Value="_model.PrimaryProcess" class="pub-input pub-select">
+                                <option value="">Select...</option>
+                                <option value="SLS/LPBF">SLS / LPBF</option>
+                                <option value="DMLS">DMLS</option>
+                                <option value="CNC Machining">CNC Machining</option>
+                                <option value="Multi-Process">Multi-Process</option>
+                                <option value="Other">Other</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+
+                    <div class="pub-form-group">
+                        <label class="pub-label" for="message">Message <span class="pub-optional">(optional)</span></label>
+                        <InputTextArea id="message" @bind-Value="_model.Message" class="pub-input pub-textarea" rows="4" placeholder="Tell us about your production challenges..." />
+                    </div>
+
+                    <button type="submit" class="pub-btn pub-btn-primary pub-btn-block pub-btn-lg">
+                        Request Demo
+                    </button>
+                </EditForm>
+            }
+        </div>
+
+        <!-- Value Props Column -->
+        <div class="pub-demo-info-col">
+            <div class="pub-demo-info-card">
+                <h3 class="pub-demo-info-title">Why Vectrik?</h3>
+                <ul class="pub-demo-info-list">
+                    <li>
+                        <svg class="pub-demo-info-icon" viewBox="0 0 20 20" fill="none">
+                            <polyline points="4 10 8 14 16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <div>
+                            <strong>60% faster scheduling</strong>
+                            <p>AI-powered build advisor eliminates manual plate planning and schedule juggling.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <svg class="pub-demo-info-icon" viewBox="0 0 20 20" fill="none">
+                            <polyline points="4 10 8 14 16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <div>
+                            <strong>Zero missed deliveries</strong>
+                            <p>Real-time tracking and at-risk alerts catch problems before they become late shipments.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <svg class="pub-demo-info-icon" viewBox="0 0 20 20" fill="none">
+                            <polyline points="4 10 8 14 16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <div>
+                            <strong>Maximized machine uptime</strong>
+                            <p>Changeover analysis ensures operators are available when machines need attention.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <svg class="pub-demo-info-icon" viewBox="0 0 20 20" fill="none">
+                            <polyline points="4 10 8 14 16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <div>
+                            <strong>Audit-ready compliance</strong>
+                            <p>Built-in traceability for ISO 9001, AS9100, and ITAR requirements.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <svg class="pub-demo-info-icon" viewBox="0 0 20 20" fill="none">
+                            <polyline points="4 10 8 14 16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <div>
+                            <strong>Up and running in days</strong>
+                            <p>Not months. Configure machines, stages, and shifts &mdash; then start scheduling.</p>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+@code {
+    private DemoRequestModel _model = new();
+    private bool _submitted;
+
+    private void HandleSubmit()
+    {
+        _submitted = true;
+    }
+
+    private sealed class DemoRequestModel
+    {
+        [Required(ErrorMessage = "Full name is required.")]
+        public string FullName { get; set; } = "";
+
+        [Required(ErrorMessage = "Work email is required.")]
+        [EmailAddress(ErrorMessage = "Please enter a valid email address.")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Company name is required.")]
+        public string Company { get; set; } = "";
+
+        public string? Phone { get; set; }
+        public string? MachineCount { get; set; }
+        public string? PrimaryProcess { get; set; }
+        public string? Message { get; set; }
+    }
+}

@@ -74,7 +74,7 @@ public class AuthService : IAuthService
                     Role = user.Role,
                     UserId = user.Id,
                     IsPlatformUser = false,
-                    RedirectUrl = "/"
+                    RedirectUrl = "/dashboard"
                 };
             }
         }

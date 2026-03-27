@@ -1,0 +1,130 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+
+<div class="pub-layout">
+    <nav class="pub-nav @(_scrolled ? "pub-nav-scrolled" : "")">
+        <div class="pub-nav-inner">
+            <a href="/" class="pub-nav-brand">
+                <svg class="pub-nav-logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="navAccent" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#3B82F6"/>
+                            <stop offset="50%" stop-color="#06B6D4"/>
+                            <stop offset="100%" stop-color="#22D3EE"/>
+                        </linearGradient>
+                    </defs>
+                    <g transform="translate(32, 6)">
+                        <polygon points="0,50 -24,0 -15,0 0,40 15,0 24,0" fill="url(#navAccent)"/>
+                        <circle cx="0" cy="47" r="2" fill="#22D3EE" opacity="0.9"/>
+                    </g>
+                </svg>
+                <span class="pub-nav-wordmark">VECTRIK</span>
+            </a>
+
+            <div class="pub-nav-links @(_menuOpen ? "pub-nav-links-open" : "")">
+                <a href="/features" class="pub-nav-link">Features</a>
+                <a href="/pricing" class="pub-nav-link">Pricing</a>
+                <a href="/about" class="pub-nav-link">About</a>
+                <div class="pub-nav-actions-mobile">
+                    <a href="/account/login" class="pub-btn pub-btn-ghost pub-btn-sm">Sign In</a>
+                    <a href="/demo" class="pub-btn pub-btn-primary pub-btn-sm">Request Demo</a>
+                </div>
+            </div>
+
+            <div class="pub-nav-actions">
+                <a href="/account/login" class="pub-btn pub-btn-ghost pub-btn-sm">Sign In</a>
+                <a href="/demo" class="pub-btn pub-btn-primary pub-btn-sm">Request Demo</a>
+            </div>
+
+            <button class="pub-hamburger @(_menuOpen ? "pub-hamburger-open" : "")" @onclick="ToggleMenu" aria-label="Toggle navigation">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <main class="pub-main">
+        @Body
+    </main>
+
+    <footer class="pub-footer">
+        <div class="pub-footer-inner">
+            <div class="pub-footer-grid">
+                <div class="pub-footer-brand">
+                    <div class="pub-footer-logo-row">
+                        <svg class="pub-footer-logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="footAccent" x1="0" y1="0" x2="1" y2="1">
+                                    <stop offset="0%" stop-color="#3B82F6"/>
+                                    <stop offset="50%" stop-color="#06B6D4"/>
+                                    <stop offset="100%" stop-color="#22D3EE"/>
+                                </linearGradient>
+                            </defs>
+                            <g transform="translate(32, 6)">
+                                <polygon points="0,50 -24,0 -15,0 0,40 15,0 24,0" fill="url(#footAccent)"/>
+                                <circle cx="0" cy="47" r="2" fill="#22D3EE" opacity="0.9"/>
+                            </g>
+                        </svg>
+                        <span class="pub-footer-wordmark">VECTRIK</span>
+                    </div>
+                    <p class="pub-footer-tagline">Manufacturing Intelligence</p>
+                </div>
+
+                <div class="pub-footer-col">
+                    <h4 class="pub-footer-heading">Product</h4>
+                    <a href="/features" class="pub-footer-link">Features</a>
+                    <a href="/pricing" class="pub-footer-link">Pricing</a>
+                    <a href="/demo" class="pub-footer-link">Request Demo</a>
+                </div>
+
+                <div class="pub-footer-col">
+                    <h4 class="pub-footer-heading">Company</h4>
+                    <a href="/about" class="pub-footer-link">About</a>
+                    <a href="/demo" class="pub-footer-link">Contact</a>
+                </div>
+
+                <div class="pub-footer-col">
+                    <h4 class="pub-footer-heading">Resources</h4>
+                    <a href="/docs" class="pub-footer-link">Documentation</a>
+                    <a href="/api" class="pub-footer-link">API</a>
+                </div>
+
+                <div class="pub-footer-col">
+                    <h4 class="pub-footer-heading">Legal</h4>
+                    <a href="/privacy" class="pub-footer-link">Privacy Policy</a>
+                    <a href="/terms" class="pub-footer-link">Terms of Service</a>
+                </div>
+            </div>
+
+            <div class="pub-footer-bottom">
+                <p>&copy; @DateTime.Now.Year Vectrik. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+@code {
+    private bool _menuOpen;
+    private bool _scrolled;
+
+    private void ToggleMenu()
+    {
+        _menuOpen = !_menuOpen;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("vectrik.initPublicNav");
+                await JS.InvokeVoidAsync("vectrik.initScrollReveal");
+            }
+            catch (JSDisconnectedException) { }
+            catch (TaskCanceledException) { }
+        }
+    }
+}

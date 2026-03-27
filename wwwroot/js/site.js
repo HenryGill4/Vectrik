@@ -103,3 +103,54 @@ window.opcentrix.debugFab = {
         return navigator.clipboard.writeText(text);
     }
 };
+
+// ── Vectrik public site utilities ──
+window.vectrik = window.vectrik || {};
+
+window.vectrik.initPublicNav = function () {
+    var nav = document.querySelector('.pub-nav');
+    if (!nav) return;
+    var update = function () {
+        if (window.scrollY > 20) {
+            nav.classList.add('pub-nav-scrolled');
+        } else {
+            nav.classList.remove('pub-nav-scrolled');
+        }
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    update();
+};
+
+window.vectrik.initScrollReveal = function () {
+    var elements = document.querySelectorAll('.pub-fade-up');
+    if (!elements.length) return;
+    if (!('IntersectionObserver' in window)) {
+        elements.forEach(function (el) { el.classList.add('pub-visible'); });
+        return;
+    }
+    var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('pub-visible');
+                observer.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    elements.forEach(function (el) { observer.observe(el); });
+};
+
+// Auto-init for SSR pages and Blazor enhanced navigation
+function vectrikAutoInit() {
+    if (document.querySelector('.pub-layout')) {
+        window.vectrik.initPublicNav();
+        window.vectrik.initScrollReveal();
+    }
+}
+document.addEventListener('DOMContentLoaded', vectrikAutoInit);
+// Blazor enhanced navigation re-renders without DOMContentLoaded
+if (typeof Blazor !== 'undefined' && Blazor.addEventListener) {
+    Blazor.addEventListener('enhancedload', vectrikAutoInit);
+} else {
+    // Blazor not ready yet — listen for it
+    document.addEventListener('blazor:enhancedload', vectrikAutoInit);
+}
