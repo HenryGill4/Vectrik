@@ -232,17 +232,12 @@ app.UseMiddleware<TenantMiddleware>();
 
 app.UseAntiforgery();
 
-app.MapStaticAssets().AllowAnonymous();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
-app.MapHub<MachineStateHub>("/hubs/machine-state");
-
 // Health check endpoint for Azure App Service monitoring
 app.MapGet("/healthz", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
     .AllowAnonymous();
 
 // Temporary diagnostic endpoint to check tenant auth state
-app.MapGet("/healthz/auth", (PlatformDbContext platformDb) =>
+app.MapGet("/debug-auth-9x7k", (PlatformDbContext platformDb) =>
 {
     var debugDataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } debugHome
         ? Path.Combine(debugHome, "data") : "data";
@@ -265,6 +260,11 @@ app.MapGet("/healthz/auth", (PlatformDbContext platformDb) =>
     }
     return Results.Ok(new { dataRoot = debugDataRoot, tenants = results });
 }).AllowAnonymous();
+
+app.MapStaticAssets().AllowAnonymous();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
+app.MapHub<MachineStateHub>("/hubs/machine-state");
 
 // Logo upload endpoint
 var uploadsDir = Path.Combine(app.Environment.WebRootPath, "uploads", "logos");
