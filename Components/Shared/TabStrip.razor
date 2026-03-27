@@ -1,5 +1,6 @@
 @inject TabManagerService Tabs
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 <div class="tab-strip" @oncontextmenu:preventDefault>
@@ -145,9 +146,10 @@
     private static bool IsHomeDashboard(TabInfo tab) =>
         tab.Pinned && tab.Url.TrimStart('/') is "" or "/";
 
-    private void ActivateTab(TabInfo tab)
+    private async Task ActivateTab(TabInfo tab)
     {
         Tabs.Activate(tab.Id);
+        try { await JS.InvokeVoidAsync("vectrik.navLoading.show"); } catch { }
         Nav.NavigateTo(tab.Url);
         _showOverflow = false;
     }
@@ -161,20 +163,22 @@
         }
     }
 
-    private void CloseTab(TabInfo tab)
+    private async Task CloseTab(TabInfo tab)
     {
         Tabs.Close(tab.Id);
         var active = Tabs.ActiveTab;
+        try { await JS.InvokeVoidAsync("vectrik.navLoading.show"); } catch { }
         if (active is not null)
             Nav.NavigateTo(active.Url);
         else
             Nav.NavigateTo("/dashboard");
     }
 
-    private void CloseAllTabs()
+    private async Task CloseAllTabs()
     {
         Tabs.CloseAll();
         var active = Tabs.ActiveTab;
+        try { await JS.InvokeVoidAsync("vectrik.navLoading.show"); } catch { }
         Nav.NavigateTo(active?.Url ?? "/");
         _showOverflow = false;
     }
