@@ -1,0 +1,70 @@
+@* Shift Info Panel — Shows operator's current shift and schedule *@
+@inject IShiftManagementService ShiftService
+
+@if (_shifts.Any())
+{
+    <div class="card" style="margin-bottom: 16px; padding: 12px;">
+        <div style="font-weight: 600; margin-bottom: 8px;">
+            <VIcon Name="shifts" /> My Shift Schedule
+        </div>
+        @foreach (var shift in _shifts)
+        {
+            var isActive = IsShiftActive(shift);
+            <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; @(isActive ? "font-weight: 600;" : "opacity: 0.6;")">
+                @if (isActive)
+                {
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0;"></span>
+                }
+                else
+                {
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink: 0;"></span>
+                }
+                <span style="color: @(shift.Color ?? "var(--text-primary)");">@shift.Name</span>
+                <span style="color: var(--text-muted); font-size: 0.85rem;">
+                    @shift.StartTime.ToString(@"hh\:mm") – @shift.EndTime.ToString(@"hh\:mm")
+                </span>
+                <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: auto;">@(shift.DaysOfWeek ?? "Mon-Fri")</span>
+                @if (isActive)
+                {
+                    var remaining = shift.EndTime - DateTime.Now.TimeOfDay;
+                    if (remaining.TotalMinutes > 0)
+                    {
+                        <span style="color: var(--accent); font-size: 0.85rem; font-weight: 600;">
+                            @((int)remaining.TotalHours)h @(remaining.Minutes)m left
+                        </span>
+                    }
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int UserId { get; set; }
+
+    private List<OperatingShift> _shifts = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (UserId <= 0) return;
+        try
+        {
+            var assignments = await ShiftService.GetUserShiftsAsync(UserId);
+            _shifts = assignments
+                .Where(a => a.OperatingShift != null)
+                .Select(a => a.OperatingShift!)
+                .ToList();
+        }
+        catch { _shifts = new(); }
+    }
+
+    private bool IsShiftActive(OperatingShift shift)
+    {
+        var now = DateTime.Now;
+        var today = now.DayOfWeek.ToString()[..3]; // "Mon", "Tue", etc.
+        if (shift.DaysOfWeek != null && !shift.DaysOfWeek.Contains(today, StringComparison.OrdinalIgnoreCase))
+            return false;
+        var timeNow = now.TimeOfDay;
+        return timeNow >= shift.StartTime && timeNow <= shift.EndTime;
+    }
+}

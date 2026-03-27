@@ -106,6 +106,12 @@ else
                         </div>
                     }
 
+                    @* ── Machine Status Card ── *@
+                    @if (_uiConfig.ShowMachineStatus && exec.MachineId.HasValue)
+                    {
+                        <ShopFloor.Partials.MachineStatusCard MachineId="exec.MachineId" />
+                    }
+
                     @* ── Part Context Panel ── *@
                     @if (_uiConfig.ShowPartContext)
                     {
@@ -240,6 +246,16 @@ else
             </div>
 
             <div class="form-group">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Setup Time (min)</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_setupMinutes" placeholder="0" />
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Run Time (min)</label>
+                        <input class="form-control" type="number" step="1" min="0" @bind="_runMinutes" placeholder="0" />
+                    </div>
+                </div>
                 <label class="form-label">Completion Notes (optional)</label>
                 <textarea class="form-control" rows="2" @bind="_completionNotes" placeholder="Any notes about this run…"></textarea>
             </div>
@@ -334,6 +350,8 @@ else
     private bool _showCompleteModal;
     private StageExecution? _completingExecution;
     private string? _completionNotes;
+    private int _setupMinutes;
+    private int _runMinutes;
     private string _feedbackCategory = "";
     private ProgramFeedbackSeverity _feedbackSeverity = ProgramFeedbackSeverity.Low;
     private string? _feedbackComment;
@@ -474,6 +492,8 @@ else
     {
         _completingExecution = exec;
         _completionNotes = null;
+        _setupMinutes = 0;
+        _runMinutes = 0;
         _feedbackCategory = "";
         _feedbackSeverity = ProgramFeedbackSeverity.Low;
         _feedbackComment = null;
@@ -516,6 +536,14 @@ else
         try
         {
             var cfv = _partialData != null ? JsonSerializer.Serialize(_partialData) : null;
+
+            // Save setup/run time split if provided
+            if (_setupMinutes > 0 || _runMinutes > 0)
+            {
+                _completingExecution.SetupHoursActual = _setupMinutes / 60m;
+                _completingExecution.RunHoursActual = _runMinutes / 60m;
+            }
+
             await StageService.CompleteStageExecutionAsync(_completingExecution.Id, customFieldValues: cfv, notes: _completionNotes);
 
             // Submit program feedback if provided
