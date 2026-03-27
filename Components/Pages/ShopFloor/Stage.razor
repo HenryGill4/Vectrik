@@ -25,7 +25,10 @@ else
     <div class="content-tab-bar">
         <button class="tab @(_tab == "queue" ? "active" : "")" @onclick='() => _tab = "queue"'>Queue (@_queue.Count)</button>
         <button class="tab @(_tab == "active" ? "active" : "")" @onclick='() => _tab = "active"'>Active (@_active.Count)</button>
-        <button class="tab @(_tab == "history" ? "active" : "")" @onclick='() => _tab = "history"'>History (@_history.Count)</button>
+        @if (_uiConfig.ShowHistory)
+        {
+            <button class="tab @(_tab == "history" ? "active" : "")" @onclick='() => _tab = "history"'>History (@_history.Count)</button>
+        }
     </div>
 
     @if (_tab == "queue")
@@ -70,14 +73,14 @@ else
                     <div class="card-header">@exec.Job?.Part?.PartNumber — Job #@exec.JobId</div>
                     <div style="margin-bottom: 12px;">
                         <span class="form-label">Operator: @exec.OperatorName</span> | Started: @exec.StartedAt?.ToString("HH:mm")
-                        @if (exec.StartedAt.HasValue)
+                        @if (_uiConfig.ShowTimer && exec.StartedAt.HasValue)
                         {
                             var elapsed = DateTime.UtcNow - exec.StartedAt.Value;
                             <span style="margin-left: 8px; font-weight: 600; color: var(--accent);">
                                 @((int)elapsed.TotalHours)h @(elapsed.Minutes)m elapsed
                             </span>
                         }
-                        @if (exec.EstimatedHours.HasValue && exec.StartedAt.HasValue)
+                        @if (_uiConfig.ShowTimer && exec.EstimatedHours.HasValue && exec.StartedAt.HasValue)
                         {
                             var elapsed = (DateTime.UtcNow - exec.StartedAt.Value).TotalHours;
                             if (elapsed > exec.EstimatedHours.Value)
@@ -130,7 +133,7 @@ else
                     }
 
                     @* ── Sign-Off Checklist ── *@
-                    @if (_signOffItems.ContainsKey(exec.Id) && _signOffItems[exec.Id].Any())
+                    @if (_uiConfig.ShowSignOffChecklist && _signOffItems.ContainsKey(exec.Id) && _signOffItems[exec.Id].Any())
                     {
                         <div class="card" style="margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px;">
                             <div style="font-weight: 600; margin-bottom: 8px;">📋 Sign-Off Checklist</div>
@@ -157,17 +160,26 @@ else
                     }
 
                     <div style="display: flex; gap: 8px;">
-                        @{ var canComplete = !_signOffItems.ContainsKey(exec.Id) || !_signOffItems[exec.Id].Any(i => i.Required && !i.SignedOff); }
+                        @{
+                            var canComplete = true;
+                            if (_uiConfig.RequireChecklist && _signOffItems.ContainsKey(exec.Id) && _signOffItems[exec.Id].Any(i => i.Required && !i.SignedOff))
+                                canComplete = false;
+                            if (!_uiConfig.RequireChecklist && _signOffItems.ContainsKey(exec.Id) && _signOffItems[exec.Id].Any(i => i.Required && !i.SignedOff))
+                                canComplete = false; // Always enforce required items when they exist
+                        }
                         <button class="btn btn-success" @onclick="() => ShowCompleteModal(exec)" disabled="@(_actionInProgress || !canComplete)"
                                 title="@(!canComplete ? "Complete all required sign-off items first" : "")">Complete</button>
-                        <button class="btn btn-danger btn-sm" @onclick="() => FailWork(exec.Id)" disabled="@_actionInProgress">Fail</button>
+                        @if (_uiConfig.AllowFail)
+                        {
+                            <button class="btn btn-danger btn-sm" @onclick="() => FailWork(exec.Id)" disabled="@_actionInProgress">Fail</button>
+                        }
                     </div>
                 </div>
             }
         }
     }
 
-    @if (_tab == "history")
+    @if (_tab == "history" && _uiConfig.ShowHistory)
     {
         <div class="card">
             <table class="data-table">
@@ -289,6 +301,7 @@ else
 @code {
     [Parameter] public string Slug { get; set; } = "";
     private ProductionStage? _stage;
+    private StageUiConfig _uiConfig = new();
     private List<StageExecution> _queue = new(), _active = new(), _history = new();
     private string _tab = "queue";
     private int _currentUserId;
@@ -319,7 +332,11 @@ else
         try
         {
             _stage = await StageService.GetStageBySlugAsync(Slug);
-            if (_stage != null) await LoadData();
+            if (_stage != null)
+            {
+                _uiConfig = _stage.GetUiConfig();
+                await LoadData();
+            }
         }
         catch (Exception ex) { Toast.ShowError($"Failed to load stage: {ex.Message}"); }
     }
