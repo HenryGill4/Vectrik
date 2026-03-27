@@ -233,33 +233,8 @@ app.UseMiddleware<TenantMiddleware>();
 app.UseAntiforgery();
 
 // Health check endpoint for Azure App Service monitoring
-app.MapGet("/healthz", () =>
-{
-    var debugDataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } debugHome
-        ? Path.Combine(debugHome, "data") : "data";
-    var tenantsDir = Path.Combine(debugDataRoot, "tenants");
-    var tenantFiles = Directory.Exists(tenantsDir)
-        ? Directory.GetFiles(tenantsDir, "*.db").Select(Path.GetFileName).ToList()
-        : new List<string?>();
-
-    var results = new List<object>();
-    foreach (var file in tenantFiles)
-    {
-        var dbPath = Path.Combine(tenantsDir, file!);
-        var users = new List<string>();
-        try
-        {
-            var opts = new DbContextOptionsBuilder<TenantDbContext>()
-                .UseSqlite($"Data Source={dbPath}")
-                .Options;
-            using var tdb = new TenantDbContext(opts);
-            users = tdb.Users.Select(u => $"{u.Username} (active={u.IsActive}, role={u.Role})").ToList();
-        }
-        catch (Exception ex) { users.Add($"ERROR: {ex.Message}"); }
-        results.Add(new { file, dbPath, users });
-    }
-    return Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, dataRoot = debugDataRoot, tenants = results });
-}).AllowAnonymous();
+app.MapGet("/healthz", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
+    .AllowAnonymous();
 
 app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
