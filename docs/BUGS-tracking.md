@@ -10,17 +10,18 @@ Last tested: 2026-03-27 (full site walkthrough as admin user)
 - **Reproduction**: Log in as admin user → navigate to Shop Floor
 - **Error**: "An error occurred while processing your request." (500 server error)
 - **Root Cause**: Likely the `OnAfterRenderAsync` or `LoadData()` method fails for non-operator users. The page tries to call `GetCurrentExecutionForOperatorAsync()` and `GetOperatorQueueAsync()` with the admin's UserId, which may throw or return unexpected results. The `_currentUiConfig` property tries to access `_currentExecution?.ProductionStage?.GetUiConfig()` which may NPE if the execution has no stage loaded.
-- **Status**: [ ] Not fixed
+- **Status**: [x] FIXED — VIcon now accepts arbitrary HTML attributes via CaptureUnmatchedValues
 
 ## UI Bugs (Visual / Display Issues)
 
 ### BUG-002: Machine Detail OEE KPI shows raw C# code
 - **Page**: `/machines/{id}` (Machines/Detail.razor)
-- **Severity**: MEDIUM
+- **Severity**: MEDIUM — ALSO FOUND IN 5 MORE FILES (78+ instances total)
 - **Reproduction**: Navigate to any machine detail page → look at OEE (30D) KPI card
 - **Symptom**: Shows `0.ToString("F1")%` as literal text instead of `0.0%`
-- **Root Cause**: Razor template has `.ToString("F1")` in an expression that's being rendered as markup instead of code. Likely a missing `@()` wrapper or incorrect Razor syntax.
-- **Status**: [ ] Not fixed
+- **Root Cause**: Razor `@(expr).ToString("F1")` terminates the expression at `)` and renders `.ToString("F1")` as literal HTML. Fix: `@((expr).ToString("F1"))` with double parens.
+- **Files fixed**: Detail.razor, ProfitDashboard.razor (41 fixes), OperationCosts.razor (17 fixes), CostEstimator.razor, PartPricingEditor.razor, ProcessEditor.razor, SLSPrinting.razor, NextBuildAdvisor.razor
+- **Status**: [x] FIXED — 78+ instances across 8 files
 
 ## Minor Issues / Polish
 

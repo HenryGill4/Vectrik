@@ -35,18 +35,18 @@ else if (_summary != null)
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
         <div class="card" style="text-align: center; padding: 16px;">
             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Total Revenue</div>
-            <div style="font-size: 1.6rem; font-weight: 700; color: var(--primary);">$@_summary.TotalRevenue.ToString("N0")</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: var(--primary);">$@(_summary.TotalRevenue.ToString("N0"))</div>
             <div style="font-size: 0.75rem; color: var(--text-muted);">@_summary.CompletedJobs jobs</div>
         </div>
         <div class="card" style="text-align: center; padding: 16px;">
             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Total Cost</div>
-            <div style="font-size: 1.6rem; font-weight: 700;">$@_summary.TotalCost.ToString("N0")</div>
+            <div style="font-size: 1.6rem; font-weight: 700;">$@(_summary.TotalCost.ToString("N0"))</div>
             <div style="font-size: 0.75rem; color: var(--text-muted);">@_summary.TotalPartsProduced parts</div>
         </div>
         <div class="card" style="text-align: center; padding: 16px;">
             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Gross Profit</div>
-            <div style="font-size: 1.6rem; font-weight: 700; color: @(_summary.GrossProfit >= 0 ? "var(--success)" : "var(--danger)");">$@_summary.GrossProfit.ToString("N0")</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">$@_summary.AverageProfitPerPart.ToString("F2") / part</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: @(_summary.GrossProfit >= 0 ? "var(--success)" : "var(--danger)");">$@(_summary.GrossProfit.ToString("N0"))</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">$@(_summary.AverageProfitPerPart.ToString("F2")) / part</div>
         </div>
         <div class="card" style="text-align: center; padding: 16px;">
             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Gross Margin</div>
@@ -70,21 +70,21 @@ else if (_summary != null)
                 @if (_summary.TotalLaborCost > 0)
                 {
                     <div style="width: @(CostBarPct(_summary.TotalLaborCost, total))%; background: #3b82f6; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.7rem; font-weight: 600; min-width: 30px;"
-                         title="Labor: $@_summary.TotalLaborCost.ToString("N0")">
+                         title="Labor: $@(_summary.TotalLaborCost.ToString("N0"))">
                         👷 @(CostBarPct(_summary.TotalLaborCost, total))%
                     </div>
                 }
                 @if (_summary.TotalOverheadCost > 0)
                 {
                     <div style="width: @(CostBarPct(_summary.TotalOverheadCost, total))%; background: #8b5cf6; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.7rem; font-weight: 600; min-width: 30px;"
-                         title="Overhead: $@_summary.TotalOverheadCost.ToString("N0")">
+                         title="Overhead: $@(_summary.TotalOverheadCost.ToString("N0"))">
                         🏢 @(CostBarPct(_summary.TotalOverheadCost, total))%
                     </div>
                 }
                 @if (_summary.TotalMaterialCost > 0)
                 {
                     <div style="width: @(CostBarPct(_summary.TotalMaterialCost, total))%; background: #f59e0b; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.7rem; font-weight: 600; min-width: 30px;"
-                         title="Material: $@_summary.TotalMaterialCost.ToString("N0")">
+                         title="Material: $@(_summary.TotalMaterialCost.ToString("N0"))">
                         🧪 @(CostBarPct(_summary.TotalMaterialCost, total))%
                     </div>
                 }
@@ -98,9 +98,9 @@ else if (_summary != null)
                 }
             </div>
             <div style="display: flex; gap: 16px; margin-top: 6px; font-size: 0.75rem; color: var(--text-muted); flex-wrap: wrap;">
-                <span>👷 Labor: $@_summary.TotalLaborCost.ToString("N0")</span>
-                <span>🏢 Overhead: $@_summary.TotalOverheadCost.ToString("N0")</span>
-                <span>🧪 Material: $@_summary.TotalMaterialCost.ToString("N0")</span>
+                <span>👷 Labor: $@(_summary.TotalLaborCost.ToString("N0"))</span>
+                <span>🏢 Overhead: $@(_summary.TotalOverheadCost.ToString("N0"))</span>
+                <span>🧪 Material: $@(_summary.TotalMaterialCost.ToString("N0"))</span>
                 <span>🖥️ Other: $@otherCost.ToString("N0")</span>
             </div>
         </div>
@@ -158,11 +158,11 @@ else if (_summary != null)
                                 </td>
                                 <td style="text-align:right;">@row.TotalProduced</td>
                                 <td style="text-align:right;">@(row.HasPricing ? "$" + row.SellPricePerUnit.ToString("F2") : "—")</td>
-                                <td style="text-align:right;">$@row.CostPerUnit.ToString("F2")</td>
+                                <td style="text-align:right;">$@(row.CostPerUnit.ToString("F2"))</td>
                                 <td style="text-align:right;">@(row.TotalRevenue > 0 ? "$" + row.TotalRevenue.ToString("N0") : "—")</td>
-                                <td style="text-align:right;">$@row.TotalCost.ToString("N0")</td>
+                                <td style="text-align:right;">$@(row.TotalCost.ToString("N0"))</td>
                                 <td style="text-align:right; font-weight: 600; color: @(row.Profit >= 0 ? "var(--success)" : "var(--danger)");">
-                                    $@row.Profit.ToString("N0")
+                                    $@(row.Profit.ToString("N0"))
                                 </td>
                                 <td style="text-align:right; color: @(row.MarginPct >= 20 ? "var(--success)" : row.MarginPct >= 0 ? "var(--warning)" : "var(--danger)");">
                                     @(row.TotalRevenue > 0 ? row.MarginPct.ToString("F1") + "%" : "—")
@@ -179,10 +179,10 @@ else if (_summary != null)
                             <td style="text-align:right;">@_byPart.Sum(r => r.TotalProduced)</td>
                             <td></td>
                             <td></td>
-                            <td style="text-align:right;">$@_byPart.Sum(r => r.TotalRevenue).ToString("N0")</td>
-                            <td style="text-align:right;">$@_byPart.Sum(r => r.TotalCost).ToString("N0")</td>
+                            <td style="text-align:right;">$@(_byPart.Sum(r => r.TotalRevenue).ToString("N0"))</td>
+                            <td style="text-align:right;">$@(_byPart.Sum(r => r.TotalCost).ToString("N0"))</td>
                             <td style="text-align:right; color: @(_byPart.Sum(r => r.Profit) >= 0 ? "var(--success)" : "var(--danger)");">
-                                $@_byPart.Sum(r => r.Profit).ToString("N0")
+                                $@(_byPart.Sum(r => r.Profit).ToString("N0"))
                             </td>
                             <td></td>
                             <td></td>
@@ -222,10 +222,10 @@ else if (_summary != null)
                                 <td><strong>@row.CustomerName</strong></td>
                                 <td style="text-align:right;">@row.OrderCount</td>
                                 <td style="text-align:right;">@row.TotalParts</td>
-                                <td style="text-align:right;">$@row.TotalRevenue.ToString("N0")</td>
-                                <td style="text-align:right;">$@row.TotalCost.ToString("N0")</td>
+                                <td style="text-align:right;">$@(row.TotalRevenue.ToString("N0"))</td>
+                                <td style="text-align:right;">$@(row.TotalCost.ToString("N0"))</td>
                                 <td style="text-align:right; font-weight: 600; color: @(row.Profit >= 0 ? "var(--success)" : "var(--danger)");">
-                                    $@row.Profit.ToString("N0")
+                                    $@(row.Profit.ToString("N0"))
                                 </td>
                                 <td style="text-align:right; color: @(row.MarginPct >= 20 ? "var(--success)" : row.MarginPct >= 0 ? "var(--warning)" : "var(--danger)");">
                                     @(row.TotalRevenue > 0 ? row.MarginPct.ToString("F1") + "%" : "—")
@@ -238,10 +238,10 @@ else if (_summary != null)
                             <td>Totals</td>
                             <td style="text-align:right;">@_byCustomer.Sum(r => r.OrderCount)</td>
                             <td style="text-align:right;">@_byCustomer.Sum(r => r.TotalParts)</td>
-                            <td style="text-align:right;">$@_byCustomer.Sum(r => r.TotalRevenue).ToString("N0")</td>
-                            <td style="text-align:right;">$@_byCustomer.Sum(r => r.TotalCost).ToString("N0")</td>
+                            <td style="text-align:right;">$@(_byCustomer.Sum(r => r.TotalRevenue).ToString("N0"))</td>
+                            <td style="text-align:right;">$@(_byCustomer.Sum(r => r.TotalCost).ToString("N0"))</td>
                             <td style="text-align:right; color: @(_byCustomer.Sum(r => r.Profit) >= 0 ? "var(--success)" : "var(--danger)");">
-                                $@_byCustomer.Sum(r => r.Profit).ToString("N0")
+                                $@(_byCustomer.Sum(r => r.Profit).ToString("N0"))
                             </td>
                             <td></td>
                         </tr>
@@ -288,9 +288,9 @@ else if (_summary != null)
                     <div>Total</div>
                     <div></div>
                     <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                        <span style="color: var(--primary);">$@_trend.Sum(t => t.Revenue).ToString("N0")</span>
-                        <span>$@_trend.Sum(t => t.Cost).ToString("N0")</span>
-                        <span style="color: @(_trend.Sum(t => t.Profit) >= 0 ? "var(--success)" : "var(--danger)");">$@_trend.Sum(t => t.Profit).ToString("N0")</span>
+                        <span style="color: var(--primary);">$@(_trend.Sum(t => t.Revenue).ToString("N0"))</span>
+                        <span>$@(_trend.Sum(t => t.Cost).ToString("N0"))</span>
+                        <span style="color: @(_trend.Sum(t => t.Profit) >= 0 ? "var(--success)" : "var(--danger)");">$@(_trend.Sum(t => t.Profit).ToString("N0"))</span>
                     </div>
                 </div>
 
@@ -336,7 +336,7 @@ else if (_summary != null)
             {
                 <div style="padding: 10px 14px; background: rgba(239,68,68,0.08); border-radius: 6px; margin-bottom: 12px; font-size: 0.85rem;">
                     ⚠️ <strong>@_unprofitable.Count job(s)</strong> completed below cost. Total loss:
-                    <strong style="color: var(--danger);">$@_unprofitable.Sum(r => r.Loss).ToString("N0")</strong>
+                    <strong style="color: var(--danger);">$@(_unprofitable.Sum(r => r.Loss).ToString("N0"))</strong>
                 </div>
                 <table class="data-table">
                     <thead>
@@ -358,9 +358,9 @@ else if (_summary != null)
                                 <td>#@row.JobId</td>
                                 <td><strong>@row.PartNumber</strong></td>
                                 <td>@row.CustomerName</td>
-                                <td style="text-align:right;">$@row.Revenue.ToString("N2")</td>
-                                <td style="text-align:right;">$@row.Cost.ToString("N2")</td>
-                                <td style="text-align:right; font-weight: 600; color: var(--danger);">-$@row.Loss.ToString("N2")</td>
+                                <td style="text-align:right;">$@(row.Revenue.ToString("N2"))</td>
+                                <td style="text-align:right;">$@(row.Cost.ToString("N2"))</td>
+                                <td style="text-align:right; font-weight: 600; color: var(--danger);">-$@(row.Loss.ToString("N2"))</td>
                                 <td style="text-align:right; color: var(--danger);">@row.MarginPct.ToString("F1")%</td>
                                 <td style="font-size: 0.8rem; color: var(--text-muted);">@row.CompletedDate.ToString("MMM dd")</td>
                             </tr>
@@ -412,27 +412,27 @@ else if (_summary != null)
                 <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
                     <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 12px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Sell Price</div>
-                        <div style="font-size: 1.4rem; font-weight: 700; color: var(--primary);">$@_breakdown.SellPricePerUnit.ToString("F2")</div>
+                        <div style="font-size: 1.4rem; font-weight: 700; color: var(--primary);">$@(_breakdown.SellPricePerUnit.ToString("F2"))</div>
                         <div style="font-size: 0.7rem; color: var(--text-muted);">per unit</div>
                     </div>
                     <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 12px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Mfg Cost</div>
-                        <div style="font-size: 1.4rem; font-weight: 700;">$@_breakdown.ManufacturingCostPerUnit.ToString("F2")</div>
+                        <div style="font-size: 1.4rem; font-weight: 700;">$@(_breakdown.ManufacturingCostPerUnit.ToString("F2"))</div>
                         <div style="font-size: 0.7rem; color: var(--text-muted);">per unit</div>
                     </div>
                     <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 12px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Material</div>
-                        <div style="font-size: 1.4rem; font-weight: 700;">$@_breakdown.MaterialCostPerUnit.ToString("F2")</div>
+                        <div style="font-size: 1.4rem; font-weight: 700;">$@(_breakdown.MaterialCostPerUnit.ToString("F2"))</div>
                         <div style="font-size: 0.7rem; color: var(--text-muted);">per unit</div>
                     </div>
                     <div style="flex: 1; min-width: 120px; background: var(--bg-tertiary); border-radius: 6px; padding: 12px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Total Cost</div>
-                        <div style="font-size: 1.4rem; font-weight: 700;">$@_breakdown.TotalCostPerUnit.ToString("F2")</div>
+                        <div style="font-size: 1.4rem; font-weight: 700;">$@(_breakdown.TotalCostPerUnit.ToString("F2"))</div>
                         <div style="font-size: 0.7rem; color: var(--text-muted);">per unit</div>
                     </div>
                     <div style="flex: 1; min-width: 120px; background: @(_breakdown.ProfitPerUnit >= 0 ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)"); border-radius: 6px; padding: 12px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Profit / Unit</div>
-                        <div style="font-size: 1.4rem; font-weight: 700; color: @(_breakdown.ProfitPerUnit >= 0 ? "var(--success)" : "var(--danger)");">$@_breakdown.ProfitPerUnit.ToString("F2")</div>
+                        <div style="font-size: 1.4rem; font-weight: 700; color: @(_breakdown.ProfitPerUnit >= 0 ? "var(--success)" : "var(--danger)");">$@(_breakdown.ProfitPerUnit.ToString("F2"))</div>
                         <div style="font-size: 0.7rem; color: @(_breakdown.MarginPct >= _breakdown.TargetMarginPct ? "var(--success)" : "var(--danger)");">@_breakdown.MarginPct.ToString("F1")% margin (target: @_breakdown.TargetMarginPct.ToString("F0")%)</div>
                     </div>
                 </div>
@@ -498,12 +498,12 @@ else if (_summary != null)
                         <tfoot>
                             <tr style="font-weight: 700; border-top: 2px solid var(--border);">
                                 <td colspan="3">Manufacturing Total</td>
-                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.LaborCost).ToString("F2")</td>
-                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.EquipmentCost).ToString("F2")</td>
-                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.OverheadCost).ToString("F2")</td>
-                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.ExternalCost).ToString("F2")</td>
-                                <td style="text-align:right;">$@_breakdown.StageBreakdown.Sum(s => s.TotalCost).ToString("F2")</td>
-                                <td style="text-align:right;">$@_breakdown.ManufacturingCostPerUnit.ToString("F2")</td>
+                                <td style="text-align:right;">$@(_breakdown.StageBreakdown.Sum(s => s.LaborCost).ToString("F2"))</td>
+                                <td style="text-align:right;">$@(_breakdown.StageBreakdown.Sum(s => s.EquipmentCost).ToString("F2"))</td>
+                                <td style="text-align:right;">$@(_breakdown.StageBreakdown.Sum(s => s.OverheadCost).ToString("F2"))</td>
+                                <td style="text-align:right;">$@(_breakdown.StageBreakdown.Sum(s => s.ExternalCost).ToString("F2"))</td>
+                                <td style="text-align:right;">$@(_breakdown.StageBreakdown.Sum(s => s.TotalCost).ToString("F2"))</td>
+                                <td style="text-align:right;">$@(_breakdown.ManufacturingCostPerUnit.ToString("F2"))</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -554,7 +554,7 @@ else if (_summary != null)
                     </div>
                     <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 14px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Avg Sell Price</div>
-                        <div style="font-size: 1.6rem; font-weight: 700;">$@_coverage.AverageSellPrice.ToString("F0")</div>
+                        <div style="font-size: 1.6rem; font-weight: 700;">$@(_coverage.AverageSellPrice.ToString("F0"))</div>
                     </div>
                     <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 14px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Avg Target Margin</div>
