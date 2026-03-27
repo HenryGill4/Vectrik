@@ -151,8 +151,8 @@ using (var scope = app.Services.CreateScope())
             var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
             platformDb.PlatformUsers.Add(new Vectrik.Models.Platform.PlatformUser
             {
-                Username = "superadmin",
-                PasswordHash = authService.HashPassword("admin123"),
+                Username = "henry",
+                PasswordHash = authService.HashPassword("Vectrik2026!"),
                 Role = "SuperAdmin"
             });
             platformDb.SaveChanges();

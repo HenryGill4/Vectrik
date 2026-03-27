@@ -1,8 +1,7 @@
 @inherits LayoutComponentBase
-@inject IJSRuntime JS
 
 <div class="pub-layout">
-    <nav class="pub-nav @(_scrolled ? "pub-nav-scrolled" : "")">
+    <nav class="pub-nav">
         <div class="pub-nav-inner">
             <a href="/" class="pub-nav-brand">
                 <svg class="pub-nav-logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -21,7 +20,7 @@
                 <span class="pub-nav-wordmark">VECTRIK</span>
             </a>
 
-            <div class="pub-nav-links @(_menuOpen ? "pub-nav-links-open" : "")">
+            <div class="pub-nav-links" id="pub-mobile-menu">
                 <a href="/features" class="pub-nav-link">Features</a>
                 <a href="/pricing" class="pub-nav-link">Pricing</a>
                 <a href="/about" class="pub-nav-link">About</a>
@@ -36,7 +35,7 @@
                 <a href="/demo" class="pub-btn pub-btn-primary pub-btn-sm">Request Demo</a>
             </div>
 
-            <button class="pub-hamburger @(_menuOpen ? "pub-hamburger-open" : "")" @onclick="ToggleMenu" aria-label="Toggle navigation">
+            <button class="pub-hamburger" id="pub-hamburger-btn" onclick="vectrik.toggleMobileMenu()" aria-label="Toggle navigation">
                 <span></span>
                 <span></span>
                 <span></span>
@@ -104,27 +103,3 @@
     </footer>
 
 </div>
-
-@code {
-    private bool _menuOpen;
-    private bool _scrolled;
-
-    private void ToggleMenu()
-    {
-        _menuOpen = !_menuOpen;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            try
-            {
-                await JS.InvokeVoidAsync("vectrik.initPublicNav");
-                await JS.InvokeVoidAsync("vectrik.initScrollReveal");
-            }
-            catch (JSDisconnectedException) { }
-            catch (TaskCanceledException) { }
-        }
-    }
-}
