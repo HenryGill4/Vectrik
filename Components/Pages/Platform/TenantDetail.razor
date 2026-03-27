@@ -3,7 +3,6 @@
 @inject ITenantService TenantService
 @inject NavigationManager Nav
 @inject ToastService Toast
-@inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "SuperAdmin")]
 
@@ -29,7 +28,7 @@ else if (_tenant != null)
     @* ─── HEADER: Logo + Name + Status ─── *@
     <div class="card" style="margin-bottom: 16px;">
         <div style="padding: 20px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
-            <div class="tenant-logo-upload" @onclick="TriggerLogoUpload">
+            <label class="tenant-logo-upload" for="logo-file-input" style="cursor: pointer;">
                 @if (!string.IsNullOrWhiteSpace(_tenant.LogoUrl))
                 {
                     <img src="@_tenant.LogoUrl" alt="Logo" class="tenant-logo-img"
@@ -45,9 +44,9 @@ else if (_tenant != null)
                     </div>
                 }
                 <div class="tenant-logo-overlay">📷</div>
-                <InputFile OnChange="OnLogoSelected" accept="image/*" @ref="_fileInput"
-                           style="display: none;" id="logo-file-input" />
-            </div>
+            </label>
+            <InputFile OnChange="OnLogoSelected" accept="image/*" @ref="_fileInput"
+                       style="display: none; position: absolute;" id="logo-file-input" />
             <div style="flex: 1; min-width: 200px;">
                 <div style="font-size: 1.5rem; font-weight: 600; color: var(--text);">@_tenant.CompanyName</div>
                 <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 2px;">@_tenant.Code</div>
@@ -292,11 +291,6 @@ else if (_tenant != null)
         else
             await TenantService.ActivateTenantAsync(_tenant.Id);
         _tenant.IsActive = !_tenant.IsActive;
-    }
-
-    private async Task TriggerLogoUpload()
-    {
-        await JS.InvokeVoidAsync("eval", "document.getElementById('logo-file-input').click()");
     }
 
     private async Task OnLogoSelected(InputFileChangeEventArgs e)
