@@ -68,7 +68,7 @@
     /// </summary>
     private static readonly Dictionary<string, (string Title, string Icon)> _routeMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        [""] = ("Dashboard", "📊"),
+        ["dashboard"] = ("Dashboard", "📊"),
         ["scheduler"] = ("Scheduler", "📅"),
         ["scheduler/capacity"] = ("Capacity", "📊"),
         ["workorders"] = ("Work Orders", "📋"),
@@ -154,13 +154,14 @@
     {
         var relativePath = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0];
 
-        // Skip auth pages — don't create tabs for login/logout
+        // Skip auth and public pages — don't create tabs for login/logout or marketing pages
         if (relativePath.StartsWith("account", StringComparison.OrdinalIgnoreCase)) return;
+        if (relativePath is "" or "features" or "pricing" or "about" or "demo") return;
 
         // Try exact match first, then pattern matches for detail pages
         if (_routeMap.TryGetValue(relativePath, out var info))
         {
-            TabManager.Open(info.Title, info.Icon, "/" + relativePath, pinned: relativePath == "");
+            TabManager.Open(info.Title, info.Icon, "/" + relativePath, pinned: relativePath.Equals("dashboard", StringComparison.OrdinalIgnoreCase));
         }
         else
         {
