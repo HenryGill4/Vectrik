@@ -27,4 +27,13 @@ public class Tenant
 
     [MaxLength(50)]
     public string? SubscriptionTier { get; set; }
+
+    [MaxLength(200)]
+    public string? ContactEmail { get; set; }
+
+    [MaxLength(50)]
+    public string? ContactPhone { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
 }

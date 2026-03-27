@@ -121,6 +121,94 @@ public class TenantService : ITenantService
         }
     }
 
+    // --- Feature flags ---
+
+    private static readonly List<(string Key, string Category, string Label)> _allFeatureKeys = new()
+    {
+        // Modules
+        ("module.quoting", "Modules", "Quoting"),
+        ("module.workorders", "Modules", "Work Orders"),
+        ("module.shopfloor", "Modules", "Shop Floor"),
+        ("module.quality", "Modules", "Quality"),
+        ("module.inventory", "Modules", "Inventory"),
+        ("module.analytics", "Modules", "Analytics"),
+        ("module.pdm", "Modules", "PDM"),
+        ("module.costing", "Modules", "Costing"),
+        ("module.tools", "Modules", "Tool Management"),
+        ("module.maintenance", "Modules", "Maintenance"),
+        ("module.purchasing", "Modules", "Purchasing"),
+        ("module.timeclock", "Modules", "Time Clock"),
+        ("module.documents", "Modules", "Documents"),
+        ("module.shipping", "Modules", "Shipping"),
+        ("module.crm", "Modules", "CRM"),
+        ("module.compliance", "Modules", "Compliance"),
+        ("module.training", "Modules", "Training"),
+        // Additive
+        ("sls", "Additive", "SLS / LPBF"),
+        ("dlms", "Additive", "DLMS"),
+        ("dlms.iuid", "Additive", "DLMS — IUID"),
+        ("dlms.wawf", "Additive", "DLMS — WAWF"),
+        ("dlms.gfm", "Additive", "DLMS — GFM"),
+        ("dlms.cdrl", "Additive", "DLMS — CDRL"),
+        // Advanced
+        ("advanced.spc", "Advanced", "SPC"),
+        ("advanced.workflows", "Advanced", "Workflows"),
+        ("advanced.custom_fields", "Advanced", "Custom Fields"),
+    };
+
+    public List<(string Key, string Category, string Label)> GetAllFeatureKeys() => _allFeatureKeys;
+
+    public async Task<Dictionary<string, bool>> GetTenantFeatureFlagsAsync(string tenantCode)
+    {
+        var flags = await _platformDb.TenantFeatureFlags
+            .Where(f => f.TenantCode == tenantCode)
+            .ToListAsync();
+
+        var result = new Dictionary<string, bool>();
+        foreach (var key in _allFeatureKeys)
+        {
+            var flag = flags.FirstOrDefault(f => f.FeatureKey == key.Key);
+            result[key.Key] = flag?.IsEnabled ?? false;
+        }
+        return result;
+    }
+
+    public async Task SetTenantFeatureFlagsAsync(string tenantCode, Dictionary<string, bool> flags)
+    {
+        var existing = await _platformDb.TenantFeatureFlags
+            .Where(f => f.TenantCode == tenantCode)
+            .ToListAsync();
+
+        foreach (var (key, enabled) in flags)
+        {
+            var flag = existing.FirstOrDefault(f => f.FeatureKey == key);
+            if (flag != null)
+            {
+                flag.IsEnabled = enabled;
+                if (enabled && flag.EnabledAt == null) flag.EnabledAt = DateTime.UtcNow;
+                if (!enabled) flag.EnabledAt = null;
+            }
+            else
+            {
+                _platformDb.TenantFeatureFlags.Add(new Models.Platform.TenantFeatureFlag
+                {
+                    TenantCode = tenantCode,
+                    FeatureKey = key,
+                    IsEnabled = enabled,
+                    EnabledAt = enabled ? DateTime.UtcNow : null,
+                    CreatedDate = DateTime.UtcNow
+                });
+            }
+        }
+        await _platformDb.SaveChangesAsync();
+    }
+
+    public async Task<int> GetTenantUserCountAsync(string tenantCode)
+    {
+        using var db = CreateTenantDbContext(tenantCode);
+        return await db.Users.CountAsync(u => u.IsActive);
+    }
+
     // --- Tenant user management ---
 
     private TenantDbContext CreateTenantDbContext(string tenantCode)

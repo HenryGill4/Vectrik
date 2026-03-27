@@ -1,97 +1,102 @@
 @page "/platform/tenants"
 @inject ITenantService TenantService
-@inject IAuthService AuthService
 @inject NavigationManager Nav
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "SuperAdmin")]
 
-<PageTitle>Tenants - OpCentrix Platform</PageTitle>
+<PageTitle>Customers - OpCentrix Platform</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Tenants</h1>
-    <button class="btn btn-primary" @onclick="() => _showCreate = true">+ New Tenant</button>
+    <h1 class="page-title">Customers</h1>
+    <button class="btn btn-primary" @onclick="CreateNew">+ New Customer</button>
+</div>
+
+<div style="margin-bottom: 16px;">
+    <input class="form-control" placeholder="Search customers..." @bind="_search" @bind:event="oninput"
+           style="max-width: 400px;" />
 </div>
 
 @if (_tenants == null)
 {
     <div class="loading"><span class="spinner"></span> Loading...</div>
 }
-else
+else if (!FilteredTenants.Any())
 {
-    <div class="card">
-        <table class="data-table">
-            <thead>
-                <tr><th>Code</th><th>Company</th><th>Status</th><th>Created</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var t in _tenants)
-                {
-                    <tr>
-                        <td>@t.Code</td>
-                        <td>@t.CompanyName</td>
-                        <td><span class="badge @(t.IsActive ? "badge-active" : "badge-cancelled")">@(t.IsActive ? "Active" : "Inactive")</span></td>
-                        <td>@t.CreatedDate.ToString("yyyy-MM-dd")</td>
-                        <td>
-                            <button class="btn btn-sm btn-secondary" @onclick="() => ManageUsers(t.Code)">Users</button>
-                            @if (t.IsActive)
-                            {
-                                <button class="btn btn-sm btn-danger" @onclick="() => Deactivate(t.Id)">Deactivate</button>
-                            }
-                            else
-                            {
-                                <button class="btn btn-sm btn-success" @onclick="() => Activate(t.Id)">Activate</button>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+    <div class="card" style="padding: 32px; text-align: center; color: var(--text-muted);">
+        No customers found.
     </div>
 }
-
-@if (_showCreate)
+else
 {
-    <div class="modal-overlay" @onclick="() => _showCreate = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header">
-                <span class="modal-title">New Tenant</span>
-                <button class="modal-close" @onclick="() => _showCreate = false">&times;</button>
+    <div class="tenant-card-grid">
+        @foreach (var t in FilteredTenants)
+        {
+            <div class="tenant-card" @onclick="() => GoToTenant(t.Code)">
+                <div class="tenant-card-header">
+                    @if (!string.IsNullOrWhiteSpace(t.LogoUrl))
+                    {
+                        <img class="tenant-card-logo" src="@t.LogoUrl" alt="@t.CompanyName"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                        <div class="tenant-card-initials" style="display:none; background: @(t.PrimaryColor ?? "#6366f1");">
+                            @t.CompanyName[0]
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="tenant-card-initials" style="background: @(t.PrimaryColor ?? "#6366f1");">
+                            @t.CompanyName[0]
+                        </div>
+                    }
+                    <span class="badge @(t.IsActive ? "badge-active" : "badge-cancelled")" style="position: absolute; top: 12px; right: 12px;">
+                        @(t.IsActive ? "Active" : "Inactive")
+                    </span>
+                </div>
+                <div class="tenant-card-body">
+                    <div class="tenant-card-name">@t.CompanyName</div>
+                    <div class="tenant-card-code">@t.Code</div>
+                    <div class="tenant-card-meta">
+                        @if (!string.IsNullOrWhiteSpace(t.SubscriptionTier))
+                        {
+                            <span class="tier-badge tier-badge-@(t.SubscriptionTier?.ToLowerInvariant().Replace(" ", ""))">@t.SubscriptionTier</span>
+                        }
+                        else
+                        {
+                            <span class="tier-badge tier-badge-free">No Tier</span>
+                        }
+                        <span style="color: var(--text-muted); font-size: 0.8rem;">
+                            @(_userCounts.GetValueOrDefault(t.Code, 0)) user@(_userCounts.GetValueOrDefault(t.Code, 0) == 1 ? "" : "s")
+                        </span>
+                    </div>
+                    <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px;">
+                        Created @t.CreatedDate.ToString("MMM d, yyyy")
+                    </div>
+                </div>
             </div>
-            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
-            <div class="form-group">
-                <label class="form-label">Code (lowercase, no spaces)</label>
-                <input class="form-control" @bind="_newCode" />
-            </div>
-            <div class="form-group">
-                <label class="form-label">Company Name</label>
-                <input class="form-control" @bind="_newCompany" />
-            </div>
-            <button class="btn btn-primary" @onclick="CreateTenant">Create Tenant</button>
-        </div>
+        }
     </div>
 }
 
 @code {
     private List<Opcentrix_V3.Models.Platform.Tenant>? _tenants;
-    private bool _showCreate;
-    private string _newCode = "", _newCompany = "";
-    private string? _error;
+    private Dictionary<string, int> _userCounts = new();
+    private string _search = "";
 
-    protected override async Task OnInitializedAsync() => _tenants = await TenantService.GetAllTenantsAsync();
+    private void CreateNew() => Nav.NavigateTo("/platform/tenants/new");
+    private void GoToTenant(string code) => Nav.NavigateTo($"/platform/tenants/{code}");
 
-    private async Task CreateTenant()
+    private IEnumerable<Opcentrix_V3.Models.Platform.Tenant> FilteredTenants =>
+        _tenants?.Where(t =>
+            string.IsNullOrWhiteSpace(_search) ||
+            t.CompanyName.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            t.Code.Contains(_search, StringComparison.OrdinalIgnoreCase)
+        ) ?? Enumerable.Empty<Opcentrix_V3.Models.Platform.Tenant>();
+
+    protected override async Task OnInitializedAsync()
     {
-        _error = null;
-        try
+        _tenants = await TenantService.GetAllTenantsAsync();
+        foreach (var t in _tenants)
         {
-            await TenantService.CreateTenantAsync(_newCode, _newCompany, "SuperAdmin");
-            _showCreate = false;
-            _tenants = await TenantService.GetAllTenantsAsync();
+            try { _userCounts[t.Code] = await TenantService.GetTenantUserCountAsync(t.Code); }
+            catch { _userCounts[t.Code] = 0; }
         }
-        catch (Exception ex) { _error = ex.Message; }
     }
-
-    private void ManageUsers(string code) => Nav.NavigateTo($"/platform/tenants/{code}/users");
-
-    private async Task Deactivate(int id) { await TenantService.DeactivateTenantAsync(id); _tenants = await TenantService.GetAllTenantsAsync(); }
-    private async Task Activate(int id) { await TenantService.ActivateTenantAsync(id); _tenants = await TenantService.GetAllTenantsAsync(); }
 }

@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 480" fill="none">
+  <defs>
+    <linearGradient id="lEdge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d4d4d8"/>
+      <stop offset="30%" stop-color="#fafafa"/>
+      <stop offset="50%" stop-color="#a1a1aa"/>
+      <stop offset="70%" stop-color="#e4e4e7"/>
+      <stop offset="100%" stop-color="#71717a"/>
+    </linearGradient>
+    <linearGradient id="lFill" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#27272a"/>
+      <stop offset="100%" stop-color="#18181b"/>
+    </linearGradient>
+    <linearGradient id="lShimmer" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="rgba(255,255,255,0)"/>
+      <stop offset="50%" stop-color="rgba(255,255,255,0.08)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+      <animateTransform attributeName="gradientTransform" type="translate"
+        values="-1 0;2 0" dur="2.5s" repeatCount="indefinite"/>
+    </linearGradient>
+
+    <!-- Clip for shimmer -->
+    <clipPath id="shieldClip">
+      <path d="M200 48 L326 92 C328 93 330 95 330 98 L330 218 C330 280 296 332 200 378 C104 332 70 280 70 218 L70 98 C70 95 72 93 74 92 Z"/>
+    </clipPath>
+  </defs>
+
+  <style>
+    /* Shield outline draws in */
+    .shield-outline {
+      stroke-dasharray: 900;
+      stroke-dashoffset: 900;
+      animation: drawShield 1.4s ease-out 0.2s forwards;
+    }
+    @keyframes drawShield {
+      to { stroke-dashoffset: 0; }
+    }
+
+    /* Shield fill fades in after outline draws */
+    .shield-fill {
+      opacity: 0;
+      animation: fadeIn 0.6s ease-out 1.0s forwards;
+    }
+
+    /* Inner border draws in */
+    .inner-border {
+      stroke-dasharray: 700;
+      stroke-dashoffset: 700;
+      animation: drawInner 1.0s ease-out 1.2s forwards;
+    }
+    @keyframes drawInner {
+      to { stroke-dashoffset: 0; }
+    }
+
+    /* Crown drops in */
+    .crown {
+      opacity: 0;
+      transform: translateY(-8px);
+      animation: dropIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 1.4s forwards;
+    }
+    @keyframes dropIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* PS monogram scales in */
+    .monogram {
+      opacity: 0;
+      transform: scale(0.8);
+      transform-origin: 200px 250px;
+      animation: scaleIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 1.6s forwards;
+    }
+    @keyframes scaleIn {
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Small text fades in */
+    .text-upper {
+      opacity: 0;
+      animation: fadeIn 0.5s ease-out 1.8s forwards;
+    }
+    .text-ind {
+      opacity: 0;
+      animation: fadeIn 0.5s ease-out 1.9s forwards;
+    }
+
+    /* Wordmark below shield */
+    .wordmark {
+      opacity: 0;
+      animation: fadeUp 0.6s ease-out 2.1s forwards;
+    }
+    .wordmark-sub {
+      opacity: 0;
+      animation: fadeUp 0.5s ease-out 2.3s forwards;
+    }
+
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Shimmer sweep after everything loads */
+    .shimmer-rect {
+      opacity: 0;
+      animation: fadeIn 0.3s ease-out 2.5s forwards;
+    }
+
+    /* Subtle pulse on completed shield */
+    .shield-group {
+      animation: subtlePulse 3s ease-in-out 3s infinite;
+    }
+    @keyframes subtlePulse {
+      0%, 100% { filter: drop-shadow(0 0 0px rgba(212, 212, 216, 0)); }
+      50% { filter: drop-shadow(0 0 12px rgba(212, 212, 216, 0.15)); }
+    }
+  </style>
+
+  <g class="shield-group">
+    <!-- Shield outline (draws in) -->
+    <path class="shield-outline"
+          d="M200 30 L340 80 C345 82 348 87 348 92 L348 220 C348 290 310 350 200 400 C90 350 52 290 52 220 L52 92 C52 87 55 82 60 80 Z"
+          fill="none" stroke="url(#lEdge)" stroke-width="3" stroke-linejoin="round"/>
+
+    <!-- Shield fill (fades in after draw) -->
+    <path class="shield-fill"
+          d="M200 30 L340 80 C345 82 348 87 348 92 L348 220 C348 290 310 350 200 400 C90 350 52 290 52 220 L52 92 C52 87 55 82 60 80 Z"
+          fill="url(#lEdge)"/>
+    <path class="shield-fill"
+          d="M200 48 L326 92 C328 93 330 95 330 98 L330 218 C330 280 296 332 200 378 C104 332 70 280 70 218 L70 98 C70 95 72 93 74 92 Z"
+          fill="url(#lFill)"/>
+
+    <!-- Inner fine border (draws in) -->
+    <path class="inner-border"
+          d="M200 62 L314 100 C315 101 316 102 316 104 L316 216 C316 270 286 316 200 358 C114 316 84 270 84 216 L84 104 C84 102 85 101 86 100 Z"
+          fill="none" stroke="#52525b" stroke-width="1"/>
+
+    <!-- Shimmer sweep -->
+    <rect class="shimmer-rect" x="50" y="28" width="300" height="380"
+          fill="url(#lShimmer)" clip-path="url(#shieldClip)"/>
+
+    <!-- Crown (drops in) -->
+    <g class="crown" transform="translate(200, 58)" fill="#d4d4d8">
+      <rect x="-18" y="2" width="36" height="3" rx="1.5"/>
+      <polygon points="-16,-8 -12,0 -6,-12 0,0 6,-12 12,0 16,-8 16,2 -16,2"/>
+      <circle cx="-6" cy="-6" r="1.5" fill="#fafafa"/>
+      <circle cx="0" cy="-8" r="1.5" fill="#fafafa"/>
+      <circle cx="6" cy="-6" r="1.5" fill="#fafafa"/>
+    </g>
+
+    <!-- "POLITE SOCIETY" text -->
+    <text class="text-upper" x="200" y="130" text-anchor="middle"
+          font-family="'Inter', 'Segoe UI', system-ui, sans-serif"
+          font-size="16" font-weight="500" letter-spacing="6"
+          fill="#a1a1aa">POLITE SOCIETY</text>
+
+    <!-- PS Monogram (scales in) -->
+    <text class="monogram" x="200" y="270" text-anchor="middle"
+          font-family="'Inter', 'Segoe UI', system-ui, sans-serif"
+          font-size="140" font-weight="800" letter-spacing="4"
+          fill="#fafafa">PS</text>
+
+    <!-- IND label -->
+    <g class="text-ind" transform="translate(200, 310)">
+      <rect x="-24" y="-14" width="48" height="22" rx="2"
+            fill="none" stroke="#71717a" stroke-width="1"/>
+      <text x="0" y="2" text-anchor="middle"
+            font-family="'Inter', 'Segoe UI', system-ui, sans-serif"
+            font-size="13" font-weight="600" letter-spacing="5"
+            fill="#a1a1aa">IND</text>
+    </g>
+  </g>
+
+  <!-- Wordmark below -->
+  <text class="wordmark" x="200" y="430" text-anchor="middle"
+        font-family="'Inter', 'Segoe UI', system-ui, sans-serif"
+        font-size="28" font-weight="700" letter-spacing="8"
+        fill="#fafafa">POLITE SOCIETY</text>
+  <text class="wordmark-sub" x="200" y="458" text-anchor="middle"
+        font-family="'Inter', 'Segoe UI', system-ui, sans-serif"
+        font-size="14" font-weight="400" letter-spacing="10"
+        fill="#71717a">INDUSTRIES</text>
+</svg>

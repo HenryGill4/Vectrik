@@ -14,6 +14,12 @@ public interface ITenantService
     Task ActivateTenantAsync(int id);
     Task SeedTenantDatabaseAsync(string tenantCode);
 
+    // Feature flags
+    Task<Dictionary<string, bool>> GetTenantFeatureFlagsAsync(string tenantCode);
+    Task SetTenantFeatureFlagsAsync(string tenantCode, Dictionary<string, bool> flags);
+    List<(string Key, string Category, string Label)> GetAllFeatureKeys();
+    Task<int> GetTenantUserCountAsync(string tenantCode);
+
     // Tenant user management
     Task<List<User>> GetTenantUsersAsync(string tenantCode);
     Task<User?> GetTenantUserByIdAsync(string tenantCode, int userId);

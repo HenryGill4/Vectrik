@@ -156,7 +156,8 @@ using (var scope = app.Services.CreateScope())
     if (!platformDb.Tenants.Any())
     {
         var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
-        tenantService.CreateTenantAsync("demo", "Demo Manufacturing", "System").GetAwaiter().GetResult();
+        tenantService.CreateTenantAsync("demo", "Polite Society Industries", "System",
+            logoUrl: "/uploads/logos/psi-shield.svg", primaryColor: "#a1a1aa").GetAwaiter().GetResult();
     }
     else
     {
@@ -222,5 +223,36 @@ app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapHub<MachineStateHub>("/hubs/machine-state");
+
+// Logo upload endpoint
+var uploadsDir = Path.Combine(app.Environment.WebRootPath, "uploads", "logos");
+if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
+
+app.MapPost("/api/uploads/logo", async (HttpRequest request) =>
+{
+    if (!request.HasFormContentType) return Results.BadRequest("Expected multipart form data.");
+
+    var form = await request.ReadFormAsync();
+    var file = form.Files.GetFile("file");
+    var tenantCode = form["tenantCode"].ToString();
+
+    if (file == null || file.Length == 0) return Results.BadRequest("No file uploaded.");
+    if (file.Length > 2 * 1024 * 1024) return Results.BadRequest("File too large (max 2MB).");
+    if (string.IsNullOrWhiteSpace(tenantCode)) return Results.BadRequest("Tenant code required.");
+
+    var allowedTypes = new[] { "image/png", "image/jpeg", "image/svg+xml", "image/webp" };
+    if (!allowedTypes.Contains(file.ContentType))
+        return Results.BadRequest($"Invalid file type. Allowed: png, jpg, svg, webp.");
+
+    var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+    if (string.IsNullOrEmpty(ext)) ext = ".png";
+    var fileName = $"{tenantCode}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{ext}";
+    var filePath = Path.Combine(uploadsDir, fileName);
+
+    await using var stream = new FileStream(filePath, FileMode.Create);
+    await file.CopyToAsync(stream);
+
+    return Results.Ok(new { url = $"/uploads/logos/{fileName}" });
+}).RequireAuthorization(policy => policy.RequireRole("SuperAdmin")).DisableAntiforgery();
 
 app.Run();
