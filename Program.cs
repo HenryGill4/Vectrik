@@ -264,7 +264,7 @@ app.MapGet("/healthz/auth", (PlatformDbContext platformDb) =>
         results.Add(new { tenant = code, dbPath, exists, users });
     }
     return Results.Ok(new { dataRoot = debugDataRoot, tenants = results });
-});
+}).AllowAnonymous();
 
 // Logo upload endpoint
 var uploadsDir = Path.Combine(app.Environment.WebRootPath, "uploads", "logos");
