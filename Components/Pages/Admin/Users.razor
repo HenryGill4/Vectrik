@@ -108,6 +108,25 @@ else
                         </label>
                     }
                 </div>
+
+                <div class="card" style="padding: 12px; margin-top: 12px;">
+                    <div class="form-label" style="margin-bottom: 4px; font-weight: 600;">Operator Permissions</div>
+                    <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 10px;">Fine-grained control over what this operator can do on the shop floor.</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <label class="form-label"><input type="checkbox" @bind="_permissions.CanPause" style="margin-right: 6px;" />Can Pause Work</label>
+                        <label class="form-label"><input type="checkbox" @bind="_permissions.CanFail" style="margin-right: 6px;" />Can Fail / NCR</label>
+                        <label class="form-label"><input type="checkbox" @bind="_permissions.CanTransfer" style="margin-right: 6px;" />Can Transfer Work</label>
+                        <label class="form-label"><input type="checkbox" @bind="_permissions.CanClaimWork" style="margin-right: 6px;" />Can Claim Unassigned Work</label>
+                        <label class="form-label"><input type="checkbox" @bind="_permissions.CanCompleteWithoutChecklist" style="margin-right: 6px;" />Can Skip Checklist</label>
+                        <label class="form-label"><input type="checkbox" @bind="_permissions.CanViewCostData" style="margin-right: 6px;" />Can View Cost Data</label>
+                        <label class="form-label"><input type="checkbox" @bind="_permissions.CanAccessAllStages" style="margin-right: 6px;" />Access All Stages</label>
+                    </div>
+                    <div class="form-group" style="margin-top: 10px; max-width: 200px;">
+                        <label class="form-label">Max Concurrent Jobs</label>
+                        <input class="form-control" type="number" min="0" max="10" @bind="_permissions.MaxConcurrentJobs" />
+                        <small style="color: var(--text-muted);">0 = unlimited</small>
+                    </div>
+                </div>
             }
 
             <div style="display: flex; gap: 8px; margin-top: 16px;">
@@ -127,6 +146,7 @@ else
     private bool _showForm, _saving;
     private string? _error, _newPassword;
     private HashSet<int> _assignedStageIds = new();
+    private OperatorPermissions _permissions = new();
     private Dictionary<string, string> _validationErrors = new();
     private ConfirmDialog _confirm = null!;
     private readonly string[] _roles = ["Admin", "Manager", "Supervisor", "Scheduler", "Operator", "MaintenanceTech", "QCSpecialist", "Analyst"];
@@ -146,6 +166,7 @@ else
         _assignedStageIds = string.IsNullOrWhiteSpace(u.AssignedStageIds)
             ? new HashSet<int>()
             : u.AssignedStageIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToHashSet();
+        _permissions = u.GetPermissions();
         _showForm = true;
     }
 
@@ -156,6 +177,7 @@ else
         _error = null;
         _validationErrors.Clear();
         _assignedStageIds = new();
+        _permissions = new OperatorPermissions();
         _showForm = true;
     }
 
@@ -235,6 +257,7 @@ else
         try
         {
             _edit!.AssignedStageIds = _assignedStageIds.Any() ? string.Join(",", _assignedStageIds.OrderBy(x => x)) : null;
+            _edit.SetPermissions(_permissions);
 
             if (_edit.Id == 0)
             {
