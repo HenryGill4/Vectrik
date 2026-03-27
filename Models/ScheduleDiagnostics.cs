@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Captures the full diagnostic output from a scheduling operation for debugging.

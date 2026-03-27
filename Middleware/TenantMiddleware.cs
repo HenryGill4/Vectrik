@@ -1,6 +1,6 @@
-using Opcentrix_V3.Services.Platform;
+using Vectrik.Services.Platform;
 
-namespace Opcentrix_V3.Middleware;
+namespace Vectrik.Middleware;
 
 public class TenantMiddleware
 {

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 
-namespace Opcentrix_V3.Hubs;
+namespace Vectrik.Hubs;
 
 public class MachineStateHub : Hub
 {

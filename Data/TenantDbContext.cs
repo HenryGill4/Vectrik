@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Maintenance;
+using Vectrik.Models;
+using Vectrik.Models.Maintenance;
 
-namespace Opcentrix_V3.Data;
+namespace Vectrik.Data;
 
 public class TenantDbContext : DbContext
 {

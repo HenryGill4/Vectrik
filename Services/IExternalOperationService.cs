@@ -1,6 +1,6 @@
-using Opcentrix_V3.Models;
+using Vectrik.Models;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 /// <summary>
 /// Manages external vendor operations (coating, outsourced heat-treat, etc.)

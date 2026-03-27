@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 /// <summary>
 /// Represents a single open tab in the MDI workspace.

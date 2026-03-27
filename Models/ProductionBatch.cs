@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using Opcentrix_V3.Models.Enums;
+using Vectrik.Models.Enums;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// A physical batch (crate/tray) of parts moving through post-print manufacturing stages.

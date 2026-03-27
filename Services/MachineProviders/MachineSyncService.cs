@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Hubs;
-using Opcentrix_V3.Models;
+using Vectrik.Data;
+using Vectrik.Hubs;
+using Vectrik.Models;
 
-namespace Opcentrix_V3.Services.MachineProviders;
+namespace Vectrik.Services.MachineProviders;
 
 public class MachineSyncService : BackgroundService
 {

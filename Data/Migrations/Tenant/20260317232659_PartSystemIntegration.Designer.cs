@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Opcentrix_V3.Data;
+using Vectrik.Data;
 
 #nullable disable
 
-namespace Opcentrix_V3.Data.Migrations.Tenant
+namespace Vectrik.Data.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
     [Migration("20260317232659_PartSystemIntegration")]
@@ -20,7 +20,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.4");
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildFileInfo", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildFileInfo", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -72,7 +72,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("BuildFileInfos");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildJob", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildJob", b =>
                 {
                     b.Property<int>("BuildId")
                         .ValueGeneratedOnAdd()
@@ -149,7 +149,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("BuildJobs");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildJobPart", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildJobPart", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -181,7 +181,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("BuildJobParts");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildPackage", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildPackage", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -243,7 +243,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("BuildPackages");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildPackagePart", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildPackagePart", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -276,7 +276,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("BuildPackageParts");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.CorrectiveAction", b =>
+            modelBuilder.Entity("Vectrik.Models.CorrectiveAction", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -340,7 +340,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("CorrectiveActions");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.CustomFieldConfig", b =>
+            modelBuilder.Entity("Vectrik.Models.CustomFieldConfig", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -371,7 +371,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("CustomFieldConfigs");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.DashboardLayout", b =>
+            modelBuilder.Entity("Vectrik.Models.DashboardLayout", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -402,7 +402,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("DashboardLayouts");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.DelayLog", b =>
+            modelBuilder.Entity("Vectrik.Models.DelayLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -465,7 +465,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("DelayLogs");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.DocumentTemplate", b =>
+            modelBuilder.Entity("Vectrik.Models.DocumentTemplate", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -520,7 +520,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("DocumentTemplates");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InspectionMeasurement", b =>
+            modelBuilder.Entity("Vectrik.Models.InspectionMeasurement", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -567,7 +567,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("InspectionMeasurements");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InspectionPlan", b =>
+            modelBuilder.Entity("Vectrik.Models.InspectionPlan", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -596,7 +596,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("InspectionPlans");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InspectionPlanCharacteristic", b =>
+            modelBuilder.Entity("Vectrik.Models.InspectionPlanCharacteristic", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -637,7 +637,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("InspectionPlanCharacteristics");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InventoryItem", b =>
+            modelBuilder.Entity("Vectrik.Models.InventoryItem", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -713,7 +713,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("InventoryItems");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InventoryLot", b =>
+            modelBuilder.Entity("Vectrik.Models.InventoryLot", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -765,7 +765,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("InventoryLots");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InventoryTransaction", b =>
+            modelBuilder.Entity("Vectrik.Models.InventoryTransaction", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -828,7 +828,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("InventoryTransactions");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Job", b =>
+            modelBuilder.Entity("Vectrik.Models.Job", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -935,7 +935,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("Jobs");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.JobNote", b =>
+            modelBuilder.Entity("Vectrik.Models.JobNote", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -963,7 +963,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("JobNotes");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Machine", b =>
+            modelBuilder.Entity("Vectrik.Models.Machine", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1081,7 +1081,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("Machines");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.MachineConnectionSettings", b =>
+            modelBuilder.Entity("Vectrik.Models.MachineConnectionSettings", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1121,7 +1121,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("MachineConnectionSettings");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.MachineStateRecord", b =>
+            modelBuilder.Entity("Vectrik.Models.MachineStateRecord", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1177,7 +1177,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("MachineStateRecords");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MachineComponent", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MachineComponent", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1239,7 +1239,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("MachineComponents");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MaintenanceActionLog", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MaintenanceActionLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1280,7 +1280,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("MaintenanceActionLogs");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MaintenanceRule", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MaintenanceRule", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1343,7 +1343,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("MaintenanceRules");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MaintenanceWorkOrder", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MaintenanceWorkOrder", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1443,7 +1443,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("MaintenanceWorkOrders");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Material", b =>
+            modelBuilder.Entity("Vectrik.Models.Material", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1501,7 +1501,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("Materials");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.MaterialRequest", b =>
+            modelBuilder.Entity("Vectrik.Models.MaterialRequest", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1547,7 +1547,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("MaterialRequests");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.NonConformanceReport", b =>
+            modelBuilder.Entity("Vectrik.Models.NonConformanceReport", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1618,7 +1618,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("NonConformanceReports");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.OperatingShift", b =>
+            modelBuilder.Entity("Vectrik.Models.OperatingShift", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1651,7 +1651,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("OperatingShifts");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Part", b =>
+            modelBuilder.Entity("Vectrik.Models.Part", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1805,7 +1805,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("Parts");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartBomItem", b =>
+            modelBuilder.Entity("Vectrik.Models.PartBomItem", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1860,7 +1860,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("PartBomItems");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartDrawing", b =>
+            modelBuilder.Entity("Vectrik.Models.PartDrawing", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1913,7 +1913,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("PartDrawings");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartInstance", b =>
+            modelBuilder.Entity("Vectrik.Models.PartInstance", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1961,7 +1961,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("PartInstances");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartInstanceStageLog", b =>
+            modelBuilder.Entity("Vectrik.Models.PartInstanceStageLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2000,7 +2000,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("PartInstanceStageLogs");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartNote", b =>
+            modelBuilder.Entity("Vectrik.Models.PartNote", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2048,7 +2048,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("PartNotes");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartRevisionHistory", b =>
+            modelBuilder.Entity("Vectrik.Models.PartRevisionHistory", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2096,7 +2096,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("PartRevisionHistories");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartStageRequirement", b =>
+            modelBuilder.Entity("Vectrik.Models.PartStageRequirement", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2220,7 +2220,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("PartStageRequirements");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.ProductionStage", b =>
+            modelBuilder.Entity("Vectrik.Models.ProductionStage", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2339,7 +2339,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("ProductionStages");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QCChecklistItem", b =>
+            modelBuilder.Entity("Vectrik.Models.QCChecklistItem", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2383,7 +2383,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("QCChecklistItems");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QCInspection", b =>
+            modelBuilder.Entity("Vectrik.Models.QCInspection", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2454,7 +2454,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("QCInspections");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Quote", b =>
+            modelBuilder.Entity("Vectrik.Models.Quote", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2557,7 +2557,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("Quotes");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QuoteLine", b =>
+            modelBuilder.Entity("Vectrik.Models.QuoteLine", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2603,7 +2603,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("QuoteLines");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QuoteRevision", b =>
+            modelBuilder.Entity("Vectrik.Models.QuoteRevision", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2655,7 +2655,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("QuoteRevisions");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.RfqRequest", b =>
+            modelBuilder.Entity("Vectrik.Models.RfqRequest", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2722,7 +2722,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("RfqRequests");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.SavedReport", b =>
+            modelBuilder.Entity("Vectrik.Models.SavedReport", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2758,7 +2758,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("SavedReports");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.SpcDataPoint", b =>
+            modelBuilder.Entity("Vectrik.Models.SpcDataPoint", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2799,7 +2799,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("SpcDataPoints");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.StageExecution", b =>
+            modelBuilder.Entity("Vectrik.Models.StageExecution", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2931,7 +2931,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("StageExecutions");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.StockLocation", b =>
+            modelBuilder.Entity("Vectrik.Models.StockLocation", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2965,7 +2965,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("StockLocations");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.SystemSetting", b =>
+            modelBuilder.Entity("Vectrik.Models.SystemSetting", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3005,7 +3005,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("SystemSettings");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.User", b =>
+            modelBuilder.Entity("Vectrik.Models.User", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3073,7 +3073,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.UserSettings", b =>
+            modelBuilder.Entity("Vectrik.Models.UserSettings", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3105,7 +3105,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("UserSettings");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrder", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrder", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3214,7 +3214,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("WorkOrders");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderComment", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrderComment", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3258,7 +3258,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("WorkOrderComments");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderLine", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrderLine", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3295,7 +3295,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("WorkOrderLines");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkflowDefinition", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkflowDefinition", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3335,7 +3335,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("WorkflowDefinitions");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkflowInstance", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkflowInstance", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3383,7 +3383,7 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("WorkflowInstances");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkflowStep", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkflowStep", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3420,24 +3420,24 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.ToTable("WorkflowSteps");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildFileInfo", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildFileInfo", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.BuildPackage", "BuildPackage")
+                    b.HasOne("Vectrik.Models.BuildPackage", "BuildPackage")
                         .WithOne("BuildFileInfo")
-                        .HasForeignKey("Opcentrix_V3.Models.BuildFileInfo", "BuildPackageId")
+                        .HasForeignKey("Vectrik.Models.BuildFileInfo", "BuildPackageId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("BuildPackage");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildJob", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildJob", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Job", "Job")
+                    b.HasOne("Vectrik.Models.Job", "Job")
                         .WithMany()
                         .HasForeignKey("JobId");
 
-                    b.HasOne("Opcentrix_V3.Models.User", "User")
+                    b.HasOne("Vectrik.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3448,15 +3448,15 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildJobPart", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildJobPart", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.BuildJob", "BuildJob")
+                    b.HasOne("Vectrik.Models.BuildJob", "BuildJob")
                         .WithMany("Parts")
                         .HasForeignKey("BuildJobId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3467,30 +3467,30 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Part");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildPackage", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildPackage", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Job", "ScheduledJob")
+                    b.HasOne("Vectrik.Models.Job", "ScheduledJob")
                         .WithMany()
                         .HasForeignKey("ScheduledJobId");
 
                     b.Navigation("ScheduledJob");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildPackagePart", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildPackagePart", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.BuildPackage", "BuildPackage")
+                    b.HasOne("Vectrik.Models.BuildPackage", "BuildPackage")
                         .WithMany("Parts")
                         .HasForeignKey("BuildPackageId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.WorkOrderLine", "WorkOrderLine")
+                    b.HasOne("Vectrik.Models.WorkOrderLine", "WorkOrderLine")
                         .WithMany()
                         .HasForeignKey("WorkOrderLineId");
 
@@ -3501,17 +3501,17 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkOrderLine");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.DelayLog", b =>
+            modelBuilder.Entity("Vectrik.Models.DelayLog", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.BuildJob", "BuildJob")
+                    b.HasOne("Vectrik.Models.BuildJob", "BuildJob")
                         .WithMany("Delays")
                         .HasForeignKey("BuildJobId");
 
-                    b.HasOne("Opcentrix_V3.Models.Job", "Job")
+                    b.HasOne("Vectrik.Models.Job", "Job")
                         .WithMany()
                         .HasForeignKey("JobId");
 
-                    b.HasOne("Opcentrix_V3.Models.StageExecution", "StageExecution")
+                    b.HasOne("Vectrik.Models.StageExecution", "StageExecution")
                         .WithMany("DelayLogs")
                         .HasForeignKey("StageExecutionId");
 
@@ -3522,9 +3522,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("StageExecution");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InspectionMeasurement", b =>
+            modelBuilder.Entity("Vectrik.Models.InspectionMeasurement", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.QCInspection", "Inspection")
+                    b.HasOne("Vectrik.Models.QCInspection", "Inspection")
                         .WithMany("Measurements")
                         .HasForeignKey("QcInspectionId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3533,9 +3533,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Inspection");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InspectionPlan", b =>
+            modelBuilder.Entity("Vectrik.Models.InspectionPlan", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany("InspectionPlans")
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3544,9 +3544,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Part");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InspectionPlanCharacteristic", b =>
+            modelBuilder.Entity("Vectrik.Models.InspectionPlanCharacteristic", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.InspectionPlan", "InspectionPlan")
+                    b.HasOne("Vectrik.Models.InspectionPlan", "InspectionPlan")
                         .WithMany("Characteristics")
                         .HasForeignKey("InspectionPlanId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3555,24 +3555,24 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("InspectionPlan");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InventoryItem", b =>
+            modelBuilder.Entity("Vectrik.Models.InventoryItem", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Material", "Material")
+                    b.HasOne("Vectrik.Models.Material", "Material")
                         .WithMany()
                         .HasForeignKey("MaterialId");
 
                     b.Navigation("Material");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InventoryLot", b =>
+            modelBuilder.Entity("Vectrik.Models.InventoryLot", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.InventoryItem", "InventoryItem")
+                    b.HasOne("Vectrik.Models.InventoryItem", "InventoryItem")
                         .WithMany("Lots")
                         .HasForeignKey("InventoryItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.StockLocation", "Location")
+                    b.HasOne("Vectrik.Models.StockLocation", "Location")
                         .WithMany()
                         .HasForeignKey("StockLocationId");
 
@@ -3581,15 +3581,15 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Location");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InventoryTransaction", b =>
+            modelBuilder.Entity("Vectrik.Models.InventoryTransaction", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.InventoryItem", "InventoryItem")
+                    b.HasOne("Vectrik.Models.InventoryItem", "InventoryItem")
                         .WithMany("Transactions")
                         .HasForeignKey("InventoryItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.InventoryLot", "Lot")
+                    b.HasOne("Vectrik.Models.InventoryLot", "Lot")
                         .WithMany()
                         .HasForeignKey("LotId");
 
@@ -3598,23 +3598,23 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Lot");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Job", b =>
+            modelBuilder.Entity("Vectrik.Models.Job", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.User", "OperatorUser")
+                    b.HasOne("Vectrik.Models.User", "OperatorUser")
                         .WithMany()
                         .HasForeignKey("OperatorUserId");
 
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany("Jobs")
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.Job", "PredecessorJob")
+                    b.HasOne("Vectrik.Models.Job", "PredecessorJob")
                         .WithMany()
                         .HasForeignKey("PredecessorJobId");
 
-                    b.HasOne("Opcentrix_V3.Models.WorkOrderLine", "WorkOrderLine")
+                    b.HasOne("Vectrik.Models.WorkOrderLine", "WorkOrderLine")
                         .WithMany("Jobs")
                         .HasForeignKey("WorkOrderLineId");
 
@@ -3627,9 +3627,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkOrderLine");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.JobNote", b =>
+            modelBuilder.Entity("Vectrik.Models.JobNote", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Job", "Job")
+                    b.HasOne("Vectrik.Models.Job", "Job")
                         .WithMany("JobNotes")
                         .HasForeignKey("JobId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3638,9 +3638,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Job");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MachineComponent", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MachineComponent", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Machine", "Machine")
+                    b.HasOne("Vectrik.Models.Machine", "Machine")
                         .WithMany("Components")
                         .HasForeignKey("MachineId")
                         .HasPrincipalKey("MachineId")
@@ -3650,18 +3650,18 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Machine");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MaintenanceActionLog", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MaintenanceActionLog", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Maintenance.MaintenanceRule", "MaintenanceRule")
+                    b.HasOne("Vectrik.Models.Maintenance.MaintenanceRule", "MaintenanceRule")
                         .WithMany()
                         .HasForeignKey("MaintenanceRuleId");
 
                     b.Navigation("MaintenanceRule");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MaintenanceRule", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MaintenanceRule", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Maintenance.MachineComponent", "MachineComponent")
+                    b.HasOne("Vectrik.Models.Maintenance.MachineComponent", "MachineComponent")
                         .WithMany("MaintenanceRules")
                         .HasForeignKey("MachineComponentId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3670,24 +3670,24 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("MachineComponent");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MaintenanceWorkOrder", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MaintenanceWorkOrder", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.User", "AssignedTechnician")
+                    b.HasOne("Vectrik.Models.User", "AssignedTechnician")
                         .WithMany()
                         .HasForeignKey("AssignedTechnicianUserId");
 
-                    b.HasOne("Opcentrix_V3.Models.Maintenance.MachineComponent", "MachineComponent")
+                    b.HasOne("Vectrik.Models.Maintenance.MachineComponent", "MachineComponent")
                         .WithMany()
                         .HasForeignKey("MachineComponentId");
 
-                    b.HasOne("Opcentrix_V3.Models.Machine", "Machine")
+                    b.HasOne("Vectrik.Models.Machine", "Machine")
                         .WithMany()
                         .HasForeignKey("MachineId")
                         .HasPrincipalKey("MachineId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.Maintenance.MaintenanceRule", "MaintenanceRule")
+                    b.HasOne("Vectrik.Models.Maintenance.MaintenanceRule", "MaintenanceRule")
                         .WithMany()
                         .HasForeignKey("MaintenanceRuleId");
 
@@ -3700,21 +3700,21 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("MaintenanceRule");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.MaterialRequest", b =>
+            modelBuilder.Entity("Vectrik.Models.MaterialRequest", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.InventoryItem", "InventoryItem")
+                    b.HasOne("Vectrik.Models.InventoryItem", "InventoryItem")
                         .WithMany()
                         .HasForeignKey("InventoryItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.Job", "Job")
+                    b.HasOne("Vectrik.Models.Job", "Job")
                         .WithMany()
                         .HasForeignKey("JobId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.InventoryLot", "IssuedFromLot")
+                    b.HasOne("Vectrik.Models.InventoryLot", "IssuedFromLot")
                         .WithMany()
                         .HasForeignKey("LotId");
 
@@ -3725,21 +3725,21 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Job");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.NonConformanceReport", b =>
+            modelBuilder.Entity("Vectrik.Models.NonConformanceReport", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.CorrectiveAction", "CorrectiveAction")
+                    b.HasOne("Vectrik.Models.CorrectiveAction", "CorrectiveAction")
                         .WithMany()
                         .HasForeignKey("CorrectiveActionId");
 
-                    b.HasOne("Opcentrix_V3.Models.Job", "Job")
+                    b.HasOne("Vectrik.Models.Job", "Job")
                         .WithMany()
                         .HasForeignKey("JobId");
 
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId");
 
-                    b.HasOne("Opcentrix_V3.Models.PartInstance", "PartInstance")
+                    b.HasOne("Vectrik.Models.PartInstance", "PartInstance")
                         .WithMany()
                         .HasForeignKey("PartInstanceId");
 
@@ -3752,9 +3752,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("PartInstance");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Part", b =>
+            modelBuilder.Entity("Vectrik.Models.Part", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Material", "MaterialEntity")
+                    b.HasOne("Vectrik.Models.Material", "MaterialEntity")
                         .WithMany()
                         .HasForeignKey("MaterialId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -3762,19 +3762,19 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("MaterialEntity");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartBomItem", b =>
+            modelBuilder.Entity("Vectrik.Models.PartBomItem", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.InventoryItem", "InventoryItem")
+                    b.HasOne("Vectrik.Models.InventoryItem", "InventoryItem")
                         .WithMany()
                         .HasForeignKey("InventoryItemId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("Opcentrix_V3.Models.Material", "Material")
+                    b.HasOne("Vectrik.Models.Material", "Material")
                         .WithMany()
                         .HasForeignKey("MaterialId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany("BomItems")
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3787,9 +3787,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Part");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartDrawing", b =>
+            modelBuilder.Entity("Vectrik.Models.PartDrawing", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany("Drawings")
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3798,19 +3798,19 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Part");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartInstance", b =>
+            modelBuilder.Entity("Vectrik.Models.PartInstance", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.ProductionStage", "CurrentStage")
+                    b.HasOne("Vectrik.Models.ProductionStage", "CurrentStage")
                         .WithMany()
                         .HasForeignKey("CurrentStageId");
 
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.WorkOrderLine", "WorkOrderLine")
+                    b.HasOne("Vectrik.Models.WorkOrderLine", "WorkOrderLine")
                         .WithMany("PartInstances")
                         .HasForeignKey("WorkOrderLineId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3823,15 +3823,15 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkOrderLine");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartInstanceStageLog", b =>
+            modelBuilder.Entity("Vectrik.Models.PartInstanceStageLog", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.PartInstance", "PartInstance")
+                    b.HasOne("Vectrik.Models.PartInstance", "PartInstance")
                         .WithMany("StageLogs")
                         .HasForeignKey("PartInstanceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.ProductionStage", "ProductionStage")
+                    b.HasOne("Vectrik.Models.ProductionStage", "ProductionStage")
                         .WithMany()
                         .HasForeignKey("ProductionStageId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3842,9 +3842,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("ProductionStage");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartNote", b =>
+            modelBuilder.Entity("Vectrik.Models.PartNote", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany("Notes")
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3853,9 +3853,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Part");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartRevisionHistory", b =>
+            modelBuilder.Entity("Vectrik.Models.PartRevisionHistory", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany("RevisionHistory")
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3864,15 +3864,15 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Part");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartStageRequirement", b =>
+            modelBuilder.Entity("Vectrik.Models.PartStageRequirement", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany("StageRequirements")
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.ProductionStage", "ProductionStage")
+                    b.HasOne("Vectrik.Models.ProductionStage", "ProductionStage")
                         .WithMany("PartStageRequirements")
                         .HasForeignKey("ProductionStageId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3883,9 +3883,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("ProductionStage");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QCChecklistItem", b =>
+            modelBuilder.Entity("Vectrik.Models.QCChecklistItem", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.QCInspection", "QCInspection")
+                    b.HasOne("Vectrik.Models.QCInspection", "QCInspection")
                         .WithMany("ChecklistItems")
                         .HasForeignKey("QCInspectionId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3894,31 +3894,31 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("QCInspection");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QCInspection", b =>
+            modelBuilder.Entity("Vectrik.Models.QCInspection", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.BuildJob", "BuildJob")
+                    b.HasOne("Vectrik.Models.BuildJob", "BuildJob")
                         .WithMany()
                         .HasForeignKey("BuildJobId");
 
-                    b.HasOne("Opcentrix_V3.Models.InspectionPlan", "InspectionPlan")
+                    b.HasOne("Vectrik.Models.InspectionPlan", "InspectionPlan")
                         .WithMany()
                         .HasForeignKey("InspectionPlanId");
 
-                    b.HasOne("Opcentrix_V3.Models.User", "Inspector")
+                    b.HasOne("Vectrik.Models.User", "Inspector")
                         .WithMany()
                         .HasForeignKey("InspectorUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.Job", "Job")
+                    b.HasOne("Vectrik.Models.Job", "Job")
                         .WithMany()
                         .HasForeignKey("JobId");
 
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId");
 
-                    b.HasOne("Opcentrix_V3.Models.PartInstance", "PartInstance")
+                    b.HasOne("Vectrik.Models.PartInstance", "PartInstance")
                         .WithMany("Inspections")
                         .HasForeignKey("PartInstanceId");
 
@@ -3935,24 +3935,24 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("PartInstance");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Quote", b =>
+            modelBuilder.Entity("Vectrik.Models.Quote", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.WorkOrder", "ConvertedWorkOrder")
+                    b.HasOne("Vectrik.Models.WorkOrder", "ConvertedWorkOrder")
                         .WithMany()
                         .HasForeignKey("ConvertedWorkOrderId2");
 
                     b.Navigation("ConvertedWorkOrder");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QuoteLine", b =>
+            modelBuilder.Entity("Vectrik.Models.QuoteLine", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.Quote", "Quote")
+                    b.HasOne("Vectrik.Models.Quote", "Quote")
                         .WithMany("Lines")
                         .HasForeignKey("QuoteId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3963,9 +3963,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Quote");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QuoteRevision", b =>
+            modelBuilder.Entity("Vectrik.Models.QuoteRevision", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Quote", "Quote")
+                    b.HasOne("Vectrik.Models.Quote", "Quote")
                         .WithMany("Revisions")
                         .HasForeignKey("QuoteId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3974,18 +3974,18 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Quote");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.RfqRequest", b =>
+            modelBuilder.Entity("Vectrik.Models.RfqRequest", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Quote", "ConvertedQuote")
+                    b.HasOne("Vectrik.Models.Quote", "ConvertedQuote")
                         .WithMany()
                         .HasForeignKey("ConvertedQuoteId");
 
                     b.Navigation("ConvertedQuote");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.SpcDataPoint", b =>
+            modelBuilder.Entity("Vectrik.Models.SpcDataPoint", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3994,21 +3994,21 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("Part");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.StageExecution", b =>
+            modelBuilder.Entity("Vectrik.Models.StageExecution", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Job", "Job")
+                    b.HasOne("Vectrik.Models.Job", "Job")
                         .WithMany("Stages")
                         .HasForeignKey("JobId");
 
-                    b.HasOne("Opcentrix_V3.Models.Machine", "Machine")
+                    b.HasOne("Vectrik.Models.Machine", "Machine")
                         .WithMany()
                         .HasForeignKey("MachineId");
 
-                    b.HasOne("Opcentrix_V3.Models.User", "Operator")
+                    b.HasOne("Vectrik.Models.User", "Operator")
                         .WithMany()
                         .HasForeignKey("OperatorUserId");
 
-                    b.HasOne("Opcentrix_V3.Models.ProductionStage", "ProductionStage")
+                    b.HasOne("Vectrik.Models.ProductionStage", "ProductionStage")
                         .WithMany("StageExecutions")
                         .HasForeignKey("ProductionStageId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -4023,24 +4023,24 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("ProductionStage");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.UserSettings", b =>
+            modelBuilder.Entity("Vectrik.Models.UserSettings", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.User", "User")
+                    b.HasOne("Vectrik.Models.User", "User")
                         .WithOne("Settings")
-                        .HasForeignKey("Opcentrix_V3.Models.UserSettings", "UserId")
+                        .HasForeignKey("Vectrik.Models.UserSettings", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrder", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrder", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Quote", "Quote")
+                    b.HasOne("Vectrik.Models.Quote", "Quote")
                         .WithOne()
-                        .HasForeignKey("Opcentrix_V3.Models.WorkOrder", "QuoteId");
+                        .HasForeignKey("Vectrik.Models.WorkOrder", "QuoteId");
 
-                    b.HasOne("Opcentrix_V3.Models.WorkflowInstance", "WorkflowInstance")
+                    b.HasOne("Vectrik.Models.WorkflowInstance", "WorkflowInstance")
                         .WithMany()
                         .HasForeignKey("WorkflowInstanceId");
 
@@ -4049,17 +4049,17 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkflowInstance");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderComment", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrderComment", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.User", "AuthorUser")
+                    b.HasOne("Vectrik.Models.User", "AuthorUser")
                         .WithMany()
                         .HasForeignKey("AuthorUserId");
 
-                    b.HasOne("Opcentrix_V3.Models.WorkOrderComment", "ParentComment")
+                    b.HasOne("Vectrik.Models.WorkOrderComment", "ParentComment")
                         .WithMany("Replies")
                         .HasForeignKey("ParentCommentId");
 
-                    b.HasOne("Opcentrix_V3.Models.WorkOrder", "WorkOrder")
+                    b.HasOne("Vectrik.Models.WorkOrder", "WorkOrder")
                         .WithMany("Comments")
                         .HasForeignKey("WorkOrderId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -4072,15 +4072,15 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkOrder");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderLine", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrderLine", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.Part", "Part")
+                    b.HasOne("Vectrik.Models.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Opcentrix_V3.Models.WorkOrder", "WorkOrder")
+                    b.HasOne("Vectrik.Models.WorkOrder", "WorkOrder")
                         .WithMany("Lines")
                         .HasForeignKey("WorkOrderId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -4091,9 +4091,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkOrder");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkflowInstance", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkflowInstance", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.WorkflowDefinition", "WorkflowDefinition")
+                    b.HasOne("Vectrik.Models.WorkflowDefinition", "WorkflowDefinition")
                         .WithMany()
                         .HasForeignKey("WorkflowDefinitionId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -4102,9 +4102,9 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkflowDefinition");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkflowStep", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkflowStep", b =>
                 {
-                    b.HasOne("Opcentrix_V3.Models.WorkflowDefinition", "WorkflowDefinition")
+                    b.HasOne("Vectrik.Models.WorkflowDefinition", "WorkflowDefinition")
                         .WithMany("Steps")
                         .HasForeignKey("WorkflowDefinitionId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -4113,50 +4113,50 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("WorkflowDefinition");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildJob", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildJob", b =>
                 {
                     b.Navigation("Delays");
 
                     b.Navigation("Parts");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.BuildPackage", b =>
+            modelBuilder.Entity("Vectrik.Models.BuildPackage", b =>
                 {
                     b.Navigation("BuildFileInfo");
 
                     b.Navigation("Parts");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InspectionPlan", b =>
+            modelBuilder.Entity("Vectrik.Models.InspectionPlan", b =>
                 {
                     b.Navigation("Characteristics");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.InventoryItem", b =>
+            modelBuilder.Entity("Vectrik.Models.InventoryItem", b =>
                 {
                     b.Navigation("Lots");
 
                     b.Navigation("Transactions");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Job", b =>
+            modelBuilder.Entity("Vectrik.Models.Job", b =>
                 {
                     b.Navigation("JobNotes");
 
                     b.Navigation("Stages");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Machine", b =>
+            modelBuilder.Entity("Vectrik.Models.Machine", b =>
                 {
                     b.Navigation("Components");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Maintenance.MachineComponent", b =>
+            modelBuilder.Entity("Vectrik.Models.Maintenance.MachineComponent", b =>
                 {
                     b.Navigation("MaintenanceRules");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Part", b =>
+            modelBuilder.Entity("Vectrik.Models.Part", b =>
                 {
                     b.Navigation("BomItems");
 
@@ -4173,64 +4173,64 @@ namespace Opcentrix_V3.Data.Migrations.Tenant
                     b.Navigation("StageRequirements");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.PartInstance", b =>
+            modelBuilder.Entity("Vectrik.Models.PartInstance", b =>
                 {
                     b.Navigation("Inspections");
 
                     b.Navigation("StageLogs");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.ProductionStage", b =>
+            modelBuilder.Entity("Vectrik.Models.ProductionStage", b =>
                 {
                     b.Navigation("PartStageRequirements");
 
                     b.Navigation("StageExecutions");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.QCInspection", b =>
+            modelBuilder.Entity("Vectrik.Models.QCInspection", b =>
                 {
                     b.Navigation("ChecklistItems");
 
                     b.Navigation("Measurements");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Quote", b =>
+            modelBuilder.Entity("Vectrik.Models.Quote", b =>
                 {
                     b.Navigation("Lines");
 
                     b.Navigation("Revisions");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.StageExecution", b =>
+            modelBuilder.Entity("Vectrik.Models.StageExecution", b =>
                 {
                     b.Navigation("DelayLogs");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.User", b =>
+            modelBuilder.Entity("Vectrik.Models.User", b =>
                 {
                     b.Navigation("Settings");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrder", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrder", b =>
                 {
                     b.Navigation("Comments");
 
                     b.Navigation("Lines");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderComment", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrderComment", b =>
                 {
                     b.Navigation("Replies");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkOrderLine", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkOrderLine", b =>
                 {
                     b.Navigation("Jobs");
 
                     b.Navigation("PartInstances");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.WorkflowDefinition", b =>
+            modelBuilder.Entity("Vectrik.Models.WorkflowDefinition", b =>
                 {
                     b.Navigation("Steps");
                 });

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Opcentrix_V3.Data.Migrations
+namespace Vectrik.Data.Migrations
 {
     /// <inheritdoc />
     public partial class AddBuildTemplates : Migration

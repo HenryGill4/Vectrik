@@ -1,10 +1,10 @@
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Enums;
-using Opcentrix_V3.Models.Maintenance;
+using Vectrik.Data;
+using Vectrik.Models;
+using Vectrik.Models.Enums;
+using Vectrik.Models.Maintenance;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public class StageService : IStageService
 {

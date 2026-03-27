@@ -7,7 +7,7 @@ on:
 
 env:
   DOTNET_VERSION: '10.0.x'
-  AZURE_WEBAPP_NAME: opcentrix-dev
+  AZURE_WEBAPP_NAME: vectrik-dev
 
 jobs:
   build-and-deploy:
@@ -23,16 +23,16 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
-        run: dotnet restore Opcentrix-V3.csproj
+        run: dotnet restore Vectrik.csproj
 
       - name: Build
-        run: dotnet build Opcentrix-V3.csproj --configuration Release --no-restore
+        run: dotnet build Vectrik.csproj --configuration Release --no-restore
 
       - name: Run tests
-        run: dotnet test Opcentrix-V3.Tests/Opcentrix-V3.Tests.csproj --configuration Release --no-restore
+        run: dotnet test Vectrik.Tests/Vectrik.Tests.csproj --configuration Release --no-restore
 
-      - name: Publish
-        run: dotnet publish Opcentrix-V3.csproj --configuration Release --runtime win-x64 --self-contained true --output ./publish
+      - name: Publish (self-contained for .NET 10)
+        run: dotnet publish Vectrik.csproj --configuration Release --runtime win-x64 --self-contained --output ./publish
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3

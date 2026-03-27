@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Services.Platform;
+using Vectrik.Services.Platform;
 
-namespace Opcentrix_V3.Data;
+namespace Vectrik.Data;
 
 public class TenantDbContextFactory
 {

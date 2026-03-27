@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using Opcentrix_V3.Models.Enums;
+using Vectrik.Models.Enums;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Operator feedback on a machine program, submitted during or after job execution.

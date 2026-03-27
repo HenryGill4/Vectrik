@@ -3,11 +3,11 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Opcentrix_V3.Data;
+using Vectrik.Data;
 
 #nullable disable
 
-namespace Opcentrix_V3.Data.Migrations.Platform
+namespace Vectrik.Data.Migrations.Platform
 {
     [DbContext(typeof(PlatformDbContext))]
     partial class PlatformDbContextModelSnapshot : ModelSnapshot
@@ -17,7 +17,7 @@ namespace Opcentrix_V3.Data.Migrations.Platform
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.4");
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Platform.PlatformUser", b =>
+            modelBuilder.Entity("Vectrik.Models.Platform.PlatformUser", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -45,7 +45,7 @@ namespace Opcentrix_V3.Data.Migrations.Platform
                     b.ToTable("PlatformUsers");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Platform.Tenant", b =>
+            modelBuilder.Entity("Vectrik.Models.Platform.Tenant", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -104,7 +104,7 @@ namespace Opcentrix_V3.Data.Migrations.Platform
                     b.ToTable("Tenants");
                 });
 
-            modelBuilder.Entity("Opcentrix_V3.Models.Platform.TenantFeatureFlag", b =>
+            modelBuilder.Entity("Vectrik.Models.Platform.TenantFeatureFlag", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()

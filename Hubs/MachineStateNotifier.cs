@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
-using Opcentrix_V3.Models;
+using Vectrik.Models;
 
-namespace Opcentrix_V3.Hubs;
+namespace Vectrik.Hubs;
 
 public class MachineStateNotifier : IMachineStateNotifier
 {

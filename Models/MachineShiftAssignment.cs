@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Many-to-many: links a machine to the shifts it operates during.

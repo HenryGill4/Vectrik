@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
-namespace Opcentrix_V3.Data;
+namespace Vectrik.Data;
 
 /// <summary>
 /// Used by EF Core CLI tools (dotnet ef migrations add / update) to create

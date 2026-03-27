@@ -46,8 +46,8 @@
     </div>
 </div>
 
-<Opcentrix_V3.Components.Shared.ToastContainer />
-<Opcentrix_V3.Components.Shared.DebugFab />
+<Vectrik.Components.Shared.ToastContainer />
+<Vectrik.Components.Shared.DebugFab />
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -112,8 +112,8 @@
 
         try
         {
-            _themePreference = await JS.InvokeAsync<string>("opcentrix.getTheme") ?? "dark";
-            await JS.InvokeVoidAsync("opcentrix.setTheme", _themePreference);
+            _themePreference = await JS.InvokeAsync<string>("vectrik.getTheme") ?? "dark";
+            await JS.InvokeVoidAsync("vectrik.setTheme", _themePreference);
         }
         catch (JSDisconnectedException) { return; }
 
@@ -131,10 +131,10 @@
                     if (settings.Theme != _themePreference)
                     {
                         _themePreference = settings.Theme;
-                        await JS.InvokeVoidAsync("opcentrix.setTheme", _themePreference);
+                        await JS.InvokeVoidAsync("vectrik.setTheme", _themePreference);
                     }
 
-                    await JS.InvokeVoidAsync("opcentrix.debugFab.setEnabled", settings.DebugFabEnabled);
+                    await JS.InvokeVoidAsync("vectrik.debugFab.setEnabled", settings.DebugFabEnabled);
                 }
                 catch (JSDisconnectedException) { return; }
                 catch (Exception) { /* DB or auth failure — keep localStorage theme */ }
@@ -216,7 +216,7 @@
 
         try
         {
-            await JS.InvokeVoidAsync("opcentrix.setTheme", _themePreference);
+            await JS.InvokeVoidAsync("vectrik.setTheme", _themePreference);
         }
         catch (JSDisconnectedException) { return; }
 

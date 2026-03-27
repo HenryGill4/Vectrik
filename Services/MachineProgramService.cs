@@ -1,12 +1,12 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Enums;
-using Opcentrix_V3.Models.Maintenance;
-using Opcentrix_V3.Services.Platform;
+using Vectrik.Data;
+using Vectrik.Models;
+using Vectrik.Models.Enums;
+using Vectrik.Models.Maintenance;
+using Vectrik.Services.Platform;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public class MachineProgramService : IMachineProgramService
 {

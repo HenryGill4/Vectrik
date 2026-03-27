@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Components.Forms;
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Enums;
+using Vectrik.Models;
+using Vectrik.Models.Enums;
 
-namespace Opcentrix_V3.Services;
+namespace Vectrik.Services;
 
 public interface IWorkInstructionService
 {

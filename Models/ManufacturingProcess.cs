@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Opcentrix_V3.Models.Enums;
+using Vectrik.Models.Enums;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Defines the full manufacturing process for a specific part type (1:1 with Part).

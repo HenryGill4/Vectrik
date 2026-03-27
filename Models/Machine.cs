@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Opcentrix_V3.Models.Enums;
-using Opcentrix_V3.Models.Maintenance;
+using Vectrik.Models.Enums;
+using Vectrik.Models.Maintenance;
 
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 public class Machine
 {

@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace Opcentrix_V3.Data.Migrations.Tenant
+namespace Vectrik.Data.Migrations.Tenant
 {
     /// <inheritdoc />
     public partial class AddDeferredSerialization : Migration

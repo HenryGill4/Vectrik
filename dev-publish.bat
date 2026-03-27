@@ -1,10 +1,10 @@
 @echo off
-title Opcentrix - Publish to Dev
+title Vectrik - Publish to Dev
 set SRC=%~dp0
-set PUB=C:\dev-publish\Opcentrix-V3
+set PUB=C:\dev-publish\Vectrik
 
 echo.
-echo === Opcentrix Dev Publish ===
+echo === Vectrik Dev Publish ===
 echo Source : %SRC%
 echo Output : %PUB%
 echo.

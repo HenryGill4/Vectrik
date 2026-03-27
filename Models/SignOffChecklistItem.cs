@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Models;
+namespace Vectrik.Models;
 
 /// <summary>
 /// Represents a single sign-off checklist item derived from a Work Instruction step.

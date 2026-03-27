@@ -1,11 +1,11 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Opcentrix_V3.Data;
-using Opcentrix_V3.Models;
-using Opcentrix_V3.Models.Platform;
-using Opcentrix_V3.Services.Auth;
+using Vectrik.Data;
+using Vectrik.Models;
+using Vectrik.Models.Platform;
+using Vectrik.Services.Auth;
 
-namespace Opcentrix_V3.Services.Platform;
+namespace Vectrik.Services.Platform;
 
 public class TenantService : ITenantService
 {

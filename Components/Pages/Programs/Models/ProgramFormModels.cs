@@ -1,4 +1,4 @@
-namespace Opcentrix_V3.Components.Pages.Programs.Models;
+namespace Vectrik.Components.Pages.Programs.Models;
 
 /// <summary>
 /// Represents a part entry in the create/edit program form's unified parts list.

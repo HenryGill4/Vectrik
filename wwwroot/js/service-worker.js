@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opcentrix-v1';
+const CACHE_NAME = 'vectrik-v1';
 const STATIC_ASSETS = [
     '/',
     '/css/site.css',
