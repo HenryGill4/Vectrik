@@ -82,14 +82,24 @@ else
             <div class="form-group">
                 <label class="form-label">Field Type</label>
                 <select class="form-control" @bind="_editField.FieldType">
-                    <option value="text">Text</option>
-                    <option value="textarea">Text Area</option>
-                    <option value="number">Number</option>
-                    <option value="decimal">Decimal</option>
-                    <option value="date">Date</option>
-                    <option value="select">Dropdown</option>
-                    <option value="multiselect">Multi-Select</option>
-                    <option value="checkbox">Checkbox</option>
+                    <optgroup label="Basic">
+                        <option value="text">Text</option>
+                        <option value="textarea">Text Area</option>
+                        <option value="number">Number</option>
+                        <option value="decimal">Decimal</option>
+                        <option value="date">Date</option>
+                        <option value="checkbox">Checkbox</option>
+                    </optgroup>
+                    <optgroup label="Selection">
+                        <option value="select">Dropdown</option>
+                        <option value="multiselect">Multi-Select</option>
+                    </optgroup>
+                    <optgroup label="Advanced">
+                        <option value="measurement">Measurement (with tolerances)</option>
+                        <option value="photo">Photo Capture</option>
+                        <option value="file">File Upload</option>
+                        <option value="signature">Signature</option>
+                    </optgroup>
                 </select>
             </div>
             <div class="form-group">
@@ -106,7 +116,7 @@ else
                     <input class="form-control" @bind="_editField.Options" placeholder="Option1, Option2, Option3" />
                 </div>
             }
-            @if (_editField.FieldType is "number" or "decimal")
+            @if (_editField.FieldType is "number" or "decimal" or "measurement")
             {
                 <div style="display:flex;gap:12px;">
                     <div class="form-group" style="flex:1;">
@@ -119,6 +129,27 @@ else
                     </div>
                 </div>
             }
+            @if (_editField.FieldType == "measurement")
+            {
+                <div class="form-group">
+                    <label class="form-label">Unit (e.g. mm, °C, PSI)</label>
+                    <input class="form-control" @bind="_editField.Unit" placeholder="mm" />
+                </div>
+                <div style="display:flex;gap:12px;">
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label">Tolerance Min</label>
+                        <input type="number" step="any" class="form-control" @bind="_editField.ToleranceMin" />
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label">Tolerance Max</label>
+                        <input type="number" step="any" class="form-control" @bind="_editField.ToleranceMax" />
+                    </div>
+                </div>
+            }
+            <div class="form-group">
+                <label class="form-label">Help Text</label>
+                <input class="form-control" @bind="_editField.HelpText" placeholder="Optional guidance text shown below the field" />
+            </div>
             <div class="form-group">
                 <label class="form-label">Validation Regex</label>
                 <input class="form-control" @bind="_editField.ValidationRegex" placeholder="Optional" />
