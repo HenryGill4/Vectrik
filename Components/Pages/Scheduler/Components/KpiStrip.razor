@@ -32,6 +32,14 @@
         <span class="sched-kpi-value">@_totalHours.ToString("F0")h</span>
         <span class="sched-kpi-label">Scheduled</span>
     </div>
+    @if (_learnedPct > 0)
+    {
+        <div class="sched-kpi @(_learnedPct >= 50 ? "sched-kpi--accent" : "sched-kpi--muted")"
+             title="@_learnedCount of @_totalExecs stage(s) using EMA-learned durations from actual runs">
+            <span class="sched-kpi-value">@_learnedPct%</span>
+            <span class="sched-kpi-label">Learned</span>
+        </div>
+    }
     @if (BottleneckReport != null && BottleneckReport.Items.Any(b => b.Severity != "ok"))
     {
         var worstSeverity = BottleneckReport.Items.Any(b => b.Severity == "critical") ? "danger" : "warning";
@@ -61,6 +69,9 @@
     private int _schedulableCount;
     private int _conflicts;
     private double _totalHours;
+    private int _learnedCount;
+    private int _totalExecs;
+    private int _learnedPct;
 
     protected override void OnParametersSet()
     {
@@ -126,5 +137,12 @@
             }
         }
         _conflicts = conflictingIds.Count;
+
+        // Learning coverage: what % of executions use EMA-learned durations
+        _totalExecs = Executions.Count;
+        _learnedCount = Executions.Count(e =>
+            (e.MachineProgram?.EstimateSource == "Auto" && e.MachineProgram.ActualSampleCount > 0)
+            || (e.ProcessStage?.EstimateSource == "Auto" && e.ProcessStage.ActualSampleCount > 0));
+        _learnedPct = _totalExecs > 0 ? (int)Math.Round(_learnedCount * 100.0 / _totalExecs) : 0;
     }
 }
