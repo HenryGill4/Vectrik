@@ -170,15 +170,15 @@ else if (_viewMode == "data")
 </div>
 
 @* ── Modals ── *@
-<Vectrik.Components.Pages.Scheduler.Modals.RescheduleModal
-    IsVisible="_showReschedule"
-    Execution="_rescheduleExec"
+<Vectrik.Components.Pages.Scheduler.Modals.JobDetailModal
+    IsVisible="_showJobDetail"
+    Execution="_jobDetailExec"
+    Build="_jobDetailBuild"
     Machines="_machines"
-    InitialMachineId="@_rescheduleMachineId"
-    InitialStart="_rescheduleStart"
-    InitialEnd="_rescheduleEnd"
-    OnClose="() => { _showReschedule = false; }"
-    OnConfirm="OnModalConfirmedAsync" />
+    UserName="@_userName"
+    OnClose="() => { _showJobDetail = false; _jobDetailExec = null; _jobDetailBuild = null; }"
+    OnChanged="OnModalConfirmedAsync"
+    OnBuildAction="HandleBuildActionAsync" />
 
 <Vectrik.Components.Pages.Scheduler.Modals.UnifiedScheduleWizard
     IsVisible="_showScheduleWizard"
@@ -247,12 +247,12 @@ else if (_viewMode == "data")
     private bool _showBuildAdvisor;
     private int? _advisorMachineId;
     private int? _advisorPartId;
-    private bool _showReschedule;
     private ConfirmDialog _confirmDialog = null!;
-    private StageExecution? _rescheduleExec;
-    private string _rescheduleMachineId = "";
-    private DateTime _rescheduleStart;
-    private DateTime _rescheduleEnd;
+
+    // Job detail modal (replaces old RescheduleModal)
+    private bool _showJobDetail;
+    private StageExecution? _jobDetailExec;
+    private MachineProgram? _jobDetailBuild;
 
     private bool _showConflictsOnly;
     private ProgramScheduleStatus? _programStatusFilter;
@@ -334,7 +334,7 @@ else if (_viewMode == "data")
         _autoRefreshTimer = new System.Threading.Timer(async _ =>
         {
             if (_disposed || !_autoRefreshEnabled || _loading || _refreshing || _scheduling
-                || _showBuildAdvisor || _showScheduleWizard || _showReschedule) return;
+                || _showBuildAdvisor || _showScheduleWizard || _showJobDetail) return;
             try
             {
                 await InvokeAsync(async () =>
@@ -562,37 +562,32 @@ else if (_viewMode == "data")
 
     private async Task OnModalConfirmedAsync()
     {
-        _showReschedule = false;
+        _showJobDetail = false;
+        _jobDetailExec = null;
+        _jobDetailBuild = null;
         _showScheduleWizard = false;
         await LoadData(isBackgroundRefresh: true);
     }
 
     private void ShowReschedule(StageExecution exec)
     {
-        _rescheduleExec = exec;
-        _rescheduleMachineId = exec.MachineId?.ToString() ?? "";
-        _rescheduleStart = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? DateTime.UtcNow;
-        _rescheduleEnd = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? DateTime.UtcNow.AddHours(4);
-        _showReschedule = true;
+        _jobDetailExec = exec;
+        _jobDetailBuild = null;
+        _showJobDetail = true;
+    }
+
+    private void ShowBuildDetail(MachineProgram build)
+    {
+        _jobDetailBuild = build;
+        _jobDetailExec = null;
+        _showJobDetail = true;
     }
 
     private void ManualScheduleSingle(StageExecution exec)
     {
-        _rescheduleExec = exec;
-        _rescheduleMachineId = "";
-        _rescheduleStart = DateTime.UtcNow;
-        _rescheduleEnd = DateTime.UtcNow.AddHours(exec.EstimatedHours ?? 4);
-
-        if (exec.ProductionStage?.RequiresMachineAssignment == true)
-        {
-            var compatibleMachine = _machines.FirstOrDefault(m =>
-                m.IsAvailableForScheduling &&
-                m.MachineType.Equals(exec.ProductionStage.Department ?? "", StringComparison.OrdinalIgnoreCase));
-            if (compatibleMachine != null)
-                _rescheduleMachineId = compatibleMachine.Id.ToString();
-        }
-
-        _showReschedule = true;
+        _jobDetailExec = exec;
+        _jobDetailBuild = null;
+        _showJobDetail = true;
     }
 
     private void OpenBuildAdvisor()
@@ -698,6 +693,13 @@ else if (_viewMode == "data")
     private async Task HandleBuildActionAsync((MachineProgram Build, string Action) args)
     {
         var (build, action) = args;
+
+        if (action == "detail")
+        {
+            ShowBuildDetail(build);
+            return;
+        }
+
         try
         {
             switch (action)
