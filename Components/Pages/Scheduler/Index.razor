@@ -648,20 +648,17 @@ else if (_viewMode == "data")
             else if (drag.BarType == "build")
             {
                 int targetMachineId;
-                ProgramScheduleResult schedResult;
                 if (drag.TargetMachineId.HasValue && drag.TargetMachineId.Value > 0)
-                {
                     targetMachineId = drag.TargetMachineId.Value;
-                    schedResult = await ProgramScheduling.ScheduleBuildPlateAsync(drag.EntityId, targetMachineId, drag.NewStart);
-                }
                 else
-                {
-                    schedResult = await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(drag.EntityId, drag.NewStart);
-                    targetMachineId = schedResult.Slot.MachineId;
-                }
+                    targetMachineId = _programs.FirstOrDefault(p => p.Id == drag.EntityId)?.MachineId ?? 0;
 
-                // Auto-cascade: shift downstream builds that now overlap
-                await ProgramScheduling.CascadeRescheduleAsync(targetMachineId, drag.EntityId);
+                if (targetMachineId <= 0)
+                    throw new InvalidOperationException("No target machine for drag.");
+
+                // Force the build to the exact drag position, then cascade to resolve overlaps.
+                // This lets users push builds forward/backward by dropping on top of them.
+                await ProgramScheduling.ForceScheduleBuildAtAsync(drag.EntityId, targetMachineId, drag.NewStart, _userName);
             }
 
             // Reload data FIRST, then show toast so UI is already updated

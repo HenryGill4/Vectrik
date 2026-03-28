@@ -448,6 +448,33 @@ public class ProgramSchedulingService : IProgramSchedulingService
         return new CascadeResult(shifted.Count, shifted);
     }
 
+    public async Task ForceScheduleBuildAtAsync(int machineProgramId, int machineId, DateTime exactStart, string userName)
+    {
+        var program = await _db.MachinePrograms
+            .Include(p => p.ProgramParts)
+            .FirstOrDefaultAsync(p => p.Id == machineProgramId)
+            ?? throw new InvalidOperationException("Machine program not found.");
+
+        if (!program.EstimatedPrintHours.HasValue || program.EstimatedPrintHours <= 0)
+            throw new InvalidOperationException("Program has no print duration.");
+
+        // If locked/scheduled, unlock first to clear old job/executions
+        if (program.IsLocked || program.ScheduledJobId.HasValue)
+        {
+            try { await UnlockProgramAsync(machineProgramId, userName, "Drag reschedule"); }
+            catch { /* Already unlocked */ }
+        }
+
+        // Schedule at the exact requested time — ScheduleBuildPlateAsync uses
+        // FindEarliestSlotAsync which will find exactStart (or later if blocked by
+        // immovable Printing/PostPrint builds). Since we just unlocked this program,
+        // its old executions are cleared and won't self-block.
+        await ScheduleBuildPlateAsync(machineProgramId, machineId, exactStart);
+
+        // Cascade: push any overlapping builds forward to make room
+        await CascadeRescheduleAsync(machineId, machineProgramId);
+    }
+
     public async Task<ProgramScheduleResult> ScheduleBuildPlateRunAsync(
         int machineProgramId, int machineId, DateTime? startAfter = null)
     {

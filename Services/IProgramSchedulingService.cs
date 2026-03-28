@@ -94,6 +94,13 @@ public interface IProgramSchedulingService
     /// </summary>
     Task<CascadeResult> CascadeRescheduleAsync(int machineId, int insertedProgramId);
 
+    /// <summary>
+    /// Force a build to an exact time (no slot finding). Used for drag-and-drop reschedule.
+    /// Places the build at the given time, then cascades overlapping builds forward.
+    /// Also handles cross-machine moves.
+    /// </summary>
+    Task ForceScheduleBuildAtAsync(int machineProgramId, int machineId, DateTime exactStart, string userName);
+
     // ══════════════════════════════════════════════════════════
     // Slot Finding
     // ══════════════════════════════════════════════════════════

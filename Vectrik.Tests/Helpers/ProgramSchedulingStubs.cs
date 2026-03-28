@@ -126,6 +126,9 @@ internal sealed class StubProgramSchedulingService : IProgramSchedulingService
         string userName,
         IProgress<(int current, int total, string status)>? progress = null)
         => Task.FromResult(new SmartRescheduleResult(0, 0, 0, 0, 0, [], 0));
+
+    public Task ForceScheduleBuildAtAsync(int machineProgramId, int machineId, DateTime exactStart, string userName)
+        => Task.CompletedTask;
 }
 
 /// <summary>

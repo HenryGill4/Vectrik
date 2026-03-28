@@ -527,6 +527,9 @@ function activateBarDrag() {
     document.body.appendChild(_barDragGhost);
 }
 
+// Cache of original positions for cascade preview
+let _barDragSiblingOriginals = null; // Map<element, originalLeftPx>
+
 /** Shared: update bar position during drag */
 function moveBarDrag(clientX, clientY) {
     if (!_barDragEl || !_barDragActive) return;
@@ -541,6 +544,9 @@ function moveBarDrag(clientX, clientY) {
         _barDragEl.style.transform = `translateY(${deltaY}px)`;
         detectTargetMachineRow(clientY);
     }
+
+    // Live cascade preview: shift sibling bars that would overlap
+    previewCascade(newLeft);
 
     // Update ghost tooltip with proposed time
     if (_barDragGhost) {
@@ -560,6 +566,71 @@ function moveBarDrag(clientX, clientY) {
         _barDragGhost.style.left = (clientX + 12) + 'px';
         _barDragGhost.style.top = (clientY - 28) + 'px';
     }
+}
+
+/** Live cascade preview: show sibling bars shifting as dragged bar overlaps them */
+function previewCascade(draggedLeftPx) {
+    if (!_barDragEl || _barDragType !== 'build') return;
+
+    // Find the gantt-track (sibling bar container) for the target machine row
+    const targetRow = _barDragHighlightedRow
+        || _barDragEl.closest('.gantt-row');
+    if (!targetRow) return;
+    const track = targetRow.querySelector('.gantt-track');
+    if (!track) return;
+
+    // Collect sibling build bar wrappers (not the dragged one)
+    const siblings = Array.from(track.querySelectorAll('.gantt-build-bar-wrapper'))
+        .filter(el => el !== _barDragEl);
+
+    // Cache original positions on first call
+    if (!_barDragSiblingOriginals) {
+        _barDragSiblingOriginals = new Map();
+        siblings.forEach(el => {
+            _barDragSiblingOriginals.set(el, parseFloat(el.style.left) || 0);
+        });
+    }
+
+    // Compute the dragged bar's occupied range
+    const dragWidth = parseFloat(_barDragEl.style.width) || 0;
+    const dragEnd = draggedLeftPx + dragWidth;
+    // Add changeover gap (30min default = 30/60 * pxPerHour)
+    const changeoverPx = (30 / 60) * _pixelsPerHour;
+
+    // Walk siblings in order and cascade shifts
+    const sortedSiblings = [..._barDragSiblingOriginals.entries()]
+        .sort((a, b) => a[1] - b[1]);
+
+    let cursor = dragEnd + changeoverPx;
+
+    for (const [el, origLeft] of sortedSiblings) {
+        const elWidth = parseFloat(el.style.width) || 0;
+        const origEnd = origLeft + elWidth;
+
+        if (origLeft < cursor && origEnd > draggedLeftPx) {
+            // This bar overlaps — push it forward
+            el.style.left = cursor + 'px';
+            el.style.opacity = '0.6';
+            el.style.transition = 'left 0.15s ease, opacity 0.15s ease';
+            cursor = cursor + elWidth + changeoverPx;
+        } else if (origLeft >= cursor) {
+            // No overlap — restore original
+            el.style.left = origLeft + 'px';
+            el.style.opacity = '';
+            el.style.transition = 'left 0.15s ease, opacity 0.15s ease';
+        }
+    }
+}
+
+/** Reset cascade preview — restore all siblings to original positions */
+function resetCascadePreview() {
+    if (!_barDragSiblingOriginals) return;
+    for (const [el, origLeft] of _barDragSiblingOriginals) {
+        el.style.left = origLeft + 'px';
+        el.style.opacity = '';
+        el.style.transition = '';
+    }
+    _barDragSiblingOriginals = null;
 }
 
 /** Shared: complete the drag and notify Blazor */
@@ -586,7 +657,9 @@ function completeBarDrag() {
         _barDragHighlightedRow = null;
     }
 
-    // Restore original position (Blazor will re-render at the correct position after reschedule)
+    // Reset cascade preview and restore original positions
+    // (Blazor will re-render at the correct positions after reschedule)
+    resetCascadePreview();
     _barDragEl.style.left = _barDragOrigLeft + 'px';
 
     // Notify Blazor with target machine ID
@@ -597,6 +670,7 @@ function completeBarDrag() {
 
 /** Shared: reset all bar drag state variables */
 function resetBarDragState() {
+    resetCascadePreview();
     _barDragEl = null;
     _barDragType = null;
     _barDragEntityId = null;
