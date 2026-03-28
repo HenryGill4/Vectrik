@@ -7,6 +7,7 @@
 @inject ISchedulingService Scheduler
 @inject IProgramSchedulingService ProgramScheduling
 @inject IProgramPlanningService ProgramPlanning
+@inject IJobService JobService
 @inject ToastService Toast
 
 @if (IsVisible)
@@ -308,6 +309,12 @@
                 <div class="modal-footer job-detail-footer">
                     <button class="btn btn-primary" @onclick="SaveRescheduleAsync" disabled="@_saving">Save</button>
                     <button class="btn btn-warning" @onclick="AutoScheduleAsync" disabled="@_saving">⚡ Auto-Schedule</button>
+                    @if (Execution?.JobId != null)
+                    {
+                        <button class="btn btn-danger" @onclick="DeleteJobAsync" disabled="@_saving">
+                            @(_confirmDelete ? "Confirm Delete?" : "Delete Job")
+                        </button>
+                    }
                     <div style="flex:1;"></div>
                     <button class="btn btn-secondary" @onclick="Close" disabled="@_saving">Close</button>
                 </div>
@@ -336,6 +343,7 @@
     private bool IsBuildMode => Build != null;
     private bool _saving;
     private string _savingMessage = "Saving...";
+    private bool _confirmDelete;
 
     // Reschedule fields (for execution mode)
     private string _machineId = "";
@@ -344,6 +352,7 @@
 
     protected override void OnParametersSet()
     {
+        _confirmDelete = false;
         if (IsVisible && Execution != null)
         {
             _machineId = Execution.MachineId?.ToString() ?? "";
@@ -400,6 +409,25 @@
         {
             await Scheduler.AutoScheduleExecutionAsync(Execution.Id);
             Toast.ShowSuccess("Auto-scheduled");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteJobAsync()
+    {
+        if (Execution?.JobId == null) return;
+        if (!_confirmDelete) { _confirmDelete = true; return; }
+
+        _saving = true; _savingMessage = "Deleting job...";
+        _confirmDelete = false;
+        StateHasChanged();
+        await Task.Yield();
+        try
+        {
+            await JobService.DeleteJobAsync(Execution.JobId.Value);
+            Toast.ShowSuccess("Job deleted");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
