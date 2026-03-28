@@ -74,11 +74,57 @@
                                    @onchange="e => SetValue(field.Name, e.Value?.ToString())" />
                             break;
 
+                        case "measurement":
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="number" step="any" class="form-control" style="flex: 1;"
+                                       value="@GetValue(field.Name)"
+                                       min="@field.MinValue" max="@field.MaxValue"
+                                       @onchange="e => SetValue(field.Name, e.Value?.ToString())" />
+                                @if (!string.IsNullOrWhiteSpace(field.Unit))
+                                {
+                                    <span style="color: var(--text-muted); font-size: 0.85rem; white-space: nowrap;">@field.Unit</span>
+                                }
+                            </div>
+                            @if (field.ToleranceMin.HasValue || field.ToleranceMax.HasValue)
+                            {
+                                <div style="font-size: 0.75rem; color: @(IsInTolerance(field) ? "var(--text-muted)" : "var(--danger)");">
+                                    Tolerance: @(field.ToleranceMin?.ToString("F2") ?? "—") to @(field.ToleranceMax?.ToString("F2") ?? "—") @field.Unit
+                                    @if (!IsInTolerance(field))
+                                    {
+                                        <span> ⚠ Out of tolerance</span>
+                                    }
+                                </div>
+                            }
+                            break;
+
+                        case "photo":
+                            <div style="color: var(--text-muted); font-size: 0.85rem; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;">
+                                📷 Photo capture available on shop floor
+                            </div>
+                            break;
+
+                        case "file":
+                            <div style="color: var(--text-muted); font-size: 0.85rem; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;">
+                                📎 File upload available on shop floor
+                            </div>
+                            break;
+
+                        case "signature":
+                            <div style="color: var(--text-muted); font-size: 0.85rem; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;">
+                                ✍️ Signature capture available on shop floor
+                            </div>
+                            break;
+
                         default:
                             <input type="text" class="form-control"
                                    value="@GetValue(field.Name)"
                                    @onchange="e => SetValue(field.Name, e.Value?.ToString())" />
                             break;
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(field.HelpText))
+                    {
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">@field.HelpText</div>
                     }
                 </div>
             }
@@ -133,6 +179,14 @@
         var val = GetValue(name);
         return val.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Contains(option);
+    }
+
+    private bool IsInTolerance(CustomFieldDefinition field)
+    {
+        if (!double.TryParse(GetValue(field.Name), out var val)) return true; // No value = assume OK
+        if (field.ToleranceMin.HasValue && val < field.ToleranceMin.Value) return false;
+        if (field.ToleranceMax.HasValue && val > field.ToleranceMax.Value) return false;
+        return true;
     }
 
     private bool IsFieldVisible(CustomFieldDefinition field)
