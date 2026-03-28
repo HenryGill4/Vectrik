@@ -191,8 +191,9 @@
     }
 
     /// <summary>
-    /// Called by JS when the user Ctrl+scrolls to zoom. C# owns PixelsPerHour so
-    /// tick/bar positions re-render at the correct scale.
+    /// Called by JS after Ctrl+wheel or pinch zoom. JS has already applied the zoom
+    /// (updated inner width and scroll position) so the viewport doesn't jump.
+    /// C# just needs to re-render tick/bar positions at the new scale.
     /// </summary>
     [JSInvokable]
     public async Task OnZoomRequested(int direction, double anchorTimeHours, double anchorViewportX)
@@ -204,7 +205,8 @@
 
         if (Math.Abs(newPph - PixelsPerHour) < 0.001) return;
 
-        // Store anchor for post-render JS sync
+        // JS already updated scroll position and inner width before calling us.
+        // Store anchor as fallback in case the Blazor DOM diff disrupts scroll.
         _pendingAnchorTimeHours = anchorTimeHours;
         _pendingAnchorViewportX = anchorViewportX;
         _needsZoomSync = true;
