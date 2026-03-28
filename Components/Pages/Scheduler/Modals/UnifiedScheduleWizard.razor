@@ -399,11 +399,11 @@
         if (_scheduling) return; // Guard against double-invocation
         _scheduling = true;
         _schedulingProgress = 0;
-        StateHasChanged();
-        await Task.Yield(); // Flush render so overlay appears before heavy DB work
 
         try
         {
+            StateHasChanged();
+            await Task.Yield(); // Flush render so overlay appears before heavy DB work
             var scheduled = 0;
             var errors = new List<string>();
 
@@ -437,6 +437,8 @@
 
             await OnScheduled.InvokeAsync();
         }
+        catch (TaskCanceledException) { }
+        catch (ObjectDisposedException) { }
         catch (Exception ex)
         {
             Toast.ShowError($"Scheduling failed: {ex.Message}");

@@ -644,51 +644,36 @@ else if (_viewMode == "data")
             if (drag.BarType is "exec" or "group")
             {
                 await Scheduler.AutoScheduleExecutionAsync(drag.EntityId, drag.NewStart);
-                Toast.ShowSuccess($"Rescheduled to {drag.NewStart:MMM d HH:mm}");
             }
             else if (drag.BarType == "build")
             {
                 int targetMachineId;
+                ProgramScheduleResult schedResult;
                 if (drag.TargetMachineId.HasValue && drag.TargetMachineId.Value > 0)
                 {
                     targetMachineId = drag.TargetMachineId.Value;
-                    await ProgramScheduling.ScheduleBuildPlateAsync(drag.EntityId, targetMachineId, drag.NewStart);
+                    schedResult = await ProgramScheduling.ScheduleBuildPlateAsync(drag.EntityId, targetMachineId, drag.NewStart);
                 }
                 else
                 {
-                    var result = await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(drag.EntityId, drag.NewStart);
-                    targetMachineId = result.Slot.MachineId;
+                    schedResult = await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(drag.EntityId, drag.NewStart);
+                    targetMachineId = schedResult.Slot.MachineId;
                 }
 
                 // Auto-cascade: shift downstream builds that now overlap
-                var cascade = await ProgramScheduling.CascadeRescheduleAsync(targetMachineId, drag.EntityId);
-
-                var msg = $"Build rescheduled to {drag.NewStart:MMM d HH:mm}";
-                if (cascade.ShiftedCount > 0)
-                    msg += $" — {cascade.ShiftedCount} build(s) shifted";
-                Toast.ShowSuccess(msg);
-
-                // Check changeover safety — warn if build ends outside operator shift
-                try
-                {
-                    var program = _programs.FirstOrDefault(p => p.Id == drag.EntityId);
-                    var buildEnd = program?.ScheduledDate?.AddHours(program.EstimatedPrintHours ?? 0);
-                    if (buildEnd.HasValue)
-                    {
-                        var changeover = await ProgramScheduling.AnalyzeChangeoverAsync(targetMachineId, buildEnd.Value);
-                        if (!changeover.OperatorAvailable)
-                            Toast.ShowWarning($"Changeover conflict: no operator available at {changeover.ChangeoverStart:MMM d HH:mm}. Machine may go DOWN until next shift.");
-                    }
-                }
-                catch { /* changeover check is advisory, don't block */ }
+                await ProgramScheduling.CascadeRescheduleAsync(targetMachineId, drag.EntityId);
             }
 
+            // Reload data FIRST, then show toast so UI is already updated
             await LoadData(isBackgroundRefresh: true);
+            Toast.ShowSuccess($"Rescheduled to {drag.NewStart:MMM d HH:mm}");
         }
+        catch (TaskCanceledException) { /* Circuit disconnected — safe to ignore */ }
+        catch (ObjectDisposedException) { /* Component disposed — safe to ignore */ }
         catch (Exception ex)
         {
             Toast.ShowError($"Reschedule failed: {ex.Message}");
-            await LoadData(isBackgroundRefresh: true);
+            try { await LoadData(isBackgroundRefresh: true); } catch { }
         }
     }
 
@@ -739,10 +724,12 @@ else if (_viewMode == "data")
 
             await LoadData(isBackgroundRefresh: true);
         }
+        catch (TaskCanceledException) { }
+        catch (ObjectDisposedException) { }
         catch (Exception ex)
         {
             Toast.ShowError($"Action failed: {ex.Message}");
-            await LoadData(isBackgroundRefresh: true);
+            try { await LoadData(isBackgroundRefresh: true); } catch { }
         }
     }
 
@@ -845,6 +832,8 @@ else if (_viewMode == "data")
 
             await LoadData(isBackgroundRefresh: true);
         }
+        catch (TaskCanceledException) { }
+        catch (ObjectDisposedException) { }
         catch (Exception ex)
         {
             Toast.ShowError($"Smart reschedule failed: {ex.Message}");
