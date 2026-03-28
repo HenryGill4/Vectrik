@@ -727,6 +727,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var currentStart = notBefore;
         var sortOrder = 0;
 
+        // ── Prefetch: batch-load machines, programs, and cost profiles to avoid N+1 queries ──
         var machineLookupById = await _db.Machines
             .Where(m => m.IsActive)
             .ToDictionaryAsync(m => m.Id, m => m);
@@ -734,13 +735,48 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .Where(m => m.IsActive && m.MachineId != null)
             .ToDictionaryAsync(m => m.MachineId!, m => m);
 
+        // Prefetch all programs for this part (avoids per-stage GetBestProgramForStageAsync DB hits)
+        var partPrograms = await _db.MachinePrograms
+            .Include(p => p.MachineAssignments)
+            .Include(p => p.ProgramParts)
+            .Where(p => p.Status == ProgramStatus.Active
+                && (p.PartId == part.Id || p.ProgramParts.Any(pp => pp.PartId == part.Id)))
+            .ToListAsync();
+
+        // Prefetch all ProcessStages for stage→program linkage
+        var processStageIds = stages.Select(s => s.Id).ToList();
+        var linkedProcessStages = await _db.ProcessStages
+            .Where(ps => processStageIds.Contains(ps.Id))
+            .ToDictionaryAsync(ps => ps.Id, ps => ps);
+
+        // Prefetch cost profiles for all stages in one query
+        var stageIds = stages.Select(s => s.ProductionStageId).Distinct().ToList();
+        var costProfiles = await _db.StageCostProfiles
+            .Where(p => stageIds.Contains(p.ProductionStageId))
+            .ToDictionaryAsync(p => p.ProductionStageId, p => p);
+        var productionStages = await _db.ProductionStages
+            .Where(s => stageIds.Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => s);
+
         foreach (var stage in stages)
         {
             var programId = stage.MachineProgramId;
             if (!programId.HasValue)
             {
-                var bestProgram = await _programService.GetBestProgramForStageAsync(
-                    part.Id, preferredMachineId, stage.ProductionStageId);
+                // Resolve from prefetched programs instead of DB query per stage
+                var candidates = partPrograms
+                    .Where(p => p.ProcessStageId != null
+                        && linkedProcessStages.ContainsKey(p.ProcessStageId.Value)
+                        && linkedProcessStages[p.ProcessStageId.Value].ProductionStageId == stage.ProductionStageId)
+                    .ToList();
+                if (!candidates.Any())
+                    candidates = partPrograms.ToList(); // fallback: any program for this part
+
+                var bestProgram = candidates
+                    .Where(p => p.EstimateSource == "Auto" && p.ActualSampleCount > 0)
+                    .OrderByDescending(p => p.ActualSampleCount)
+                    .FirstOrDefault()
+                    ?? candidates.FirstOrDefault();
                 programId = bestProgram?.Id;
             }
 
@@ -750,8 +786,24 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
             int? stageMachineId = preferredMachineId ?? ResolveStageMachine(stage, machineLookupById, machineIdLookup);
 
-            var costEstimate = await _costService.EstimateCostAsync(
-                stage.ProductionStageId, estimatedHours, quantity, batchCount: 1);
+            // Estimate cost from prefetched profiles instead of DB query per stage
+            decimal estimatedCost;
+            if (costProfiles.TryGetValue(stage.ProductionStageId, out var profile))
+            {
+                var laborCost = profile.LaborCostPerHour * (decimal)estimatedHours;
+                var equipmentCost = profile.EquipmentCostPerHour * (decimal)estimatedHours;
+                var overheadCost = profile.OverheadCostPerHour * (decimal)estimatedHours;
+                var partCosts = profile.PerPartCost * quantity;
+                var toolingCost = profile.ToolingCostPerRun;
+                var directTimeCost = laborCost + equipmentCost + overheadCost;
+                var overheadMarkup = directTimeCost * (decimal)(profile.OverheadPercent / 100);
+                estimatedCost = directTimeCost + overheadMarkup + partCosts + toolingCost;
+            }
+            else
+            {
+                var fallbackRate = productionStages.GetValueOrDefault(stage.ProductionStageId)?.DefaultHourlyRate ?? 85m;
+                estimatedCost = fallbackRate * (decimal)estimatedHours;
+            }
 
             var scheduledEnd = currentStart.AddHours(estimatedHours);
 
@@ -765,7 +817,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 Status = StageExecutionStatus.NotStarted,
                 EstimatedHours = estimatedHours,
                 SetupHours = durationResult.SetupMinutes / 60.0,
-                EstimatedCost = costEstimate.TotalCost,
+                EstimatedCost = estimatedCost,
                 MaterialCost = stage.MaterialCost,
                 QualityCheckRequired = stage.RequiresQualityCheck,
                 ScheduledStartAt = currentStart,

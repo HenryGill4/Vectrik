@@ -12,9 +12,17 @@
 {
     <div class="modal-overlay" @onclick="Close">
         <div class="modal-content modal-lg" @onclick:stopPropagation>
+            @if (_scheduling)
+            {
+                <div class="wizard-scheduling-overlay">
+                    <span class="spinner"></span>
+                    <span>Scheduling @_schedulingProgress of @_cncConfigs.Count job(s)...</span>
+                </div>
+            }
+
             <div class="modal-header">
                 <h3 class="modal-title">@StepTitle</h3>
-                <button class="btn-icon" @onclick="Close">&#x2715;</button>
+                <button class="btn-icon" @onclick="Close" disabled="@_scheduling">&#x2715;</button>
             </div>
 
             <div class="modal-body">
@@ -212,6 +220,7 @@
 
     private int _stepIndex;
     private bool _scheduling;
+    private int _schedulingProgress;
     private bool _isLoading;
     private string? _errorMessage;
 
@@ -374,7 +383,9 @@
 
     private async Task ExecuteScheduleAsync()
     {
+        if (_scheduling) return; // Guard against double-invocation
         _scheduling = true;
+        _schedulingProgress = 0;
         StateHasChanged();
 
         try
@@ -384,6 +395,10 @@
 
             foreach (var cnc in _cncConfigs)
             {
+                _schedulingProgress++;
+                StateHasChanged();
+                await Task.Yield(); // Allow UI to repaint with progress
+
                 try
                 {
                     await ProgramScheduling.ScheduleFromWorkOrderLineAsync(cnc.Line.Id);
@@ -438,6 +453,7 @@
 
     private async Task Close()
     {
+        if (_scheduling) return; // Don't close while scheduling is in progress
         _partSelections.Clear();
         _cncConfigs.Clear();
         _stepIndex = 0;
