@@ -129,6 +129,10 @@ builder.Services.AddScoped<IWorkInstructionService, WorkInstructionService>();
 // Shipping
 builder.Services.AddScoped<IShippingService, ShippingService>();
 
+// Email
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
+builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+
 // Machine providers + SignalR notifier
 builder.Services.AddScoped<MachineProviderFactory>();
 builder.Services.AddSingleton<IMachineStateNotifier, MachineStateNotifier>();
