@@ -101,6 +101,7 @@
         if (_needsZoomSync && _jsModule != null && !_disposed)
         {
             _needsZoomSync = false;
+            _needsReinit = false; // Zoom sync supersedes reinit — don't fight over scroll position
             try
             {
                 await _jsModule.InvokeVoidAsync("applyZoomAnchored",
@@ -111,6 +112,7 @@
                 // JS interop recovery — self-heals on next render
             }
             catch (ObjectDisposedException) { }
+            return; // Don't run reinit in the same render as zoom sync
         }
 
         // After background refresh: Blazor may have recreated DOM content.
