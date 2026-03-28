@@ -40,7 +40,7 @@ let _savedPixelsPerHour = null;
 
 const MIN_PX_PER_HOUR = 0.5;
 const MAX_PX_PER_HOUR = 120;
-const ZOOM_FACTOR = 1.15;
+const ZOOM_FACTOR = 1.5;
 const DEBOUNCE_MS = 150;
 
 // ── Helpers (internal) ──────────────────────────────────────────────────────
@@ -107,11 +107,11 @@ function debouncedNotify() {
 // Debounce zoom C# notifications — batches rapid Ctrl+wheel/pinch events
 // so only the final zoom level triggers a Blazor re-render (~60ms = ~1 frame at 16fps)
 let _zoomNotifyId = 0;
-function debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX) {
+function debouncedZoomNotify(anchorTimeHours, anchorViewportX) {
     clearTimeout(_zoomNotifyId);
     _zoomNotifyId = setTimeout(() => {
         if (_disposed || !_dotNetRef) return;
-        _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, anchorTimeHours, anchorViewportX);
+        _dotNetRef.invokeMethodAsync('OnZoomRequested', _pixelsPerHour, anchorTimeHours, anchorViewportX);
     }, 60);
 }
 
@@ -196,6 +196,7 @@ export function initGanttViewport(dotNetRef, containerEl, dataStartIso, dataEndI
  * Preserves scroll position and zoom level.
  */
 export function reinit(containerEl, dataStartIso, dataEndIso, pixelsPerHour) {
+    if (_pinchActive) return;
     if (!containerEl) {
         console.warn('gantt-viewport reinit: containerEl is null');
         return;
@@ -243,7 +244,7 @@ export function dispose() {
 }
 
 export function scrollToTime(isoDateTimeString) {
-    if (!isAlive() || !_inner) return;
+    if (!isAlive() || !_inner || _pinchActive) return;
     const targetMs = new Date(isoDateTimeString).getTime();
     const hoursFromStart = (targetMs - _dataStartMs) / 3600000;
     const px = hoursFromStart * _pixelsPerHour;
@@ -257,6 +258,7 @@ export function scrollToTime(isoDateTimeString) {
  * Runs BEFORE Blazor auto-render so scroll position persists through the diff.
  */
 export function applyZoom(pixelsPerHour) {
+    if (_pinchActive) return;
     if (!isAlive() || !_inner) {
         _pixelsPerHour = clampZoom(pixelsPerHour);
         return;
@@ -279,6 +281,7 @@ export function applyZoom(pixelsPerHour) {
  * This syncs JS _pixelsPerHour and scrolls so the cursor anchor stays put.
  */
 export function applyZoomAnchored(pixelsPerHour, anchorTimeHours, anchorViewportX) {
+    if (_pinchActive) return;
     _pixelsPerHour = clampZoom(pixelsPerHour);
 
     if (!isAlive() || !_inner) return;
@@ -306,7 +309,7 @@ export function getViewport() {
 }
 
 export function updateDataRange(dataStartIso, dataEndIso, pixelsPerHour) {
-    if (!_initialized) return;
+    if (!_initialized || _pinchActive) return;
 
     const oldStartMs = _dataStartMs;
     _dataStartIso = dataStartIso;
@@ -336,7 +339,7 @@ export function restoreState() {
 // ── Event Handlers ──────────────────────────────────────────────────────────
 
 function onScroll() {
-    if (_disposed || !isAlive()) return;
+    if (_disposed || !isAlive() || _pinchActive) return;
     debouncedNotify();
 }
 
@@ -374,21 +377,28 @@ function onWheel(e) {
     _container.scrollLeft = cursorTimeHours * _pixelsPerHour - cursorViewportX;
 
     // Debounce C# notification — rapid wheel events batch into one re-render
-    debouncedZoomNotify(direction, cursorTimeHours, cursorViewportX);
+    debouncedZoomNotify(cursorTimeHours, cursorViewportX);
 }
 
 let _pinchDist = 0;
-let _touchBarMode = false;      // true = single-finger touch on a bar (potential drag)
+let _pinchActive = false;        // true while a two-finger pinch gesture is in progress
+let _touchBarMode = false;       // true = single-finger touch on a bar (potential drag)
 let _touchBarLongPress = null;   // timeout ID for long-press detection
+let _touchPanMode = false;       // true = single-finger touch NOT on a bar (JS scroll pan)
+let _touchPanStartX = 0;
+let _touchPanStartY = 0;
+let _touchPanScrollLeft = 0;
+let _touchPanScrollTop = 0;
 
 function onTouchStart(e) {
     if (_disposed || !isAlive()) return;
 
     // Two-finger: pinch zoom
     if (e.touches.length === 2) {
-        // Cancel any pending bar drag
         cancelTouchBarDrag();
+        _touchPanMode = false;
         _pinchDist = touchDist(e.touches);
+        _pinchActive = true;
         return;
     }
 
@@ -419,38 +429,50 @@ function onTouchStart(e) {
             }, 300);
             return;
         }
+
+        // Not on a bar — start single-finger pan (replaces native scroll
+        // since touch-action: none disables browser touch handling)
+        _touchPanMode = true;
+        _touchPanStartX = touch.clientX;
+        _touchPanStartY = touch.clientY;
+        _touchPanScrollLeft = _container.scrollLeft;
+        _touchPanScrollTop = _container.scrollTop;
     }
 }
 
 function onTouchMove(e) {
     if (_disposed || !isAlive() || !_inner) return;
 
-    // Two-finger pinch zoom
-    if (e.touches.length === 2) {
-        const cur = touchDist(e.touches);
-        const delta = cur - _pinchDist;
-        if (Math.abs(delta) < 20) return;
-
+    // Two-finger pinch zoom — update pph, inner width, and scroll in JS,
+    // then notify C# so Blazor re-renders bars at correct positions.
+    // Guards on applyZoomAnchored/applyZoom/reinit/updateDataRange prevent
+    // C# re-render callbacks from fighting with our scroll position.
+    // touch-action:none in CSS prevents browser compositor from fighting too.
+    if (e.touches.length === 2 && _pinchActive) {
         e.preventDefault();
-        _pinchDist = cur;
 
-        const direction = delta > 0 ? 1 : -1;
+        const cur = touchDist(e.touches);
+        if (Math.abs(cur - _pinchDist) < 3) return;
+
+        // Anchor at the midpoint between fingers
         const rect = _container.getBoundingClientRect();
         const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const anchorViewportX = midX - rect.left;
-        const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
+        const anchorVpX = midX - rect.left;
+        const anchorTime = (_container.scrollLeft + anchorVpX) / _pixelsPerHour;
 
-        // Apply zoom immediately in JS (same pattern as Ctrl+wheel)
-        const newPph = clampZoom(direction > 0
-            ? _pixelsPerHour * ZOOM_FACTOR
-            : _pixelsPerHour / ZOOM_FACTOR);
+        // Continuous ratio scaling — tracks finger spread naturally
+        const ratio = cur / _pinchDist;
+        _pinchDist = cur;
+
+        const newPph = clampZoom(_pixelsPerHour * ratio);
         if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
 
         _pixelsPerHour = newPph;
         updateInnerWidth();
-        _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
+        _container.scrollLeft = anchorTime * newPph - anchorVpX;
 
-        debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX);
+        // Notify C# so Blazor re-renders bars at the new zoom level
+        debouncedZoomNotify(anchorTime, anchorVpX);
         return;
     }
 
@@ -478,9 +500,28 @@ function onTouchMove(e) {
             moveBarDrag(touch.clientX, touch.clientY);
         }
     }
+
+    // Single-finger pan (replaces native scroll since touch-action: none)
+    if (e.touches.length === 1 && _touchPanMode && !_touchBarMode) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        _container.scrollLeft = _touchPanScrollLeft + (_touchPanStartX - touch.clientX);
+        _container.scrollTop = _touchPanScrollTop + (_touchPanStartY - touch.clientY);
+    }
 }
 
 function onTouchEnd(e) {
+    // Reset pinch state when fingers lift
+    if (_pinchActive && e.touches.length < 2) {
+        _pinchActive = false;
+    }
+
+    // Reset touch pan state
+    if (_touchPanMode) {
+        _touchPanMode = false;
+        debouncedNotify();
+    }
+
     if (!_touchBarMode) return;
 
     if (_touchBarLongPress) { clearTimeout(_touchBarLongPress); _touchBarLongPress = null; }
