@@ -104,6 +104,17 @@ function debouncedNotify() {
     _debounceId = setTimeout(notifyViewportChanged, DEBOUNCE_MS);
 }
 
+// Debounce zoom C# notifications — batches rapid Ctrl+wheel/pinch events
+// so only the final zoom level triggers a Blazor re-render (~60ms = ~1 frame at 16fps)
+let _zoomNotifyId = 0;
+function debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX) {
+    clearTimeout(_zoomNotifyId);
+    _zoomNotifyId = setTimeout(() => {
+        if (_disposed || !_dotNetRef) return;
+        _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, anchorTimeHours, anchorViewportX);
+    }, 60);
+}
+
 function touchDist(t) {
     const dx = t[0].clientX - t[1].clientX;
     const dy = t[0].clientY - t[1].clientY;
@@ -341,16 +352,24 @@ function onWheel(e) {
     e.preventDefault();
     e.stopPropagation();
 
-    // Delegate zoom to C# so tick/bar positions re-render at the correct scale.
-    // Pass the zoom direction and cursor anchor so C# can restore scroll after render.
     const direction = e.deltaY < 0 ? 1 : -1;
     const rect = _container.getBoundingClientRect();
     const cursorViewportX = e.clientX - rect.left;
     const cursorTimeHours = (_container.scrollLeft + cursorViewportX) / _pixelsPerHour;
 
-    if (_dotNetRef) {
-        _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, cursorTimeHours, cursorViewportX);
-    }
+    // Apply zoom immediately in JS so scroll position persists through Blazor re-render.
+    // This is the same pattern as button zoom (applyZoom) — update JS FIRST, then notify C#.
+    const newPph = clampZoom(direction > 0
+        ? _pixelsPerHour * ZOOM_FACTOR
+        : _pixelsPerHour / ZOOM_FACTOR);
+    if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
+
+    _pixelsPerHour = newPph;
+    updateInnerWidth();
+    _container.scrollLeft = cursorTimeHours * _pixelsPerHour - cursorViewportX;
+
+    // Debounce C# notification — rapid wheel events batch into one re-render
+    debouncedZoomNotify(direction, cursorTimeHours, cursorViewportX);
 }
 
 let _pinchDist = 0;
@@ -416,9 +435,17 @@ function onTouchMove(e) {
         const anchorViewportX = midX - rect.left;
         const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
 
-        if (_dotNetRef) {
-            _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, anchorTimeHours, anchorViewportX);
-        }
+        // Apply zoom immediately in JS (same pattern as Ctrl+wheel)
+        const newPph = clampZoom(direction > 0
+            ? _pixelsPerHour * ZOOM_FACTOR
+            : _pixelsPerHour / ZOOM_FACTOR);
+        if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
+
+        _pixelsPerHour = newPph;
+        updateInnerWidth();
+        _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
+
+        debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX);
         return;
     }
 
