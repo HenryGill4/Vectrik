@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject NavigationManager Nav
 
 <div class="pub-layout">
     <nav class="pub-nav">
@@ -21,9 +22,9 @@
             </a>
 
             <div class="pub-nav-links" id="pub-mobile-menu">
-                <a href="/features" class="pub-nav-link">Features</a>
-                <a href="/pricing" class="pub-nav-link">Pricing</a>
-                <a href="/about" class="pub-nav-link">About</a>
+                <a href="/features" class="pub-nav-link @(IsActive("/features") ? "pub-nav-link-active" : "")">Features</a>
+                <a href="/pricing" class="pub-nav-link @(IsActive("/pricing") ? "pub-nav-link-active" : "")">Pricing</a>
+                <a href="/about" class="pub-nav-link @(IsActive("/about") ? "pub-nav-link-active" : "")">About</a>
                 <div class="pub-nav-actions-mobile">
                     <a href="/account/login" class="pub-btn pub-btn-ghost pub-btn-sm">Sign In</a>
                     <a href="/demo" class="pub-btn pub-btn-primary pub-btn-sm">Request Demo</a>
@@ -103,3 +104,9 @@
     </footer>
 
 </div>
+
+@code {
+    private bool IsActive(string path) =>
+        Nav.Uri.EndsWith(path, StringComparison.OrdinalIgnoreCase) ||
+        Nav.ToBaseRelativePath(Nav.Uri).Equals(path.TrimStart('/'), StringComparison.OrdinalIgnoreCase);
+}

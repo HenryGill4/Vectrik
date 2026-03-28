@@ -5,6 +5,8 @@
 
 @using Microsoft.AspNetCore.Authorization
 @using System.ComponentModel.DataAnnotations
+@inject IEmailService EmailService
+@inject ILogger<Demo> Logger
 
 <section class="pub-page-hero pub-page-hero-sm">
     <h1 class="pub-gradient-text">Request a Demo</h1>
@@ -92,8 +94,15 @@
                         <InputTextArea id="message" @bind-Value="_model.Message" class="pub-input pub-textarea" rows="4" placeholder="Tell us about your production challenges..." />
                     </div>
 
-                    <button type="submit" class="pub-btn pub-btn-primary pub-btn-block pub-btn-lg">
-                        Request Demo
+                    <button type="submit" class="pub-btn pub-btn-primary pub-btn-block pub-btn-lg" disabled="@_sending">
+                        @if (_sending)
+                        {
+                            <span class="pub-spinner"></span> <text>Sending...</text>
+                        }
+                        else
+                        {
+                            <text>Request Demo</text>
+                        }
                     </button>
                 </EditForm>
             }
@@ -158,10 +167,33 @@
 @code {
     private DemoRequestModel _model = new();
     private bool _submitted;
+    private bool _sending;
 
-    private void HandleSubmit()
+    private async Task HandleSubmit()
     {
+        _sending = true;
+        StateHasChanged();
+
+        try
+        {
+            await EmailService.SendDemoRequestAsync(new DemoRequestEmail
+            {
+                FullName = _model.FullName,
+                Email = _model.Email,
+                Company = _model.Company,
+                Phone = _model.Phone,
+                MachineCount = _model.MachineCount,
+                PrimaryProcess = _model.PrimaryProcess,
+                Message = _model.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to send demo request email for {Company}", _model.Company);
+        }
+
         _submitted = true;
+        _sending = false;
     }
 
     private sealed class DemoRequestModel
