@@ -17,8 +17,8 @@
                             case "dropdown":
                             case "select":
                                 <select class="form-control"
-                                        value="@GetFieldValue(field.Label)"
-                                        @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())">
+                                        value="@GetFieldValue(field.Name)"
+                                        @onchange="e => SetFieldValue(field.Name, e.Value?.ToString())">
                                     <option value="">Select...</option>
                                     @if (!string.IsNullOrWhiteSpace(field.Options))
                                     {
@@ -29,8 +29,8 @@
                             case "checkbox":
                                 <div style="min-height: var(--tap-target); display: flex; align-items: center;">
                                     <input type="checkbox" style="width: 20px; height: 20px;"
-                                           checked="@IsFieldChecked(field.Label)"
-                                           @onchange="e => SetCheckboxValue(field.Label, e.Value)" />
+                                           checked="@IsFieldChecked(field.Name)"
+                                           @onchange="e => SetCheckboxValue(field.Name, e.Value)" />
                                 </div>
                                 break;
                             case "number":
@@ -38,19 +38,19 @@
                                 <input class="form-control" type="number"
                                        min="@field.MinValue" max="@field.MaxValue"
                                        inputmode="numeric"
-                                       value="@GetFieldValue(field.Label)"
-                                       @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())" />
+                                       value="@GetFieldValue(field.Name)"
+                                       @onchange="e => SetFieldValue(field.Name, e.Value?.ToString())" />
                                 break;
                             case "textarea":
                                 <textarea class="form-control" rows="3"
-                                          value="@GetFieldValue(field.Label)"
-                                          @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())"
+                                          value="@GetFieldValue(field.Name)"
+                                          @onchange="e => SetFieldValue(field.Name, e.Value?.ToString())"
                                           placeholder="@field.HelpText"></textarea>
                                 break;
                             case "date":
                                 <input class="form-control" type="date"
-                                       value="@GetFieldValue(field.Label)"
-                                       @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())" />
+                                       value="@GetFieldValue(field.Name)"
+                                       @onchange="e => SetFieldValue(field.Name, e.Value?.ToString())" />
                                 break;
                             case "measurement":
                                 <div style="display: flex; gap: 6px; align-items: center;">
@@ -58,8 +58,8 @@
                                            min="@field.MinValue" max="@field.MaxValue"
                                            inputmode="decimal"
                                            style="color: @GetMeasurementColor(field); font-weight: 600; flex: 1;"
-                                           value="@GetFieldValue(field.Label)"
-                                           @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())" />
+                                           value="@GetFieldValue(field.Name)"
+                                           @onchange="e => SetFieldValue(field.Name, e.Value?.ToString())" />
                                     @if (!string.IsNullOrWhiteSpace(field.Unit))
                                     {
                                         <span style="color: var(--text-muted); font-size: 0.85rem; white-space: nowrap;">@field.Unit</span>
@@ -68,14 +68,14 @@
                                 @if (field.ToleranceMin.HasValue || field.ToleranceMax.HasValue)
                                 {
                                     <small style="color: var(--text-muted);">
-                                        Tolerance: @(field.ToleranceMin?.ToString("F2") ?? "—") – @(field.ToleranceMax?.ToString("F2") ?? "—") @field.Unit
+                                        Tolerance: @(field.ToleranceMin?.ToString("F2") ?? "—") – @(field.ToleranceMax?.ToString("F2") ?? "—") @(field.Unit ?? "")
                                     </small>
                                 }
                                 break;
                             case "photo":
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <InputFile OnChange="e => HandleFileUpload(field.Label, e)" accept="image/*" capture="environment" />
-                                    @if (!string.IsNullOrWhiteSpace(GetFieldValue(field.Label)))
+                                    <InputFile OnChange="e => HandleFileUpload(field.Name, e)" accept="image/*" capture="environment" />
+                                    @if (!string.IsNullOrWhiteSpace(GetFieldValue(field.Name)))
                                     {
                                         <span style="color: var(--success); font-size: 0.85rem;">Photo captured</span>
                                     }
@@ -83,8 +83,8 @@
                                 break;
                             case "file":
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <InputFile OnChange="e => HandleFileUpload(field.Label, e)" />
-                                    @if (!string.IsNullOrWhiteSpace(GetFieldValue(field.Label)))
+                                    <InputFile OnChange="e => HandleFileUpload(field.Name, e)" />
+                                    @if (!string.IsNullOrWhiteSpace(GetFieldValue(field.Name)))
                                     {
                                         <span style="color: var(--success); font-size: 0.85rem;">File attached</span>
                                     }
@@ -94,18 +94,18 @@
                                 <div>
                                     <input class="form-control" type="text"
                                            placeholder="Type your name to sign"
-                                           value="@GetFieldValue(field.Label)"
-                                           @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())" />
-                                    @if (!string.IsNullOrWhiteSpace(GetFieldValue(field.Label)))
+                                           value="@GetFieldValue(field.Name)"
+                                           @onchange="e => SetFieldValue(field.Name, e.Value?.ToString())" />
+                                    @if (!string.IsNullOrWhiteSpace(GetFieldValue(field.Name)))
                                     {
-                                        <small style="color: var(--success);">Signed: @GetFieldValue(field.Label) at @DateTime.Now.ToString("HH:mm")</small>
+                                        <small style="color: var(--success);">Signed: @GetFieldValue(field.Name) at @DateTime.Now.ToString("HH:mm")</small>
                                     }
                                 </div>
                                 break;
                             default:
                                 <input class="form-control" type="text"
-                                       value="@GetFieldValue(field.Label)"
-                                       @onchange="e => SetFieldValue(field.Label, e.Value?.ToString())" />
+                                       value="@GetFieldValue(field.Name)"
+                                       @onchange="e => SetFieldValue(field.Name, e.Value?.ToString())" />
                                 break;
                         }
                         @if (!string.IsNullOrWhiteSpace(field.HelpText) && field.FieldType?.ToLower() != "textarea")
@@ -136,7 +136,7 @@
 
     protected override void OnParametersSet()
     {
-        _fields = Stage?.GetCustomFields();
+        _fields = Stage?.GetCustomFields() ?? new();
         HydrateFromInitialValues();
     }
 
@@ -156,7 +156,7 @@
 
     private string GetMeasurementColor(CustomFieldDefinition field)
     {
-        var val = GetFieldValue(field.Label);
+        var val = GetFieldValue(field.Name);
         if (!double.TryParse(val, out var num)) return "inherit";
         if (field.ToleranceMin.HasValue && num < field.ToleranceMin.Value) return "var(--danger)";
         if (field.ToleranceMax.HasValue && num > field.ToleranceMax.Value) return "var(--danger)";
