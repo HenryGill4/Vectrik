@@ -728,12 +728,11 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var sortOrder = 0;
 
         // ── Prefetch: batch-load machines, programs, and cost profiles to avoid N+1 queries ──
-        var machineLookupById = await _db.Machines
-            .Where(m => m.IsActive)
-            .ToDictionaryAsync(m => m.Id, m => m);
-        var machineIdLookup = await _db.Machines
-            .Where(m => m.IsActive && m.MachineId != null)
-            .ToDictionaryAsync(m => m.MachineId!, m => m);
+        var allActiveMachines = await _db.Machines.Where(m => m.IsActive).ToListAsync();
+        var machineLookupById = allActiveMachines.ToDictionary(m => m.Id, m => m);
+        var machineIdLookup = allActiveMachines
+            .Where(m => m.MachineId != null)
+            .ToDictionary(m => m.MachineId!, m => m);
 
         // Prefetch all programs for this part (avoids per-stage GetBestProgramForStageAsync DB hits)
         var partPrograms = await _db.MachinePrograms

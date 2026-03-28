@@ -2,15 +2,15 @@
 @inject IStageService StageService
 @inject ToastService Toast
 
-@if (!string.IsNullOrEmpty(UserName) && _myWork.Any())
+@if (!string.IsNullOrEmpty(UserName) && _cachedMyWork.Any())
 {
     <div class="card" style="margin-bottom: 12px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
             <span>👤 My Work — @UserName</span>
-            <span class="badge badge-accent">@_myWork.Count task(s)</span>
+            <span class="badge badge-accent">@_cachedMyWork.Count task(s)</span>
         </div>
         <div style="padding: 4px 0;">
-            @foreach (var exec in _myWork.OrderByDescending(e => e.Status == StageExecutionStatus.InProgress).ThenBy(e => e.ScheduledStartAt))
+            @foreach (var exec in _cachedMyWork.OrderByDescending(e => e.Status == StageExecutionStatus.InProgress).ThenBy(e => e.ScheduledStartAt))
             {
                 <div class="stage-queue-item @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item--active" : "")" style="padding: 6px 12px;">
                     <span class="stage-queue-item-dot @(exec.Status == StageExecutionStatus.InProgress ? "stage-queue-item-dot--active" : "")"></span>
@@ -205,6 +205,7 @@
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
     private HashSet<int> _expandedStages = new();
+    private List<StageExecution> _cachedMyWork = [];
     private double ShiftHoursPerDay => Shifts.Any()
         ? Shifts.Sum(s =>
         {
@@ -214,11 +215,14 @@
         })
         : 24.0;
 
-    private List<StageExecution> _myWork => Executions.Concat(Unscheduled)
-        .Where(e => !string.IsNullOrEmpty(e.OperatorName)
-            && e.OperatorName.Equals(UserName, StringComparison.OrdinalIgnoreCase)
-            && e.Status is StageExecutionStatus.NotStarted or StageExecutionStatus.InProgress)
-        .ToList();
+    protected override void OnParametersSet()
+    {
+        _cachedMyWork = Executions.Concat(Unscheduled)
+            .Where(e => !string.IsNullOrEmpty(e.OperatorName)
+                && e.OperatorName.Equals(UserName, StringComparison.OrdinalIgnoreCase)
+                && e.Status is StageExecutionStatus.NotStarted or StageExecutionStatus.InProgress)
+            .ToList();
+    }
 
     /// <summary>
     /// Resolves machines capable of executing a production stage using AssignedMachineIds
