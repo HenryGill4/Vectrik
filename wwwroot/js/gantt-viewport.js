@@ -105,20 +105,14 @@ function debouncedNotify() {
 }
 
 // Debounce zoom C# notifications — batches rapid Ctrl+wheel/pinch events
-// so only the final zoom level triggers a Blazor re-render.
-// Touch uses a longer debounce (200ms) since pinch generates many events;
-// desktop wheel uses 60ms for snappier response.
+// so only the final zoom level triggers a Blazor re-render (~60ms = ~1 frame at 16fps)
 let _zoomNotifyId = 0;
-let _zoomNotifyIsTouch = false;
-function debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX, isTouch) {
+function debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX) {
     clearTimeout(_zoomNotifyId);
-    _zoomNotifyIsTouch = isTouch || _zoomNotifyIsTouch;
-    const delay = _zoomNotifyIsTouch ? 200 : 60;
     _zoomNotifyId = setTimeout(() => {
         if (_disposed || !_dotNetRef) return;
-        _zoomNotifyIsTouch = false;
         _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, anchorTimeHours, anchorViewportX);
-    }, delay);
+    }, 60);
 }
 
 function touchDist(t) {
@@ -188,8 +182,13 @@ export function initGanttViewport(dotNetRef, containerEl, dataStartIso, dataEndI
 
     _initialized = true;
 
-    // Scroll to "now" on first init
-    setTimeout(() => scrollToTime(new Date().toISOString()), 50);
+    // Scroll to "now" on first init — but only if we don't have saved state
+    // (saved state means the component was destroyed/recreated, not a fresh page load)
+    if (_savedScrollTimeMsFromStart != null) {
+        restoreStateInternal();
+    } else {
+        setTimeout(() => scrollToTime(new Date().toISOString()), 50);
+    }
 }
 
 /**
@@ -390,7 +389,6 @@ function onTouchStart(e) {
         // Cancel any pending bar drag
         cancelTouchBarDrag();
         _pinchDist = touchDist(e.touches);
-        e.preventDefault(); // Prevent iOS page zoom
         return;
     }
 
@@ -427,35 +425,32 @@ function onTouchStart(e) {
 function onTouchMove(e) {
     if (_disposed || !isAlive() || !_inner) return;
 
-    // Two-finger pinch zoom — smooth continuous scaling
+    // Two-finger pinch zoom
     if (e.touches.length === 2) {
-        e.preventDefault();
         const cur = touchDist(e.touches);
-        if (_pinchDist <= 0) { _pinchDist = cur; return; }
+        const delta = cur - _pinchDist;
+        if (Math.abs(delta) < 20) return;
 
-        // Use ratio of distances for smooth proportional zoom
-        const ratio = cur / _pinchDist;
-        // Ignore tiny jitter (< 1% change)
-        if (Math.abs(ratio - 1.0) < 0.01) return;
-
+        e.preventDefault();
         _pinchDist = cur;
 
+        const direction = delta > 0 ? 1 : -1;
         const rect = _container.getBoundingClientRect();
         const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const anchorViewportX = midX - rect.left;
         const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
 
-        // Scale pixelsPerHour proportionally to finger spread
-        const newPph = clampZoom(_pixelsPerHour * ratio);
+        // Apply zoom immediately in JS (same pattern as Ctrl+wheel)
+        const newPph = clampZoom(direction > 0
+            ? _pixelsPerHour * ZOOM_FACTOR
+            : _pixelsPerHour / ZOOM_FACTOR);
         if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
 
         _pixelsPerHour = newPph;
         updateInnerWidth();
         _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
 
-        // Use longer debounce for touch to batch more events into one C# re-render
-        const direction = ratio > 1 ? 1 : -1;
-        debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX, true);
+        debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX);
         return;
     }
 
