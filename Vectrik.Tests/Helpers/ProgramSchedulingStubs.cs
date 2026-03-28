@@ -121,6 +121,11 @@ internal sealed class StubProgramSchedulingService : IProgramSchedulingService
 
     public Task<List<MachineProgram>> GetDraftProgramsAwaitingScheduleAsync()
         => Task.FromResult(new List<MachineProgram>());
+
+    public Task<SmartRescheduleResult> SmartRescheduleBuildsAsync(
+        string userName,
+        IProgress<(int current, int total, string status)>? progress = null)
+        => Task.FromResult(new SmartRescheduleResult(0, 0, 0, 0, 0, [], 0));
 }
 
 /// <summary>

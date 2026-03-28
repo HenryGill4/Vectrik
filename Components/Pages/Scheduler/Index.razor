@@ -42,6 +42,8 @@
                  OnManualRefresh="ManualRefreshAsync"
                  OnToggleAutoRefresh="ToggleAutoRefresh"
                  OnAutoScheduleAll="AutoScheduleAll"
+                 ShowSmartReschedule="@(_programs.Any(p => p.ScheduleStatus == ProgramScheduleStatus.Scheduled || p.ScheduleStatus == ProgramScheduleStatus.Ready))"
+                 OnSmartReschedule="SmartRescheduleAll"
                  OnNewBuild="OpenBuildAdvisor"
                  OnNewCncJob="OpenCncWizard"
                  OnShowConflictsOnlyChanged="v => _showConflictsOnly = v"
@@ -823,6 +825,35 @@ else if (_viewMode == "data")
             await LoadData(isBackgroundRefresh: true);
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _scheduling = false; }
+    }
+
+    private async Task SmartRescheduleAll()
+    {
+        _scheduling = true;
+        StateHasChanged();
+        await Task.Yield();
+
+        try
+        {
+            var progress = new Progress<(int current, int total, string status)>(update =>
+            {
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            var result = await ProgramScheduling.SmartRescheduleBuildsAsync(_userName, progress);
+
+            if (result.HasChanges)
+                Toast.ShowSuccess(result.Summary);
+            else
+                Toast.ShowInfo("Schedule is already optimal — no changes needed.");
+
+            await LoadData(isBackgroundRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Smart reschedule failed: {ex.Message}");
+        }
         finally { _scheduling = false; }
     }
 

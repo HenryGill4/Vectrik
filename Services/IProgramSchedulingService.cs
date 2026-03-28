@@ -186,6 +186,19 @@ public interface IProgramSchedulingService
     /// </summary>
     Task UnlockProgramAsync(int machineProgramId, string unlockedBy, string reason);
     // ══════════════════════════════════════════════════════════
+    // Smart Reschedule
+    // ══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// One-click optimization of the SLS build schedule.
+    /// Pass 1: Fix overlapping builds. Pass 2: Align changeovers with operator shifts.
+    /// Pass 3: Balance load across machines. Only touches Scheduled/Ready BuildPlate programs.
+    /// </summary>
+    Task<SmartRescheduleResult> SmartRescheduleBuildsAsync(
+        string userName,
+        IProgress<(int current, int total, string status)>? progress = null);
+
+    // ══════════════════════════════════════════════════════════
     // Draft Programs (Engineer → Scheduler Handoff)
     // ══════════════════════════════════════════════════════════
 
@@ -353,3 +366,34 @@ public record WorkOrderScheduleResult(
     DateTime ScheduledStart,
     DateTime ScheduledEnd,
     List<string> Warnings);
+
+/// <summary>
+/// Result of the smart reschedule optimization.
+/// </summary>
+public record SmartRescheduleResult(
+    int TotalBuildsAnalyzed,
+    int BuildsMoved,
+    int OverlapsFixed,
+    int ConflictsFixed,
+    int BuildsRebalanced,
+    List<SmartRescheduleAction> Actions,
+    double TotalDowntimeHoursEliminated)
+{
+    public bool HasChanges => BuildsMoved > 0;
+    public string Summary => HasChanges
+        ? $"Optimized {BuildsMoved} build(s): {OverlapsFixed} overlap(s) fixed, {ConflictsFixed} changeover conflict(s) resolved, {BuildsRebalanced} rebalanced"
+        : "Schedule is already optimal — no changes needed.";
+}
+
+/// <summary>
+/// A single action taken by the smart reschedule optimizer.
+/// </summary>
+public record SmartRescheduleAction(
+    int MachineProgramId,
+    string ProgramName,
+    string ActionType,
+    string FromMachine,
+    string ToMachine,
+    DateTime OldStart,
+    DateTime NewStart,
+    string Reason);
