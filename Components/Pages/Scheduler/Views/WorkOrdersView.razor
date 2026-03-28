@@ -457,7 +457,7 @@
         line.Part?.ManufacturingApproach?.RequiresBuildPlate == true;
 
     private static bool HasExistingJobs(WorkOrderLine line) =>
-        line.Jobs?.Any() == true;
+        line.Jobs?.Any(j => j.Status is not (JobStatus.Completed or JobStatus.Cancelled)) == true;
 
     /// <summary>
     /// Quantity covered by active (non-terminal) jobs — Scheduled, InProgress, Paused, Draft.
