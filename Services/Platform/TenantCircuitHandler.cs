@@ -25,14 +25,19 @@ public class TenantCircuitHandler : CircuitHandler
 
     public override async Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        var authState = await _authStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-
-        if (user.Identity?.IsAuthenticated == true && _tenantContext is TenantContext tc)
+        try
         {
-            tc.TenantCode = user.FindFirst("TenantCode")?.Value ?? string.Empty;
-            tc.CompanyName = user.FindFirst("CompanyName")?.Value ?? string.Empty;
-            tc.IsSuperAdmin = user.FindFirst("IsPlatform")?.Value == "true";
+            cancellationToken.ThrowIfCancellationRequested();
+            var authState = await _authStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.Identity?.IsAuthenticated == true && _tenantContext is TenantContext tc)
+            {
+                tc.TenantCode = user.FindFirst("TenantCode")?.Value ?? string.Empty;
+                tc.CompanyName = user.FindFirst("CompanyName")?.Value ?? string.Empty;
+                tc.IsSuperAdmin = user.FindFirst("IsPlatform")?.Value == "true";
+            }
         }
+        catch (OperationCanceledException) { /* Circuit closed before auth completed — safe to ignore */ }
     }
 }

@@ -9,6 +9,19 @@ using Vectrik.Services.Auth;
 using Vectrik.Services.MachineProviders;
 using Vectrik.Services.Platform;
 
+// Catch unobserved task exceptions to prevent worker process crashes.
+// In Blazor Server, circuit disconnections and cancellation tokens can produce
+// TaskCanceledException on fire-and-forget paths (timer callbacks, SignalR).
+TaskScheduler.UnobservedTaskException += (sender, e) =>
+{
+    if (e.Exception.InnerExceptions.All(ex =>
+        ex is TaskCanceledException or OperationCanceledException or ObjectDisposedException
+        or Microsoft.JSInterop.JSDisconnectedException))
+    {
+        e.SetObserved(); // Suppress — expected during circuit teardown
+    }
+};
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.

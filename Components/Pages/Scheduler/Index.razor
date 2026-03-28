@@ -345,6 +345,9 @@ else if (_viewMode == "data")
                 });
             }
             catch (ObjectDisposedException) { /* Component disposed during refresh — safe to ignore */ }
+            catch (TaskCanceledException) { /* Circuit disconnected — safe to ignore */ }
+            catch (OperationCanceledException) { /* Circuit disconnected — safe to ignore */ }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { /* JS runtime torn down */ }
         }, null, TimeSpan.FromSeconds(_autoRefreshSeconds), TimeSpan.FromSeconds(_autoRefreshSeconds));
     }
 

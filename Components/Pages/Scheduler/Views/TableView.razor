@@ -163,7 +163,14 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
-            _jsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/scheduler-utils.js");
+        {
+            try
+            {
+                _jsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/scheduler-utils.js");
+            }
+            catch (TaskCanceledException) { }
+            catch (JSDisconnectedException) { }
+        }
     }
 
     private string _tableSortCol = "Start";

@@ -939,7 +939,12 @@ else
         };
 
         var html = TemplateService.RenderHtml(template, fields);
-        await JS.InvokeVoidAsync("vectrik.printHtml", html, $"Traveler {_order.OrderNumber}");
+        try
+        {
+            await JS.InvokeVoidAsync("vectrik.printHtml", html, $"Traveler {_order.OrderNumber}");
+        }
+        catch (TaskCanceledException) { }
+        catch (JSDisconnectedException) { }
     }
 
     private static string GetBadge(WorkOrderStatus status) => status switch

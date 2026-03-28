@@ -93,6 +93,10 @@ public class MachineSyncService : BackgroundService
                 // Notify via SignalR
                 await notifier.SendMachineStateAsync(tenantCode, state);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Error polling machine {MachineId} for tenant {TenantCode}.",
