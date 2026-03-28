@@ -73,7 +73,7 @@
     private DateTime _viewportStart;
     private DateTime _viewportEnd;
 
-    private const double ZoomFactor = 1.15;
+    private const double ZoomFactor = 1.5;
     private const double MinPxPerHour = 0.5;
     private const double MaxPxPerHour = 120;
 
@@ -199,15 +199,14 @@
     /// <summary>
     /// Called by JS after Ctrl+wheel or pinch zoom. JS has already applied the zoom
     /// (updated inner width and scroll position) so the viewport doesn't jump.
-    /// C# just needs to re-render tick/bar positions at the new scale.
+    /// JS sends the actual pixelsPerHour value so C# stays in sync even after
+    /// multiple rapid zoom steps batched by the debounce.
     /// </summary>
     [JSInvokable]
-    public async Task OnZoomRequested(int direction, double anchorTimeHours, double anchorViewportX)
+    public async Task OnZoomRequested(double newPixelsPerHour, double anchorTimeHours, double anchorViewportX)
     {
         if (_disposed) return;
-        var newPph = direction > 0
-            ? Math.Clamp(PixelsPerHour * ZoomFactor, MinPxPerHour, MaxPxPerHour)
-            : Math.Clamp(PixelsPerHour / ZoomFactor, MinPxPerHour, MaxPxPerHour);
+        var newPph = Math.Clamp(newPixelsPerHour, MinPxPerHour, MaxPxPerHour);
 
         if (Math.Abs(newPph - PixelsPerHour) < 0.001) return;
 
