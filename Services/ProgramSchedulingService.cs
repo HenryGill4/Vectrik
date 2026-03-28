@@ -383,7 +383,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var notBefore = startAfter ?? DateTime.UtcNow;
         var bestSlot = await FindBestSlotAsync(program.EstimatedPrintHours.Value, notBefore, machineType: "SLS");
 
-        return await ScheduleBuildPlateAsync(machineProgramId, bestSlot.MachineId, startAfter);
+        // Pass the slot's actual start time so ScheduleBuildPlateAsync uses the same slot
+        return await ScheduleBuildPlateAsync(machineProgramId, bestSlot.MachineId, bestSlot.Slot.PrintStart);
     }
 
     // ══════════════════════════════════════════════════════════
@@ -902,10 +903,12 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
         var isContinuous = machine.AutoChangeoverEnabled;
 
-        // Query program-based executions
+        // Query program-based executions — exclude the program being rescheduled
+        // so its old executions (not yet deleted) don't block its new slot.
         var existingExecutions = await _db.StageExecutions
             .Where(e => e.MachineId == machine.Id
                 && e.MachineProgramId != null
+                && (!forProgramId.HasValue || e.MachineProgramId != forProgramId.Value)
                 && e.ScheduledStartAt != null
                 && e.ScheduledEndAt != null
                 && e.Status != StageExecutionStatus.Completed

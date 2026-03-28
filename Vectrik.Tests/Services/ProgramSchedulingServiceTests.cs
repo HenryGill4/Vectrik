@@ -178,20 +178,20 @@ public class ProgramSchedulingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ProgramSlot_Continuous_SameProgramRun_AppliesChangeover()
+    public async Task ProgramSlot_Continuous_SameProgramRun_ExcludesOwnBlocks()
     {
-        // Arrange: machine with one block, new slot is for same program
+        // Arrange: machine with one block belonging to the program being rescheduled
         var machine = await AddSlsMachineAsync(changeoverMinutes: 30);
         var existingProg = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 24);
         await AddProgramBlockAsync(machine.Id, existingProg.Id, Mon, Mon.AddHours(24));
 
-        // Act: schedule same program (forProgramId matches)
+        // Act: reschedule same program (forProgramId matches) — own blocks should be excluded
         var slot = await _sut.FindEarliestSlotAsync(
             machine.Id, durationHours: 10, Mon, forProgramId: existingProg.Id);
 
-        // Assert: changeover always applied — cool-down/powder extraction required regardless
-        Assert.Equal(Mon.AddHours(24).AddMinutes(30), slot.PrintStart);  // Tue 00:30
-        Assert.Equal(Mon.AddHours(34).AddMinutes(30), slot.PrintEnd);    // Tue 10:30
+        // Assert: own block is excluded, so slot starts at notBefore (Mon)
+        Assert.Equal(Mon, slot.PrintStart);
+        Assert.Equal(Mon.AddHours(10), slot.PrintEnd);
     }
 
     [Fact]

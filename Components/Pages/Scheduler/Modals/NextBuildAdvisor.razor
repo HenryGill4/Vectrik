@@ -1480,11 +1480,11 @@
     {
         if (!_plateAllocations.Any()) return false;
         _scheduling = true;
-        StateHasChanged();
-        await Task.Yield(); // Flush render so overlay appears before heavy DB work
 
         try
         {
+            StateHasChanged();
+            await Task.Yield(); // Flush render so overlay appears before heavy DB work
             int programId;
 
             if (_selectedExistingProgram != null)
@@ -1548,6 +1548,8 @@
             _createdProgramId = null; // prevent cleanup on close
             return true;
         }
+        catch (TaskCanceledException) { return false; /* Circuit disconnected */ }
+        catch (ObjectDisposedException) { return false; /* Component disposed */ }
         catch (Exception ex)
         {
             Toast.ShowError($"Schedule failed: {ex.Message}");
