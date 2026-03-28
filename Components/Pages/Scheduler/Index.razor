@@ -836,12 +836,7 @@ else if (_viewMode == "data")
 
         try
         {
-            var progress = new Progress<(int current, int total, string status)>(update =>
-            {
-                _ = InvokeAsync(StateHasChanged);
-            });
-
-            var result = await ProgramScheduling.SmartRescheduleBuildsAsync(_userName, progress);
+            var result = await ProgramScheduling.SmartRescheduleBuildsAsync(_userName);
 
             if (result.HasChanges)
                 Toast.ShowSuccess(result.Summary);

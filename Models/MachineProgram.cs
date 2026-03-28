@@ -104,6 +104,9 @@ public class MachineProgram
 
     public int? ActualSampleCount { get; set; }
 
+    /// <summary>EMA-smoothed variance (minutes²). Use √ for standard deviation.</summary>
+    public double? ActualVarianceMinutes { get; set; }
+
     /// <summary>
     /// "Manual" (user-entered times) or "Auto" (EMA-learned from actual runs).
     /// </summary>

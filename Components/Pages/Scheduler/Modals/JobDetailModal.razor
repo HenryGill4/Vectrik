@@ -238,6 +238,70 @@
                         }
                     </div>
 
+                    @* ── Learning Accuracy ── *@
+                    @{
+                        var procStage = Execution.ProcessStage;
+                        var prog = Execution.MachineProgram;
+                        var hasLearning = (procStage?.EstimateSource == "Auto" && procStage.ActualSampleCount > 0)
+                            || (prog?.EstimateSource == "Auto" && prog.ActualSampleCount > 0);
+                        var learnSource = prog?.EstimateSource == "Auto" ? prog : null;
+                        var stageSource = procStage?.EstimateSource == "Auto" ? procStage : null;
+                    }
+                    @if (hasLearning)
+                    {
+                        <div class="job-detail-section">
+                            <h4 class="job-detail-section-title">Scheduling Intelligence</h4>
+                            <div class="job-detail-learning">
+                                @if (learnSource != null)
+                                {
+                                    var avgMin = learnSource.ActualAverageDurationMinutes ?? 0;
+                                    var stdDev = learnSource.ActualVarianceMinutes.HasValue ? Math.Sqrt(learnSource.ActualVarianceMinutes.Value) : 0;
+                                    var samples = learnSource.ActualSampleCount ?? 0;
+                                    var confidence = samples >= 10 ? "High" : samples >= 5 ? "Medium" : "Low";
+                                    var confClass = samples >= 10 ? "high" : samples >= 5 ? "medium" : "low";
+                                    <div class="job-detail-learning-row">
+                                        <span class="job-detail-learning-badge job-detail-learning-badge--@confClass">Learned</span>
+                                        <span class="job-detail-learning-stat">@(avgMin / 60.0).ToString("F1")h avg</span>
+                                        @if (stdDev > 0.1)
+                                        {
+                                            <span class="job-detail-learning-stat job-detail-learning-range">±@((stdDev / 60.0).ToString("F1"))h</span>
+                                        }
+                                        <span class="job-detail-learning-meta">from @samples run@(samples != 1 ? "s" : "") · @confidence confidence</span>
+                                    </div>
+                                }
+                                else if (stageSource != null)
+                                {
+                                    var avgMin = stageSource.ActualAverageDurationMinutes ?? 0;
+                                    var stdDev = stageSource.ActualVarianceMinutes.HasValue ? Math.Sqrt(stageSource.ActualVarianceMinutes.Value) : 0;
+                                    var samples = stageSource.ActualSampleCount ?? 0;
+                                    var confidence = samples >= 10 ? "High" : samples >= 5 ? "Medium" : "Low";
+                                    var confClass = samples >= 10 ? "high" : samples >= 5 ? "medium" : "low";
+                                    <div class="job-detail-learning-row">
+                                        <span class="job-detail-learning-badge job-detail-learning-badge--@confClass">Learned</span>
+                                        <span class="job-detail-learning-stat">@((avgMin / 60.0).ToString("F1"))h avg</span>
+                                        @if (stdDev > 0.1)
+                                        {
+                                            <span class="job-detail-learning-stat job-detail-learning-range">±@((stdDev / 60.0).ToString("F1"))h</span>
+                                        }
+                                        <span class="job-detail-learning-meta">from @samples run@(samples != 1 ? "s" : "") · @confidence confidence (stage-level)</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="job-detail-section">
+                            <h4 class="job-detail-section-title">Scheduling Intelligence</h4>
+                            <div class="job-detail-learning">
+                                <div class="job-detail-learning-row">
+                                    <span class="job-detail-learning-badge job-detail-learning-badge--manual">Manual</span>
+                                    <span class="job-detail-learning-meta">Using configured estimates — will learn from actual completions</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
                     @* ── Stage Pipeline (all stages in this job) ── *@
                     @if (job?.Stages?.Count > 1)
                     {
