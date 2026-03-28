@@ -1980,234 +1980,86 @@ public class ProgramSchedulingService : IProgramSchedulingService
         IProgress<(int current, int total, string status)>? progress = null)
     {
         var actions = new List<SmartRescheduleAction>();
-        var overlapsFixed = 0;
-        var conflictsFixed = 0;
-        var rebalanced = 0;
-        var totalDowntimeEliminated = 0.0;
-        const int maxMoves = 20;
-        var moveCount = 0;
 
-        var slsMachines = await _db.Machines
-            .Where(m => m.IsActive && m.IsAvailableForScheduling && m.IsAdditiveMachine)
-            .OrderBy(m => m.Priority)
+        // Get all movable builds — Scheduled or Ready BuildPlates with slicer data
+        var movableBuilds = await _db.MachinePrograms
+            .Include(p => p.Machine)
+            .Where(p => p.ProgramType == ProgramType.BuildPlate
+                && p.ScheduledDate != null
+                && p.EstimatedPrintHours != null && p.EstimatedPrintHours > 0
+                && (p.ScheduleStatus == ProgramScheduleStatus.Scheduled
+                    || p.ScheduleStatus == ProgramScheduleStatus.Ready))
+            .OrderBy(p => p.ScheduledDate)
             .ToListAsync();
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        if (!movableBuilds.Any())
+            return new SmartRescheduleResult(0, 0, 0, 0, 0, [], 0);
 
-        // Helper to query movable builds
-        async Task<List<MachineProgram>> GetMovableBuildsAsync() =>
-            await _db.MachinePrograms
-                .Include(p => p.Machine)
-                .Where(p => p.ProgramType == ProgramType.BuildPlate
-                    && p.ScheduledDate != null
-                    && p.EstimatedPrintHours != null && p.EstimatedPrintHours > 0
-                    && (p.ScheduleStatus == ProgramScheduleStatus.Scheduled
-                        || p.ScheduleStatus == ProgramScheduleStatus.Ready))
-                .OrderBy(p => p.ScheduledDate)
-                .ToListAsync();
+        var total = movableBuilds.Count;
+        progress?.Report((0, total, $"Unlocking {total} build(s)..."));
 
-        var allMovable = await GetMovableBuildsAsync();
-        var totalAnalyzed = allMovable.Count;
-        var totalSteps = allMovable.Count + slsMachines.Count;
-
-        // ── Pass 1: Fix Overlaps (per machine) ──────────────────
-        progress?.Report((0, totalSteps, "Pass 1: Fixing overlapping builds..."));
-
-        foreach (var machine in slsMachines)
+        // Step 1: Unlock all movable builds so they can be rescheduled fresh
+        foreach (var build in movableBuilds)
         {
-            if (moveCount >= maxMoves) break;
-
-            var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
-            var machineBuilds = allMovable
-                .Where(b => b.MachineId == machine.Id)
-                .OrderBy(b => b.ScheduledDate)
-                .ToList();
-
-            var cursor = DateTime.UtcNow; // Don't schedule anything in the past
-
-            // Also respect printing/postprint builds as immovable blocks
-            var immovableEnd = await _db.MachinePrograms
-                .Where(p => p.MachineId == machine.Id
-                    && p.ProgramType == ProgramType.BuildPlate
-                    && p.ScheduledDate != null && p.EstimatedPrintHours != null
-                    && (p.ScheduleStatus == ProgramScheduleStatus.Printing
-                        || p.ScheduleStatus == ProgramScheduleStatus.PostPrint))
-                .Select(p => p.ScheduledDate!.Value.AddHours(p.EstimatedPrintHours!.Value).AddMinutes(changeoverMinutes))
-                .OrderByDescending(d => d)
-                .FirstOrDefaultAsync();
-
-            if (immovableEnd > cursor)
-                cursor = immovableEnd;
-
-            foreach (var build in machineBuilds)
+            try
             {
-                if (moveCount >= maxMoves) break;
-
-                var buildStart = build.ScheduledDate!.Value;
-                var buildEnd = buildStart.AddHours(build.EstimatedPrintHours!.Value);
-                var blockEnd = buildEnd.AddMinutes(changeoverMinutes);
-
-                if (buildStart < cursor)
-                {
-                    // Overlap — reschedule to cursor
-                    var oldStart = buildStart;
-                    var machineName = build.Machine?.Name ?? $"Machine #{build.MachineId}";
-
-                    try
-                    {
-                        if (build.IsLocked)
-                            await UnlockProgramAsync(build.Id, userName, "Smart reschedule: fix overlap");
-                        await ScheduleBuildPlateAsync(build.Id, machine.Id, cursor);
-                        moveCount++;
-                        overlapsFixed++;
-
-                        // Re-read to get new scheduled date
-                        var updated = await _db.MachinePrograms.FindAsync(build.Id);
-                        var newStart = updated?.ScheduledDate ?? cursor;
-
-                        actions.Add(new SmartRescheduleAction(
-                            build.Id, build.Name ?? build.ProgramNumber ?? $"Build #{build.Id}",
-                            "FixOverlap", machineName, machineName, oldStart, newStart,
-                            $"Overlapped with previous build, shifted forward"));
-
-                        cursor = newStart.AddHours(build.EstimatedPrintHours!.Value).AddMinutes(changeoverMinutes);
-                    }
-                    catch { /* Skip builds that fail to reschedule */ }
-                }
-                else
-                {
-                    cursor = blockEnd;
-                }
-
-                progress?.Report((moveCount, totalSteps, $"Pass 1: Fixed {overlapsFixed} overlap(s)..."));
+                if (build.IsLocked)
+                    await UnlockProgramAsync(build.Id, userName, "Smart reschedule");
             }
+            catch { /* Already unlocked or can't unlock — skip */ }
         }
 
-        // ── Pass 2: Align Changeovers with Shifts ───────────────
-        progress?.Report((moveCount, totalSteps, "Pass 2: Aligning changeovers with operator shifts..."));
+        // Step 2: Re-schedule each build to the best available slot across all SLS machines.
+        // Process in priority order so high-priority builds get the earliest slots.
+        var buildsToSchedule = await _db.MachinePrograms
+            .Where(p => p.ProgramType == ProgramType.BuildPlate
+                && p.EstimatedPrintHours != null && p.EstimatedPrintHours > 0
+                && (p.ScheduleStatus == ProgramScheduleStatus.Ready
+                    || p.ScheduleStatus == ProgramScheduleStatus.None))
+            .OrderBy(p => p.CreatedDate)
+            .ToListAsync();
 
-        // Re-query after pass 1 mutations
-        allMovable = await GetMovableBuildsAsync();
-
-        foreach (var build in allMovable)
+        var scheduled = 0;
+        for (var i = 0; i < buildsToSchedule.Count; i++)
         {
-            if (moveCount >= maxMoves) break;
-            if (!build.MachineId.HasValue) continue;
-
-            var machine = slsMachines.FirstOrDefault(m => m.Id == build.MachineId.Value);
-            if (machine == null || !machine.AutoChangeoverEnabled) continue;
-
-            var buildEnd = build.ScheduledDate!.Value.AddHours(build.EstimatedPrintHours!.Value);
+            var build = buildsToSchedule[i];
+            progress?.Report((i + 1, buildsToSchedule.Count, $"Scheduling {i + 1} of {buildsToSchedule.Count}: {build.Name ?? build.ProgramNumber}..."));
 
             try
             {
-                var changeover = await AnalyzeChangeoverAsync(machine.Id, buildEnd);
-                if (changeover.OperatorAvailable) continue; // Already safe
+                var oldMachineName = build.Machine?.Name ?? "Unscheduled";
+                var oldStart = build.ScheduledDate ?? DateTime.MinValue;
 
-                var downtimeBefore = changeover.DowntimeHours ?? 0;
+                // Find best slot across ALL SLS machines
+                var result = await ScheduleBuildPlateAutoMachineAsync(build.Id);
 
-                // Try shifting forward: align build end + changeover with next shift start
-                var nextShift = ShiftTimeHelper.FindNextShiftStart(buildEnd, shifts);
-                if (nextShift == null) continue;
-
-                var targetStart = nextShift.Value.AddMinutes(-machine.ChangeoverMinutes)
-                                                 .AddHours(-build.EstimatedPrintHours!.Value);
-
-                // Only shift forward (don't pull back into overlap territory)
-                if (targetStart <= build.ScheduledDate!.Value) continue;
-
-                // Verify the new slot is actually safe
-                var newSlot = await FindEarliestSlotAsync(machine.Id, build.EstimatedPrintHours!.Value, targetStart, build.Id);
-                if (!newSlot.OperatorAvailableForChangeover) continue;
-
-                var oldStart = build.ScheduledDate!.Value;
-                var machineName = build.Machine?.Name ?? machine.Name;
-
-                if (build.IsLocked)
-                    await UnlockProgramAsync(build.Id, userName, "Smart reschedule: fix changeover");
-                await ScheduleBuildPlateAsync(build.Id, machine.Id, newSlot.PrintStart);
-                await CascadeRescheduleAsync(machine.Id, build.Id);
-
-                moveCount++;
-                conflictsFixed++;
-                totalDowntimeEliminated += downtimeBefore;
+                var updated = await _db.MachinePrograms.Include(p => p.Machine).FirstOrDefaultAsync(p => p.Id == build.Id);
+                var newMachineName = updated?.Machine?.Name ?? "?";
+                var newStart = updated?.ScheduledDate ?? result.Slot.PrintStart;
+                var changeoverSafe = result.Slot.OperatorAvailableForChangeover;
 
                 actions.Add(new SmartRescheduleAction(
                     build.Id, build.Name ?? build.ProgramNumber ?? $"Build #{build.Id}",
-                    "FixChangeover", machineName, machineName, oldStart, newSlot.PrintStart,
-                    $"Changeover aligned with shift — eliminated {downtimeBefore:F1}h downtime"));
+                    "Scheduled", oldMachineName, newMachineName, oldStart, newStart,
+                    changeoverSafe ? "Changeover safe" : "Changeover outside shift"));
+
+                scheduled++;
             }
-            catch { /* Skip builds that fail */ }
-
-            progress?.Report((moveCount, totalSteps, $"Pass 2: Fixed {conflictsFixed} changeover conflict(s)..."));
-        }
-
-        // ── Pass 3: Balance Machine Load ────────────────────────
-        progress?.Report((moveCount, totalSteps, "Pass 3: Balancing machine load..."));
-
-        if (slsMachines.Count >= 2 && moveCount < maxMoves)
-        {
-            // Re-query after pass 2
-            allMovable = await GetMovableBuildsAsync();
-
-            var loadPerMachine = slsMachines.Select(m => new
+            catch (Exception ex)
             {
-                Machine = m,
-                Hours = allMovable.Where(b => b.MachineId == m.Id).Sum(b => b.EstimatedPrintHours ?? 0),
-                Builds = allMovable.Where(b => b.MachineId == m.Id).OrderBy(b => b.ScheduledDate).ToList()
-            }).ToList();
-
-            var overloaded = loadPerMachine.OrderByDescending(m => m.Hours).First();
-            var underloaded = loadPerMachine.OrderBy(m => m.Hours).First();
-            var imbalance = overloaded.Hours - underloaded.Hours;
-
-            // Only rebalance if imbalance is significant (> one typical build)
-            if (imbalance > 18 && overloaded.Machine.Id != underloaded.Machine.Id)
-            {
-                // Try moving the LAST build from overloaded → underloaded
-                var candidates = overloaded.Builds.AsEnumerable().Reverse().Take(3);
-
-                foreach (var candidate in candidates)
-                {
-                    if (moveCount >= maxMoves) break;
-
-                    try
-                    {
-                        var slot = await FindEarliestSlotAsync(
-                            underloaded.Machine.Id,
-                            candidate.EstimatedPrintHours!.Value,
-                            DateTime.UtcNow,
-                            candidate.Id);
-
-                        // Only move if it starts earlier on the other machine
-                        if (slot.PrintStart >= candidate.ScheduledDate!.Value) continue;
-
-                        var oldStart = candidate.ScheduledDate!.Value;
-                        var fromName = overloaded.Machine.Name;
-                        var toName = underloaded.Machine.Name;
-
-                        if (candidate.IsLocked)
-                            await UnlockProgramAsync(candidate.Id, userName, "Smart reschedule: rebalance");
-                        await ScheduleBuildPlateAsync(candidate.Id, underloaded.Machine.Id, slot.PrintStart);
-
-                        moveCount++;
-                        rebalanced++;
-
-                        actions.Add(new SmartRescheduleAction(
-                            candidate.Id, candidate.Name ?? candidate.ProgramNumber ?? $"Build #{candidate.Id}",
-                            "Rebalance", fromName, toName, oldStart, slot.PrintStart,
-                            $"Moved to {toName} (starts {(oldStart - slot.PrintStart).TotalHours:F1}h earlier)"));
-                    }
-                    catch { /* Skip */ }
-                }
+                actions.Add(new SmartRescheduleAction(
+                    build.Id, build.Name ?? build.ProgramNumber ?? $"Build #{build.Id}",
+                    "Failed", "", "", DateTime.MinValue, DateTime.MinValue,
+                    $"Failed: {ex.Message}"));
             }
         }
 
-        progress?.Report((totalSteps, totalSteps, "Complete"));
+        var conflictsFree = actions.Count(a => a.Reason.Contains("safe"));
+
+        progress?.Report((buildsToSchedule.Count, buildsToSchedule.Count, "Complete"));
 
         return new SmartRescheduleResult(
-            totalAnalyzed, actions.Count, overlapsFixed,
-            conflictsFixed, rebalanced, actions, totalDowntimeEliminated);
+            total, scheduled, 0, conflictsFree, 0, actions, 0);
     }
 
     // ── Draft Programs (Engineer → Scheduler Handoff) ────────
