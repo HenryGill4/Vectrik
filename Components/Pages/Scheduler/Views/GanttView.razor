@@ -219,21 +219,22 @@
     private bool HasSelection => _selectedExecIds.Count > 0 || _selectedBuildIds.Count > 0;
     private int SelectionCount => _selectedExecIds.Count + _selectedBuildIds.Count;
 
-    private void HandleBarClick(StageExecution exec)
+    private async Task HandleBarClick(StageExecution exec)
     {
         // Forward to parent for reschedule dialog
-        OnShowReschedule.InvokeAsync(exec);
+        await OnShowReschedule.InvokeAsync(exec);
     }
 
     private async Task HandleBuildBarClick((MachineProgram Build, string Action) args)
     {
         if (args.Action == "select")
         {
-            // Toggle build selection
+            // Toggle build selection — reset confirm state since selection changed
             if (_selectedBuildIds.Contains(args.Build.Id))
                 _selectedBuildIds.Remove(args.Build.Id);
             else
                 _selectedBuildIds.Add(args.Build.Id);
+            _confirmBatchDelete = false;
         }
         else
         {
@@ -246,6 +247,7 @@
     {
         _selectedExecIds.Clear();
         _selectedBuildIds.Clear();
+        _confirmBatchDelete = false;
     }
 
     private bool _confirmBatchDelete;

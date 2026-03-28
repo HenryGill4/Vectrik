@@ -7717,16 +7717,85 @@ dialog#components-reconnect-modal button:hover {
 .wizard-scheduling-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(20, 20, 25, 0.92);
+    background: rgba(12, 12, 18, 0.96);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 12px;
+    gap: 16px;
     z-index: 10;
     border-radius: inherit;
-    font-size: 0.95rem;
     color: var(--text-secondary);
+    backdrop-filter: blur(6px);
+    animation: wizard-overlay-in 0.3s ease-out;
+}
+@keyframes wizard-overlay-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+.wizard-scheduling-pulse {
+    position: absolute;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%);
+    animation: wizard-pulse 2s ease-in-out infinite;
+}
+@keyframes wizard-pulse {
+    0%, 100% { transform: scale(0.8); opacity: 0.5; }
+    50%      { transform: scale(1.4); opacity: 0.15; }
+}
+.wizard-scheduling-icon {
+    position: relative;
+    width: 52px; height: 52px;
+    color: var(--primary, #6366f1);
+    filter: drop-shadow(0 0 12px rgba(99,102,241,0.4));
+}
+.wizard-scheduling-gear {
+    width: 100%; height: 100%;
+    animation: wizard-gear-spin 3s linear infinite;
+}
+@keyframes wizard-gear-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+.wizard-scheduling-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text-primary, #f1f5f9);
+    letter-spacing: 0.01em;
+}
+.wizard-scheduling-progress-ring {
+    width: 200px; height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.wizard-scheduling-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary, #6366f1), var(--accent, #8b5cf6));
+    border-radius: 4px;
+    transition: width 0.4s ease;
+    box-shadow: 0 0 8px rgba(99,102,241,0.5);
+}
+.wizard-scheduling-status {
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--text-primary, #e2e8f0);
+    font-variant-numeric: tabular-nums;
+}
+.wizard-scheduling-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted, #64748b);
+    animation: wizard-hint-fade 2s ease-in-out infinite alternate;
+}
+@keyframes wizard-hint-fade {
+    from { opacity: 0.5; }
+    to   { opacity: 1; }
+}
+@keyframes wizard-progress-indeterminate {
+    0%   { width: 10%; margin-left: 0; }
+    50%  { width: 40%; margin-left: 30%; }
+    100% { width: 10%; margin-left: 90%; }
 }
 
 /* Wizard Content Area */
