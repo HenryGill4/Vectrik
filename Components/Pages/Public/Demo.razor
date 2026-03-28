@@ -1,12 +1,15 @@
 @page "/demo"
 @layout Components.Layout.PublicLayout
 @attribute [AllowAnonymous]
-@rendermode InteractiveServer
+@attribute [ExcludeFromInteractiveRouting]
 
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Routing
 @using System.ComponentModel.DataAnnotations
 @inject IEmailService EmailService
 @inject ILogger<Demo> Logger
+
+<PageTitle>Request a Demo - Vectrik</PageTitle>
 
 <section class="pub-page-hero pub-page-hero-sm">
     <h1 class="pub-gradient-text">Request a Demo</h1>
@@ -94,15 +97,8 @@
                         <InputTextArea id="message" @bind-Value="_model.Message" class="pub-input pub-textarea" rows="4" placeholder="Tell us about your production challenges..." />
                     </div>
 
-                    <button type="submit" class="pub-btn pub-btn-primary pub-btn-block pub-btn-lg" disabled="@_sending">
-                        @if (_sending)
-                        {
-                            <span class="pub-spinner"></span> <text>Sending...</text>
-                        }
-                        else
-                        {
-                            <text>Request Demo</text>
-                        }
+                    <button type="submit" class="pub-btn pub-btn-primary pub-btn-block pub-btn-lg">
+                        Request Demo
                     </button>
                 </EditForm>
             }
@@ -165,15 +161,18 @@
 </section>
 
 @code {
-    private DemoRequestModel _model = new();
+    [SupplyParameterFromForm] private DemoRequestModel _model { get; set; } = null!;
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
     private bool _submitted;
-    private bool _sending;
+
+    protected override void OnInitialized()
+    {
+        _model ??= new();
+    }
 
     private async Task HandleSubmit()
     {
-        _sending = true;
-        StateHasChanged();
-
         try
         {
             await EmailService.SendDemoRequestAsync(new DemoRequestEmail
@@ -186,6 +185,7 @@
                 PrimaryProcess = _model.PrimaryProcess,
                 Message = _model.Message
             });
+            Logger.LogInformation("Demo request sent for {Company} ({Email})", _model.Company, _model.Email);
         }
         catch (Exception ex)
         {
@@ -193,7 +193,6 @@
         }
 
         _submitted = true;
-        _sending = false;
     }
 
     private sealed class DemoRequestModel
