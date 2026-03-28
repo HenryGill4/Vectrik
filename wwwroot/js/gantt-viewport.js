@@ -105,14 +105,20 @@ function debouncedNotify() {
 }
 
 // Debounce zoom C# notifications — batches rapid Ctrl+wheel/pinch events
-// so only the final zoom level triggers a Blazor re-render (~60ms = ~1 frame at 16fps)
+// so only the final zoom level triggers a Blazor re-render.
+// Touch uses a longer debounce (200ms) since pinch generates many events;
+// desktop wheel uses 60ms for snappier response.
 let _zoomNotifyId = 0;
-function debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX) {
+let _zoomNotifyIsTouch = false;
+function debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX, isTouch) {
     clearTimeout(_zoomNotifyId);
+    _zoomNotifyIsTouch = isTouch || _zoomNotifyIsTouch;
+    const delay = _zoomNotifyIsTouch ? 200 : 60;
     _zoomNotifyId = setTimeout(() => {
         if (_disposed || !_dotNetRef) return;
+        _zoomNotifyIsTouch = false;
         _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, anchorTimeHours, anchorViewportX);
-    }, 60);
+    }, delay);
 }
 
 function touchDist(t) {
@@ -384,6 +390,7 @@ function onTouchStart(e) {
         // Cancel any pending bar drag
         cancelTouchBarDrag();
         _pinchDist = touchDist(e.touches);
+        e.preventDefault(); // Prevent iOS page zoom
         return;
     }
 
@@ -420,32 +427,35 @@ function onTouchStart(e) {
 function onTouchMove(e) {
     if (_disposed || !isAlive() || !_inner) return;
 
-    // Two-finger pinch zoom
+    // Two-finger pinch zoom — smooth continuous scaling
     if (e.touches.length === 2) {
-        const cur = touchDist(e.touches);
-        const delta = cur - _pinchDist;
-        if (Math.abs(delta) < 20) return;
-
         e.preventDefault();
+        const cur = touchDist(e.touches);
+        if (_pinchDist <= 0) { _pinchDist = cur; return; }
+
+        // Use ratio of distances for smooth proportional zoom
+        const ratio = cur / _pinchDist;
+        // Ignore tiny jitter (< 1% change)
+        if (Math.abs(ratio - 1.0) < 0.01) return;
+
         _pinchDist = cur;
 
-        const direction = delta > 0 ? 1 : -1;
         const rect = _container.getBoundingClientRect();
         const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const anchorViewportX = midX - rect.left;
         const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
 
-        // Apply zoom immediately in JS (same pattern as Ctrl+wheel)
-        const newPph = clampZoom(direction > 0
-            ? _pixelsPerHour * ZOOM_FACTOR
-            : _pixelsPerHour / ZOOM_FACTOR);
+        // Scale pixelsPerHour proportionally to finger spread
+        const newPph = clampZoom(_pixelsPerHour * ratio);
         if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
 
         _pixelsPerHour = newPph;
         updateInnerWidth();
         _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
 
-        debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX);
+        // Use longer debounce for touch to batch more events into one C# re-render
+        const direction = ratio > 1 ? 1 : -1;
+        debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX, true);
         return;
     }
 
