@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vectrik.Data;
 
 namespace Vectrik.Services.Auth;
@@ -10,11 +11,13 @@ public class AuthService : IAuthService
 {
     private readonly PlatformDbContext _platformDb;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(PlatformDbContext platformDb, IServiceProvider serviceProvider)
+    public AuthService(PlatformDbContext platformDb, IServiceProvider serviceProvider, ILogger<AuthService> logger)
     {
         _platformDb = platformDb;
         _serviceProvider = serviceProvider;
+        _logger = logger;
     }
 
     public async Task<AuthResult> LoginAsync(string username, string password)
@@ -48,10 +51,15 @@ public class AuthService : IAuthService
         var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
             ? Path.Combine(home, "data") : "data";
 
+        _logger.LogInformation("Login attempt for '{Username}': scanning {Count} tenants, dataRoot={DataRoot}",
+            normalizedUsername, tenants.Count, dataRoot);
+
         foreach (var tenant in tenants)
         {
             var dbPath = Path.Combine(dataRoot, "tenants", $"{tenant.Code}.db");
-            if (!File.Exists(dbPath)) continue;
+            var exists = File.Exists(dbPath);
+            _logger.LogInformation("Tenant {Code}: dbPath={Path}, exists={Exists}", tenant.Code, dbPath, exists);
+            if (!exists) continue;
 
             var options = new DbContextOptionsBuilder<TenantDbContext>()
                 .UseSqlite($"Data Source={dbPath}")
@@ -61,6 +69,9 @@ public class AuthService : IAuthService
 
             var user = await tenantDb.Users
                 .FirstOrDefaultAsync(u => u.Username.ToLower() == normalizedUsername && u.IsActive);
+
+            _logger.LogInformation("Tenant {Code}: user '{Username}' found={Found}",
+                tenant.Code, normalizedUsername, user != null);
 
             if (user != null && VerifyPassword(password, user.PasswordHash))
             {
