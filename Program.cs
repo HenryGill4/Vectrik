@@ -153,6 +153,7 @@ builder.Services.AddScoped<IPrintCompletionService, PrintCompletionService>();
 builder.Services.AddScoped<IDispatchScoringService, DispatchScoringService>();
 builder.Services.AddScoped<IDispatchGenerationService, DispatchGenerationService>();
 builder.Services.AddScoped<IMaintenanceDispatchService, MaintenanceDispatchService>();
+builder.Services.AddScoped<IDispatchLearningService, DispatchLearningService>();
 builder.Services.AddHostedService<DispatchGenerationBackgroundService>();
 
 // Email

@@ -28,6 +28,21 @@ internal sealed class StubDispatchNotifier : IDispatchNotifier
     public Task SendChangeoverCountdownAsync(string tenantCode, int machineId, int minutesRemaining) => Task.CompletedTask;
 }
 
+internal sealed class StubServiceProvider : IServiceProvider
+{
+    public object? GetService(Type serviceType) => null;
+}
+
+internal sealed class StubDispatchLearningService : IDispatchLearningService
+{
+    public int ProcessedCount { get; private set; }
+    public Task ProcessCompletedDispatchAsync(int dispatchId) { ProcessedCount++; return Task.CompletedTask; }
+    public Task RecalculateProficiencyLevelsAsync(int machineId) => Task.CompletedTask;
+    public Task<int?> SuggestBestOperatorAsync(int machineId, int? machineProgramId = null) => Task.FromResult<int?>(null);
+    public Task<List<OperatorSetupProfile>> GetMachineProfilesAsync(int machineId) => Task.FromResult(new List<OperatorSetupProfile>());
+    public Task<List<OperatorSetupProfile>> GetOperatorProfilesAsync(int userId) => Task.FromResult(new List<OperatorSetupProfile>());
+}
+
 internal sealed class StubTenantContext : ITenantContext
 {
     public string TenantCode => "test";
@@ -95,7 +110,8 @@ internal static class DispatchTestFixtures
         var notifier = new StubDispatchNotifier();
         var numService = new StubNumberSequenceService();
         var tenant = new StubTenantContext();
-        var svc = new SetupDispatchService(db, numService, notifier, tenant);
+        var serviceProvider = new StubServiceProvider();
+        var svc = new SetupDispatchService(db, numService, notifier, tenant, serviceProvider);
         return (db, svc, notifier);
     }
 
@@ -595,7 +611,7 @@ public class DispatchGenerationServiceTests
         var tenant = new StubTenantContext();
         var scoringSvc = new DispatchScoringService(db);
 
-        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, notifier, tenant);
+        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant);
         var result = await genSvc.GenerateDispatchSuggestionsAsync();
 
         Assert.Empty(result);
@@ -616,7 +632,7 @@ public class DispatchGenerationServiceTests
         entity.Status = DispatchStatus.Deferred;
         await db.SaveChangesAsync();
 
-        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, notifier, tenant);
+        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant);
         var approved = await genSvc.ApproveAutoDispatchAsync(dispatch.Id, 1);
 
         Assert.Equal(DispatchStatus.Queued, approved.Status);
@@ -632,7 +648,7 @@ public class DispatchGenerationServiceTests
 
         var dispatch = await svc.CreateManualDispatchAsync(machine.Id, DispatchType.Setup);
 
-        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, notifier, tenant);
+        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant);
         var rejected = await genSvc.RejectAutoDispatchAsync(dispatch.Id, 1, "Not needed");
 
         Assert.Equal(DispatchStatus.Cancelled, rejected.Status);
@@ -656,7 +672,7 @@ public class DispatchGenerationServiceTests
 
         var tenant = new StubTenantContext();
         var scoringSvc = new DispatchScoringService(db);
-        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, notifier, tenant);
+        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant);
 
         var result = await genSvc.GenerateDispatchSuggestionsAsync(machine.Id);
 

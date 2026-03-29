@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Vectrik.Data;
 using Vectrik.Hubs;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Vectrik.Models;
 using Vectrik.Models.Enums;
 using Vectrik.Services.Platform;
@@ -14,17 +15,20 @@ public class SetupDispatchService : ISetupDispatchService
     private readonly INumberSequenceService _numberSequence;
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
+    private readonly IServiceProvider _serviceProvider;
 
     public SetupDispatchService(
         TenantDbContext db,
         INumberSequenceService numberSequence,
         IDispatchNotifier notifier,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IServiceProvider serviceProvider)
     {
         _db = db;
         _numberSequence = numberSequence;
         _notifier = notifier;
         _tenantContext = tenantContext;
+        _serviceProvider = serviceProvider;
     }
 
     // ── CRUD & Lifecycle ─────────────────────────────────────
@@ -218,6 +222,15 @@ public class SetupDispatchService : ISetupDispatchService
 
         // Write history record
         await WriteHistoryAsync(dispatch);
+
+        // Trigger EMA learning (resolve lazily to avoid circular dependency)
+        try
+        {
+            var learningService = _serviceProvider.GetService<IDispatchLearningService>();
+            if (learningService != null)
+                await learningService.ProcessCompletedDispatchAsync(dispatchId);
+        }
+        catch { /* Learning failures shouldn't break dispatch completion */ }
 
         await NotifyAsync(d => _notifier.SendDispatchStatusChangedAsync(d, dispatch));
         return dispatch;

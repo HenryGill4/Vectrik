@@ -12,6 +12,7 @@ public class DispatchGenerationService : IDispatchGenerationService
     private readonly TenantDbContext _db;
     private readonly ISetupDispatchService _dispatchService;
     private readonly IDispatchScoringService _scoringService;
+    private readonly IDispatchLearningService _learningService;
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
 
@@ -19,12 +20,14 @@ public class DispatchGenerationService : IDispatchGenerationService
         TenantDbContext db,
         ISetupDispatchService dispatchService,
         IDispatchScoringService scoringService,
+        IDispatchLearningService learningService,
         IDispatchNotifier notifier,
         ITenantContext tenantContext)
     {
         _db = db;
         _dispatchService = dispatchService;
         _scoringService = scoringService;
+        _learningService = learningService;
         _notifier = notifier;
         _tenantContext = tenantContext;
     }
@@ -143,6 +146,18 @@ public class DispatchGenerationService : IDispatchGenerationService
 
                 await _dispatchService.UpdateDispatchPriorityAsync(dispatch.Id, score.FinalScore,
                     score.PriorityReason, score.ScoreBreakdownJson);
+
+                // Auto-assign best operator if configured
+                if (config.AutoAssignOperator && entity?.Status != DispatchStatus.Deferred)
+                {
+                    var bestOperator = await _learningService.SuggestBestOperatorAsync(
+                        machine.Id, candidate.MachineProgramId);
+                    if (bestOperator.HasValue)
+                    {
+                        try { await _dispatchService.AssignOperatorAsync(dispatch.Id, bestOperator.Value); }
+                        catch { /* Assignment failures shouldn't block generation */ }
+                    }
+                }
 
                 created.Add(dispatch);
             }
