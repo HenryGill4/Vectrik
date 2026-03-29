@@ -60,4 +60,10 @@ public class DispatchNotifier : IDispatchNotifier
         await _hubContext.Clients.Group($"dispatch:{tenantCode}")
             .SendAsync("UrgentDispatch", new { machineId, message, timestamp = DateTime.UtcNow });
     }
+
+    public async Task SendChangeoverCountdownAsync(string tenantCode, int machineId, int minutesRemaining)
+    {
+        await _hubContext.Clients.Group($"dispatch:{tenantCode}:machine:{machineId}")
+            .SendAsync("ChangeoverCountdown", new { machineId, minutesRemaining, timestamp = DateTime.UtcNow });
+    }
 }

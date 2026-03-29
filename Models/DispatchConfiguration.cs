@@ -50,6 +50,12 @@ public class DispatchConfiguration
     /// <summary>Push SignalR notification to operators on dispatch.</summary>
     public bool NotifyOnDispatch { get; set; } = true;
 
+    /// <summary>Hours within which same-program jobs are batched into one dispatch.</summary>
+    public int BatchGroupingWindowHours { get; set; } = 4;
+
+    /// <summary>Auto-generated dispatches require scheduler approval before entering queue.</summary>
+    public bool RequiresSchedulerApproval { get; set; } = true;
+
     // ── Navigation ───────────────────────────────────────────
 
     public virtual Machine? Machine { get; set; }

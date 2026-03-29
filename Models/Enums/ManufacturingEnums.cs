@@ -251,7 +251,8 @@ public enum DispatchStatus
 
 public enum DispatchType
 {
-    Setup, Changeover, Maintenance, BuildPlateLoad, Inspection, Teardown
+    Setup, Changeover, Maintenance, BuildPlateLoad, Inspection, Teardown,
+    PlateLayout, PrintStart
 }
 
 public enum MachineSetupState
