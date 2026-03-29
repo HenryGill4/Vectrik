@@ -169,7 +169,7 @@ else
                             <input type="checkbox" checked="@_selectedPartIds.Contains(gap.PartId)"
                                    @onchange="(e) => TogglePartSelection(gap.PartId, (bool)(e.Value ?? false))" />
                             <span class="font-mono">@gap.PartNumber</span>
-                            <span>x@gap.GapQty needed</span>
+                            <span>x@(gap.GapQty) needed</span>
                             <span class="@(gap.IsOverdue ? "capacity-overdue" : "")">Due: @gap.EarliestDueDate.ToString("MMM d")</span>
                             <span class="capacity-priority capacity-priority--@gap.HighestPriority.ToString().ToLower()">@gap.HighestPriority</span>
                         </label>
@@ -184,7 +184,7 @@ else
                         var partSuggestions = _suggestions.Where(s => s.PartId == partId).ToList();
                         if (!partSuggestions.Any()) continue;
                         <div class="setup-wizard-part-group">
-                            <h4 class="font-mono">@partSuggestions.First().PartNumber — x@partSuggestions.First().Quantity</h4>
+                            <h4 class="font-mono">@partSuggestions.First().PartNumber — x@(partSuggestions.First().Quantity)</h4>
                             @foreach (var sug in partSuggestions)
                             {
                                 <label class="setup-wizard-suggestion @(sug.IsRecommended ? "setup-wizard-suggestion--recommended" : "")">
@@ -213,7 +213,7 @@ else
                             @foreach (var sug in _suggestions.Where(s => s.IsRecommended))
                             {
                                 <tr>
-                                    <td class="font-mono">@sug.PartNumber x@sug.Quantity</td>
+                                    <td class="font-mono">@sug.PartNumber x@(sug.Quantity)</td>
                                     <td>@sug.MachineName</td>
                                     <td>@sug.ProgramName</td>
                                     <td>@($"{sug.EstimatedSetupMinutes:F0}")m</td>
