@@ -2,6 +2,7 @@
 @inject Vectrik.Services.ISetupDispatchService DispatchService
 @inject Vectrik.Services.IPrintStartDispatchService PrintStartService
 @inject Vectrik.Services.IPrintCompletionService PrintCompletionService
+@inject Vectrik.Services.IMaintenanceDispatchService MaintenanceDispatchService
 @inject Vectrik.Services.ToastService Toast
 @using Vectrik.Models
 @using Vectrik.Models.Enums
@@ -9,6 +10,19 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>Setup Queue - Vectrik</PageTitle>
+
+@* ── Maintenance Warning Banner ── *@
+@if (_maintenanceBlocks.Any(b => b.Value.IsBlocked))
+{
+    <div class="setup-maintenance-banner">
+        @foreach (var (machineId, block) in _maintenanceBlocks.Where(b => b.Value.IsBlocked))
+        {
+            <div class="setup-maintenance-alert">
+                <span>⚙ @block.BlockReason</span>
+            </div>
+        }
+    </div>
+}
 
 @* ── Urgent Changeover Alert Overlay ── *@
 @if (_urgentChangeover != null)
@@ -292,6 +306,9 @@
     // Phase 2: Urgent changeover alert
     private SetupDispatch? _urgentChangeover;
 
+    // Phase 3: Maintenance blocks
+    private Dictionary<int, MaintenanceBlockResult> _maintenanceBlocks = new();
+
     // Phase 2: Pre-print checklist
     private List<SignOffChecklistItem> _prePrintChecklist = new();
 
@@ -328,6 +345,15 @@
             d.DispatchType == DispatchType.Changeover
             && d.Priority >= 95
             && d.Status is DispatchStatus.Queued or DispatchStatus.Assigned);
+
+        // Check maintenance blocks for machines in queue
+        _maintenanceBlocks = new();
+        var machineIds = all.Select(d => d.MachineId).Distinct();
+        foreach (var mid in machineIds)
+        {
+            var block = await MaintenanceDispatchService.CheckMaintenanceBlockAsync(mid);
+            if (block.IsBlocked) _maintenanceBlocks[mid] = block;
+        }
 
         // Load checklists for current setup
         LoadChecklists();
