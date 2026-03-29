@@ -1212,10 +1212,8 @@ public class DataSeedingService : IDataSeedingService
 
             // Branding (Stage 0.5)
             new() { Key = "company.name", Value = "Polite Society Industries", Category = "Branding", Description = "Company name on all documents", LastModifiedBy = "System" },
-            new() { Key = "company.logo_url", Value = "/uploads/logos/psi-shield.svg", Category = "Branding", Description = "Logo for reports/packing lists", LastModifiedBy = "System" },
-            new() { Key = "company.address", Value = "4201 Industrial Blvd, Suite 120\nAustin, TX 78745", Category = "Branding", Description = "Address for documents", LastModifiedBy = "System" },
-            new() { Key = "company.phone", Value = "(512) 555-0147", Category = "Branding", Description = "Company phone number", LastModifiedBy = "System" },
-            new() { Key = "company.email", Value = "info@politesocietyind.com", Category = "Branding", Description = "Company email", LastModifiedBy = "System" },
+            new() { Key = "company.logo_url", Value = "/uploads/logos/psi-primary.svg", Category = "Branding", Description = "Logo for reports/packing lists", LastModifiedBy = "System" },
+            new() { Key = "company.address", Value = "1847 Freedom Blvd, Suite 200\nAustin, TX 78745", Category = "Branding", Description = "Address for documents", LastModifiedBy = "System" },
 
             // Defense identifiers
             new() { Key = "company.cage_code", Value = "8P4K7", Category = "Defense", Description = "CAGE code for DLMS transactions", LastModifiedBy = "System" },
@@ -2595,6 +2593,32 @@ public class DataSeedingService : IDataSeedingService
             true, 96, 16.0, 144, 22.0);
 
         // ════════════════════════════════════════════════════════════
+        // PART PRICING — sell prices for profit dashboard
+        // ════════════════════════════════════════════════════════════
+        foreach (var (part, sellPrice, matCost, margin) in new[] {
+            (tinman,   599.00m, 42.00m, 35.0m),
+            (handyman, 599.00m, 38.00m, 35.0m),
+            (gargoyle, 599.00m, 35.00m, 35.0m),
+            (pilate,   299.00m, 22.00m, 40.0m) })
+        {
+            if (!await db.Set<PartPricing>().AnyAsync(pp => pp.PartId == part.Id))
+            {
+                db.Set<PartPricing>().Add(new PartPricing
+                {
+                    PartId = part.Id,
+                    SellPricePerUnit = sellPrice,
+                    MaterialCostPerUnit = matCost,
+                    TargetMarginPct = margin,
+                    MinimumOrderQty = 1,
+                    Currency = "USD",
+                    EffectiveDate = now.AddDays(-90),
+                    CreatedBy = "System", LastModifiedBy = "System"
+                });
+            }
+        }
+        await db.SaveChangesAsync();
+
+        // ════════════════════════════════════════════════════════════
         // MANUFACTURING PROCESSES — one per part, all Suppressor (No HT)
         // SLS → Depowder → Wire EDM → Sandblast → CNC → Engrave → QC → Pack
         // ════════════════════════════════════════════════════════════
@@ -2654,6 +2678,8 @@ public class DataSeedingService : IDataSeedingService
                 OrderDate = now.AddDays(-daysAgo), DueDate = now.AddDays(dueDays),
                 ShipByDate = now.AddDays(dueDays - 2), Status = status, Priority = priority,
                 CreatedBy = "System", LastModifiedBy = "System" };
+            // Note: LastModifiedDate for completed WOs is fixed up at the end of SeedSchedulerDemoDataAsync
+            // to avoid EF change tracking resetting it during subsequent saves
             db.WorkOrders.Add(wo);
             await db.SaveChangesAsync();
             foreach (var (part, qty) in lines)
@@ -3182,6 +3208,17 @@ public class DataSeedingService : IDataSeedingService
         // (nothing "produced" yet — still on the plate)
 
         // wo8-10: Released — nothing produced yet
+
+        // ── Fix up completed WO dates for On-Time Delivery ──
+        // Must happen AFTER all jobs/builds are created to avoid EF change tracking overwriting
+        var completedWOs = await db.WorkOrders
+            .Where(w => w.Status == WorkOrderStatus.Complete)
+            .ToListAsync();
+        foreach (var cwo in completedWOs)
+        {
+            cwo.LastModifiedDate = cwo.DueDate.AddDays(-2);
+            cwo.ActualShipDate = cwo.DueDate.AddDays(-3);
+        }
 
         await db.SaveChangesAsync();
     }
