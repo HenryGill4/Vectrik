@@ -1,0 +1,267 @@
+@page "/shopfloor/setup-queue"
+@inject Vectrik.Services.ISetupDispatchService DispatchService
+@inject Vectrik.Services.ToastService Toast
+@using Vectrik.Models
+@using Vectrik.Models.Enums
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>Setup Queue - Vectrik</PageTitle>
+
+<div class="setup-queue">
+    <div class="setup-queue-header">
+        <h1>Setup Queue</h1>
+        @if (_operatorName != null)
+        {
+            <span class="setup-queue-operator">@_operatorName</span>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <div class="loading"><span class="spinner"></span> Loading queue...</div>
+    }
+    else
+    {
+        @* ── Current Setup Panel ── *@
+        @if (_currentSetup != null)
+        {
+            <div class="setup-current">
+                <div class="setup-current-header">
+                    <h2>Current Setup</h2>
+                    <span class="dispatch-card-badge dispatch-card-badge--@_currentSetup.Status.ToString().ToLower()">
+                        @_currentSetup.StatusDisplay
+                    </span>
+                </div>
+                <div class="setup-current-body">
+                    <div class="setup-current-info">
+                        <div class="setup-info-row">
+                            <span class="setup-info-label">Dispatch</span>
+                            <span class="setup-info-value">@_currentSetup.DispatchNumber</span>
+                        </div>
+                        <div class="setup-info-row">
+                            <span class="setup-info-label">Machine</span>
+                            <span class="setup-info-value">@_currentSetup.Machine?.Name</span>
+                        </div>
+                        @if (_currentSetup.MachineProgram != null)
+                        {
+                            <div class="setup-info-row">
+                                <span class="setup-info-label">Program</span>
+                                <span class="setup-info-value">@_currentSetup.MachineProgram.Name (@_currentSetup.MachineProgram.ProgramNumber)</span>
+                            </div>
+                        }
+                        @if (_currentSetup.Part != null)
+                        {
+                            <div class="setup-info-row">
+                                <span class="setup-info-label">Part</span>
+                                <span class="setup-info-value">@_currentSetup.Part.PartNumber — @_currentSetup.Part.Name</span>
+                            </div>
+                        }
+                        @if (_currentSetup.ToolingRequired != null)
+                        {
+                            <div class="setup-info-row">
+                                <span class="setup-info-label">Tooling</span>
+                                <span class="setup-info-value">@_currentSetup.ToolingRequired</span>
+                            </div>
+                        }
+                        @if (_currentSetup.FixtureRequired != null)
+                        {
+                            <div class="setup-info-row">
+                                <span class="setup-info-label">Fixture</span>
+                                <span class="setup-info-value">@_currentSetup.FixtureRequired</span>
+                            </div>
+                        }
+                        @if (_currentSetup.Notes != null)
+                        {
+                            <div class="setup-info-row">
+                                <span class="setup-info-label">Notes</span>
+                                <span class="setup-info-value">@_currentSetup.Notes</span>
+                            </div>
+                        }
+                    </div>
+
+                    @* Timer *@
+                    @if (_currentSetup.StartedAt.HasValue)
+                    {
+                        var elapsed = (DateTime.UtcNow - _currentSetup.StartedAt.Value).TotalMinutes;
+                        <div class="setup-timer">
+                            <span class="setup-timer-value">@($"{elapsed:F0}")</span>
+                            <span class="setup-timer-label">minutes elapsed</span>
+                            @if (_currentSetup.EstimatedSetupMinutes.HasValue)
+                            {
+                                var pct = Math.Min(100, elapsed / _currentSetup.EstimatedSetupMinutes.Value * 100);
+                                <div class="setup-timer-bar">
+                                    <div class="setup-timer-fill" style="width: @($"{pct:F0}%"); background: @(pct > 100 ? "var(--danger)" : "var(--accent)")"></div>
+                                </div>
+                                <span class="setup-timer-est">/ @($"{_currentSetup.EstimatedSetupMinutes:F0}") min estimated</span>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="setup-current-actions">
+                    @if (_currentSetup.Status == DispatchStatus.InProgress)
+                    {
+                        <button class="btn btn-lg btn-accent" @onclick="CompleteCurrentSetup">Complete Setup</button>
+                        <button class="btn btn-lg btn-secondary" @onclick="RequestVerification">Request Verification</button>
+                    }
+                    else if (_currentSetup.Status == DispatchStatus.PendingVerification)
+                    {
+                        <div class="setup-verification-waiting">Waiting for verification...</div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="setup-current setup-current--empty">
+                <p>No active setup. Accept a dispatch from the queue below to begin.</p>
+            </div>
+        }
+
+        @* ── Queued Dispatches ── *@
+        <div class="setup-queue-list">
+            <h2>Next Up (@_queue.Count)</h2>
+            @if (_queue.Any())
+            {
+                @foreach (var dispatch in _queue)
+                {
+                    <div class="setup-queue-card">
+                        <div class="setup-queue-card-header">
+                            <span class="dispatch-card-number">@dispatch.DispatchNumber</span>
+                            <span class="dispatch-card-badge dispatch-card-badge--@dispatch.Status.ToString().ToLower()">@dispatch.StatusDisplay</span>
+                            <span class="dispatch-card-priority">P@dispatch.Priority</span>
+                        </div>
+                        <div class="setup-queue-card-body">
+                            <span>@dispatch.Machine?.Name</span>
+                            <span>@dispatch.TypeDisplay</span>
+                            @if (dispatch.MachineProgram != null)
+                            {
+                                <span>@dispatch.MachineProgram.Name</span>
+                            }
+                            @if (dispatch.Part != null)
+                            {
+                                <span>@dispatch.Part.PartNumber</span>
+                            }
+                            @if (dispatch.EstimatedSetupMinutes.HasValue)
+                            {
+                                <span>~@($"{dispatch.EstimatedSetupMinutes:F0}") min</span>
+                            }
+                        </div>
+                        <div class="setup-queue-card-actions">
+                            @if (dispatch.Status == DispatchStatus.Assigned || dispatch.Status == DispatchStatus.Queued)
+                            {
+                                <button class="btn btn-lg btn-primary" @onclick="() => AcceptAndStart(dispatch.Id)">Accept & Start</button>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="setup-queue-empty">No dispatches in queue.</div>
+            }
+        </div>
+
+        @* ── Barcode Scan Input ── *@
+        <div class="setup-barcode-section">
+            <label>Scan Dispatch Barcode</label>
+            <input type="text" class="form-control setup-barcode-input"
+                   placeholder="Scan or type dispatch number..."
+                   @bind="_barcodeScan"
+                   @bind:event="oninput"
+                   @onkeydown="HandleBarcodeScan" />
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private SetupDispatch? _currentSetup;
+    private List<SetupDispatch> _queue = new();
+    private string? _operatorName;
+    private string _barcodeScan = "";
+
+    [CascadingParameter] private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadQueueAsync();
+    }
+
+    private async Task LoadQueueAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Get all active dispatches (in Phase 1 we show all; later filter by operator)
+        var all = await DispatchService.GetActiveDispatchesAsync();
+        _currentSetup = all.FirstOrDefault(d =>
+            d.Status is DispatchStatus.InProgress or DispatchStatus.PendingVerification);
+        _queue = all
+            .Where(d => d.Status is DispatchStatus.Queued or DispatchStatus.Assigned)
+            .OrderByDescending(d => d.Priority)
+            .ThenBy(d => d.QueuedAt)
+            .ToList();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task AcceptAndStart(int dispatchId)
+    {
+        try
+        {
+            await DispatchService.StartDispatchAsync(dispatchId);
+            Toast.ShowSuccess("Setup started.");
+            await LoadQueueAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task CompleteCurrentSetup()
+    {
+        if (_currentSetup == null) return;
+        try
+        {
+            await DispatchService.CompleteDispatchAsync(_currentSetup.Id);
+            Toast.ShowSuccess("Setup completed!");
+            await LoadQueueAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task RequestVerification()
+    {
+        if (_currentSetup == null) return;
+        try
+        {
+            await DispatchService.RequestVerificationAsync(_currentSetup.Id);
+            Toast.ShowSuccess("Verification requested.");
+            await LoadQueueAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task HandleBarcodeScan(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(_barcodeScan)) return;
+
+        var dispatch = await DispatchService.GetByNumberAsync(_barcodeScan.Trim());
+        if (dispatch == null)
+        {
+            Toast.ShowError($"Dispatch '{_barcodeScan}' not found.");
+        }
+        else if (dispatch.Status == DispatchStatus.Queued || dispatch.Status == DispatchStatus.Assigned)
+        {
+            await DispatchService.StartDispatchAsync(dispatch.Id);
+            Toast.ShowSuccess($"Started {dispatch.DispatchNumber}");
+            await LoadQueueAsync();
+        }
+        else
+        {
+            Toast.ShowError($"{dispatch.DispatchNumber} is already {dispatch.StatusDisplay}.");
+        }
+
+        _barcodeScan = "";
+    }
+}

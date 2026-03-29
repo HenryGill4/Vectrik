@@ -111,6 +111,11 @@ public class StageExecution
     /// </summary>
     public int? MachineProgramId { get; set; }
 
+    /// <summary>
+    /// FK to SetupDispatch — links this execution to its dispatch instruction.
+    /// </summary>
+    public int? SetupDispatchId { get; set; }
+
     // Audit
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;
@@ -132,4 +137,5 @@ public class StageExecution
     public virtual ProductionBatch? ProductionBatch { get; set; }
     public virtual ProcessStage? ProcessStage { get; set; }
     public virtual MachineProgram? MachineProgram { get; set; }
+    public virtual SetupDispatch? SetupDispatch { get; set; }
 }

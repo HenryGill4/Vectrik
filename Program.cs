@@ -143,6 +143,10 @@ builder.Services.AddScoped<IWorkInstructionService, WorkInstructionService>();
 // Shipping
 builder.Services.AddScoped<IShippingService, ShippingService>();
 
+// Setup Dispatch System
+builder.Services.AddScoped<ISetupDispatchService, SetupDispatchService>();
+builder.Services.AddSingleton<IDispatchNotifier, DispatchNotifier>();
+
 // Email
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
@@ -258,6 +262,7 @@ app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapHub<MachineStateHub>("/hubs/machine-state");
+app.MapHub<DispatchHub>("/hubs/dispatch");
 
 // Logo upload endpoint
 var uploadsDir = Path.Combine(app.Environment.WebRootPath, "uploads", "logos");

@@ -152,6 +152,12 @@ public class TenantDbContext : DbContext
     public DbSet<Shipment> Shipments { get; set; }
     public DbSet<ShipmentLine> ShipmentLines { get; set; }
 
+    // Setup Dispatch System
+    public DbSet<SetupDispatch> SetupDispatches { get; set; }
+    public DbSet<SetupHistory> SetupHistories { get; set; }
+    public DbSet<OperatorSetupProfile> OperatorSetupProfiles { get; set; }
+    public DbSet<DispatchConfiguration> DispatchConfigurations { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -1078,6 +1084,131 @@ public class TenantDbContext : DbContext
                 .WithOne(e => e.Pricing)
                 .HasForeignKey<PartPricing>(e => e.PartId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Setup Dispatch System ────────────────────────────────
+
+        // Machine — CurrentProgram FK
+        modelBuilder.Entity<Machine>(entity =>
+        {
+            entity.HasOne(e => e.CurrentProgram)
+                .WithMany()
+                .HasForeignKey(e => e.CurrentProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // SetupDispatch
+        modelBuilder.Entity<SetupDispatch>(entity =>
+        {
+            entity.HasIndex(e => e.DispatchNumber).IsUnique();
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => new { e.MachineId, e.Status });
+
+            entity.HasOne(e => e.Machine)
+                .WithMany()
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany()
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.StageExecution)
+                .WithMany()
+                .HasForeignKey(e => e.StageExecutionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Job)
+                .WithMany()
+                .HasForeignKey(e => e.JobId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.AssignedOperator)
+                .WithMany()
+                .HasForeignKey(e => e.AssignedOperatorId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.RequestedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.RequestedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.WorkInstruction)
+                .WithMany()
+                .HasForeignKey(e => e.WorkInstructionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.PredecessorDispatch)
+                .WithMany()
+                .HasForeignKey(e => e.PredecessorDispatchId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // StageExecution — SetupDispatch FK
+        modelBuilder.Entity<StageExecution>(entity =>
+        {
+            entity.HasOne(e => e.SetupDispatch)
+                .WithMany()
+                .HasForeignKey(e => e.SetupDispatchId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // SetupHistory (immutable ledger)
+        modelBuilder.Entity<SetupHistory>(entity =>
+        {
+            entity.HasIndex(e => new { e.MachineId, e.CompletedAt });
+            entity.HasIndex(e => new { e.OperatorUserId, e.MachineId });
+
+            entity.HasOne(e => e.SetupDispatch)
+                .WithMany()
+                .HasForeignKey(e => e.SetupDispatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Machine)
+                .WithMany()
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany()
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Operator)
+                .WithMany()
+                .HasForeignKey(e => e.OperatorUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Shift)
+                .WithMany()
+                .HasForeignKey(e => e.ShiftId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // OperatorSetupProfile
+        modelBuilder.Entity<OperatorSetupProfile>(entity =>
+        {
+            entity.HasIndex(e => new { e.UserId, e.MachineId, e.MachineProgramId }).IsUnique();
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Machine)
+                .WithMany()
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.MachineProgram)
+                .WithMany()
+                .HasForeignKey(e => e.MachineProgramId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // DispatchConfiguration
+        modelBuilder.Entity<DispatchConfiguration>(entity =>
+        {
+            entity.HasOne(e => e.Machine)
+                .WithMany()
+                .HasForeignKey(e => e.MachineId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ProductionStage)
+                .WithMany()
+                .HasForeignKey(e => e.ProductionStageId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }
