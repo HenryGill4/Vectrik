@@ -2630,12 +2630,8 @@ public class DataSeedingService : IDataSeedingService
                 OrderDate = now.AddDays(-daysAgo), DueDate = now.AddDays(dueDays),
                 ShipByDate = now.AddDays(dueDays - 2), Status = status, Priority = priority,
                 CreatedBy = "System", LastModifiedBy = "System" };
-            // For completed WOs, set LastModifiedDate to 2 days before DueDate so On-Time Delivery shows correctly
-            if (status == WorkOrderStatus.Complete)
-            {
-                wo.LastModifiedDate = now.AddDays(dueDays - 2);
-                wo.ActualShipDate = now.AddDays(dueDays - 3);
-            }
+            // Note: LastModifiedDate for completed WOs is fixed up at the end of SeedSchedulerDemoDataAsync
+            // to avoid EF change tracking resetting it during subsequent saves
             db.WorkOrders.Add(wo);
             await db.SaveChangesAsync();
             foreach (var (part, qty) in lines)
@@ -3082,6 +3078,17 @@ public class DataSeedingService : IDataSeedingService
         // (nothing "produced" yet — still on the plate)
 
         // wo8-10: Released — nothing produced yet
+
+        // ── Fix up completed WO dates for On-Time Delivery ──
+        // Must happen AFTER all jobs/builds are created to avoid EF change tracking overwriting
+        var completedWOs = await db.WorkOrders
+            .Where(w => w.Status == WorkOrderStatus.Complete)
+            .ToListAsync();
+        foreach (var cwo in completedWOs)
+        {
+            cwo.LastModifiedDate = cwo.DueDate.AddDays(-2);
+            cwo.ActualShipDate = cwo.DueDate.AddDays(-3);
+        }
 
         await db.SaveChangesAsync();
     }

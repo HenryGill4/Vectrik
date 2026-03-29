@@ -143,6 +143,18 @@
             var userIdClaim = state.User.FindFirst("UserId")?.Value;
             if (int.TryParse(userIdClaim, out var uid))
             {
+                // Validate user still exists in the database (handles stale cookies after DB reset)
+                try
+                {
+                    var userExists = await Db.Users.AnyAsync(u => u.Id == uid);
+                    if (!userExists)
+                    {
+                        Nav.NavigateTo("/account/logout", forceLoad: true);
+                        return;
+                    }
+                }
+                catch { /* In-memory DB — skip validation */ }
+
                 _userId = uid;
                 try
                 {
