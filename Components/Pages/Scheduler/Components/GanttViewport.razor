@@ -105,8 +105,8 @@
             _needsReinit = false; // Zoom sync supersedes reinit — don't fight over scroll position
             try
             {
-                await _jsModule.InvokeVoidAsync("applyZoomAnchored",
-                    PixelsPerHour, _pendingAnchorTimeHours, _pendingAnchorViewportX);
+                await _jsModule.InvokeVoidAsync("syncScrollToAnchor",
+                    _pendingAnchorTimeHours, _pendingAnchorViewportX);
             }
             catch (JSException ex)
             {
@@ -199,15 +199,14 @@
     /// <summary>
     /// Called by JS after Ctrl+wheel or pinch zoom. JS has already applied the zoom
     /// (updated inner width and scroll position) so the viewport doesn't jump.
-    /// C# just needs to re-render tick/bar positions at the new scale.
+    /// JS sends the actual accumulated pixelsPerHour (not direction) so rapid wheel
+    /// events during the debounce window are correctly reflected.
     /// </summary>
     [JSInvokable]
-    public async Task OnZoomRequested(int direction, double anchorTimeHours, double anchorViewportX)
+    public async Task OnZoomApplied(double pixelsPerHour, double anchorTimeHours, double anchorViewportX)
     {
         if (_disposed) return;
-        var newPph = direction > 0
-            ? Math.Clamp(PixelsPerHour * ZoomFactor, MinPxPerHour, MaxPxPerHour)
-            : Math.Clamp(PixelsPerHour / ZoomFactor, MinPxPerHour, MaxPxPerHour);
+        var newPph = Math.Clamp(pixelsPerHour, MinPxPerHour, MaxPxPerHour);
 
         if (Math.Abs(newPph - PixelsPerHour) < 0.001) return;
 

@@ -72,7 +72,7 @@ function attachListeners() {
     if (!_container) return;
     _container.addEventListener('scroll', onScroll, { passive: true });
     _container.addEventListener('wheel', onWheel, { passive: false, capture: true });
-    _container.addEventListener('touchstart', onTouchStart, { passive: false });
+    _container.addEventListener('touchstart', onTouchStart, { passive: true });
     _container.addEventListener('touchmove', onTouchMove, { passive: false });
     _container.addEventListener('touchend', onTouchEnd, { passive: true });
     _container.addEventListener('touchcancel', onTouchEnd, { passive: true });
@@ -107,11 +107,13 @@ function debouncedNotify() {
 // Debounce zoom C# notifications — batches rapid Ctrl+wheel/pinch events
 // so only the final zoom level triggers a Blazor re-render (~60ms = ~1 frame at 16fps)
 let _zoomNotifyId = 0;
-function debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX) {
+function debouncedZoomNotify(anchorTimeHours, anchorViewportX) {
     clearTimeout(_zoomNotifyId);
     _zoomNotifyId = setTimeout(() => {
         if (_disposed || !_dotNetRef) return;
-        _dotNetRef.invokeMethodAsync('OnZoomRequested', direction, anchorTimeHours, anchorViewportX);
+        // Send the actual accumulated _pixelsPerHour (not direction) so C# gets the
+        // correct value even after rapid wheel events during the debounce window.
+        _dotNetRef.invokeMethodAsync('OnZoomApplied', _pixelsPerHour, anchorTimeHours, anchorViewportX);
     }, 60);
 }
 
@@ -274,17 +276,13 @@ export function applyZoom(pixelsPerHour) {
 }
 
 /**
- * Called by C# OnAfterRenderAsync after Ctrl+wheel zoom.
- * Blazor has already re-rendered tick/bar positions at the new zoom.
- * This syncs JS _pixelsPerHour and scrolls so the cursor anchor stays put.
+ * Called by C# OnAfterRenderAsync after Ctrl+wheel/pinch zoom.
+ * Blazor has re-rendered tick/bar positions. JS already has the correct
+ * _pixelsPerHour — this only restores scrollLeft as a safety net in case
+ * the Blazor DOM diff displaced the scroll position.
  */
-export function applyZoomAnchored(pixelsPerHour, anchorTimeHours, anchorViewportX) {
-    _pixelsPerHour = clampZoom(pixelsPerHour);
-
+export function syncScrollToAnchor(anchorTimeHours, anchorViewportX) {
     if (!isAlive() || !_inner) return;
-
-    // The DOM already has the correct inner width from Blazor's render
-    // Just scroll so the anchor time is at the same viewport X position
     _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
 }
 
@@ -374,7 +372,7 @@ function onWheel(e) {
     _container.scrollLeft = cursorTimeHours * _pixelsPerHour - cursorViewportX;
 
     // Debounce C# notification — rapid wheel events batch into one re-render
-    debouncedZoomNotify(direction, cursorTimeHours, cursorViewportX);
+    debouncedZoomNotify(cursorTimeHours, cursorViewportX);
 }
 
 let _pinchDist = 0;
@@ -450,7 +448,7 @@ function onTouchMove(e) {
         updateInnerWidth();
         _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
 
-        debouncedZoomNotify(direction, anchorTimeHours, anchorViewportX);
+        debouncedZoomNotify(anchorTimeHours, anchorViewportX);
         return;
     }
 
