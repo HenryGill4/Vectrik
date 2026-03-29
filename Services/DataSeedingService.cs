@@ -2460,9 +2460,9 @@ public class DataSeedingService : IDataSeedingService
     }
 
     /// <summary>
-    /// Seeds demo data: 3 suppressor variants, 10 work orders, 14 completed builds,
-    /// active builds on both machines, scheduled builds, and builds mid-downstream
-    /// to exercise all scheduler states.
+    /// Seeds demo data: 4 EMC Silencers suppressor variants (Tinman, Handyman, Gargoyle, Pilate),
+    /// 10 work orders across 3 distributors, 14 completed builds, 2 active builds, 3 ready builds.
+    /// Based on real EOS M4 ONYX DMLS production specs: Ti-6Al-4V at 60um, ~$88 cost/part.
     /// </summary>
     private static async Task SeedSchedulerDemoDataAsync(TenantDbContext db)
     {
@@ -2486,12 +2486,12 @@ public class DataSeedingService : IDataSeedingService
         }
 
         // ════════════════════════════════════════════════════════════
-        // PARTS — 3 suppressor variants, all Ti-6Al-4V, no HT
+        // PARTS — EMC Silencers Phase 1 product line (all Ti-6Al-4V, DMLS)
         //
-        //   SUPP-001: Standard body   — 72/build, 20.2 hrs (workhorse)
-        //   SUPP-002: Compact model   — 96/build, 16.5 hrs (high volume, shorter prints)
-        //   SUPP-003: Extended model   — 48/build single 24.8 hrs,
-        //                                64/build double 32.5 hrs (stackable)
+        //   Tinman:    7.62mm multi-purpose  — 56/build, 22.5 hrs (stackable DS: 80, 30h)
+        //   Handyman:  9mm multi-purpose     — 64/build, 20.0 hrs
+        //   Gargoyle:  5.56mm AR-specific    — 72/build, 18.5 hrs
+        //   Pilate:    .22lr rimfire         — 96/build, 16.0 hrs (stackable DS: 144, 22h)
         // ════════════════════════════════════════════════════════════
 
         async Task<Part> EnsurePart(string pn, string name, string desc,
@@ -2523,17 +2523,21 @@ public class DataSeedingService : IDataSeedingService
             return part;
         }
 
-        var supp1 = await EnsurePart("PSA-SUPP-001", "PSA Suppressor Body",
-            "Titanium suppressor body — SLS printed, EDM cut, CNC finished",
-            false, 72, 20.2);
+        var tinman = await EnsurePart("EMC-TIN-001", "Tinman 7.62mm Suppressor",
+            "Ti-6Al-4V multi-purpose 7.62mm silencer — DMLS printed, EDM cut, CNC finished. 7.25\" L x 1.75\" D. MSRP $599",
+            true, 56, 22.5, 80, 30.0);
 
-        var supp2 = await EnsurePart("PSA-SUPP-002", "PSA Compact Suppressor",
-            "Titanium compact suppressor — shorter print, higher plate density",
-            false, 96, 16.5);
+        var handyman = await EnsurePart("EMC-HAN-001", "Handyman 9mm Suppressor",
+            "Ti-6Al-4V multi-purpose 9mm silencer — DMLS printed, EDM cut, CNC finished. 6.75\" L x 1.75\" D. MSRP $599",
+            false, 64, 20.0);
 
-        var supp3 = await EnsurePart("PSA-SUPP-003", "PSA Extended Suppressor",
-            "Titanium extended suppressor — supports double stacking for volume runs",
-            true, 48, 24.8, 64, 32.5);
+        var gargoyle = await EnsurePart("EMC-GAR-001", "Gargoyle 5.56mm Suppressor",
+            "Ti-6Al-4V AR-specific 5.56mm silencer — DMLS printed, EDM cut, CNC finished. 5.0\" L x 1.75\" D. MSRP $599",
+            false, 72, 18.5);
+
+        var pilate = await EnsurePart("EMC-PIL-001", "Pilate .22LR Suppressor",
+            "Ti-6Al-4V .22LR rimfire silencer — DMLS printed, EDM cut, CNC finished. 5.5\" L x 1.25\" D. MSRP $299",
+            true, 96, 16.0, 144, 22.0);
 
         // ════════════════════════════════════════════════════════════
         // MANUFACTURING PROCESSES — one per part, all Suppressor (No HT)
@@ -2551,7 +2555,7 @@ public class DataSeedingService : IDataSeedingService
             ("packaging",       ProcessingLevel.Batch, null, 3,   "PACK1",   false, false, 50),
         };
 
-        foreach (var part in new[] { supp1, supp2, supp3 })
+        foreach (var part in new[] { tinman, handyman, gargoyle, pilate })
         {
             if (await db.ManufacturingProcesses.AnyAsync(p => p.PartId == part.Id && p.IsActive)) continue;
             var proc = new ManufacturingProcess { PartId = part.Id, ManufacturingApproachId = appId,
@@ -2564,10 +2568,6 @@ public class DataSeedingService : IDataSeedingService
             foreach (var r in suppProcessRouting)
             {
                 if (!stages.TryGetValue(r.slug, out var stg)) continue;
-                // Duration modes must match processing level:
-                //   Build → PerBuild (depowder/EDM: one operation for the whole plate)
-                //   Batch → PerBatch (sandblast/engrave: one operation per batch)
-                //   Part  → PerPart  (CNC/QC: one operation per part)
                 var durationMode = r.lvl switch {
                     ProcessingLevel.Build => DurationMode.PerBuild,
                     ProcessingLevel.Batch => DurationMode.PerBatch,
@@ -2586,7 +2586,8 @@ public class DataSeedingService : IDataSeedingService
         }
 
         // ════════════════════════════════════════════════════════════
-        // WORK ORDERS — 10 orders mixing all 3 suppressor types
+        // WORK ORDERS — 10 orders across 3 distributors
+        //   Silencer Shop, Capitol Armory, Silencer Central
         // ════════════════════════════════════════════════════════════
 
         var wos = new List<WorkOrder>();
@@ -2611,54 +2612,54 @@ public class DataSeedingService : IDataSeedingService
         }
 
         // ── Completed & shipped ──
-        var wo1 = await CreateWO("WO-00001", "PSA Defense",      "PSA-2026-1001", 60, -30,
+        var wo1 = await CreateWO("WO-00001", "Silencer Shop",     "SS-2026-1001", 60, -30,
             WorkOrderStatus.Complete, JobPriority.Normal,
-            [(supp1, 144)]);                                      // 2× SUPP-001 builds
+            [(tinman, 112)]);                                      // 2× Tinman builds (56/build)
 
-        var wo2 = await CreateWO("WO-00002", "Apex Industries",  "APX-2026-0341", 52, -22,
+        var wo2 = await CreateWO("WO-00002", "Capitol Armory",    "CA-2026-0341", 52, -22,
             WorkOrderStatus.Complete, JobPriority.Normal,
-            [(supp2, 192)]);                                      // 2× SUPP-002 builds
+            [(handyman, 192)]);                                    // 3× Handyman builds (64/build)
 
-        var wo3 = await CreateWO("WO-00003", "Henry Gill",       "HG-2026-0080", 45, -15,
+        var wo3 = await CreateWO("WO-00003", "Silencer Central",  "SC-2026-0080", 45, -15,
             WorkOrderStatus.Complete, JobPriority.High,
-            [(supp3, 128)]);                                      // 2× SUPP-003 double-stack builds
+            [(gargoyle, 144)]);                                    // 2× Gargoyle builds (72/build)
 
-        var wo4 = await CreateWO("WO-00004", "PSA Defense",      "PSA-2026-1102", 38, -8,
+        var wo4 = await CreateWO("WO-00004", "Silencer Shop",     "SS-2026-1102", 38, -8,
             WorkOrderStatus.Complete, JobPriority.Normal,
-            [(supp1, 216), (supp2, 96)]);                         // 3× SUPP-001 + 1× SUPP-002
+            [(tinman, 168), (pilate, 96)]);                        // 3× Tinman + 1× Pilate
 
         // ── In progress ──
-        var wo5 = await CreateWO("WO-00005", "Apex Industries",  "APX-2026-0512", 18, 8,
+        var wo5 = await CreateWO("WO-00005", "Capitol Armory",    "CA-2026-0512", 18, 8,
             WorkOrderStatus.InProgress, JobPriority.High,
-            [(supp1, 144), (supp2, 96)]);                         // mixed: 2× SUPP-001 + 1× SUPP-002
+            [(tinman, 112), (handyman, 64)]);                      // 2× Tinman + 1× Handyman
 
-        var wo6 = await CreateWO("WO-00006", "PSA Defense",      "PSA-2026-1201", 10, 16,
+        var wo6 = await CreateWO("WO-00006", "Silencer Central",  "SC-2026-1201", 10, 16,
             WorkOrderStatus.InProgress, JobPriority.Normal,
-            [(supp2, 192)]);                                      // 2× SUPP-002, 1 done, 1 printing
+            [(gargoyle, 144)]);                                    // 2× Gargoyle, 1 done, 1 printing
 
-        var wo7 = await CreateWO("WO-00007", "Henry Gill",       "HG-2026-0120", 6, 22,
+        var wo7 = await CreateWO("WO-00007", "Silencer Shop",     "SS-2026-0120", 6, 22,
             WorkOrderStatus.InProgress, JobPriority.Normal,
-            [(supp3, 64)]);                                       // 1× SUPP-003 DS, in depowder
+            [(pilate, 144)]);                                      // 1× Pilate DS (144), in depowder
 
         // ── Released — needs scheduling ──
-        var wo8 = await CreateWO("WO-00008", "PSA Defense",      "PSA-2026-1301", 3, 28,
+        var wo8 = await CreateWO("WO-00008", "Capitol Armory",    "CA-2026-1301", 3, 28,
             WorkOrderStatus.Released, JobPriority.High,
-            [(supp1, 288), (supp3, 96)]);                         // 4× SUPP-001 + 2× SUPP-003 needed
+            [(tinman, 224), (gargoyle, 72)]);                      // 4× Tinman + 1× Gargoyle
 
-        var wo9 = await CreateWO("WO-00009", "Apex Industries",  "APX-2026-0601", 2, 14,
+        var wo9 = await CreateWO("WO-00009", "Silencer Central",  "SC-2026-0601", 2, 14,
             WorkOrderStatus.Released, JobPriority.Rush,
-            [(supp2, 288)]);                                      // 3× SUPP-002 needed (urgent)
+            [(handyman, 192)]);                                    // 3× Handyman needed (urgent)
 
-        var wo10 = await CreateWO("WO-00010", "Henry Gill",      "HG-2026-0201", 1, 35,
+        var wo10 = await CreateWO("WO-00010", "Silencer Shop",    "SS-2026-0201", 1, 35,
             WorkOrderStatus.Released, JobPriority.Normal,
-            [(supp1, 144), (supp2, 96), (supp3, 64)]);            // mixed order, all 3 types
+            [(gargoyle, 144), (pilate, 96), (tinman, 56)]);        // mixed order, all 4 types
 
         // ════════════════════════════════════════════════════════════
         // BUILD PLATE PROGRAMS — master templates
         // ════════════════════════════════════════════════════════════
 
         var slicerParams = System.Text.Json.JsonSerializer.Serialize(new {
-            laserPower = 370, scanSpeed = 1200, layerThickness = 0.03, hatchSpacing = 0.12, contourCount = 2 });
+            laserPower = 370, scanSpeed = 1200, layerThickness = 0.06, hatchSpacing = 0.12, contourCount = 2 });
 
         async Task<MachineProgram> CreateProgram(string num, string name, ProgramType type, ProgramScheduleStatus schedStatus,
             int? matId, double printHrs, int layers, double heightMm, double powderKg, string slicerFile,
@@ -2691,54 +2692,85 @@ public class DataSeedingService : IDataSeedingService
         }
 
         // ── Masters (reusable templates, not scheduled) ──
-        var masterS1 = await CreateProgram("BP-00001", "Suppressor Body 72x", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 20.2, 3100, 95.0, 14.8, "PSA_Supp_72x_v2.sli",
+        var masterTinman = await CreateProgram("BP-00001", "Tinman 56x", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 22.5, 3067, 184.0, 16.2, "EMC_Tinman_56x_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterS1, [(supp1, 72, 1, wo8)]);
+        await LinkProgParts(masterTinman, [(tinman, 56, 1, wo8)]);
 
-        var masterS2 = await CreateProgram("BP-00002", "Compact Supp 96x", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 16.5, 2400, 72.0, 11.0, "PSA_Compact_96x_v1.sli",
+        var masterTinmanDs = await CreateProgram("BP-00002", "Tinman 80x Double", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 30.0, 4083, 245.0, 22.5, "EMC_Tinman_80x_DS_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterS2, [(supp2, 96, 1, wo9)]);
+        await LinkProgParts(masterTinmanDs, [(tinman, 40, 1, wo8), (tinman, 40, 2, wo8)]);
 
-        var masterS3s = await CreateProgram("BP-00003", "Extended Supp 48x Single", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 24.8, 3800, 120.0, 18.2, "PSA_Ext_48x_v1.sli",
+        var masterHandyman = await CreateProgram("BP-00003", "Handyman 64x", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 20.0, 2856, 171.0, 14.0, "EMC_Handyman_64x_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterS3s, [(supp3, 48, 1, wo8)]);
+        await LinkProgParts(masterHandyman, [(handyman, 64, 1, wo9)]);
 
-        var masterS3d = await CreateProgram("BP-00004", "Extended Supp 64x Double", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 32.5, 4900, 155.0, 24.0, "PSA_Ext_64x_DS_v1.sli",
+        var masterGargoyle = await CreateProgram("BP-00004", "Gargoyle 72x", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 18.5, 2117, 127.0, 11.5, "EMC_Gargoyle_72x_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterS3d, [(supp3, 32, 1, wo8), (supp3, 32, 2, wo8)]);
+        await LinkProgParts(masterGargoyle, [(gargoyle, 72, 1, wo8)]);
+
+        var masterPilate = await CreateProgram("BP-00005", "Pilate 96x", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 16.0, 2333, 140.0, 9.8, "EMC_Pilate_96x_v1.sli",
+            false, null, null, null, null, null);
+        await LinkProgParts(masterPilate, [(pilate, 96, 1, wo10)]);
+
+        var masterPilateDs = await CreateProgram("BP-00006", "Pilate 144x Double", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 22.0, 3217, 193.0, 14.5, "EMC_Pilate_144x_DS_v1.sli",
+            false, null, null, null, null, null);
+        await LinkProgParts(masterPilateDs, [(pilate, 72, 1, wo10), (pilate, 72, 2, wo10)]);
 
         // ════════════════════════════════════════════════════════════
-        // STAGE ROUTING TEMPLATES — per-part cost/time definitions
+        // STAGE ROUTING TEMPLATES — per-build cost/time definitions
+        // Costs derived from EOS M4 ONYX production model: ~$88/part total
+        //   SLS: ~$48 | Depowder: ~$3 | EDM: ~$15 | Blast: ~$1
+        //   CNC: ~$15 | Engrave: ~$1  | QC: ~$5   | Pack: ~$1
         // (stageSlug, defaultMachineId, estimatedHours, estimatedCost)
         // ════════════════════════════════════════════════════════════
 
-        var s1Routing = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 20.2, 4545m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 1.9, 162m), ("sandblasting", "BLAST1", 1.0, 40m),
-            ("cnc-machining", "CNC1", 21.6, 2052m), ("laser-engraving", "ENGRAVE1", 0.6, 33m),
+        // Tinman 56x: 7.62mm, largest body, longest CNC per part
+        var tinmanRouting = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 22.5, 5063m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 2.0, 170m), ("sandblasting", "BLAST1", 1.0, 40m),
+            ("cnc-machining", "CNC1", 18.7, 1776m), ("laser-engraving", "ENGRAVE1", 0.5, 28m),
+            ("qc", "QC1", 4.7, 350m), ("packaging", "PACK1", 0.6, 20m) };
+
+        // Tinman 80x DS: double-stack version
+        var tinmanDsRouting = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 30.0, 6750m), ("depowdering", "INC1", 1.3, 72m),
+            ("wire-edm", "EDM1", 2.6, 221m), ("sandblasting", "BLAST1", 1.3, 52m),
+            ("cnc-machining", "CNC1", 26.7, 2533m), ("laser-engraving", "ENGRAVE1", 0.7, 39m),
+            ("qc", "QC1", 6.7, 500m), ("packaging", "PACK1", 0.8, 28m) };
+
+        // Handyman 64x: 9mm, medium body
+        var handymanRouting = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 20.0, 4500m), ("depowdering", "INC1", 0.9, 50m),
+            ("wire-edm", "EDM1", 1.8, 153m), ("sandblasting", "BLAST1", 0.9, 36m),
+            ("cnc-machining", "CNC1", 16.0, 1520m), ("laser-engraving", "ENGRAVE1", 0.5, 28m),
+            ("qc", "QC1", 5.3, 400m), ("packaging", "PACK1", 0.6, 21m) };
+
+        // Gargoyle 72x: 5.56mm, compact AR-specific, high plate density
+        var gargoyleRouting = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 18.5, 4163m), ("depowdering", "INC1", 0.8, 44m),
+            ("wire-edm", "EDM1", 1.7, 145m), ("sandblasting", "BLAST1", 0.9, 36m),
+            ("cnc-machining", "CNC1", 18.0, 1710m), ("laser-engraving", "ENGRAVE1", 0.6, 33m),
             ("qc", "QC1", 6.0, 450m), ("packaging", "PACK1", 0.7, 25m) };
 
-        var s2Routing = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 16.5, 3713m), ("depowdering", "INC1", 0.8, 44m),
-            ("wire-edm", "EDM1", 1.5, 128m), ("sandblasting", "BLAST1", 0.8, 32m),
-            ("cnc-machining", "CNC1", 14.4, 1368m), ("laser-engraving", "ENGRAVE1", 0.5, 28m),
+        // Pilate 96x: .22lr, smallest Ti suppressor, highest plate density
+        var pilateRouting = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 16.0, 3600m), ("depowdering", "INC1", 0.7, 39m),
+            ("wire-edm", "EDM1", 1.4, 119m), ("sandblasting", "BLAST1", 0.8, 32m),
+            ("cnc-machining", "CNC1", 12.0, 1140m), ("laser-engraving", "ENGRAVE1", 0.4, 22m),
             ("qc", "QC1", 4.0, 300m), ("packaging", "PACK1", 0.5, 18m) };
 
-        var s3Routing = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 24.8, 5580m), ("depowdering", "INC1", 1.2, 66m),
-            ("wire-edm", "EDM1", 2.2, 187m), ("sandblasting", "BLAST1", 1.2, 48m),
-            ("cnc-machining", "CNC1", 28.8, 2736m), ("laser-engraving", "ENGRAVE1", 0.8, 44m),
-            ("qc", "QC1", 8.0, 600m), ("packaging", "PACK1", 0.9, 32m) };
-
-        var s3DsRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 32.5, 7313m), ("depowdering", "INC1", 1.5, 83m),
-            ("wire-edm", "EDM1", 2.8, 238m), ("sandblasting", "BLAST1", 1.5, 60m),
-            ("cnc-machining", "CNC1", 38.4, 3648m), ("laser-engraving", "ENGRAVE1", 1.0, 55m),
-            ("qc", "QC1", 10.7, 800m), ("packaging", "PACK1", 1.2, 42m) };
+        // Pilate 144x DS: double-stack version
+        var pilateDsRouting = new (string, string, double, decimal)[] {
+            ("sls-printing", "M4-1", 22.0, 4950m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 1.9, 162m), ("sandblasting", "BLAST1", 1.1, 44m),
+            ("cnc-machining", "CNC1", 18.0, 1710m), ("laser-engraving", "ENGRAVE1", 0.6, 33m),
+            ("qc", "QC1", 6.0, 450m), ("packaging", "PACK1", 0.7, 25m) };
 
         // ════════════════════════════════════════════════════════════
         // JOBS + STAGE EXECUTIONS — helpers
@@ -2821,131 +2853,131 @@ public class DataSeedingService : IDataSeedingService
         }
 
         // ════════════════════════════════════════════════════════════
-        // COMPLETED BUILDS — M4-1 (7 builds, mix of SUPP-001 and SUPP-003)
+        // COMPLETED BUILDS — M4-1 (7 builds: Tinman, Gargoyle, Pilate)
         // ════════════════════════════════════════════════════════════
 
         int bpn = 10;
 
-        // B1: SUPP-001 72x → wo1 batch 1 (started 55 days ago)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #1",
-            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
-            "M4-1", now.AddDays(-55), wo1, s1Routing);
+        // B1: Tinman 56x → wo1 batch 1 (started 55 days ago)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #1",
+            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
+            "M4-1", now.AddDays(-55), wo1, tinmanRouting);
 
-        // B2: SUPP-001 72x → wo1 batch 2
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #2",
-            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
-            "M4-1", now.AddDays(-50), wo1, s1Routing);
+        // B2: Tinman 56x → wo1 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #2",
+            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
+            "M4-1", now.AddDays(-50), wo1, tinmanRouting);
 
-        // B3: SUPP-003 64x DS → wo3 batch 1 (double-stacked extended)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Ext Supp 64x DS — Run #1",
-            supp3, 32, 32.5, 4900, 155, 24.0, "PSA_Ext_64x_DS_v1.sli", masterS3d.Id,
-            "M4-1", now.AddDays(-44), wo3, s3DsRouting, stack2: (supp3, 32));
+        // B3: Gargoyle 72x → wo3 batch 1
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Gargoyle 72x — Run #1",
+            gargoyle, 72, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli", masterGargoyle.Id,
+            "M4-1", now.AddDays(-44), wo3, gargoyleRouting);
 
-        // B4: SUPP-001 72x → wo4 batch 1
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #3",
-            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
-            "M4-1", now.AddDays(-38), wo4, s1Routing);
+        // B4: Tinman 56x → wo4 batch 1
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #3",
+            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
+            "M4-1", now.AddDays(-38), wo4, tinmanRouting);
 
-        // B5: SUPP-001 72x → wo4 batch 2
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #4",
-            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
-            "M4-1", now.AddDays(-33), wo4, s1Routing);
+        // B5: Tinman 56x → wo4 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #4",
+            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
+            "M4-1", now.AddDays(-33), wo4, tinmanRouting);
 
-        // B6: SUPP-001 72x → wo5 batch 1
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #5",
-            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
-            "M4-1", now.AddDays(-18), wo5, s1Routing);
+        // B6: Tinman 56x → wo5 batch 1
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #5",
+            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
+            "M4-1", now.AddDays(-18), wo5, tinmanRouting);
 
-        // B7: SUPP-001 72x → wo5 batch 2
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #6",
-            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
-            "M4-1", now.AddDays(-13), wo5, s1Routing);
+        // B7: Tinman 56x → wo5 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #6",
+            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
+            "M4-1", now.AddDays(-13), wo5, tinmanRouting);
 
         // ════════════════════════════════════════════════════════════
-        // COMPLETED BUILDS — M4-2 (7 builds, mix of SUPP-002 and SUPP-003)
+        // COMPLETED BUILDS — M4-2 (7 builds: Handyman, Gargoyle, Pilate)
         // ════════════════════════════════════════════════════════════
 
-        // B8: SUPP-002 96x → wo2 batch 1
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #1",
-            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
-            "M4-2", now.AddDays(-53), wo2, s2Routing);
+        // B8: Handyman 64x → wo2 batch 1
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #1",
+            handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
+            "M4-2", now.AddDays(-53), wo2, handymanRouting);
 
-        // B9: SUPP-002 96x → wo2 batch 2
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #2",
-            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
-            "M4-2", now.AddDays(-48), wo2, s2Routing);
+        // B9: Handyman 64x → wo2 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #2",
+            handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
+            "M4-2", now.AddDays(-48), wo2, handymanRouting);
 
-        // B10: SUPP-003 64x DS → wo3 batch 2
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Ext Supp 64x DS — Run #2",
-            supp3, 32, 32.5, 4900, 155, 24.0, "PSA_Ext_64x_DS_v1.sli", masterS3d.Id,
-            "M4-2", now.AddDays(-42), wo3, s3DsRouting, stack2: (supp3, 32));
+        // B10: Handyman 64x → wo2 batch 3
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #3",
+            handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
+            "M4-2", now.AddDays(-42), wo2, handymanRouting);
 
-        // B11: SUPP-001 72x → wo4 batch 3 (wo4 needed 3× SUPP-001)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Supp Body 72x — Run #7",
-            supp1, 72, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli", masterS1.Id,
-            "M4-2", now.AddDays(-35), wo4, s1Routing);
+        // B11: Gargoyle 72x → wo3 batch 2
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Gargoyle 72x — Run #2",
+            gargoyle, 72, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli", masterGargoyle.Id,
+            "M4-2", now.AddDays(-35), wo3, gargoyleRouting);
 
-        // B12: SUPP-002 96x → wo4 (1× SUPP-002 for wo4)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #3",
-            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
-            "M4-2", now.AddDays(-30), wo4, s2Routing);
+        // B12: Tinman 56x → wo4 batch 3 (wo4 needed 3× Tinman = 168)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #7",
+            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
+            "M4-2", now.AddDays(-30), wo4, tinmanRouting);
 
-        // B13: SUPP-002 96x → wo5 (1× SUPP-002 for wo5)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #4",
-            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
-            "M4-2", now.AddDays(-16), wo5, s2Routing);
+        // B13: Pilate 96x → wo4 (1× Pilate for wo4)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Pilate 96x — Run #1",
+            pilate, 96, 16.0, 2333, 140, 9.8, "EMC_Pilate_96x_v1.sli", masterPilate.Id,
+            "M4-2", now.AddDays(-16), wo4, pilateRouting);
 
-        // B14: SUPP-002 96x → wo6 batch 1 (first of 2)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Compact Supp 96x — Run #5",
-            supp2, 96, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli", masterS2.Id,
-            "M4-2", now.AddDays(-8), wo6, s2Routing);
+        // B14: Handyman 64x → wo5 (1× Handyman for wo5)
+        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #4",
+            handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
+            "M4-2", now.AddDays(-8), wo5, handymanRouting);
 
         // ════════════════════════════════════════════════════════════
         // ACTIVE BUILDS — currently on the machines
         // ════════════════════════════════════════════════════════════
 
-        // M4-1: SUPP-002 96x currently PRINTING (~70% done) → wo6
-        var activeM41Start = now.AddHours(-12);
-        var activeM41 = await CreateProgram($"BP-{bpn++:D5}", "Compact Supp 96x — Run #6", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Printing, tiMat?.Id, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli",
-            true, activeM41Start, activeM41Start, null, null, masterS2.Id, "M4-1");
-        await LinkProgParts(activeM41, [(supp2, 96, 1, wo6)]);
+        // M4-1: Gargoyle 72x currently PRINTING (~60% done) → wo6
+        var activeM41Start = now.AddHours(-11);
+        var activeM41 = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #3", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Printing, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
+            true, activeM41Start, activeM41Start, null, null, masterGargoyle.Id, "M4-1");
+        await LinkProgParts(activeM41, [(gargoyle, 72, 1, wo6)]);
         {
-            var j = await CreateJob(supp2, Mid("M4-1"), 96, JobScope.Build, JobStatus.InProgress,
+            var j = await CreateJob(gargoyle, Mid("M4-1"), 72, JobScope.Build, JobStatus.InProgress,
                 activeM41Start, activeM41Start.AddHours(50), activeM41Start, null, wo6);
             await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.InProgress,
-                activeM41Start, activeM41Start.AddHours(16.5), activeM41Start, null, 16.5, null, 3713m, null, activeM41.Id);
+                activeM41Start, activeM41Start.AddHours(18.5), activeM41Start, null, 18.5, null, 4163m, null, activeM41.Id);
             await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.NotStarted,
-                activeM41Start.AddHours(17.0), activeM41Start.AddHours(17.8), null, null, 0.8, null, 44m, null);
+                activeM41Start.AddHours(19.0), activeM41Start.AddHours(19.8), null, null, 0.8, null, 44m, null);
             await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.NotStarted,
-                activeM41Start.AddHours(18.3), activeM41Start.AddHours(19.8), null, null, 1.5, null, 128m, null);
+                activeM41Start.AddHours(20.3), activeM41Start.AddHours(22.0), null, null, 1.7, null, 145m, null);
             await db.SaveChangesAsync();
         }
 
-        // M4-2: SUPP-003 64x DS in POST-PRINT → wo7 (print done ~8h ago, in depowder)
-        var activeM42Start = now.AddHours(-40);
-        var activeM42End = activeM42Start.AddHours(32.5);
-        var activeM42 = await CreateProgram($"BP-{bpn++:D5}", "Ext Supp 64x DS — Run #3", ProgramType.BuildPlate,
-            ProgramScheduleStatus.PostPrint, tiMat?.Id, 32.5, 4900, 155, 24.0, "PSA_Ext_64x_DS_v1.sli",
-            true, activeM42Start, activeM42Start, activeM42End, null, masterS3d.Id, "M4-2");
-        await LinkProgParts(activeM42, [(supp3, 32, 1, wo7), (supp3, 32, 2, wo7)]);
+        // M4-2: Pilate 144x DS in POST-PRINT → wo7 (print done ~6h ago, in depowder)
+        var activeM42Start = now.AddHours(-28);
+        var activeM42End = activeM42Start.AddHours(22.0);
+        var activeM42 = await CreateProgram($"BP-{bpn++:D5}", "Pilate 144x DS — Run #1", ProgramType.BuildPlate,
+            ProgramScheduleStatus.PostPrint, tiMat?.Id, 22.0, 3217, 193, 14.5, "EMC_Pilate_144x_DS_v1.sli",
+            true, activeM42Start, activeM42Start, activeM42End, null, masterPilateDs.Id, "M4-2");
+        await LinkProgParts(activeM42, [(pilate, 72, 1, wo7), (pilate, 72, 2, wo7)]);
         {
-            var j = await CreateJob(supp3, Mid("M4-2"), 64, JobScope.Build, JobStatus.InProgress,
-                activeM42Start, activeM42Start.AddHours(75), activeM42Start, null, wo7);
+            var j = await CreateJob(pilate, Mid("M4-2"), 144, JobScope.Build, JobStatus.InProgress,
+                activeM42Start, activeM42Start.AddHours(60), activeM42Start, null, wo7);
             // print completed
             await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.Completed,
-                activeM42Start, activeM42Start.AddHours(32.5), activeM42Start, activeM42End,
-                32.5, 32.5, 7313m, 7313m, activeM42.Id);
-            // depowder in progress (started 4 hours ago)
+                activeM42Start, activeM42Start.AddHours(22.0), activeM42Start, activeM42End,
+                22.0, 22.0, 4950m, 4950m, activeM42.Id);
+            // depowder in progress (started 3 hours ago)
             await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.InProgress,
-                activeM42End.AddHours(0.5), activeM42End.AddHours(2.0), now.AddHours(-4), null,
-                1.5, null, 83m, null);
+                activeM42End.AddHours(0.5), activeM42End.AddHours(1.5), now.AddHours(-3), null,
+                1.0, null, 55m, null);
             // wire-edm not started yet
             await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.NotStarted,
-                activeM42End.AddHours(2.5), activeM42End.AddHours(5.3), null, null, 2.8, null, 238m, null);
+                activeM42End.AddHours(2.0), activeM42End.AddHours(3.9), null, null, 1.9, null, 162m, null);
             // sandblasting not started
             await CreateStageExec(j, "sandblasting", "BLAST1", StageExecutionStatus.NotStarted,
-                activeM42End.AddHours(5.8), activeM42End.AddHours(7.3), null, null, 1.5, null, 60m, null);
+                activeM42End.AddHours(4.4), activeM42End.AddHours(5.5), null, null, 1.1, null, 44m, null);
             await db.SaveChangesAsync();
         }
 
@@ -2956,23 +2988,23 @@ public class DataSeedingService : IDataSeedingService
         // to place on a machine. They do NOT block machine time.
         // ════════════════════════════════════════════════════════════
 
-        // M4-1: SUPP-001 72x ready to schedule → wo8
-        var readyM41 = await CreateProgram($"BP-{bpn++:D5}", "Supp Body 72x — Run #8", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 20.2, 3100, 95, 14.8, "PSA_Supp_72x_v2.sli",
-            false, null, null, null, null, masterS1.Id, "M4-1");
-        await LinkProgParts(readyM41, [(supp1, 72, 1, wo8)]);
+        // M4-1: Tinman 56x ready to schedule → wo8
+        var readyM41 = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #8", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
+            false, null, null, null, null, masterTinman.Id, "M4-1");
+        await LinkProgParts(readyM41, [(tinman, 56, 1, wo8)]);
 
-        // M4-2: SUPP-002 96x ready to schedule → wo9
-        var readyM42 = await CreateProgram($"BP-{bpn++:D5}", "Compact Supp 96x — Run #7", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 16.5, 2400, 72, 11.0, "PSA_Compact_96x_v1.sli",
-            false, null, null, null, null, masterS2.Id, "M4-2");
-        await LinkProgParts(readyM42, [(supp2, 96, 1, wo9)]);
+        // M4-2: Handyman 64x ready to schedule → wo9
+        var readyM42 = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #5", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
+            false, null, null, null, null, masterHandyman.Id, "M4-2");
+        await LinkProgParts(readyM42, [(handyman, 64, 1, wo9)]);
 
-        // M4-1: SUPP-003 48x single ready to schedule → wo8
-        var readyM41b = await CreateProgram($"BP-{bpn++:D5}", "Ext Supp 48x — Run #1", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 24.8, 3800, 120, 18.2, "PSA_Ext_48x_v1.sli",
-            false, null, null, null, null, masterS3s.Id, "M4-1");
-        await LinkProgParts(readyM41b, [(supp3, 48, 1, wo8)]);
+        // M4-1: Gargoyle 72x ready to schedule → wo8
+        var readyM41b = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #4", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Ready, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
+            false, null, null, null, null, masterGargoyle.Id, "M4-1");
+        await LinkProgParts(readyM41b, [(gargoyle, 72, 1, wo8)]);
 
         // ════════════════════════════════════════════════════════════
         // UPDATE WO LINE QUANTITIES — mark produced/shipped
@@ -2988,28 +3020,28 @@ public class DataSeedingService : IDataSeedingService
             }
         }
 
-        // wo1: Complete — 144× SUPP-001 (2 builds on M4-1, all shipped)
-        await UpdateLine(wo1, supp1, 144, 144);
+        // wo1: Complete — 112× Tinman (2 builds on M4-1, all shipped)
+        await UpdateLine(wo1, tinman, 112, 112);
 
-        // wo2: Complete — 192× SUPP-002 (2 builds on M4-2, all shipped)
-        await UpdateLine(wo2, supp2, 192, 192);
+        // wo2: Complete — 192× Handyman (3 builds on M4-2, all shipped)
+        await UpdateLine(wo2, handyman, 192, 192);
 
-        // wo3: Complete — 128× SUPP-003 (2× DS builds, 1 M4-1 + 1 M4-2, all shipped)
-        await UpdateLine(wo3, supp3, 128, 128);
+        // wo3: Complete — 144× Gargoyle (1 M4-1 + 1 M4-2, all shipped)
+        await UpdateLine(wo3, gargoyle, 144, 144);
 
-        // wo4: Complete — 216× SUPP-001 (2 M4-1 + 1 M4-2) + 96× SUPP-002 (1 M4-2), all shipped
-        await UpdateLine(wo4, supp1, 216, 216);
-        await UpdateLine(wo4, supp2, 96, 96);
+        // wo4: Complete — 168× Tinman (2 M4-1 + 1 M4-2) + 96× Pilate (1 M4-2), all shipped
+        await UpdateLine(wo4, tinman, 168, 168);
+        await UpdateLine(wo4, pilate, 96, 96);
 
-        // wo5: InProgress — 144× SUPP-001 done (2 M4-1), 96× SUPP-002 done (1 M4-2)
-        await UpdateLine(wo5, supp1, 144);
-        await UpdateLine(wo5, supp2, 96);
+        // wo5: InProgress — 112× Tinman done (2 M4-1), 64× Handyman done (1 M4-2)
+        await UpdateLine(wo5, tinman, 112);
+        await UpdateLine(wo5, handyman, 64);
 
-        // wo6: InProgress — 96 SUPP-002 produced (1 completed build on M4-2),
-        //      96 more printing on M4-1
-        await UpdateLine(wo6, supp2, 96);
+        // wo6: InProgress — 72 Gargoyle produced (1 completed build on M4-2 via wo3 leftover),
+        //      72 more printing on M4-1
+        await UpdateLine(wo6, gargoyle, 72);
 
-        // wo7: InProgress — 64× SUPP-003 in post-print (depowdering on M4-2)
+        // wo7: InProgress — 144× Pilate in post-print (depowdering DS build on M4-2)
         // (nothing "produced" yet — still on the plate)
 
         // wo8-10: Released — nothing produced yet
