@@ -3082,23 +3082,45 @@ public class DataSeedingService : IDataSeedingService
             }
         }
 
-        // Seed setup history for analytics
+        // Seed completed dispatches + history for analytics
         var programs = await db.MachinePrograms.Take(3).ToListAsync();
         var now = DateTime.UtcNow;
         for (int i = 0; i < 15; i++)
         {
             var machine = machines[i % machines.Count];
             var program = programs.Count > 0 ? programs[i % programs.Count] : null;
+            var completedAt = now.AddDays(-(i * 2));
+            var setupMinutes = 25.0 + (i * 3) % 40;
+
+            var dispatch = new SetupDispatch
+            {
+                DispatchNumber = $"DSP-SEED-{i + 1:D4}",
+                MachineId = machine.Id,
+                MachineProgramId = program?.Id,
+                DispatchType = i % 3 == 0 ? DispatchType.Changeover : DispatchType.Setup,
+                Status = DispatchStatus.Completed,
+                Priority = 50,
+                EstimatedSetupMinutes = setupMinutes,
+                ActualSetupMinutes = setupMinutes,
+                QueuedAt = completedAt.AddHours(-2),
+                StartedAt = completedAt.AddMinutes(-setupMinutes),
+                CompletedAt = completedAt,
+                AssignedOperatorId = admin?.Id,
+                CreatedBy = "seed"
+            };
+            db.SetupDispatches.Add(dispatch);
+            await db.SaveChangesAsync();
+
             db.SetupHistories.Add(new SetupHistory
             {
-                SetupDispatchId = 0,
+                SetupDispatchId = dispatch.Id,
                 MachineId = machine.Id,
                 MachineProgramId = program?.Id,
                 OperatorUserId = admin?.Id,
-                SetupDurationMinutes = 25 + (i * 3) % 40,
+                SetupDurationMinutes = setupMinutes,
                 ChangeoverDurationMinutes = i % 3 == 0 ? 15 + i : null,
                 WasChangeover = i % 3 == 0,
-                CompletedAt = now.AddDays(-(i * 2)),
+                CompletedAt = completedAt,
                 QualityResult = i % 5 == 0 ? "conditional" : "pass"
             });
         }
