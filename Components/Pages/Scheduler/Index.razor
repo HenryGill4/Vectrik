@@ -86,23 +86,8 @@ else if (_viewMode == "gantt")
                OnPixelsPerHourChanged="HandlePixelsPerHourChanged"
                OnViewportBoundsChanged="HandleViewportBoundsChanged"
                OnDataRangeExtensionNeeded="ExtendDataRangeAsync"
+               ProgramStatusFilter="_programStatusFilter"
                OnBarDragCompleted="HandleBarDragAsync" />
-}
-else if (_viewMode == "programs")
-{
-    <ProgramsView @ref="_programsView"
-                Programs="_programs"
-                SlsMachines="SlsMachines"
-                ProgramTimelines="_programTimelines"
-                DataRangeStart="_dataRangeStart"
-                DataRangeEnd="_dataRangeEnd"
-                PixelsPerHour="_pixelsPerHour"
-                ProgramStatusFilter="_programStatusFilter"
-                OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)"
-                UserName="@_userName"
-                OnPixelsPerHourChanged="HandlePixelsPerHourChanged"
-                OnViewportBoundsChanged="HandleViewportBoundsChanged"
-                OnDataRangeExtensionNeeded="ExtendDataRangeAsync" />
 }
 else if (_viewMode == "demand")
 {
@@ -124,22 +109,6 @@ else if (_viewMode == "dispatch")
                   OnOpenAdvisorForPart="OpenBuildAdvisorForPart"
                   OnInstantiateTemplate="HandleInstantiateTemplateAsync"
                   OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
-}
-else if (_viewMode == "setup")
-{
-    <DispatchBoard OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
-}
-else if (_viewMode == "floor")
-{
-    <StagesView Executions="_executions"
-                Unscheduled="_unscheduled"
-                Stages="_stages"
-                Machines="_machines"
-                Shifts="_shifts"
-                UserName="@_userName"
-                OnShowReschedule="ShowReschedule"
-                OnAutoSchedule="AutoScheduleSingle"
-                OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
 }
 else if (_viewMode == "data")
 {
@@ -237,7 +206,6 @@ else if (_viewMode == "data")
     private List<MachineProgram> _draftPrograms = new();
 
     private GanttView? _ganttView;
-    private ProgramsView? _programsView;
     private PartPathView? _partPathView;
     private string _dataSubView = "table";
     private double _pixelsPerHour = 6.0;
@@ -271,10 +239,10 @@ else if (_viewMode == "data")
             _viewMode = ViewParam switch
             {
                 "orders" => "demand",
-                "stages" => "floor",
+                "stages" or "floor" => "gantt",
                 "table" or "path" => "data",
-                "builds" => "programs",
-                "dispatch" => "dispatch",
+                "builds" or "programs" => "gantt",
+                "dispatch" or "setup" => "dispatch",
                 _ => ViewParam
             };
         }
@@ -320,7 +288,6 @@ else if (_viewMode == "data")
             await LoadActiveTabDataAsync();
 
             _ganttView?.Viewport?.RequestReinit();
-            _programsView?.Viewport?.RequestReinit();
             _partPathView?.Viewport?.RequestReinit();
         }
         catch (Exception ex)
@@ -395,14 +362,8 @@ else if (_viewMode == "data")
             case "gantt":
                 await LoadProductionDataAsync();
                 break;
-            case "programs":
-                await LoadProgramsDataAsync();
-                break;
             case "demand":
                 await LoadDemandDataAsync();
-                break;
-            case "floor":
-                await LoadFloorDataAsync();
                 break;
             case "dispatch":
                 await LoadDispatchDataAsync();
@@ -429,17 +390,6 @@ else if (_viewMode == "data")
     {
         _workOrders = await WorkOrderService.GetWorkOrdersByStatusesAsync(WorkOrderStatus.Released, WorkOrderStatus.InProgress);
         _programs = await ProgramService.GetBuildPlateProgramsAsync();
-    }
-
-    private async Task LoadProgramsDataAsync()
-    {
-        _programs = await ProgramService.GetBuildPlateProgramsAsync();
-        await LoadProgramTimelinesAsync();
-    }
-
-    private async Task LoadFloorDataAsync()
-    {
-        _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
     }
 
     private async Task LoadDataViewAsync()
@@ -542,8 +492,6 @@ else if (_viewMode == "data")
 
             if (_ganttView?.Viewport != null)
                 await _ganttView.Viewport.UpdateDataRangeInJsAsync();
-            if (_programsView?.Viewport != null)
-                await _programsView.Viewport.UpdateDataRangeInJsAsync();
             if (_partPathView?.Viewport != null)
                 await _partPathView.Viewport.UpdateDataRangeInJsAsync();
         }
@@ -556,7 +504,6 @@ else if (_viewMode == "data")
     private GanttViewport? ActiveViewport => _viewMode switch
     {
         "gantt" => _ganttView?.Viewport,
-        "programs" => _programsView?.Viewport,
         "data" => _dataSubView == "path" ? _partPathView?.Viewport : null,
         _ => null
     };
