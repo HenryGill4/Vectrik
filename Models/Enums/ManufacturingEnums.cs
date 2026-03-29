@@ -34,6 +34,21 @@ public enum QuoteLossReason
     Other
 }
 
+public enum CustomerTier
+{
+    Standard, Silver, Gold, Platinum, Strategic
+}
+
+public enum ContractType
+{
+    Standard, BlanketPO, AnnualRateCard, LongTermAgreement, Defense
+}
+
+public enum ContractStatus
+{
+    Draft, Active, Expired, Cancelled
+}
+
 public enum StageExecutionStatus
 {
     NotStarted, InProgress, Paused, Completed, Skipped, Failed

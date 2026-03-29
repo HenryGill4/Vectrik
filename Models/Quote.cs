@@ -11,6 +11,9 @@ public class Quote
     [Required, MaxLength(50)]
     public string QuoteNumber { get; set; } = string.Empty;
 
+    /// <summary>Optional FK to Customer entity for customer-level pricing and analytics.</summary>
+    public int? CustomerId { get; set; }
+
     [Required, MaxLength(200)]
     public string CustomerName { get; set; } = string.Empty;
 
@@ -19,6 +22,9 @@ public class Quote
 
     [MaxLength(50)]
     public string? CustomerPhone { get; set; }
+
+    /// <summary>Contract applied to this quote (drives contract-based discounts).</summary>
+    public int? PricingContractId { get; set; }
 
     public QuoteStatus Status { get; set; } = QuoteStatus.Draft;
 
@@ -85,9 +91,15 @@ public class Quote
     /// <summary>Days from quote sent to customer decision (accepted or rejected).</summary>
     public int? DecisionDays { get; set; }
 
+    /// <summary>Customer-level discount % applied to this quote (auto-populated from Customer tier or contract).</summary>
+    [Range(0, 100)]
+    public decimal CustomerDiscountPct { get; set; }
+
     public int? ConvertedWorkOrderId { get; set; }
 
     // Navigation
+    public virtual Customer? Customer { get; set; }
+    public virtual PricingContract? PricingContract { get; set; }
     public virtual ICollection<QuoteLine> Lines { get; set; } = new List<QuoteLine>();
     public virtual ICollection<QuoteRevision> Revisions { get; set; } = new List<QuoteRevision>();
     public virtual WorkOrder? ConvertedWorkOrder { get; set; }
@@ -131,6 +143,10 @@ public class QuoteLine
 
     /// <summary>Stack level used for cost estimate (1=single, 2=double, 3=triple). Null for non-additive parts.</summary>
     public int? StackLevel { get; set; }
+
+    /// <summary>Standard price before customer discount (for tracking discount impact).</summary>
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal StandardPricePerPart { get; set; }
 
     [MaxLength(500)]
     public string? Notes { get; set; }

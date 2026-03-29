@@ -4,6 +4,7 @@
 @inject IPartService PartService
 @inject IPricingEngineService PricingEngine
 @inject ISmartPricingService SmartPricing
+@inject ICustomerPricingService CustomerPricing
 @inject ITenantFeatureService Features
 @inject ICustomFieldService CustomFieldService
 @inject NavigationManager Nav
@@ -38,6 +39,19 @@ else
         <h3 class="card-title">Quote Information</h3>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
             <div class="form-group">
+                <label class="form-label">Customer <span style="color:var(--danger)">*</span></label>
+                <div style="display: flex; gap: 6px;">
+                    <select class="form-control" value="@(_quote.CustomerId ?? 0)" @onchange="OnCustomerSelected" style="flex: 1;">
+                        <option value="0">-- Manual Entry --</option>
+                        @foreach (var c in _customers)
+                        {
+                            <option value="@c.Id">@c.Name @(c.Tier != CustomerTier.Standard ? $"({c.Tier})" : "")</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => _showNewCustomer = true" title="New Customer">+</button>
+                </div>
+            </div>
+            <div class="form-group">
                 <label class="form-label">Customer Name <span style="color:var(--danger)">*</span></label>
                 <input class="form-control" @bind="_quote.CustomerName" />
             </div>
@@ -64,8 +78,50 @@ else
                     <input class="form-control" @bind="_quote.ContractNumber" />
                 </div>
             }
+            @if (_activeContracts.Any())
+            {
+                <div class="form-group">
+                    <label class="form-label">Pricing Contract</label>
+                    <select class="form-control" @bind="_quote.PricingContractId">
+                        <option value="">None</option>
+                        @foreach (var ct in _activeContracts)
+                        {
+                            <option value="@ct.Id">@ct.ContractNumber — @ct.BlanketDiscountPct% off (expires @ct.EndDate.ToString("MMM yyyy"))</option>
+                        }
+                    </select>
+                </div>
+            }
         </div>
-        <div class="form-group">
+
+        @* Customer pricing summary strip *@
+        @if (_customerSummary != null)
+        {
+            <div style="display: flex; gap: 16px; align-items: center; padding: 8px 12px; margin-top: 8px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(16, 185, 129, 0.06)); border-radius: 6px; font-size: 0.82rem;">
+                <span class="badge @(_customerSummary.Tier == CustomerTier.Platinum || _customerSummary.Tier == CustomerTier.Strategic ? "badge-active" : _customerSummary.Tier == CustomerTier.Gold ? "badge-warning" : "badge-info")">
+                    @_customerSummary.Tier
+                </span>
+                @if (_customerSummary.DefaultDiscountPct > 0)
+                {
+                    <span>Default Discount: <strong>@_customerSummary.DefaultDiscountPct%</strong></span>
+                }
+                @if (_customerSummary.ActiveContractCount > 0)
+                {
+                    <span>Contracts: <strong>@_customerSummary.ActiveContractCount active</strong></span>
+                }
+                @if (_customerSummary.ActiveRuleCount > 0)
+                {
+                    <span>Part Rules: <strong>@_customerSummary.ActiveRuleCount</strong></span>
+                }
+                <span>Win Rate: <strong style="color: @(_customerSummary.WinRate >= 50 ? "var(--success)" : "var(--warning)")">@_customerSummary.WinRate%</strong></span>
+                @if (_customerSummary.TotalWonValue > 0)
+                {
+                    <span>Won: <strong>@_customerSummary.TotalWonValue.ToString("C0")</strong></span>
+                }
+                <span style="color: var(--text-muted);">Net @_customerSummary.PaymentTermDays</span>
+            </div>
+        }
+
+        <div class="form-group" style="margin-top: 8px;">
             <label class="form-label">Notes</label>
             <textarea class="form-control" @bind="_quote.Notes" rows="2"></textarea>
         </div>
@@ -252,6 +308,27 @@ else
                     <button class="btn btn-sm btn-secondary" @onclick="() => UsePrice(_lineEstimate.TargetMarginPrice)">Use</button>
                 </div>
             </div>
+
+            <!-- Customer-Specific Pricing -->
+            @if (_customerPriceResult != null && _customerPriceResult.HasCustomerPricing && _customerPriceResult.DiscountPct > 0)
+            {
+                <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(249, 115, 22, 0.08)); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <div style="font-size: 0.85rem; font-weight: 600;">Customer Pricing</div>
+                        <span class="badge badge-warning" style="font-size: 0.7rem;">@_customerPriceResult.PriceSource</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 0.85rem;">
+                        <span>
+                            @_customerPriceResult.RuleDescription
+                        </span>
+                        <strong style="color: var(--warning);">@_customerPriceResult.ResolvedPrice.ToString("C")/part</strong>
+                        <button class="btn btn-sm btn-primary" @onclick="() => UsePrice(_customerPriceResult.ResolvedPrice)">Use</button>
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">
+                        Standard: @_customerPriceResult.StandardPrice.ToString("C") | Discount: @_customerPriceResult.DiscountAmount.ToString("C") (@_customerPriceResult.DiscountPct%)
+                    </div>
+                </div>
+            }
 
             <!-- Stacking Options (SLS Parts Only) -->
             @if (_lineEstimate.IsAdditivePart && _lineEstimate.StackingOptions.Count > 1)
@@ -470,6 +547,55 @@ else
     </Footer>
 </AppModal>
 
+<!-- Quick Add Customer Modal -->
+<AppModal Visible="_showNewCustomer" VisibleChanged="v => _showNewCustomer = v" Title="New Customer" Size="md">
+    <ChildContent>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+                <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                <input class="form-control" @bind="_newCustomer.Name" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Code</label>
+                <input class="form-control" @bind="_newCustomer.Code" placeholder="e.g. ACME" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input class="form-control" @bind="_newCustomer.Email" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input class="form-control" @bind="_newCustomer.Phone" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Tier</label>
+                <select class="form-control" @bind="_newCustomer.Tier">
+                    @foreach (var t in Enum.GetValues<CustomerTier>())
+                    {
+                        <option value="@t">@t</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Default Discount %</label>
+                <input class="form-control" type="number" step="0.5" @bind="_newCustomer.DefaultDiscountPct" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Payment Terms (days)</label>
+                <input class="form-control" type="number" @bind="_newCustomer.PaymentTermDays" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Default Margin %</label>
+                <input class="form-control" type="number" step="0.5" @bind="_newCustomer.DefaultMarginPct" />
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showNewCustomer = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="SaveNewCustomer">Save Customer</button>
+    </Footer>
+</AppModal>
+
 <ConfirmDialog @ref="_confirm" />
 <NavigationLock OnBeforeInternalNavigation="OnBeforeNavigation" ConfirmExternalNavigation="_hasChanges" />
 
@@ -482,6 +608,14 @@ else
     private Quote _quote = new();
     private List<Part> _parts = new();
     private ConfirmDialog _confirm = null!;
+
+    // Customer
+    private List<Customer> _customers = new();
+    private List<PricingContract> _activeContracts = new();
+    private CustomerPricingSummary? _customerSummary;
+    private CustomerPriceResult? _customerPriceResult;
+    private bool _showNewCustomer;
+    private Customer _newCustomer = new();
 
     // Custom fields
     private List<CustomFieldDefinition> _customFieldDefs = new();
@@ -514,11 +648,14 @@ else
         {
             _showDlms = Features.IsEnabled("dlms");
             _parts = await PartService.GetAllPartsAsync();
+            _customers = await CustomerPricing.GetAllCustomersAsync();
 
             if (Id > 0)
             {
                 _quote = await QuoteService.GetQuoteByIdAsync(Id) ?? new Quote();
                 _isNew = false;
+                if (_quote.CustomerId.HasValue)
+                    await LoadCustomerContext(_quote.CustomerId.Value);
             }
             else
             {
@@ -571,19 +708,35 @@ else
     {
         _estimateLoading = true;
         _smartPrice = null;
+        _customerPriceResult = null;
         StateHasChanged();
         try
         {
             _lineEstimate = await PricingEngine.GetQuoteLineEstimateAsync(
                 _linePartId, Math.Max(1, _lineQty), _quote.TargetMarginPct);
 
-            // Auto-set price: prefer PartPricing sell price, then target margin price
+            // Determine standard price (PartPricing sell price or target margin price)
+            decimal standardPrice = 0;
             if (_lineEstimate.PartPricingSellPrice.HasValue && _lineEstimate.PartPricingSellPrice > 0)
-                _linePrice = _lineEstimate.PartPricingSellPrice.Value;
+                standardPrice = _lineEstimate.PartPricingSellPrice.Value;
             else if (_lineEstimate.TargetMarginPrice > 0)
-                _linePrice = _lineEstimate.TargetMarginPrice;
+                standardPrice = _lineEstimate.TargetMarginPrice;
+
+            // Resolve customer-specific pricing if a customer is selected
+            if (_quote.CustomerId.HasValue && _quote.CustomerId > 0 && standardPrice > 0)
+            {
+                _customerPriceResult = await CustomerPricing.ResolveCustomerPriceAsync(
+                    _quote.CustomerId.Value, _linePartId, Math.Max(1, _lineQty), standardPrice);
+
+                // Auto-set price: prefer customer-resolved price
+                _linePrice = _customerPriceResult.HasCustomerPricing && _customerPriceResult.DiscountPct > 0
+                    ? _customerPriceResult.ResolvedPrice
+                    : standardPrice;
+            }
             else
-                _linePrice = 0;
+            {
+                _linePrice = standardPrice;
+            }
         }
         catch
         {
@@ -745,6 +898,83 @@ else
             _quote = await QuoteService.GetQuoteByIdAsync(_quote.Id) ?? _quote;
             _showRevisionModal = false;
             Toast.ShowSuccess($"Revision R{_quote.RevisionNumber} saved");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private async Task OnCustomerSelected(ChangeEventArgs e)
+    {
+        var val = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        if (val > 0)
+        {
+            _quote.CustomerId = val;
+            var customer = _customers.FirstOrDefault(c => c.Id == val);
+            if (customer != null)
+            {
+                _quote.CustomerName = customer.Name;
+                _quote.CustomerEmail = customer.Email;
+                _quote.CustomerPhone = customer.Phone;
+                _quote.IsDefenseContract = customer.IsDefenseCustomer;
+                _quote.CustomerDiscountPct = customer.DefaultDiscountPct;
+                if (customer.DefaultMarginPct.HasValue)
+                    _quote.TargetMarginPct = customer.DefaultMarginPct.Value;
+            }
+            await LoadCustomerContext(val);
+        }
+        else
+        {
+            _quote.CustomerId = null;
+            _quote.PricingContractId = null;
+            _quote.CustomerDiscountPct = 0;
+            _customerSummary = null;
+            _activeContracts = new();
+        }
+        _hasChanges = true;
+    }
+
+    private async Task LoadCustomerContext(int customerId)
+    {
+        try
+        {
+            _customerSummary = await CustomerPricing.GetCustomerPricingSummaryAsync(customerId);
+            _activeContracts = await CustomerPricing.GetContractsForCustomerAsync(customerId);
+            _activeContracts = _activeContracts
+                .Where(c => c.Status == ContractStatus.Active && c.EndDate >= DateTime.UtcNow)
+                .ToList();
+        }
+        catch
+        {
+            _customerSummary = null;
+            _activeContracts = new();
+        }
+    }
+
+    private async Task SaveNewCustomer()
+    {
+        if (string.IsNullOrWhiteSpace(_newCustomer.Name))
+        {
+            Toast.ShowError("Customer name is required.");
+            return;
+        }
+        try
+        {
+            var saved = await CustomerPricing.SaveCustomerAsync(_newCustomer);
+            _customers = await CustomerPricing.GetAllCustomersAsync();
+            _quote.CustomerId = saved.Id;
+            _quote.CustomerName = saved.Name;
+            _quote.CustomerEmail = saved.Email;
+            _quote.CustomerPhone = saved.Phone;
+            _quote.CustomerDiscountPct = saved.DefaultDiscountPct;
+            if (saved.DefaultMarginPct.HasValue)
+                _quote.TargetMarginPct = saved.DefaultMarginPct.Value;
+            await LoadCustomerContext(saved.Id);
+            _showNewCustomer = false;
+            _newCustomer = new Customer();
+            _hasChanges = true;
+            Toast.ShowSuccess($"Customer '{saved.Name}' created");
         }
         catch (Exception ex)
         {

@@ -120,6 +120,7 @@ builder.Services.AddScoped<IPartFileService, PartFileService>();
 builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
 builder.Services.AddScoped<ISmartPricingService, SmartPricingService>();
 builder.Services.AddScoped<IQuoteAnalyticsService, QuoteAnalyticsService>();
+builder.Services.AddScoped<ICustomerPricingService, CustomerPricingService>();
 
 // Shop Floor & Scheduling (Stage 4)
 builder.Services.AddScoped<IShiftManagementService, ShiftManagementService>();

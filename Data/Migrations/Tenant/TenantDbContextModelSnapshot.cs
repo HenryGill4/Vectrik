@@ -457,6 +457,128 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.ToTable("CustomFieldConfigs");
                 });
 
+            modelBuilder.Entity("Vectrik.Models.Customer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Company")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("DefaultDiscountPct")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("DefaultMarginPct")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDefenseCustomer")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastModifiedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PaymentTermDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Tier")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasFilter("\"Code\" IS NOT NULL");
+
+                    b.HasIndex("Name");
+
+                    b.ToTable("Customers");
+                });
+
+            modelBuilder.Entity("Vectrik.Models.CustomerPricingRule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("DiscountPct")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("EffectiveDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ExpirationDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MaxQuantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MinQuantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal?>("NegotiatedPricePerUnit")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId", "PartId");
+
+                    b.ToTable("CustomerPricingRules");
+                });
+
             modelBuilder.Entity("Vectrik.Models.DashboardLayout", b =>
                 {
                     b.Property<int>("Id")
@@ -3332,6 +3454,62 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.ToTable("PartStageRequirements");
                 });
 
+            modelBuilder.Entity("Vectrik.Models.PricingContract", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("ActualVolume")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<decimal>("BlanketDiscountPct")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContractNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("EndDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("MinAnnualCommitment")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractNumber")
+                        .IsUnique();
+
+                    b.HasIndex("CustomerId");
+
+                    b.ToTable("PricingContracts");
+                });
+
             modelBuilder.Entity("Vectrik.Models.ProcessStage", b =>
                 {
                     b.Property<int>("Id")
@@ -4029,9 +4207,15 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Property<string>("CustomFieldValues")
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal>("CustomerDiscountPct")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CustomerEmail")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("CustomerName")
                         .IsRequired()
@@ -4083,6 +4267,9 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Property<string>("Notes")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("PricingContractId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("QuoteNumber")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -4109,6 +4296,10 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.HasKey("Id");
 
                     b.HasIndex("ConvertedWorkOrderId2");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("PricingContractId");
 
                     b.HasIndex("QuoteNumber")
                         .IsUnique();
@@ -4161,6 +4352,9 @@ namespace Vectrik.Data.Migrations.Tenant
 
                     b.Property<int?>("StackLevel")
                         .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("StandardPricePerPart")
+                        .HasColumnType("decimal(10,2)");
 
                     b.HasKey("Id");
 
@@ -6594,13 +6788,57 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Navigation("PartInstance");
                 });
 
+            modelBuilder.Entity("Vectrik.Models.CustomerPricingRule", b =>
+                {
+                    b.HasOne("Vectrik.Models.Customer", "Customer")
+                        .WithMany("PricingRules")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Vectrik.Models.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Part");
+                });
+
+            modelBuilder.Entity("Vectrik.Models.PricingContract", b =>
+                {
+                    b.HasOne("Vectrik.Models.Customer", "Customer")
+                        .WithMany("Contracts")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+                });
+
             modelBuilder.Entity("Vectrik.Models.Quote", b =>
                 {
                     b.HasOne("Vectrik.Models.WorkOrder", "ConvertedWorkOrder")
                         .WithMany()
                         .HasForeignKey("ConvertedWorkOrderId2");
 
+                    b.HasOne("Vectrik.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Vectrik.Models.PricingContract", "PricingContract")
+                        .WithMany()
+                        .HasForeignKey("PricingContractId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("ConvertedWorkOrder");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("PricingContract");
                 });
 
             modelBuilder.Entity("Vectrik.Models.QuoteLine", b =>
@@ -7162,6 +7400,13 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Navigation("ChecklistItems");
 
                     b.Navigation("Measurements");
+                });
+
+            modelBuilder.Entity("Vectrik.Models.Customer", b =>
+                {
+                    b.Navigation("Contracts");
+
+                    b.Navigation("PricingRules");
                 });
 
             modelBuilder.Entity("Vectrik.Models.Quote", b =>
