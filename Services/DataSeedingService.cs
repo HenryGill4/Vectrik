@@ -55,6 +55,11 @@ public class DataSeedingService : IDataSeedingService
 
         // Dispatch system demo data (depends on machines + programs)
         await SeedDispatchDemoDataAsync(tenantDb);
+
+        // Demo quotes, quality data, and shipments (depends on parts + WOs + jobs)
+        await SeedDemoQuotesAsync(tenantDb);
+        await SeedDemoQualityDataAsync(tenantDb);
+        await SeedDemoShipmentsAsync(tenantDb);
     }
 
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
@@ -1184,16 +1189,16 @@ public class DataSeedingService : IDataSeedingService
         var settings = new List<SystemSetting>
         {
             // Existing settings
-            new() { Key = "CompanyName", Value = "My Company", Category = "Branding", Description = "Company name displayed in the app", LastModifiedBy = "System" },
+            new() { Key = "CompanyName", Value = "Polite Society Industries", Category = "Branding", Description = "Company name displayed in the app", LastModifiedBy = "System" },
             new() { Key = "SerialNumberPrefix", Value = "SN", Category = "Serial", Description = "Prefix for generated serial numbers", LastModifiedBy = "System" },
             new() { Key = "ShowDebugBuildForm", Value = "true", Category = "Debug", Description = "Show the debug build file form on the Builds page", LastModifiedBy = "System" },
             new() { Key = "DefaultDueDateDays", Value = "30", Category = "General", Description = "Default number of days for work order due dates", LastModifiedBy = "System" },
             new() { Key = "DelayReasonCodes", Value = "Material Shortage,Machine Breakdown,Operator Unavailable,Quality Hold,Tooling Issue,Other", Category = "General", Description = "Comma-separated delay reason codes", LastModifiedBy = "System" },
 
             // Branding (Stage 0.5)
-            new() { Key = "company.name", Value = "", Category = "Branding", Description = "Company name on all documents", LastModifiedBy = "System" },
-            new() { Key = "company.logo_url", Value = "", Category = "Branding", Description = "Logo for reports/packing lists", LastModifiedBy = "System" },
-            new() { Key = "company.address", Value = "", Category = "Branding", Description = "Address for documents", LastModifiedBy = "System" },
+            new() { Key = "company.name", Value = "Polite Society Industries", Category = "Branding", Description = "Company name on all documents", LastModifiedBy = "System" },
+            new() { Key = "company.logo_url", Value = "/uploads/logos/psi-primary.svg", Category = "Branding", Description = "Logo for reports/packing lists", LastModifiedBy = "System" },
+            new() { Key = "company.address", Value = "1847 Freedom Blvd, Suite 200\nAustin, TX 78745", Category = "Branding", Description = "Address for documents", LastModifiedBy = "System" },
 
             // Defense identifiers
             new() { Key = "company.cage_code", Value = "", Category = "Defense", Description = "CAGE code for DLMS transactions", LastModifiedBy = "System" },
@@ -2540,6 +2545,32 @@ public class DataSeedingService : IDataSeedingService
             true, 96, 16.0, 144, 22.0);
 
         // ════════════════════════════════════════════════════════════
+        // PART PRICING — sell prices for profit dashboard
+        // ════════════════════════════════════════════════════════════
+        foreach (var (part, sellPrice, matCost, margin) in new[] {
+            (tinman,   599.00m, 42.00m, 35.0m),
+            (handyman, 599.00m, 38.00m, 35.0m),
+            (gargoyle, 599.00m, 35.00m, 35.0m),
+            (pilate,   299.00m, 22.00m, 40.0m) })
+        {
+            if (!await db.Set<PartPricing>().AnyAsync(pp => pp.PartId == part.Id))
+            {
+                db.Set<PartPricing>().Add(new PartPricing
+                {
+                    PartId = part.Id,
+                    SellPricePerUnit = sellPrice,
+                    MaterialCostPerUnit = matCost,
+                    TargetMarginPct = margin,
+                    MinimumOrderQty = 1,
+                    Currency = "USD",
+                    EffectiveDate = now.AddDays(-90),
+                    CreatedBy = "System", LastModifiedBy = "System"
+                });
+            }
+        }
+        await db.SaveChangesAsync();
+
+        // ════════════════════════════════════════════════════════════
         // MANUFACTURING PROCESSES — one per part, all Suppressor (No HT)
         // SLS → Depowder → Wire EDM → Sandblast → CNC → Engrave → QC → Pack
         // ════════════════════════════════════════════════════════════
@@ -2599,6 +2630,12 @@ public class DataSeedingService : IDataSeedingService
                 OrderDate = now.AddDays(-daysAgo), DueDate = now.AddDays(dueDays),
                 ShipByDate = now.AddDays(dueDays - 2), Status = status, Priority = priority,
                 CreatedBy = "System", LastModifiedBy = "System" };
+            // For completed WOs, set LastModifiedDate to 2 days before DueDate so On-Time Delivery shows correctly
+            if (status == WorkOrderStatus.Complete)
+            {
+                wo.LastModifiedDate = now.AddDays(dueDays - 2);
+                wo.ActualShipDate = now.AddDays(dueDays - 3);
+            }
             db.WorkOrders.Add(wo);
             await db.SaveChangesAsync();
             foreach (var (part, qty) in lines)
@@ -3158,6 +3195,273 @@ public class DataSeedingService : IDataSeedingService
         }
 
         await db.SaveChangesAsync();
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // DEMO QUOTES — pre-populate quotes page for demo
+    // ════════════════════════════════════════════════════════════════════
+    private static async Task SeedDemoQuotesAsync(TenantDbContext db)
+    {
+        if (await db.Quotes.AnyAsync()) return;
+
+        var now = DateTime.UtcNow;
+        var parts = await db.Parts.Where(p => p.IsActive).ToListAsync();
+        var pricing = await db.Set<PartPricing>().ToListAsync();
+
+        var quotes = new[]
+        {
+            new { Num = "QT-00001", Customer = "Silencer Shop", Email = "purchasing@silencershop.com",
+                  Status = QuoteStatus.Accepted, DaysAgo = 65, ExpDays = -35, Margin = 32.0m,
+                  Lines = new[] { ("EMC-TIN-001", 112, 88.00m, 599.00m), ("EMC-PIL-001", 96, 62.00m, 299.00m) },
+                  WoId = (int?)null },
+            new { Num = "QT-00002", Customer = "Capitol Armory", Email = "orders@capitolarmory.com",
+                  Status = QuoteStatus.Accepted, DaysAgo = 55, ExpDays = -25, Margin = 34.0m,
+                  Lines = new[] { ("EMC-HAN-001", 192, 82.00m, 599.00m), ("EMC-GAR-001", 0, 0m, 0m) },
+                  WoId = (int?)null },
+            new { Num = "QT-00003", Customer = "PSA Defense", Email = "procurement@psadefense.com",
+                  Status = QuoteStatus.Sent, DaysAgo = 8, ExpDays = 22, Margin = 30.0m,
+                  Lines = new[] { ("EMC-TIN-001", 336, 88.00m, 579.00m), ("EMC-GAR-001", 144, 78.00m, 569.00m) },
+                  WoId = (int?)null },
+            new { Num = "QT-00004", Customer = "Apex Industries", Email = "buying@apexindustries.com",
+                  Status = QuoteStatus.Draft, DaysAgo = 2, ExpDays = 28, Margin = 28.0m,
+                  Lines = new[] { ("EMC-HAN-001", 256, 82.00m, 589.00m), ("EMC-PIL-001", 192, 62.00m, 289.00m) },
+                  WoId = (int?)null },
+        };
+
+        foreach (var q in quotes)
+        {
+            var quote = new Quote
+            {
+                QuoteNumber = q.Num,
+                CustomerName = q.Customer,
+                CustomerEmail = q.Email,
+                Status = q.Status,
+                CreatedDate = now.AddDays(-q.DaysAgo),
+                ExpirationDate = now.AddDays(q.ExpDays),
+                TargetMarginPct = q.Margin,
+                RevisionNumber = 1,
+                CreatedBy = "Henry Gill",
+                LastModifiedBy = "Henry Gill"
+            };
+
+            // Calculate totals from lines
+            decimal totalCost = 0, totalPrice = 0;
+            foreach (var line in q.Lines)
+            {
+                if (line.Item2 == 0) continue;
+                totalCost += line.Item3 * line.Item2;
+                totalPrice += line.Item4 * line.Item2;
+            }
+            quote.TotalEstimatedCost = totalCost;
+            quote.QuotedPrice = totalPrice;
+            quote.Markup = totalPrice > 0 ? ((totalPrice - totalCost) / totalCost * 100) : 0;
+            quote.EstimatedLaborCost = totalCost * 0.60m;
+            quote.EstimatedMaterialCost = totalCost * 0.30m;
+            quote.EstimatedOverheadCost = totalCost * 0.10m;
+
+            if (q.Status == QuoteStatus.Sent)
+                quote.SentAt = now.AddDays(-q.DaysAgo + 1);
+            if (q.Status == QuoteStatus.Accepted)
+            {
+                quote.SentAt = now.AddDays(-q.DaysAgo + 1);
+                quote.AcceptedAt = now.AddDays(-q.DaysAgo + 3);
+            }
+
+            db.Quotes.Add(quote);
+            await db.SaveChangesAsync();
+
+            // Add quote lines
+            foreach (var (pn, qty, costEach, priceEach) in q.Lines)
+            {
+                if (qty == 0) continue;
+                var part = parts.FirstOrDefault(p => p.PartNumber == pn);
+                if (part == null) continue;
+                db.Set<QuoteLine>().Add(new QuoteLine
+                {
+                    QuoteId = quote.Id,
+                    PartId = part.Id,
+                    Quantity = qty,
+                    EstimatedCostPerPart = costEach,
+                    QuotedPricePerPart = priceEach,
+                    MaterialCostEach = costEach * 0.30m,
+                    LaborMinutes = (int)(costEach * 0.8m),
+                    SetupMinutes = 30
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // DEMO QUALITY DATA — QC inspections, NCR, SPC data points
+    // ════════════════════════════════════════════════════════════════════
+    private static async Task SeedDemoQualityDataAsync(TenantDbContext db)
+    {
+        if (await db.QCInspections.AnyAsync()) return;
+
+        var now = DateTime.UtcNow;
+        var completedJobs = await db.Jobs
+            .Where(j => j.Status == JobStatus.Completed)
+            .Include(j => j.Part)
+            .OrderByDescending(j => j.ActualEnd)
+            .Take(8)
+            .ToListAsync();
+
+        var inspector = await db.Users.FirstOrDefaultAsync(u => u.Username == "qcinspector");
+        var inspectorId = inspector?.Id ?? (await db.Users.FirstAsync(u => u.Username == "admin")).Id;
+
+        var parts = await db.Parts.Where(p => p.IsActive).ToListAsync();
+        int inspNum = 1;
+
+        // Create QC inspections for completed jobs
+        foreach (var job in completedJobs)
+        {
+            var isPassing = inspNum != 5; // Make inspection #5 a fail to show NCR
+            var inspection = new QCInspection
+            {
+                JobId = job.Id,
+                PartId = job.PartId,
+                InspectorUserId = inspectorId,
+                IsFair = inspNum <= 2,
+                OverallResult = isPassing ? InspectionResult.Pass : InspectionResult.Fail,
+                OverallPass = isPassing,
+                InspectionDate = (job.ActualEnd ?? now).AddHours(2),
+                Notes = isPassing
+                    ? $"All dimensions within tolerance. {job.ProducedQuantity} parts inspected per AQL Level II."
+                    : "Thread dimensions out of tolerance on 3 parts. See NCR-00001.",
+                FailureReason = isPassing ? null : "Thread OD undersized by 0.003\" on 3 of 72 parts"
+            };
+            db.QCInspections.Add(inspection);
+            await db.SaveChangesAsync();
+
+            // Add checklist items for each inspection
+            var checks = new[] {
+                ("Visual Inspection", "Surface finish, no cracks or defects", true, (string?)null, (string?)null, (string?)null),
+                ("Thread Gauge Check", "1/2x28 thread per MIL-S-7742", isPassing, isPassing ? "0.4995\"" : "0.4972\"", "0.500\"", "±0.002\""),
+                ("OD Dimension", "Outer diameter per drawing", true, "1.750\"", "1.750\"", "±0.005\""),
+                ("Length Check", "Overall length per drawing", true, isPassing ? "7.245\"" : "7.248\"", "7.250\"", "±0.010\""),
+                ("Bore Alignment", "Internal bore concentricity", true, "0.001\"", "0.000\"", "±0.003\""),
+                ("Weight Check", "Part weight within spec", true, "10.2 oz", "10.1 oz", "±0.5 oz"),
+            };
+            foreach (var (name, desc, passed, measured, expected, tolerance) in checks)
+            {
+                db.Set<QCChecklistItem>().Add(new QCChecklistItem
+                {
+                    QCInspectionId = inspection.Id,
+                    ItemName = name,
+                    Description = desc,
+                    Passed = passed,
+                    MeasuredValue = measured,
+                    ExpectedValue = expected,
+                    Tolerance = tolerance
+                });
+            }
+            await db.SaveChangesAsync();
+
+            // Create NCR for the failed inspection
+            if (!isPassing)
+            {
+                var ncr = new NonConformanceReport
+                {
+                    NcrNumber = "NCR-00001",
+                    JobId = job.Id,
+                    PartId = job.PartId,
+                    Type = NcrType.InProcess,
+                    Description = "Thread OD undersized by 0.003\" on 3 of 72 parts from build B7. Root cause: tool wear on Thread Mill #2 (CNC1). Tool replaced, remaining parts re-machined and passed inspection.",
+                    QuantityAffected = "3",
+                    Severity = NcrSeverity.Minor,
+                    Disposition = NcrDisposition.Rework,
+                    Status = NcrStatus.Closed,
+                    ReportedByUserId = inspectorId.ToString(),
+                    ReportedAt = inspection.InspectionDate,
+                    ClosedAt = inspection.InspectionDate.AddDays(1)
+                };
+                db.NonConformanceReports.Add(ncr);
+                await db.SaveChangesAsync();
+            }
+
+            inspNum++;
+        }
+
+        // Add SPC data points for dimensional tracking
+        foreach (var part in parts)
+        {
+            var characteristics = new[] {
+                ("Thread OD", 0.500m, 0.002m, -0.002m),
+                ("Outer Diameter", 1.750m, 0.005m, -0.005m),
+                ("Overall Length", 7.250m, 0.010m, -0.010m),
+                ("Bore Concentricity", 0.000m, 0.003m, -0.003m),
+            };
+
+            foreach (var (name, nominal, tolPlus, tolMinus) in characteristics)
+            {
+                var rng = new Random(part.Id * 100 + name.GetHashCode());
+                for (int i = 0; i < 25; i++)
+                {
+                    var variation = (decimal)(rng.NextDouble() * 0.004 - 0.002);
+                    db.SpcDataPoints.Add(new SpcDataPoint
+                    {
+                        PartId = part.Id,
+                        CharacteristicName = name,
+                        MeasuredValue = nominal + variation,
+                        NominalValue = nominal,
+                        TolerancePlus = tolPlus,
+                        ToleranceMinus = tolMinus,
+                        RecordedAt = now.AddDays(-25 + i)
+                    });
+                }
+            }
+        }
+        await db.SaveChangesAsync();
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // DEMO SHIPMENTS — for completed work orders
+    // ════════════════════════════════════════════════════════════════════
+    private static async Task SeedDemoShipmentsAsync(TenantDbContext db)
+    {
+        if (await db.Shipments.AnyAsync()) return;
+
+        var now = DateTime.UtcNow;
+        var completedWOs = await db.WorkOrders
+            .Where(w => w.Status == WorkOrderStatus.Complete)
+            .Include(w => w.Lines)
+            .OrderBy(w => w.OrderNumber)
+            .ToListAsync();
+
+        int shipNum = 1;
+        foreach (var wo in completedWOs)
+        {
+            var shipment = new Shipment
+            {
+                ShipmentNumber = $"SHP-{shipNum++:D5}",
+                WorkOrderId = wo.Id,
+                Status = ShipmentStatus.Delivered,
+                CarrierName = shipNum % 2 == 0 ? "FedEx" : "UPS",
+                TrackingNumber = $"1Z{shipNum:D3}AA{Random.Shared.Next(100000, 999999)}",
+                PackageCount = Math.Max(1, wo.Lines.Sum(l => l.Quantity) / 50),
+                ShippedAt = wo.ActualShipDate ?? wo.DueDate.AddDays(-2),
+                ShippedBy = "Jake Marshall",
+                ShipperNotes = "Packaged per MIL-STD-2073. Certificate of Conformance included."
+            };
+            db.Shipments.Add(shipment);
+            await db.SaveChangesAsync();
+
+            // Add shipment lines for each WO line
+            foreach (var line in wo.Lines)
+            {
+                db.ShipmentLines.Add(new ShipmentLine
+                {
+                    ShipmentId = shipment.Id,
+                    WorkOrderLineId = line.Id,
+                    QuantityShipped = line.Quantity
+                });
+                // Also update the shipped quantity on the WO line
+                line.ShippedQuantity = line.Quantity;
+                line.ProducedQuantity = line.Quantity;
+            }
+            await db.SaveChangesAsync();
+        }
     }
 
     }
