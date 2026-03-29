@@ -115,6 +115,19 @@ public enum BuildTemplateStatus
     Archived
 }
 
+public enum LayoutSize
+{
+    Quadrant,
+    Half
+}
+
+public enum CertifiedLayoutStatus
+{
+    Draft,
+    Certified,
+    Archived
+}
+
 // Quality Systems (Module 05)
 public enum InspectionResult
 {

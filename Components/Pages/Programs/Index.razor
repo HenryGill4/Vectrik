@@ -12,6 +12,7 @@
 @inject IJSRuntime JS
 @inject ITenantFeatureService Features
 @inject IWorkInstructionService WorkInstructionService
+@inject ICertifiedLayoutService CertifiedLayoutService
 @using System.Security.Claims
 @using System.Text.Json
 @using Microsoft.AspNetCore.Components.Authorization
@@ -68,6 +69,9 @@
                  EdmCandidates="_edmCandidates"
                  SelectedMachineIds="_editSelectedMachineIds"
                  PartsList="_createBuildPlateParts"
+                 CertifiedLayouts="_certifiedLayouts"
+                 PlateAssignments="_plateAssignments"
+                 OnPlateAssignmentsChanged="HandlePlateAssignmentsChanged"
                  EditMaterialId="@_editMaterialId"
                  EditWorkInstructionId="@_editWorkInstructionId"
                  EditDepowderProgramId="@_editDepowderProgramId"
@@ -302,6 +306,10 @@ else
     private List<Part>? _additiveParts;
     private bool _buildProcessing;
 
+    // Certified Layout State
+    private List<CertifiedLayout> _certifiedLayouts = [];
+    private List<PlateSlotAssignment> _plateAssignments = [];
+
     // Slicer data modal
     private bool _showBuildSlicerEntry;
     private MachineProgram? _slicerBuildPlate;
@@ -333,6 +341,7 @@ else
 
         var allParts = _parts ?? await PartService.GetAllPartsAsync(activeOnly: true);
         _additiveParts = allParts.ToList();
+        _certifiedLayouts = await CertifiedLayoutService.GetCertifiedAsync();
 
         if (_programs.Count > 0)
         {
@@ -459,6 +468,21 @@ else
     {
         _showEditor = false;
         _createBuildPlateParts.Clear();
+    }
+
+    private void HandlePlateAssignmentsChanged(List<PlateSlotAssignment> assignments)
+    {
+        _plateAssignments = assignments;
+
+        // Sync certified layout assignments to legacy PartsList for save
+        _createBuildPlateParts.Clear();
+        foreach (var a in assignments)
+        {
+            var cl = _certifiedLayouts.FirstOrDefault(l => l.Id == a.CertifiedLayoutId);
+            if (cl == null) continue;
+            _createBuildPlateParts.Add(new CreateBuildPartEntry(
+                cl.PartId, cl.Part?.PartNumber ?? $"#{cl.PartId}", cl.Part?.Name ?? "", cl.Positions));
+        }
     }
 
     private void HandleFormMachineTypeChanged(string machineType)

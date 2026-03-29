@@ -63,4 +63,19 @@ public interface IBuildTemplateService
     /// sorted by match percentage (most relevant first).
     /// </summary>
     Task<List<BuildTemplate>> GetTemplatesWithDemandMatchAsync(List<int> demandPartIds);
+
+    /// <summary>
+    /// Creates a template from certified layout plate assignments.
+    /// Stores PlateCompositionJson and derives Parts collection from the layouts.
+    /// </summary>
+    Task<BuildTemplate> CreateFromLayoutsAsync(
+        string name, List<PlateSlotAssignment> assignments,
+        double estimatedDurationHours, string createdBy);
+
+    /// <summary>
+    /// Instantiate a template that uses certified layouts, carrying CertifiedLayoutId
+    /// and PlateSlots to the created ProgramParts.
+    /// </summary>
+    Task<MachineProgram> InstantiateWithLayoutsAsync(
+        int templateId, int machineId, string createdBy, int? workOrderLineId = null);
 }

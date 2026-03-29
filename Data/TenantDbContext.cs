@@ -120,6 +120,10 @@ public class TenantDbContext : DbContext
     public DbSet<BuildTemplatePart> BuildTemplateParts { get; set; }
     public DbSet<BuildTemplateRevision> BuildTemplateRevisions { get; set; }
 
+    // Certified Layouts (Quadrant & Half plate compositions)
+    public DbSet<CertifiedLayout> CertifiedLayouts { get; set; }
+    public DbSet<CertifiedLayoutRevision> CertifiedLayoutRevisions { get; set; }
+
     // Dev Issue Tracking
     public DbSet<DevIssue> DevIssues { get; set; }
 
@@ -729,6 +733,39 @@ public class TenantDbContext : DbContext
                 .HasForeignKey(e => e.PartId);
 
             entity.HasIndex(e => new { e.BuildTemplateId, e.PartId });
+        });
+
+        // ── Certified Layouts ────────────────────────────────────
+
+        modelBuilder.Entity<CertifiedLayout>(entity =>
+        {
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId);
+
+            entity.HasOne(e => e.Material)
+                .WithMany()
+                .HasForeignKey(e => e.MaterialId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.PartId);
+        });
+
+        modelBuilder.Entity<CertifiedLayoutRevision>(entity =>
+        {
+            entity.HasOne(e => e.CertifiedLayout)
+                .WithMany(e => e.Revisions)
+                .HasForeignKey(e => e.CertifiedLayoutId);
+        });
+
+        // ProgramPart → CertifiedLayout (optional FK)
+        modelBuilder.Entity<ProgramPart>(entity =>
+        {
+            entity.HasOne(e => e.CertifiedLayout)
+                .WithMany()
+                .HasForeignKey(e => e.CertifiedLayoutId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Manufacturing Process Redesign ───────────────────────

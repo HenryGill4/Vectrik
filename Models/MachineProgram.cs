@@ -227,6 +227,12 @@ public class MachineProgram
     /// </summary>
     public int? SourceTemplateId { get; set; }
 
+    /// <summary>
+    /// True when this build plate was composed from certified quadrant/half layouts.
+    /// When true, all ProgramParts must have a valid CertifiedLayoutId for scheduling.
+    /// </summary>
+    public bool UsesCertifiedLayouts { get; set; }
+
     // ── Navigation ───────────────────────────────────────────
     public virtual Part? Part { get; set; }
     public virtual Machine? Machine { get; set; }

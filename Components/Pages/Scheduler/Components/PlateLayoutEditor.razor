@@ -1,0 +1,262 @@
+@* PlateLayoutEditor.razor — WYSIWYG certified layout plate composition editor.
+   Displays a 2×2 grid representing the 450×450mm build plate.
+   Users click empty slots to place certified Quadrant or Half layouts.
+   Half layouts visually span 2 adjacent cells. *@
+@using Vectrik.Models
+@using Vectrik.Models.Enums
+@using Vectrik.Services
+
+<div class="ple-grid" style="@GridStyle">
+    @{
+        // Build slot occupancy map
+        var slotOccupancy = BuildSlotOccupancy();
+        var renderedSlots = new HashSet<int>(); // Track which slots already rendered by a half-span
+    }
+
+    @for (int slot = 0; slot < 4; slot++)
+    {
+        var s = slot; // capture for lambdas
+
+        if (renderedSlots.Contains(s)) continue;
+
+        if (slotOccupancy.TryGetValue(s, out var assignment))
+        {
+            var cl = AvailableLayouts.FirstOrDefault(l => l.Id == assignment.CertifiedLayoutId);
+            if (cl == null) continue;
+
+            var hue = (cl.PartId * 137) % 360;
+            var halfClass = GetHalfCssClass(assignment.Slots);
+            var isHalf = cl.Size == LayoutSize.Half;
+
+            if (isHalf)
+            {
+                foreach (var occupied in assignment.Slots) renderedSlots.Add(occupied);
+            }
+
+            <div class="ple-slot ple-slot--occupied @halfClass"
+                 style="background: hsla(@hue, 55%, 50%, 0.08); border-color: hsla(@hue, 55%, 50%, 0.4);">
+                @if (!ReadOnly)
+                {
+                    <button class="ple-slot-remove" @onclick="() => RemoveAssignment(s)" title="Remove">&#x2715;</button>
+                }
+                <span class="ple-slot-badge badge @(cl.IsCertified ? "badge-success" : cl.NeedsRecertification ? "badge-warning" : "badge-secondary")" style="font-size: 0.6rem;">
+                    @(cl.IsCertified ? "Certified" : cl.NeedsRecertification ? "Recert" : "Draft")
+                </span>
+                <div class="ple-slot-part" style="color: hsla(@hue, 55%, 40%, 1);">@(cl.Part?.PartNumber ?? cl.Name)</div>
+                <div class="ple-slot-info">
+                    @cl.Positions pos × @(cl.StackLevel)x = @cl.TotalParts parts
+                </div>
+                @if (isHalf)
+                {
+                    <div class="ple-slot-info">
+                        <span class="badge badge-info" style="font-size: 0.6rem;">Half</span>
+                    </div>
+                }
+            </div>
+        }
+        else if (!ReadOnly)
+        {
+            @* Empty slot — show add button or picker *@
+            @if (_pickerOpenSlot == s)
+            {
+                <div class="ple-slot" style="padding: 0; overflow: hidden;">
+                    <div class="ple-picker">
+                        <div class="ple-picker-close">
+                            <button class="btn btn-sm btn-ghost" @onclick="() => _pickerOpenSlot = -1" style="font-size: 0.72rem;">Close</button>
+                        </div>
+
+                        @* ── Quadrant layouts ── *@
+                        @{
+                            var quadLayouts = AvailableLayouts.Where(l => l.Size == LayoutSize.Quadrant && l.IsCertified).ToList();
+                        }
+                        @if (quadLayouts.Any())
+                        {
+                            <div class="ple-picker-group">Quadrants</div>
+                            @foreach (var ql in quadLayouts)
+                            {
+                                var qLayout = ql;
+                                <div class="ple-picker-item" @onclick="() => SelectLayout(s, qLayout, new[] { s })">
+                                    <span class="ple-picker-item-name">@(qLayout.Part?.PartNumber ?? qLayout.Name)</span>
+                                    <span class="ple-picker-item-meta">@qLayout.Positions×@(qLayout.StackLevel)x = @qLayout.TotalParts</span>
+                                </div>
+                            }
+                        }
+
+                        @* ── Half layouts (only if adjacent slot is free) ── *@
+                        @{
+                            var halfLayouts = AvailableLayouts.Where(l => l.Size == LayoutSize.Half && l.IsCertified).ToList();
+                            var halfPairs = GetAvailableHalfPairs(s, slotOccupancy);
+                        }
+                        @if (halfLayouts.Any() && halfPairs.Any())
+                        {
+                            <div class="ple-picker-group">Halves</div>
+                            @foreach (var hl in halfLayouts)
+                            {
+                                var hLayout = hl;
+                                @foreach (var pair in halfPairs)
+                                {
+                                    var pairSlots = pair;
+                                    var pairLabel = GetHalfPairLabel(pairSlots);
+                                    <div class="ple-picker-item" @onclick="() => SelectLayout(s, hLayout, pairSlots)">
+                                        <span class="ple-picker-item-name">@(hLayout.Part?.PartNumber ?? hLayout.Name)</span>
+                                        <span class="ple-picker-item-meta">@hLayout.TotalParts parts — @pairLabel</span>
+                                    </div>
+                                }
+                            }
+                        }
+
+                        @if (!quadLayouts.Any() && (!halfLayouts.Any() || !halfPairs.Any()))
+                        {
+                            <div style="padding: 12px; font-size: 0.78rem; color: var(--text-muted); text-align: center;">
+                                No certified layouts available
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="ple-slot" @onclick="() => OpenPicker(s)">
+                    <div class="ple-slot-add">+</div>
+                    <div class="ple-slot-add-label">Slot @(s + 1)</div>
+                </div>
+            }
+        }
+        else
+        {
+            @* Empty slot in read-only mode *@
+            <div class="ple-slot" style="opacity: 0.4;">
+                <div class="ple-slot-add-label">Empty</div>
+            </div>
+        }
+    }
+</div>
+
+@* ── Summary below grid ── *@
+@if (Assignments.Any())
+{
+    <div class="ple-summary">
+        @{
+            var totalParts = 0;
+            var slotsUsed = 0;
+        }
+        @foreach (var a in Assignments)
+        {
+            var cl = AvailableLayouts.FirstOrDefault(l => l.Id == a.CertifiedLayoutId);
+            if (cl == null) continue;
+            totalParts += cl.TotalParts;
+            slotsUsed += a.Slots.Length;
+            var hue = (cl.PartId * 137) % 360;
+            var slotLabels = string.Join(", ", a.Slots.Select(sl => $"S{sl + 1}"));
+
+            <div class="ple-summary-row">
+                <span style="width: 10px; height: 10px; border-radius: 2px; background: hsla(@hue, 55%, 50%, 0.6); flex-shrink: 0;"></span>
+                <span style="font-weight: 600; min-width: 80px;">@(cl.Part?.PartNumber ?? "?")</span>
+                <span>@cl.TotalParts parts</span>
+                <span style="color: var(--text-muted);">@cl.Positions pos × @(cl.StackLevel)x</span>
+                <span class="badge @(cl.Size == LayoutSize.Half ? "badge-info" : "badge-secondary")" style="font-size: 0.6rem;">@cl.Size</span>
+                <span style="color: var(--text-muted); font-size: 0.72rem;">@slotLabels</span>
+            </div>
+        }
+        <div style="margin-top: 4px; padding: 4px 8px; font-weight: 600; font-size: 0.82rem;">
+            Total: @totalParts parts across @slotsUsed / 4 slots
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public List<CertifiedLayout> AvailableLayouts { get; set; } = [];
+    [Parameter] public List<PlateSlotAssignment> Assignments { get; set; } = [];
+    [Parameter] public EventCallback<List<PlateSlotAssignment>> OnAssignmentsChanged { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+
+    private int _pickerOpenSlot = -1;
+
+    // Valid adjacent pairs for half layouts
+    private static readonly int[][] AdjacentPairs = [[0, 1], [2, 3], [0, 2], [1, 3]];
+
+    private string GridStyle
+    {
+        get
+        {
+            // Check if any half layout spans a full row or column and adjust grid
+            var occupancy = BuildSlotOccupancy();
+            foreach (var a in Assignments)
+            {
+                var cl = AvailableLayouts.FirstOrDefault(l => l.Id == a.CertifiedLayoutId);
+                if (cl?.Size == LayoutSize.Half)
+                {
+                    var sorted = a.Slots.OrderBy(s => s).ToArray();
+                    // Vertical halves (left/right column) need columns adjusted
+                    if (sorted.SequenceEqual([0, 2]) || sorted.SequenceEqual([1, 3]))
+                        return ""; // Default grid works
+                }
+            }
+            return "";
+        }
+    }
+
+    private Dictionary<int, PlateSlotAssignment> BuildSlotOccupancy()
+    {
+        var map = new Dictionary<int, PlateSlotAssignment>();
+        foreach (var a in Assignments)
+        {
+            foreach (var slot in a.Slots)
+                map[slot] = a;
+        }
+        return map;
+    }
+
+    private bool IsSlotFree(int slot) => !Assignments.Any(a => a.Slots.Contains(slot));
+
+    private List<int[]> GetAvailableHalfPairs(int slot, Dictionary<int, PlateSlotAssignment> occupancy)
+    {
+        return AdjacentPairs
+            .Where(p => p.Contains(slot) && p.All(s => !occupancy.ContainsKey(s)))
+            .ToList();
+    }
+
+    private string GetHalfCssClass(int[] slots)
+    {
+        var sorted = slots.OrderBy(s => s).ToArray();
+        if (sorted.SequenceEqual([0, 1])) return "ple-slot--half-top";
+        if (sorted.SequenceEqual([2, 3])) return "ple-slot--half-bottom";
+        if (sorted.SequenceEqual([0, 2])) return "ple-slot--half-left";
+        if (sorted.SequenceEqual([1, 3])) return "ple-slot--half-right";
+        return "";
+    }
+
+    private string GetHalfPairLabel(int[] slots)
+    {
+        var sorted = slots.OrderBy(s => s).ToArray();
+        if (sorted.SequenceEqual([0, 1])) return "Top row";
+        if (sorted.SequenceEqual([2, 3])) return "Bottom row";
+        if (sorted.SequenceEqual([0, 2])) return "Left column";
+        if (sorted.SequenceEqual([1, 3])) return "Right column";
+        return "Slots " + string.Join(",", slots.Select(s => s + 1));
+    }
+
+    private void OpenPicker(int slot)
+    {
+        _pickerOpenSlot = slot;
+    }
+
+    private async Task SelectLayout(int triggerSlot, CertifiedLayout certLayout, int[] slots)
+    {
+        _pickerOpenSlot = -1;
+
+        var newAssignment = new PlateSlotAssignment(certLayout.Id, slots);
+        var updated = new List<PlateSlotAssignment>(Assignments) { newAssignment };
+
+        await OnAssignmentsChanged.InvokeAsync(updated);
+    }
+
+    private async Task RemoveAssignment(int slot)
+    {
+        var updated = Assignments
+            .Where(a => !a.Slots.Contains(slot))
+            .ToList();
+
+        await OnAssignmentsChanged.InvokeAsync(updated);
+    }
+}

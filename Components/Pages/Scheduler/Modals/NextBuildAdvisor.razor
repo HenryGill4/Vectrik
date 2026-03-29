@@ -14,6 +14,7 @@
 @inject IMachineProgramService ProgramService
 @inject IStageCostService StageCostService
 @inject IStageService StageService
+@inject ICertifiedLayoutService CertifiedLayoutService
 @inject ToastService Toast
 
 @if (IsVisible)
@@ -420,6 +421,11 @@
                         <PlateComposer Allocations="_plateAllocations"
                                        Demand="_demand"
                                        EstimatedDurationHours="@EstimatedPrintHours"
+                                       UseCertifiedLayouts="_useCertifiedLayouts"
+                                       CertifiedLayouts="_certifiedLayouts"
+                                       PlateAssignments="_plateLayoutAssignments"
+                                       OnPlateAssignmentsChanged="OnPlateLayoutAssignmentsChanged"
+                                       OnModeChanged="OnComposerModeChanged"
                                        OnStackLevelChanged="args => OnStackLevelChanged(args.Index, args.NewLevel)"
                                        OnPositionsChanged="args => OnPositionsChanged(args.Index, args.NewPositions)"
                                        OnRemovePart="RemoveFromPlate"
@@ -711,6 +717,11 @@
     private bool _plateEdited;
     private List<string> _activeWarnings = [];
 
+    // Certified layout mode
+    private bool _useCertifiedLayouts = true;
+    private List<CertifiedLayout> _certifiedLayouts = [];
+    private List<PlateSlotAssignment> _plateLayoutAssignments = [];
+
     // Program details (Step 1 — new programs only)
     private string _programName = "";
     private double? _slicerPrintHours;
@@ -955,6 +966,10 @@
         try
         {
             _demand = await Advisor.GetAggregateDemandAsync();
+
+            // Load certified layouts for plate composition
+            _certifiedLayouts = await CertifiedLayoutService.GetCertifiedAsync();
+            _plateLayoutAssignments = [];
 
             // Load build queue for selected machine
             var timeline = await ProgramScheduling.GetMachineTimelineAsync(
@@ -1208,6 +1223,49 @@
         if (_selectedOption != null) ApplySelectedOptionToPlate();
     }
 
+    // ── Certified Layout Mode Handlers ──
+
+    private void OnComposerModeChanged(bool certified)
+    {
+        _useCertifiedLayouts = certified;
+        if (certified)
+        {
+            // Switching to certified mode — clear free-form allocations
+            // User will place certified layouts via the WYSIWYG editor
+        }
+    }
+
+    private void OnPlateLayoutAssignmentsChanged(List<PlateSlotAssignment> assignments)
+    {
+        _plateLayoutAssignments = assignments;
+        _plateEdited = true;
+
+        // Sync certified layout assignments to the legacy _plateAllocations
+        // so the rest of the wizard flow (timing, scheduling) still works
+        _plateAllocations.Clear();
+        foreach (var a in assignments)
+        {
+            var cl = _certifiedLayouts.FirstOrDefault(l => l.Id == a.CertifiedLayoutId);
+            if (cl == null) continue;
+
+            var demandMatch = _demand.FirstOrDefault(d => d.PartId == cl.PartId);
+            _plateAllocations.Add(new EditablePlateAllocation
+            {
+                PartId = cl.PartId,
+                PartNumber = cl.Part?.PartNumber ?? $"#{cl.PartId}",
+                Positions = cl.Positions,
+                StackLevel = cl.StackLevel,
+                DemandRemaining = demandMatch?.NetRemaining ?? 0,
+                SourceLines = demandMatch?.SourceLines ?? [],
+                WoDueDate = demandMatch?.EarliestDueDate,
+                WorkOrderLineId = demandMatch?.SourceLines?.FirstOrDefault()?.WorkOrderLineId
+            });
+        }
+
+        RecalculateWarnings();
+        StateHasChanged();
+    }
+
     private void OnStackLevelChanged(int index, int newLevel)
     {
         if (index < 0 || index >= _plateAllocations.Count) return;
@@ -1393,24 +1451,65 @@
     {
         if (_createdProgramId.HasValue) return; // already created
 
-        var newProgram = new MachineProgram
+        List<ProgramPart> programParts;
+
+        if (_useCertifiedLayouts && _plateLayoutAssignments.Any())
         {
-            Name = _programName,
-            ProgramType = ProgramType.BuildPlate,
-            MachineId = _selectedMachineId,
-            CreatedBy = UserName,
-            LastModifiedBy = UserName,
-            ProgramParts = _plateAllocations.Select(a => new ProgramPart
+            // Build ProgramParts from certified layout assignments
+            programParts = _plateLayoutAssignments.Select(a =>
+            {
+                var cl = _certifiedLayouts.FirstOrDefault(l => l.Id == a.CertifiedLayoutId);
+                var demandMatch = _demand.FirstOrDefault(d => d.PartId == cl?.PartId);
+                return new ProgramPart
+                {
+                    PartId = cl?.PartId ?? 0,
+                    Quantity = cl?.Positions ?? 0,
+                    StackLevel = cl?.StackLevel ?? 1,
+                    CertifiedLayoutId = a.CertifiedLayoutId,
+                    PlateSlots = string.Join(",", a.Slots),
+                    WorkOrderLineId = demandMatch?.SourceLines?.FirstOrDefault()?.WorkOrderLineId
+                };
+            }).Where(pp => pp.PartId > 0).ToList();
+        }
+        else
+        {
+            // Free-form mode — existing behavior
+            programParts = _plateAllocations.Select(a => new ProgramPart
             {
                 PartId = a.PartId,
                 Quantity = a.Positions,
                 StackLevel = a.StackLevel,
                 WorkOrderLineId = a.WorkOrderLineId
-            }).ToList()
+            }).ToList();
+        }
+
+        var newProgram = new MachineProgram
+        {
+            Name = _programName,
+            ProgramType = ProgramType.BuildPlate,
+            MachineId = _selectedMachineId,
+            UsesCertifiedLayouts = _useCertifiedLayouts && _plateLayoutAssignments.Any(),
+            CreatedBy = UserName,
+            LastModifiedBy = UserName,
+            ProgramParts = programParts
         };
 
         var program = await ProgramPlanning.CreateBuildPlateAsync(newProgram, UserName);
         _createdProgramId = program.Id;
+
+        // Increment use counts on certified layouts
+        if (_useCertifiedLayouts)
+        {
+            foreach (var a in _plateLayoutAssignments)
+            {
+                var cl = _certifiedLayouts.FirstOrDefault(l => l.Id == a.CertifiedLayoutId);
+                if (cl != null)
+                {
+                    cl.UseCount++;
+                    cl.LastUsedDate = DateTime.UtcNow;
+                }
+            }
+        }
     }
 
     private async Task HandleSliceFileUpload(InputFileChangeEventArgs e)

@@ -80,6 +80,13 @@ public class BuildTemplate
     [MaxLength(100)]
     public string LastModifiedBy { get; set; } = string.Empty;
 
+    /// <summary>
+    /// JSON describing certified layout plate composition:
+    /// [{"layoutId": 5, "slots": [0,2]}, {"layoutId": 8, "slots": [1]}, {"layoutId": 3, "slots": [3]}]
+    /// Null for legacy templates not using certified layouts.
+    /// </summary>
+    public string? PlateCompositionJson { get; set; }
+
     // Navigation
     public virtual ICollection<BuildTemplatePart> Parts { get; set; } = new List<BuildTemplatePart>();
     public virtual ICollection<BuildTemplateRevision> Revisions { get; set; } = new List<BuildTemplateRevision>();

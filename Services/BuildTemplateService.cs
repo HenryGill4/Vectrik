@@ -414,4 +414,157 @@ public class BuildTemplateService : IBuildTemplateService
             .ThenByDescending(t => t.UseCount)
             .ToList();
     }
+
+    // ── Certified Layout Composition ────────────────────────
+
+    public async Task<BuildTemplate> CreateFromLayoutsAsync(
+        string name, List<PlateSlotAssignment> assignments,
+        double estimatedDurationHours, string createdBy)
+    {
+        if (!assignments.Any())
+            throw new ArgumentException("At least one layout assignment is required.", nameof(assignments));
+
+        // Serialize the plate composition
+        var compositionJson = System.Text.Json.JsonSerializer.Serialize(
+            assignments.Select(a => new { layoutId = a.CertifiedLayoutId, slots = a.Slots }));
+
+        // Load the referenced certified layouts to derive Parts
+        var layoutIds = assignments.Select(a => a.CertifiedLayoutId).Distinct().ToList();
+        var layouts = await _db.CertifiedLayouts
+            .Include(l => l.Part)
+            .Where(l => layoutIds.Contains(l.Id))
+            .ToListAsync();
+
+        var template = new BuildTemplate
+        {
+            Name = name,
+            EstimatedDurationHours = estimatedDurationHours,
+            PlateCompositionJson = compositionJson,
+            MaterialId = layouts.FirstOrDefault(l => l.MaterialId.HasValue)?.MaterialId,
+            StackLevel = layouts.Max(l => l.StackLevel),
+            CreatedBy = createdBy,
+            LastModifiedBy = createdBy,
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+
+        _db.BuildTemplates.Add(template);
+        await _db.SaveChangesAsync();
+
+        // Derive Parts collection from layouts
+        foreach (var a in assignments)
+        {
+            var cl = layouts.FirstOrDefault(l => l.Id == a.CertifiedLayoutId);
+            if (cl == null) continue;
+
+            _db.BuildTemplateParts.Add(new BuildTemplatePart
+            {
+                BuildTemplateId = template.Id,
+                PartId = cl.PartId,
+                Quantity = cl.Positions,
+                StackLevel = cl.StackLevel,
+                PositionNotes = $"Slots: {string.Join(",", a.Slots)}; Layout: {cl.Name}"
+            });
+        }
+
+        await _db.SaveChangesAsync();
+        return template;
+    }
+
+    public async Task<MachineProgram> InstantiateWithLayoutsAsync(
+        int templateId, int machineId, string createdBy, int? workOrderLineId = null)
+    {
+        var template = await _db.BuildTemplates
+            .Include(t => t.Parts)
+            .FirstOrDefaultAsync(t => t.Id == templateId)
+            ?? throw new InvalidOperationException($"BuildTemplate {templateId} not found.");
+
+        // Parse the composition JSON to get layout assignments
+        List<PlateSlotAssignment> assignments = [];
+        if (!string.IsNullOrEmpty(template.PlateCompositionJson))
+        {
+            var parsed = System.Text.Json.JsonSerializer.Deserialize<List<CompositionEntry>>(
+                template.PlateCompositionJson);
+            if (parsed != null)
+                assignments = parsed.Select(e => new PlateSlotAssignment(e.layoutId, e.slots)).ToList();
+        }
+
+        var program = new MachineProgram
+        {
+            ProgramType = ProgramType.BuildPlate,
+            SourceTemplateId = templateId,
+            MachineId = machineId,
+            ProgramNumber = $"BT-{templateId}-{DateTime.UtcNow:yyyyMMddHHmmss}",
+            Name = template.Name,
+            Description = $"Instantiated from template '{template.Name}' (ID {templateId})",
+            Version = 1,
+            Status = ProgramStatus.Active,
+            UsesCertifiedLayouts = assignments.Any(),
+            MaterialId = template.MaterialId,
+            LayerCount = template.LayerCount,
+            BuildHeightMm = template.BuildHeightMm,
+            EstimatedPrintHours = template.EstimatedDurationHours,
+            EstimatedPowderKg = template.EstimatedPowderKg,
+            SlicerFileName = template.FileName,
+            SlicerSoftware = template.SlicerSoftware,
+            SlicerVersion = template.SlicerVersion,
+            PartPositionsJson = template.PartPositionsJson,
+            ScheduleStatus = ProgramScheduleStatus.Ready,
+            CreatedBy = createdBy,
+            CreatedDate = DateTime.UtcNow,
+            LastModifiedDate = DateTime.UtcNow
+        };
+
+        _db.MachinePrograms.Add(program);
+        await _db.SaveChangesAsync();
+
+        // Build a layout assignment lookup by part
+        var assignmentByPart = new Dictionary<int, PlateSlotAssignment>();
+        if (assignments.Any())
+        {
+            var layoutIds = assignments.Select(a => a.CertifiedLayoutId).Distinct().ToList();
+            var certLayouts = await _db.CertifiedLayouts
+                .Where(l => layoutIds.Contains(l.Id))
+                .ToListAsync();
+
+            foreach (var a in assignments)
+            {
+                var cl = certLayouts.FirstOrDefault(l => l.Id == a.CertifiedLayoutId);
+                if (cl != null && !assignmentByPart.ContainsKey(cl.PartId))
+                    assignmentByPart[cl.PartId] = a;
+            }
+        }
+
+        // Copy template parts to program parts with layout references
+        foreach (var tp in template.Parts)
+        {
+            var pp = new ProgramPart
+            {
+                MachineProgramId = program.Id,
+                PartId = tp.PartId,
+                Quantity = tp.Quantity,
+                StackLevel = tp.StackLevel,
+                PositionNotes = tp.PositionNotes,
+                WorkOrderLineId = workOrderLineId
+            };
+
+            if (assignmentByPart.TryGetValue(tp.PartId, out var assignment))
+            {
+                pp.CertifiedLayoutId = assignment.CertifiedLayoutId;
+                pp.PlateSlots = string.Join(",", assignment.Slots);
+            }
+
+            _db.ProgramParts.Add(pp);
+        }
+
+        // Update template usage tracking
+        template.UseCount++;
+        template.LastUsedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        return program;
+    }
+
+    // Helper record for JSON deserialization of PlateCompositionJson
+    private record CompositionEntry(int layoutId, int[] slots);
 }

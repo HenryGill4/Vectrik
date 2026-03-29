@@ -1,57 +1,89 @@
 @using Vectrik.Components.Pages.Scheduler.Models
 @using Vectrik.Models
+@using Vectrik.Models.Enums
 @using Vectrik.Services
 
 <div class="plate-composer @(ReadOnly ? "plate-composer--readonly" : "")">
     @{
-        var totalParts = Allocations.Sum(a => a.TotalParts);
+        var totalParts = UseCertifiedLayouts
+            ? CertifiedLayouts.Where(l => PlateAssignments.Any(a => a.CertifiedLayoutId == l.Id)).Sum(l => l.TotalParts)
+            : Allocations.Sum(a => a.TotalParts);
         var durationDisplay = EstimatedDurationHours > 0 ? $"~{EstimatedDurationHours:F1}h print" : "Duration TBD";
     }
     <div class="plate-composer-header">
         <span class="plate-composer-title">Plate Composition — @totalParts @(totalParts == 1 ? "part" : "parts"), @durationDisplay</span>
-        @if (!ReadOnly)
+        <div style="display: flex; gap: 6px; align-items: center;">
+            @if (!ReadOnly && ShowModeToggle)
+            {
+                <div style="display: inline-flex; gap: 2px; border: 1px solid var(--border-color); border-radius: 5px; overflow: hidden; font-size: 0.72rem;">
+                    <button class="btn btn-sm @(UseCertifiedLayouts ? "btn-primary" : "btn-secondary")" style="border-radius: 0; padding: 2px 8px; font-size: 0.72rem;"
+                            @onclick="() => SetMode(true)">Certified</button>
+                    <button class="btn btn-sm @(!UseCertifiedLayouts ? "btn-primary" : "btn-secondary")" style="border-radius: 0; padding: 2px 8px; font-size: 0.72rem;"
+                            @onclick="() => SetMode(false)">Free-form</button>
+                </div>
+            }
+            @if (!ReadOnly && !UseCertifiedLayouts)
+            {
+                <button class="btn btn-sm btn-ghost" @onclick="() => OnResetToRecommendation.InvokeAsync()" title="Reset to system recommendation">
+                    Reset
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (!UseCertifiedLayouts)
+    {
+        <div style="padding: 6px 10px; background: rgba(var(--warning-rgb), 0.08); border: 1px solid rgba(var(--warning-rgb), 0.2); border-radius: 6px; margin-bottom: 8px; font-size: 0.78rem; color: var(--warning); font-weight: 500;">
+            Draft mode — this plate cannot be scheduled without certified layouts.
+        </div>
+    }
+
+    @if (UseCertifiedLayouts)
+    {
+        @* ── Certified Layout WYSIWYG Editor ── *@
+        <PlateLayoutEditor AvailableLayouts="CertifiedLayouts"
+                           Assignments="PlateAssignments"
+                           OnAssignmentsChanged="HandleLayoutAssignmentsChanged"
+                           ReadOnly="ReadOnly" />
+    }
+    else
+    {
+        @* ── Free-form mode (existing behavior) ── *@
+        <div class="plate-layout">
+            <PlateQuadrantGrid Allocations="Allocations"
+                               MaxParts="MaxPartsPerPlate"
+                               PlateDimensionLabel="@PlateDimensionLabel"
+                               OnAddPartClicked="() => _showSidebar = true" />
+
+            @if (_showSidebar && !ReadOnly)
+            {
+                <PlateDemandSidebar AvailableParts="AvailablePartsForPlate"
+                                    OnAddPart="HandleAddPart" />
+            }
+        </div>
+
+        @* ── Part detail rows ── *@
+        <div class="plate-part-entries">
+            @foreach (var (alloc, idx) in Allocations.Select((a, i) => (a, i)))
+            {
+                var config = Demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
+                <PlatePartEntry Allocation="alloc"
+                                Index="idx"
+                                BuildConfig="config"
+                                CanRemove="@(!ReadOnly && Allocations.Count > 1)"
+                                OnStackLevelChanged="HandleStackLevelChanged"
+                                OnPositionsChanged="HandlePositionsChanged"
+                                OnRemove="HandleRemovePart" />
+            }
+        </div>
+
+        @* ── Add Part (inline, when sidebar is hidden) ── *@
+        @if (!ReadOnly && !_showSidebar && Allocations.Count < MaxPartsPerPlate && AvailablePartsForPlate.Any())
         {
-            <button class="btn btn-sm btn-ghost" @onclick="() => OnResetToRecommendation.InvokeAsync()" title="Reset to system recommendation">
-                Reset
+            <button class="btn btn-sm btn-secondary plate-add-btn" @onclick="() => _showSidebar = true">
+                + Add Part
             </button>
         }
-    </div>
-
-    @* ── Visual plate grid + demand sidebar ── *@
-    <div class="plate-layout">
-        <PlateQuadrantGrid Allocations="Allocations"
-                           MaxParts="MaxPartsPerPlate"
-                           PlateDimensionLabel="@PlateDimensionLabel"
-                           OnAddPartClicked="() => _showSidebar = true" />
-
-        @if (_showSidebar && !ReadOnly)
-        {
-            <PlateDemandSidebar AvailableParts="AvailablePartsForPlate"
-                                OnAddPart="HandleAddPart" />
-        }
-    </div>
-
-    @* ── Part detail rows ── *@
-    <div class="plate-part-entries">
-        @foreach (var (alloc, idx) in Allocations.Select((a, i) => (a, i)))
-        {
-            var config = Demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
-            <PlatePartEntry Allocation="alloc"
-                            Index="idx"
-                            BuildConfig="config"
-                            CanRemove="@(!ReadOnly && Allocations.Count > 1)"
-                            OnStackLevelChanged="HandleStackLevelChanged"
-                            OnPositionsChanged="HandlePositionsChanged"
-                            OnRemove="HandleRemovePart" />
-        }
-    </div>
-
-    @* ── Add Part (inline, when sidebar is hidden) ── *@
-    @if (!ReadOnly && !_showSidebar && Allocations.Count < MaxPartsPerPlate && AvailablePartsForPlate.Any())
-    {
-        <button class="btn btn-sm btn-secondary plate-add-btn" @onclick="() => _showSidebar = true">
-            + Add Part
-        </button>
     }
 
     @* ── Demand Coverage Summary ── *@
@@ -79,6 +111,7 @@
 </div>
 
 @code {
+    // ── Free-form mode parameters (existing) ──
     [Parameter] public List<DemandSummary> Demand { get; set; } = [];
     [Parameter] public List<EditablePlateAllocation> Allocations { get; set; } = [];
     [Parameter] public double EstimatedDurationHours { get; set; }
@@ -92,12 +125,28 @@
     [Parameter] public EventCallback<int> OnAddPart { get; set; }
     [Parameter] public EventCallback OnResetToRecommendation { get; set; }
 
+    // ── Certified layout mode parameters (new) ──
+    [Parameter] public bool UseCertifiedLayouts { get; set; }
+    [Parameter] public bool ShowModeToggle { get; set; } = true;
+    [Parameter] public List<CertifiedLayout> CertifiedLayouts { get; set; } = [];
+    [Parameter] public List<PlateSlotAssignment> PlateAssignments { get; set; } = [];
+    [Parameter] public EventCallback<List<PlateSlotAssignment>> OnPlateAssignmentsChanged { get; set; }
+    [Parameter] public EventCallback<bool> OnModeChanged { get; set; }
+
     private bool _showSidebar;
 
     private List<DemandSummary> AvailablePartsForPlate => Demand
         .Where(d => d.IsAdditive && d.NetRemaining > 0 && d.BuildConfig != null
             && !Allocations.Any(a => a.PartId == d.PartId))
         .ToList();
+
+    private async Task SetMode(bool certified)
+    {
+        await OnModeChanged.InvokeAsync(certified);
+    }
+
+    private Task HandleLayoutAssignmentsChanged(List<PlateSlotAssignment> assignments) =>
+        OnPlateAssignmentsChanged.InvokeAsync(assignments);
 
     private Task HandleStackLevelChanged((int Index, int NewLevel) args) =>
         OnStackLevelChanged.InvokeAsync(args);

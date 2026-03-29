@@ -29,8 +29,19 @@ public class ProgramPart
     /// <summary>Optional link to a work order line that this plate entry fulfils.</summary>
     public int? WorkOrderLineId { get; set; }
 
+    /// <summary>FK to the CertifiedLayout this entry was created from. Null for legacy/free-form programs.</summary>
+    public int? CertifiedLayoutId { get; set; }
+
+    /// <summary>
+    /// Comma-separated slot indices this layout occupies on the plate (e.g. "0", "0,1", "2,3").
+    /// Quadrant = 1 slot, Half = 2 adjacent slots. Null for legacy programs.
+    /// </summary>
+    [MaxLength(20)]
+    public string? PlateSlots { get; set; }
+
     // Navigation
     public virtual MachineProgram MachineProgram { get; set; } = null!;
     public virtual Part Part { get; set; } = null!;
     public virtual WorkOrderLine? WorkOrderLine { get; set; }
+    public virtual CertifiedLayout? CertifiedLayout { get; set; }
 }
