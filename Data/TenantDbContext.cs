@@ -148,6 +148,9 @@ public class TenantDbContext : DbContext
     // Part Pricing
     public DbSet<PartPricing> PartPricings { get; set; }
 
+    // Smart Pricing
+    public DbSet<PartSignature> PartSignatures { get; set; }
+
     // Shipping
     public DbSet<Shipment> Shipments { get; set; }
     public DbSet<ShipmentLine> ShipmentLines { get; set; }
@@ -1083,6 +1086,16 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Part)
                 .WithOne(e => e.Pricing)
                 .HasForeignKey<PartPricing>(e => e.PartId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PartSignature — 1:1 with Part (smart pricing feature vectors)
+        modelBuilder.Entity<PartSignature>(entity =>
+        {
+            entity.HasIndex(e => e.PartId).IsUnique();
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

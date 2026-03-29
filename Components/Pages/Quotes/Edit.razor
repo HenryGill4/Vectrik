@@ -3,6 +3,7 @@
 @inject IQuoteService QuoteService
 @inject IPartService PartService
 @inject IPricingEngineService PricingEngine
+@inject ISmartPricingService SmartPricing
 @inject ITenantFeatureService Features
 @inject ICustomFieldService CustomFieldService
 @inject NavigationManager Nav
@@ -333,6 +334,114 @@ else
                     </div>
                 </details>
             }
+
+            <!-- AI-Powered Smart Pricing -->
+            @if (_smartPrice != null)
+            {
+                <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(59, 130, 246, 0.06)); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div style="font-size: 0.85rem; font-weight: 600;">AI-Powered Estimate</div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <span class="badge @(_smartPrice.ConfidenceScore >= 50 ? "badge-active" : _smartPrice.ConfidenceScore >= 25 ? "badge-warning" : "badge-cancelled")"
+                                  style="font-size: 0.7rem;">
+                                @_smartPrice.ConfidenceLabel Confidence (@_smartPrice.ConfidenceScore%)
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 10px; text-align: center;">
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Parametric</div>
+                            <div style="font-size: 1rem; font-weight: 600;">@_smartPrice.ParametricCostPerPart.ToString("C")</div>
+                        </div>
+                        @if (_smartPrice.SimilarPartCostPerPart.HasValue)
+                        {
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Similar Parts Avg</div>
+                                <div style="font-size: 1rem; font-weight: 600;">@_smartPrice.SimilarPartCostPerPart.Value.ToString("C")</div>
+                            </div>
+                        }
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">AI Blended</div>
+                            <div style="font-size: 1.1rem; font-weight: 700; color: var(--accent);">@_smartPrice.AiEstimatedCostPerPart.ToString("C")</div>
+                        </div>
+                    </div>
+
+                    @if (_smartPrice.RecommendedSellPrice > 0)
+                    {
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: rgba(16, 185, 129, 0.08); border-radius: 6px; margin-bottom: 8px;">
+                            <span style="font-size: 0.85rem;">AI Recommended Price:</span>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <strong style="color: var(--success); font-size: 1rem;">@_smartPrice.RecommendedSellPrice.ToString("C")/part</strong>
+                                <button class="btn btn-sm btn-primary" @onclick="() => UsePrice(_smartPrice.RecommendedSellPrice)">Use</button>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_smartPrice.AccuracyAdjustmentNote))
+                    {
+                        <div style="font-size: 0.78rem; color: var(--warning); padding: 4px 0;">
+                            @_smartPrice.AccuracyAdjustmentNote
+                        </div>
+                    }
+
+                    <!-- Complexity Badge -->
+                    @if (_smartPrice.Complexity.Score > 0)
+                    {
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Complexity:</span>
+                            <span class="badge @(_smartPrice.Complexity.Tier == "Simple" ? "badge-active" : _smartPrice.Complexity.Tier == "Moderate" ? "badge-info" : _smartPrice.Complexity.Tier == "Complex" ? "badge-warning" : "badge-cancelled")">
+                                @_smartPrice.Complexity.Tier (@_smartPrice.Complexity.Score.ToString("F1")/10)
+                            </span>
+                        </div>
+                    }
+
+                    <!-- Similar Parts -->
+                    @if (_smartPrice.SimilarParts.Any(s => s.CompletedJobCount > 0))
+                    {
+                        <details>
+                            <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 600; color: var(--text-primary); padding: 4px 0;">
+                                Similar Parts (@_smartPrice.SimilarParts.Count(s => s.CompletedJobCount > 0) with actuals)
+                            </summary>
+                            <table class="data-table" style="font-size: 0.78rem; margin-top: 6px;">
+                                <thead>
+                                    <tr>
+                                        <th>Part</th>
+                                        <th>Match</th>
+                                        <th>Actual $/Part</th>
+                                        <th>Est. $/Part</th>
+                                        <th>Accuracy</th>
+                                        <th>Jobs</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var sp in _smartPrice.SimilarParts.Where(s => s.CompletedJobCount > 0).Take(5))
+                                    {
+                                        <tr>
+                                            <td>@sp.PartNumber — @sp.PartName</td>
+                                            <td>
+                                                <span style="color: @(sp.SimilarityScore >= 70 ? "var(--success)" : sp.SimilarityScore >= 40 ? "var(--warning)" : "var(--text-muted)")">
+                                                    @sp.SimilarityScore.ToString("F0")%
+                                                </span>
+                                            </td>
+                                            <td>@sp.ActualCostPerPart.ToString("C")</td>
+                                            <td>@sp.EstimatedCostPerPart.ToString("C")</td>
+                                            <td>@(sp.CostAccuracyRatio > 0 ? sp.CostAccuracyRatio.ToString("F2") + "x" : "—")</td>
+                                            <td>@sp.CompletedJobCount</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </details>
+                    }
+                </div>
+            }
+            else if (_linePartId > 0 && !_estimateLoading && _lineEstimate != null)
+            {
+                <div style="text-align: center; padding: 8px; color: var(--text-muted); font-size: 0.82rem;">
+                    <span class="spinner" style="width: 14px; height: 14px;"></span> Loading AI pricing...
+                </div>
+            }
         }
         else if (_linePartId > 0 && _estimateLoading)
         {
@@ -384,6 +493,7 @@ else
     private int _lineQty = 1;
     private decimal _linePrice;
     private QuoteLineEstimate? _lineEstimate;
+    private SmartPriceRecommendation? _smartPrice;
     private bool _estimateLoading;
 
     // Revision
@@ -460,6 +570,7 @@ else
     private async Task RefreshEstimate()
     {
         _estimateLoading = true;
+        _smartPrice = null;
         StateHasChanged();
         try
         {
@@ -483,6 +594,23 @@ else
         {
             _estimateLoading = false;
         }
+
+        // Fetch AI-powered smart pricing in the background (non-blocking)
+        _ = LoadSmartPriceAsync();
+    }
+
+    private async Task LoadSmartPriceAsync()
+    {
+        try
+        {
+            _smartPrice = await SmartPricing.GetSmartPriceAsync(
+                _linePartId, Math.Max(1, _lineQty), _quote.TargetMarginPct);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            _smartPrice = null;
+        }
     }
 
     private void UsePrice(decimal price)
@@ -504,6 +632,7 @@ else
         _lineQty = 1;
         _linePrice = 0;
         _lineEstimate = null;
+        _smartPrice = null;
         _estimateLoading = false;
         _showAddLine = true;
     }

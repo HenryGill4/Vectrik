@@ -12,13 +12,15 @@ public class StageService : IStageService
     private readonly IWorkOrderService _workOrderService;
     private readonly ILearningService _learning;
     private readonly IInventoryService _inventory;
+    private readonly ISmartPricingService _smartPricing;
 
-    public StageService(TenantDbContext db, IWorkOrderService workOrderService, ILearningService learning, IInventoryService inventory)
+    public StageService(TenantDbContext db, IWorkOrderService workOrderService, ILearningService learning, IInventoryService inventory, ISmartPricingService smartPricing)
     {
         _db = db;
         _workOrderService = workOrderService;
         _learning = learning;
         _inventory = inventory;
+        _smartPricing = smartPricing;
     }
 
     // ── Stage CRUD ──────────────────────────────────────────────
@@ -300,6 +302,19 @@ public class StageService : IStageService
             catch
             {
                 // EMA update is non-critical — don't fail the completion
+            }
+        }
+
+        // Refresh smart pricing signature when job completes
+        if (execution.Job?.Status == JobStatus.Completed && execution.Job.PartId > 0)
+        {
+            try
+            {
+                await _smartPricing.RefreshSignatureAsync(execution.Job.PartId);
+            }
+            catch
+            {
+                // Signature refresh is non-critical — don't fail the completion
             }
         }
 

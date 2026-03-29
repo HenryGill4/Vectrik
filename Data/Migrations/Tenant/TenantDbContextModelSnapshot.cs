@@ -3067,6 +3067,99 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.ToTable("PartPricings");
                 });
 
+            modelBuilder.Entity("Vectrik.Models.PartSignature", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("ActualCostPerPart")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<double>("ActualHoursPerPart")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("ActualMarginPct")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("AverageJobQuantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BomItemCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CompletedJobCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("ComplexityScore")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("CostAccuracyRatio")
+                        .HasColumnType("REAL");
+
+                    b.Property<decimal>("EstimatedCostPerPart")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<bool>("HasStacking")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsAdditive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsStale")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("LastSellPrice")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<DateTime>("LastUpdated")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ManufacturingApproachId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("MaterialCategory")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("MaterialCostPerKg")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("MaterialName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MaxStackLevel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PartId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PlannedPartsPerBuild")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StageCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("TotalEstimatedHours")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("TotalSetupMinutes")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("WeightKg")
+                        .HasColumnType("REAL");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartId")
+                        .IsUnique();
+
+                    b.ToTable("PartSignatures");
+                });
+
             modelBuilder.Entity("Vectrik.Models.PartRevisionHistory", b =>
                 {
                     b.Property<int>("Id")
@@ -6248,6 +6341,17 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.HasOne("Vectrik.Models.Part", "Part")
                         .WithOne("Pricing")
                         .HasForeignKey("Vectrik.Models.PartPricing", "PartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Part");
+                });
+
+            modelBuilder.Entity("Vectrik.Models.PartSignature", b =>
+                {
+                    b.HasOne("Vectrik.Models.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
