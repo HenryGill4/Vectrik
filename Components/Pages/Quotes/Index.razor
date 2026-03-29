@@ -1,5 +1,6 @@
 @page "/quotes"
 @inject IQuoteService QuoteService
+@inject IQuoteAnalyticsService QuoteAnalytics
 @inject ITenantFeatureService Features
 @inject NavigationManager Nav
 @inject ToastService Toast
@@ -20,9 +21,33 @@
         {
             <button class="btn btn-sm btn-secondary" @onclick="ArchiveAllExpired">Archive @expiredCount Expired</button>
         }
+        <button class="btn btn-sm btn-secondary" @onclick='() => Nav.NavigateTo("/quotes/analytics")'>Analytics</button>
         <button class="btn btn-primary" @onclick="GoToNewQuote">+ New Quote</button>
     </div>
 </div>
+
+<!-- Quick KPIs -->
+@if (_pipeline != null && _pipeline.TotalQuotes > 0)
+{
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;">
+        <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Win Rate (90d)</span>
+            <strong style="font-size: 1.1rem; color: @(_pipeline.WinRatePct >= 40 ? "var(--success)" : "var(--warning)")">@_pipeline.WinRatePct%</strong>
+        </div>
+        <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Won Value (90d)</span>
+            <strong style="font-size: 1.1rem; color: var(--success);">@_pipeline.TotalAcceptedValue.ToString("C0")</strong>
+        </div>
+        <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Avg Margin (Won)</span>
+            <strong style="font-size: 1.1rem;">@_pipeline.AvgAcceptedMarginPct%</strong>
+        </div>
+        <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Accuracy</span>
+            <strong style="font-size: 1.1rem; color: @(_pipeline.OverallAccuracyRatio is > 0.9 and < 1.1 ? "var(--success)" : "var(--warning)")">@_pipeline.OverallAccuracyRatio.ToString("F2")x</strong>
+        </div>
+    </div>
+}
 
 <!-- Status Filter Tabs -->
 <div class="content-tab-bar" style="margin-bottom: 16px;">
@@ -111,6 +136,7 @@ else
     private QuoteStatus? _statusFilter;
     private int _currentPage = 1;
     private int _pageSize = 25;
+    private QuotePipelineMetrics? _pipeline;
 
     private List<Quote> _pagedQuotes => _filteredQuotes
         .Skip((_currentPage - 1) * _pageSize)
@@ -123,6 +149,9 @@ else
         {
             _allQuotes = await QuoteService.GetAllQuotesAsync();
             _filteredQuotes = _allQuotes;
+
+            // Load pipeline KPIs in background (non-blocking)
+            _ = LoadPipelineAsync();
         }
         catch
         {
@@ -132,6 +161,21 @@ else
         finally
         {
             _loading = false;
+        }
+    }
+
+    private async Task LoadPipelineAsync()
+    {
+        try
+        {
+            var to = DateTime.UtcNow;
+            var from = to.AddDays(-90);
+            _pipeline = await QuoteAnalytics.GetPipelineMetricsAsync(from, to);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            _pipeline = null;
         }
     }
 

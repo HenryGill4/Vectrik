@@ -71,6 +71,20 @@ public class Quote
 
     public string? Notes { get; set; }
 
+    // ── Win/Loss Tracking ────────────────────────────────────
+
+    public QuoteLossReason LossReason { get; set; } = QuoteLossReason.None;
+
+    [MaxLength(500)]
+    public string? LossNotes { get; set; }
+
+    /// <summary>Competitor price if known (for price sensitivity analysis).</summary>
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal? CompetitorPrice { get; set; }
+
+    /// <summary>Days from quote sent to customer decision (accepted or rejected).</summary>
+    public int? DecisionDays { get; set; }
+
     public int? ConvertedWorkOrderId { get; set; }
 
     // Navigation

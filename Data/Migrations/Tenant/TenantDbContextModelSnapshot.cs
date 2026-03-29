@@ -4042,6 +4042,12 @@ namespace Vectrik.Data.Migrations.Tenant
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal?>("CompetitorPrice")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("DecisionDays")
+                        .HasColumnType("INTEGER");
+
                     b.Property<decimal>("EstimatedLaborCost")
                         .HasColumnType("decimal(10,2)");
 
@@ -4063,6 +4069,13 @@ namespace Vectrik.Data.Migrations.Tenant
 
                     b.Property<DateTime?>("LastModifiedDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("LossNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LossReason")
+                        .HasColumnType("INTEGER");
 
                     b.Property<decimal?>("Markup")
                         .HasColumnType("decimal(10,2)");

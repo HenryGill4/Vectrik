@@ -20,6 +20,20 @@ public enum QuoteStatus
     Draft, Sent, Accepted, Rejected, Expired
 }
 
+public enum QuoteLossReason
+{
+    None,
+    Price,
+    LeadTime,
+    Capability,
+    Relationship,
+    Specification,
+    CompetitorWon,
+    ProjectCancelled,
+    NoResponse,
+    Other
+}
+
 public enum StageExecutionStatus
 {
     NotStarted, InProgress, Paused, Completed, Skipped, Failed
