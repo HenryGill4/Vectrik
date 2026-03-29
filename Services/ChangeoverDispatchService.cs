@@ -74,9 +74,11 @@ public class ChangeoverDispatchService : IChangeoverDispatchService
         await _dispatchService.UpdateDispatchPriorityAsync(dispatch.Id, priority, reason, breakdownJson);
 
         // Set scheduled start
-        dispatch = (await _dispatchService.GetByIdAsync(dispatch.Id))!;
-        dispatch.ScheduledStartAt = buildEndTime;
+        var reloaded = await _dispatchService.GetByIdAsync(dispatch.Id);
+        if (reloaded == null) return dispatch;
+        reloaded.ScheduledStartAt = buildEndTime;
         await _db.SaveChangesAsync();
+        dispatch = reloaded;
 
         if (priority >= 95)
             await NotifyUrgentAsync(machineId, $"URGENT: Changeover required on {machine.Name} — chamber at risk");

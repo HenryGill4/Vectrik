@@ -300,6 +300,11 @@ else
 
     private async Task SaveGlobalConfig()
     {
+        if (_weightSum < 0.90m || _weightSum > 1.10m)
+        {
+            Toast.ShowError($"Scoring weights must sum to ~1.0 (currently {_weightSum:F2}).");
+            return;
+        }
         try
         {
             if (_globalConfig.Id == 0)

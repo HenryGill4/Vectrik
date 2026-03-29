@@ -336,6 +336,7 @@
     private List<SetupDispatch> _plateLayoutDispatches = new();
     private List<MaintenanceAlert> _maintenanceAlerts = new();
     private int _deferredCount;
+    private int _currentUserId;
     private bool _loading = true;
     private bool _showCreateModal;
 
@@ -354,8 +355,17 @@
     [Inject] private IMaintenanceService MaintenanceService { get; set; } = null!;
     [Inject] private ToastService Toast { get; set; } = null!;
 
+    [CascadingParameter] private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var userIdClaim = state.User.FindFirst("UserId")?.Value;
+            if (int.TryParse(userIdClaim, out var uid))
+                _currentUserId = uid;
+        }
         await LoadDataAsync();
     }
 
@@ -413,7 +423,7 @@
     {
         try
         {
-            await DispatchService.VerifyDispatchAsync(dispatchId, 0); // TODO: get current user ID
+            await DispatchService.VerifyDispatchAsync(dispatchId, _currentUserId);
             await DispatchService.CompleteDispatchAsync(dispatchId);
             Toast.ShowSuccess("Setup verified and completed.");
             await LoadDataAsync();
@@ -447,7 +457,7 @@
     {
         try
         {
-            await GenerationService.ApproveAutoDispatchAsync(dispatchId, 0); // TODO: get current user ID
+            await GenerationService.ApproveAutoDispatchAsync(dispatchId, _currentUserId);
             Toast.ShowSuccess("Auto-dispatch approved.");
             await LoadDataAsync();
         }
@@ -458,7 +468,7 @@
     {
         try
         {
-            await GenerationService.RejectAutoDispatchAsync(dispatchId, 0, "Rejected from dispatch board");
+            await GenerationService.RejectAutoDispatchAsync(dispatchId, _currentUserId, "Rejected from dispatch board");
             Toast.ShowSuccess("Auto-dispatch rejected.");
             await LoadDataAsync();
         }
@@ -478,7 +488,7 @@
             }
             return string.Join("\n", parts);
         }
-        catch { return json; }
+        catch { return "Score details unavailable"; }
     }
 
     // ── Create Modal ─────────────────────────────────────────

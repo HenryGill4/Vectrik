@@ -34,7 +34,7 @@ public class DispatchLearningService : IDispatchLearningService
         }
 
         // 2. Update changeover EMA (from-program → to-program transition)
-        if (history.WasChangeover && history.ChangeoverDurationMinutes.HasValue
+        if (history.WasChangeover && history.ChangeoverDurationMinutes is > 0
             && history.PreviousProgramId.HasValue && history.MachineProgramId.HasValue)
         {
             await UpdateProgramSetupEmaAsync(history.MachineProgramId.Value,

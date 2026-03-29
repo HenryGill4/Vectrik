@@ -133,11 +133,12 @@ public class PlateLayoutDispatchService : IPlateLayoutDispatchService
             .Where(d => d.PartId.HasValue && partIds.Contains(d.PartId.Value))
             .ToList();
 
+        // Cache demand once instead of per-dispatch
+        var demand = await _buildAdvisor.GetAggregateDemandAsync();
+
         var anyCompleted = false;
         foreach (var layout in matchingLayouts)
         {
-            // Re-check demand to see if this program covers it
-            var demand = await _buildAdvisor.GetAggregateDemandAsync();
             var partDemand = demand.FirstOrDefault(d => d.PartId == layout.PartId);
             if (partDemand == null || partDemand.NetRemaining <= 0)
             {

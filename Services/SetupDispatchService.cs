@@ -354,6 +354,7 @@ public class SetupDispatchService : ISetupDispatchService
             .ToListAsync();
 
         var activeDispatches = await _db.SetupDispatches
+            .Include(d => d.Machine)
             .Include(d => d.MachineProgram)
             .Include(d => d.Part)
             .Include(d => d.AssignedOperator)
