@@ -34,6 +34,12 @@ public interface ISetupDispatchService
     Task<List<SetupDispatch>> GetOperatorQueueAsync(int operatorUserId);
     Task<List<SetupDispatch>> GetActiveDispatchesAsync();
     Task<DispatchDashboardData> GetDashboardDataAsync();
+
+    // ── Phase 2 Extensions ────────────────────────────────────
+
+    Task<List<SetupDispatch>> GetActiveDispatchesByTypeAsync(DispatchType type);
+    Task UpdateDispatchPriorityAsync(int dispatchId, int priority, string? reason = null, string? scoreBreakdownJson = null);
+    Task<List<SetupDispatch>> GetDispatchesByRoleAsync(int roleId);
 }
 
 /// <summary>DTO for the dispatch board dashboard.</summary>

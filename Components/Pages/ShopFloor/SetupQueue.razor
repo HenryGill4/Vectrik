@@ -1,11 +1,33 @@
 @page "/shopfloor/setup-queue"
 @inject Vectrik.Services.ISetupDispatchService DispatchService
+@inject Vectrik.Services.IPrintStartDispatchService PrintStartService
+@inject Vectrik.Services.IPrintCompletionService PrintCompletionService
 @inject Vectrik.Services.ToastService Toast
 @using Vectrik.Models
 @using Vectrik.Models.Enums
+@using System.Text.Json
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>Setup Queue - Vectrik</PageTitle>
+
+@* ── Urgent Changeover Alert Overlay ── *@
+@if (_urgentChangeover != null)
+{
+    <div class="setup-urgent-overlay" @onclick="DismissUrgentAlert">
+        <div class="setup-urgent-alert">
+            <div class="setup-urgent-icon">⚠</div>
+            <h2>CHANGEOVER REQUIRED</h2>
+            <p>@_urgentChangeover.Machine?.Name — Chamber at risk of overflow</p>
+            @if (_urgentChangeover.ScheduledStartAt.HasValue)
+            {
+                var overdue = (DateTime.UtcNow - _urgentChangeover.ScheduledStartAt.Value).TotalMinutes;
+                <p class="setup-urgent-time">@(overdue > 0 ? $"OVERDUE by {overdue:F0} min" : $"Due in {Math.Abs(overdue):F0} min")</p>
+            }
+            <button class="btn btn-lg btn-danger" @onclick="() => AcceptAndStart(_urgentChangeover.Id)">Accept & Start Now</button>
+            <button class="btn btn-lg btn-secondary" @onclick="DismissUrgentAlert">Dismiss</button>
+        </div>
+    </div>
+}
 
 <div class="setup-queue">
     <div class="setup-queue-header">
@@ -25,9 +47,22 @@
         @* ── Current Setup Panel ── *@
         @if (_currentSetup != null)
         {
-            <div class="setup-current">
+            <div class="setup-current @(_currentSetup.DispatchType == DispatchType.PrintStart ? "setup-current--printstart" : "")">
                 <div class="setup-current-header">
-                    <h2>Current Setup</h2>
+                    <h2>
+                        @if (_currentSetup.DispatchType == DispatchType.PrintStart)
+                        {
+                            <text>Print Start</text>
+                        }
+                        else if (_currentSetup.DispatchType == DispatchType.Teardown && !string.IsNullOrEmpty(_currentSetup.InspectionChecklistJson))
+                        {
+                            <text>Post-Print Inspection</text>
+                        }
+                        else
+                        {
+                            <text>Current Setup</text>
+                        }
+                    </h2>
                     <span class="dispatch-card-badge dispatch-card-badge--@_currentSetup.Status.ToString().ToLower()">
                         @_currentSetup.StatusDisplay
                     </span>
@@ -79,6 +114,63 @@
                         }
                     </div>
 
+                    @* Pre-Print Checklist (PrintStart dispatches) *@
+                    @if (_currentSetup.DispatchType == DispatchType.PrintStart && _prePrintChecklist.Any())
+                    {
+                        <div class="setup-checklist">
+                            <h3>Pre-Print Checklist</h3>
+                            @foreach (var item in _prePrintChecklist)
+                            {
+                                <div class="setup-checklist-item">
+                                    <label class="setup-checklist-label">
+                                        <input type="checkbox" checked="@item.SignedOff"
+                                               @onchange="(e) => TogglePrePrintItem(item.StepId, (bool)(e.Value ?? false))" />
+                                        <span>@item.Title</span>
+                                        @if (item.Required) { <span class="badge-required">Required</span> }
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* Inspection Checklist (Teardown dispatches) *@
+                    @if (_currentSetup.DispatchType == DispatchType.Teardown && _inspectionChecklist.Any())
+                    {
+                        <div class="setup-checklist">
+                            <h3>Post-Print Inspection</h3>
+                            @foreach (var item in _inspectionChecklist)
+                            {
+                                <div class="setup-checklist-item @(item.Passed == false ? "setup-checklist-item--failed" : "")">
+                                    <label class="setup-checklist-label">
+                                        <input type="checkbox" checked="@item.Inspected"
+                                               @onchange="(e) => ToggleInspectionItem(item.StepId, (bool)(e.Value ?? false))" />
+                                        <span>@item.Title</span>
+                                        @if (item.Required) { <span class="badge-required">Required</span> }
+                                    </label>
+                                    @if (item.Inspected)
+                                    {
+                                        <div class="setup-checklist-result">
+                                            <label>
+                                                <input type="radio" name="inspect-@item.StepId" checked="@(item.Passed == true)"
+                                                       @onchange="() => SetInspectionResult(item.StepId, true)" /> Pass
+                                            </label>
+                                            <label>
+                                                <input type="radio" name="inspect-@item.StepId" checked="@(item.Passed == false)"
+                                                       @onchange="() => SetInspectionResult(item.StepId, false)" /> Fail
+                                            </label>
+                                        </div>
+                                        @if (item.Passed == false)
+                                        {
+                                            <input type="text" class="form-control" placeholder="Failure notes..."
+                                                   value="@item.FailureNotes"
+                                                   @onchange="(e) => SetInspectionNotes(item.StepId, e.Value?.ToString())" />
+                                        }
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
                     @* Timer *@
                     @if (_currentSetup.StartedAt.HasValue)
                     {
@@ -99,7 +191,23 @@
                 </div>
 
                 <div class="setup-current-actions">
-                    @if (_currentSetup.Status == DispatchStatus.InProgress)
+                    @if (_currentSetup.DispatchType == DispatchType.PrintStart)
+                    {
+                        <button class="btn btn-xl btn-accent setup-start-print-btn"
+                                disabled="@(!AllPrePrintItemsComplete())"
+                                @onclick="CompletePrintStart">
+                            START PRINT
+                        </button>
+                    }
+                    else if (_currentSetup.DispatchType == DispatchType.Teardown && !string.IsNullOrEmpty(_currentSetup.InspectionChecklistJson))
+                    {
+                        <button class="btn btn-xl btn-accent"
+                                disabled="@(!AllInspectionItemsComplete())"
+                                @onclick="CompleteInspection">
+                            COMPLETE INSPECTION
+                        </button>
+                    }
+                    else if (_currentSetup.Status == DispatchStatus.InProgress)
                     {
                         <button class="btn btn-lg btn-accent" @onclick="CompleteCurrentSetup">Complete Setup</button>
                         <button class="btn btn-lg btn-secondary" @onclick="RequestVerification">Request Verification</button>
@@ -118,14 +226,14 @@
             </div>
         }
 
-        @* ── Queued Dispatches ── *@
+        @* ── Queued Dispatches (filter out PlateLayout — engineer only) ── *@
         <div class="setup-queue-list">
             <h2>Next Up (@_queue.Count)</h2>
             @if (_queue.Any())
             {
                 @foreach (var dispatch in _queue)
                 {
-                    <div class="setup-queue-card">
+                    <div class="setup-queue-card @(dispatch.DispatchType == DispatchType.Changeover && dispatch.Priority >= 85 ? "setup-queue-card--urgent" : "")">
                         <div class="setup-queue-card-header">
                             <span class="dispatch-card-number">@dispatch.DispatchNumber</span>
                             <span class="dispatch-card-badge dispatch-card-badge--@dispatch.Status.ToString().ToLower()">@dispatch.StatusDisplay</span>
@@ -181,6 +289,15 @@
     private string? _operatorName;
     private string _barcodeScan = "";
 
+    // Phase 2: Urgent changeover alert
+    private SetupDispatch? _urgentChangeover;
+
+    // Phase 2: Pre-print checklist
+    private List<SignOffChecklistItem> _prePrintChecklist = new();
+
+    // Phase 2: Inspection checklist
+    private List<InspectionChecklistItem> _inspectionChecklist = new();
+
     [CascadingParameter] private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
 
     protected override async Task OnInitializedAsync()
@@ -193,8 +310,11 @@
         _loading = true;
         StateHasChanged();
 
-        // Get all active dispatches (in Phase 1 we show all; later filter by operator)
         var all = await DispatchService.GetActiveDispatchesAsync();
+
+        // Filter out PlateLayout dispatches (engineer-only)
+        all = all.Where(d => d.DispatchType != DispatchType.PlateLayout).ToList();
+
         _currentSetup = all.FirstOrDefault(d =>
             d.Status is DispatchStatus.InProgress or DispatchStatus.PendingVerification);
         _queue = all
@@ -203,9 +323,117 @@
             .ThenBy(d => d.QueuedAt)
             .ToList();
 
+        // Check for urgent changeovers
+        _urgentChangeover = all.FirstOrDefault(d =>
+            d.DispatchType == DispatchType.Changeover
+            && d.Priority >= 95
+            && d.Status is DispatchStatus.Queued or DispatchStatus.Assigned);
+
+        // Load checklists for current setup
+        LoadChecklists();
+
         _loading = false;
         StateHasChanged();
     }
+
+    private void LoadChecklists()
+    {
+        _prePrintChecklist = new();
+        _inspectionChecklist = new();
+
+        if (_currentSetup == null) return;
+
+        if (_currentSetup.DispatchType == DispatchType.PrintStart
+            && !string.IsNullOrEmpty(_currentSetup.PrePrintChecklistJson))
+        {
+            _prePrintChecklist = JsonSerializer.Deserialize<List<SignOffChecklistItem>>(
+                _currentSetup.PrePrintChecklistJson) ?? new();
+        }
+
+        if (_currentSetup.DispatchType == DispatchType.Teardown
+            && !string.IsNullOrEmpty(_currentSetup.InspectionChecklistJson))
+        {
+            _inspectionChecklist = JsonSerializer.Deserialize<List<InspectionChecklistItem>>(
+                _currentSetup.InspectionChecklistJson) ?? new();
+        }
+    }
+
+    // ── Pre-Print Checklist ──────────────────────────────────
+
+    private void TogglePrePrintItem(int stepId, bool signedOff)
+    {
+        var item = _prePrintChecklist.FirstOrDefault(i => i.StepId == stepId);
+        if (item != null)
+        {
+            item.SignedOff = signedOff;
+            item.SignedBy = signedOff ? _operatorName : null;
+            item.SignedAt = signedOff ? DateTime.UtcNow : null;
+        }
+    }
+
+    private bool AllPrePrintItemsComplete()
+        => _prePrintChecklist.Where(i => i.Required).All(i => i.SignedOff);
+
+    private async Task CompletePrintStart()
+    {
+        if (_currentSetup == null) return;
+        try
+        {
+            // Save updated checklist back
+            var entity = _currentSetup;
+            entity.PrePrintChecklistJson = JsonSerializer.Serialize(_prePrintChecklist);
+            await PrintStartService.CompletePrintStartAsync(_currentSetup.Id, 0); // TODO: current user ID
+            Toast.ShowSuccess("Print started!");
+            await LoadQueueAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    // ── Inspection Checklist ─────────────────────────────────
+
+    private void ToggleInspectionItem(int stepId, bool inspected)
+    {
+        var item = _inspectionChecklist.FirstOrDefault(i => i.StepId == stepId);
+        if (item != null)
+        {
+            item.Inspected = inspected;
+            item.InspectedBy = inspected ? _operatorName : null;
+            item.InspectedAt = inspected ? DateTime.UtcNow : null;
+            if (!inspected) { item.Passed = null; item.FailureNotes = null; }
+        }
+    }
+
+    private void SetInspectionResult(int stepId, bool passed)
+    {
+        var item = _inspectionChecklist.FirstOrDefault(i => i.StepId == stepId);
+        if (item != null) item.Passed = passed;
+    }
+
+    private void SetInspectionNotes(int stepId, string? notes)
+    {
+        var item = _inspectionChecklist.FirstOrDefault(i => i.StepId == stepId);
+        if (item != null) item.FailureNotes = notes;
+    }
+
+    private bool AllInspectionItemsComplete()
+        => _inspectionChecklist.Where(i => i.Required).All(i => i.Inspected && i.Passed.HasValue);
+
+    private async Task CompleteInspection()
+    {
+        if (_currentSetup == null) return;
+        try
+        {
+            var checklistJson = JsonSerializer.Serialize(_inspectionChecklist);
+            await PrintCompletionService.CompleteInspectionAsync(_currentSetup.Id, checklistJson, 0); // TODO: current user ID
+            Toast.ShowSuccess("Inspection completed!");
+            await LoadQueueAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    // ── Existing Actions ─────────────────────────────────────
+
+    private void DismissUrgentAlert() => _urgentChangeover = null;
 
     private async Task AcceptAndStart(int dispatchId)
     {
@@ -213,6 +441,7 @@
         {
             await DispatchService.StartDispatchAsync(dispatchId);
             Toast.ShowSuccess("Setup started.");
+            _urgentChangeover = null;
             await LoadQueueAsync();
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }

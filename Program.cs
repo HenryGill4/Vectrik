@@ -146,6 +146,13 @@ builder.Services.AddScoped<IShippingService, ShippingService>();
 // Setup Dispatch System
 builder.Services.AddScoped<ISetupDispatchService, SetupDispatchService>();
 builder.Services.AddSingleton<IDispatchNotifier, DispatchNotifier>();
+builder.Services.AddScoped<IChangeoverDispatchService, ChangeoverDispatchService>();
+builder.Services.AddScoped<IPlateLayoutDispatchService, PlateLayoutDispatchService>();
+builder.Services.AddScoped<IPrintStartDispatchService, PrintStartDispatchService>();
+builder.Services.AddScoped<IPrintCompletionService, PrintCompletionService>();
+builder.Services.AddScoped<IDispatchScoringService, DispatchScoringService>();
+builder.Services.AddScoped<IDispatchGenerationService, DispatchGenerationService>();
+builder.Services.AddHostedService<DispatchGenerationBackgroundService>();
 
 // Email
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));

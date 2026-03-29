@@ -1140,6 +1140,11 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.PredecessorDispatchId)
                 .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.TargetRole)
+                .WithMany()
+                .HasForeignKey(e => e.TargetRoleId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => e.TargetRoleId);
         });
 
         // StageExecution — SetupDispatch FK

@@ -33,4 +33,14 @@ public class DispatchHub : Hub
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"dispatch:{tenantCode}:operator:{operatorId}");
     }
+
+    public async Task JoinRoleGroup(string tenantCode, int roleId)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"dispatch:{tenantCode}:role:{roleId}");
+    }
+
+    public async Task LeaveRoleGroup(string tenantCode, int roleId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"dispatch:{tenantCode}:role:{roleId}");
+    }
 }

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vectrik.Data;
 using Vectrik.Hubs;
+using System.Text.Json;
 using Vectrik.Models;
 using Vectrik.Models.Enums;
 using Vectrik.Services.Platform;
@@ -179,6 +180,16 @@ public class SetupDispatchService : ISetupDispatchService
         // Allow completing from InProgress, PendingVerification, or Verified
         if (dispatch.Status is not (DispatchStatus.InProgress or DispatchStatus.PendingVerification or DispatchStatus.Verified))
             throw new InvalidOperationException($"Cannot complete dispatch in {dispatch.Status} state.");
+
+        // Gate: validate inspection checklist if present
+        if (!string.IsNullOrEmpty(dispatch.InspectionChecklistJson))
+        {
+            var items = JsonSerializer.Deserialize<List<InspectionChecklistItem>>(dispatch.InspectionChecklistJson);
+            var incomplete = items?.Where(i => i.Required && !i.Inspected).ToList();
+            if (incomplete?.Count > 0)
+                throw new InvalidOperationException(
+                    $"Cannot complete: {incomplete.Count} required inspection item(s) not yet completed.");
+        }
 
         dispatch.Status = DispatchStatus.Completed;
         dispatch.CompletedAt = DateTime.UtcNow;
@@ -369,6 +380,51 @@ public class SetupDispatchService : ISetupDispatchService
             TotalQueued = activeDispatches.Count(d => d.Status == DispatchStatus.Queued),
             TotalInProgress = activeDispatches.Count(d => d.Status == DispatchStatus.InProgress)
         };
+    }
+
+    // ── Phase 2 Extensions ──────────────────────────────────
+
+    public async Task<List<SetupDispatch>> GetActiveDispatchesByTypeAsync(DispatchType type)
+    {
+        var dispatches = await _db.SetupDispatches
+            .Include(d => d.Machine)
+            .Include(d => d.MachineProgram)
+            .Include(d => d.Part)
+            .Include(d => d.AssignedOperator)
+            .Where(d => d.DispatchType == type
+                && d.Status != DispatchStatus.Completed
+                && d.Status != DispatchStatus.Cancelled)
+            .ToListAsync();
+
+        return dispatches.OrderByDescending(d => d.Priority).ThenBy(d => d.QueuedAt).ToList();
+    }
+
+    public async Task UpdateDispatchPriorityAsync(int dispatchId, int priority, string? reason = null, string? scoreBreakdownJson = null)
+    {
+        var dispatch = await GetRequiredAsync(dispatchId);
+        dispatch.Priority = Math.Clamp(priority, 1, 100);
+        if (reason != null) dispatch.PriorityReason = reason;
+        if (scoreBreakdownJson != null) dispatch.ScoreBreakdownJson = scoreBreakdownJson;
+        dispatch.LastModifiedDate = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        await NotifyAsync(d => _notifier.SendQueueReprioritizedAsync(d, dispatch.MachineId));
+    }
+
+    public async Task<List<SetupDispatch>> GetDispatchesByRoleAsync(int roleId)
+    {
+        var dispatches = await _db.SetupDispatches
+            .Include(d => d.Machine)
+            .Include(d => d.MachineProgram)
+            .Include(d => d.Part)
+            .Include(d => d.AssignedOperator)
+            .Include(d => d.TargetRole)
+            .Where(d => d.TargetRoleId == roleId
+                && d.Status != DispatchStatus.Completed
+                && d.Status != DispatchStatus.Cancelled)
+            .ToListAsync();
+
+        return dispatches.OrderByDescending(d => d.Priority).ThenBy(d => d.QueuedAt).ToList();
     }
 
     // ── Helpers ──────────────────────────────────────────────
