@@ -225,7 +225,8 @@ using (var scope = app.Services.CreateScope())
             {
                 "module.quoting", "module.workorders", "module.shopfloor",
                 "module.quality", "module.inventory", "module.analytics",
-                "module.pdm", "module.maintenance", "sls",
+                "module.pdm", "module.maintenance", "module.instructions",
+                "module.costing", "module.shipping", "sls",
                 "advanced.spc", "advanced.workflows", "advanced.custom_fields"
             };
             foreach (var key in coreFlags)
