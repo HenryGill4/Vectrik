@@ -1,0 +1,536 @@
+@* ═══════════════════════════════════════════════════════════════════════════
+   JobDetailModal — Full-screen detail view when clicking a Gantt bar.
+   Shows job info, stage pipeline, work order context, and actions.
+   Handles both stage execution bars and build (MachineProgram) bars.
+   ═══════════════════════════════════════════════════════════════════════════ *@
+@inject IStageService StageService
+@inject ISchedulingService Scheduler
+@inject IProgramSchedulingService ProgramScheduling
+@inject IProgramPlanningService ProgramPlanning
+@inject IJobService JobService
+@inject ToastService Toast
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal-content modal-lg job-detail-modal" @onclick:stopPropagation>
+            @if (_saving)
+            {
+                <div class="wizard-scheduling-overlay">
+                    <div class="wizard-scheduling-pulse"></div>
+                    <div class="wizard-scheduling-icon">
+                        <svg class="wizard-scheduling-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+                        </svg>
+                    </div>
+                    <div class="wizard-scheduling-title">@_savingMessage</div>
+                    <div class="wizard-scheduling-progress-ring">
+                        <div class="wizard-scheduling-progress-bar" style="width: 100%; animation: wizard-progress-indeterminate 1.5s ease-in-out infinite;"></div>
+                    </div>
+                </div>
+            }
+
+            @if (IsBuildMode)
+            {
+                @* ═══ BUILD DETAIL ═══ *@
+                <div class="modal-header">
+                    <div class="job-detail-header-group">
+                        <span class="job-detail-type-badge job-detail-type--build">SLS BUILD</span>
+                        <h3 class="modal-title">@(Build!.Name ?? $"Build #{Build.Id}")</h3>
+                        <span class="badge badge-@BuildStatusBadge">@BuildStatusIcon @Build.ScheduleStatus</span>
+                    </div>
+                    <button class="btn-icon" @onclick="Close" disabled="@_saving">&#x2715;</button>
+                </div>
+
+                <div class="modal-body job-detail-body">
+                    @* ── Build Info Grid ── *@
+                    <div class="job-detail-grid">
+                        <div class="job-detail-field">
+                            <span class="job-detail-label">Program</span>
+                            <span class="job-detail-value">@(Build.ProgramNumber ?? "—")</span>
+                        </div>
+                        <div class="job-detail-field">
+                            <span class="job-detail-label">Machine</span>
+                            <span class="job-detail-value">@(Machines.FirstOrDefault(m => m.Id == Build.MachineId)?.Name ?? "Unassigned")</span>
+                        </div>
+                        <div class="job-detail-field">
+                            <span class="job-detail-label">Print Time</span>
+                            <span class="job-detail-value">@(Build.EstimatedPrintHours?.ToString("F1") ?? "?")h</span>
+                        </div>
+                        <div class="job-detail-field">
+                            <span class="job-detail-label">Parts</span>
+                            <span class="job-detail-value">@Build.TotalPartCount (@Build.UniquePartCount type@(Build.UniquePartCount != 1 ? "s" : ""))</span>
+                        </div>
+                        @if (Build.ScheduledDate.HasValue)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Scheduled Start</span>
+                                <span class="job-detail-value">@Build.ScheduledDate.Value.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                            </div>
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Estimated End</span>
+                                <span class="job-detail-value">@Build.ScheduledDate.Value.AddHours(Build.EstimatedPrintHours ?? 0).ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                            </div>
+                        }
+                        @if (Build.EstimatedPrintHours.HasValue)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Est. Cost</span>
+                                <span class="job-detail-value">@((200m * (decimal)Build.EstimatedPrintHours.Value).ToString("C0"))</span>
+                            </div>
+                        }
+                        @if (Build.EstimatedPowderKg.HasValue)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Powder</span>
+                                <span class="job-detail-value">@Build.EstimatedPowderKg.Value.ToString("F1") kg</span>
+                            </div>
+                        }
+                        @if (Build.LayerCount.HasValue)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Layers</span>
+                                <span class="job-detail-value">@Build.LayerCount.Value.ToString("N0")</span>
+                            </div>
+                        }
+                    </div>
+
+                    @* ── Parts on Plate ── *@
+                    @if (Build.ProgramParts?.Any() == true)
+                    {
+                        <div class="job-detail-section">
+                            <h4 class="job-detail-section-title">Parts on Plate</h4>
+                            <div class="job-detail-parts-table">
+                                @foreach (var pp in Build.ProgramParts)
+                                {
+                                    var woRef = pp.WorkOrderLine?.WorkOrder;
+                                    <div class="job-detail-part-row">
+                                        <span class="job-detail-part-num">@(pp.Part?.PartNumber ?? $"Part #{pp.PartId}")</span>
+                                        <span class="job-detail-part-name">@(pp.Part?.Name ?? "")</span>
+                                        <span class="job-detail-part-qty">@(pp.Quantity * pp.StackLevel) parts</span>
+                                        <span class="job-detail-part-stack">@pp.Quantity pos × @pp.StackLevel high</span>
+                                        @if (woRef != null)
+                                        {
+                                            <span class="job-detail-part-wo">@woRef.OrderNumber — @woRef.CustomerName</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @* ── Build Actions ── *@
+                <div class="modal-footer job-detail-footer">
+                    @switch (Build.ScheduleStatus)
+                    {
+                        case ProgramScheduleStatus.Scheduled:
+                            <button class="btn btn-accent" @onclick="OnStartPrint" disabled="@_saving">🖨️ Start Print</button>
+                            <button class="btn btn-warning" @onclick="OnBuildReschedule" disabled="@_saving">Reschedule</button>
+                            <button class="btn btn-danger" @onclick="OnBuildDelete" disabled="@_saving">Delete</button>
+                            break;
+                        case ProgramScheduleStatus.Printing:
+                            <button class="btn btn-warning" @onclick="OnPostPrint" disabled="@_saving">🔄 Move to Post-Print</button>
+                            break;
+                        case ProgramScheduleStatus.PostPrint:
+                            <button class="btn btn-success" @onclick="OnReleasePlate" disabled="@_saving">📦 Release Plate</button>
+                            break;
+                    }
+                    <div style="flex:1;"></div>
+                    <button class="btn btn-secondary" @onclick="Close" disabled="@_saving">Close</button>
+                </div>
+            }
+            else if (Execution != null)
+            {
+                @* ═══ STAGE EXECUTION DETAIL ═══ *@
+                var job = Execution.Job;
+                var wo = job?.WorkOrderLine?.WorkOrder;
+                var scopeLabel = job?.Scope switch { JobScope.Build => "Build", JobScope.Batch => "Batch", _ => "Part" };
+
+                <div class="modal-header">
+                    <div class="job-detail-header-group">
+                        <span class="job-detail-type-badge job-detail-type--@scopeLabel.ToLower()">@scopeLabel.ToUpper()</span>
+                        <h3 class="modal-title">@(job?.Part?.PartNumber ?? Execution.MachineProgram?.Name ?? "Job")</h3>
+                        <span class="badge badge-@(Execution.Status.ToString().ToLower())">@Execution.Status</span>
+                        @if (job != null)
+                        {
+                            <span class="badge badge-@(job.Priority.ToString().ToLower())">@job.Priority</span>
+                        }
+                    </div>
+                    <button class="btn-icon" @onclick="Close" disabled="@_saving">&#x2715;</button>
+                </div>
+
+                <div class="modal-body job-detail-body">
+                    @* ── Job Info Grid ── *@
+                    <div class="job-detail-grid">
+                        @if (job != null)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Job</span>
+                                <span class="job-detail-value">@(job.JobNumber ?? $"#{job.Id}")</span>
+                            </div>
+                        }
+                        <div class="job-detail-field">
+                            <span class="job-detail-label">Part</span>
+                            <span class="job-detail-value">@(job?.Part?.PartNumber ?? "—") @(job?.Part?.Name ?? "")</span>
+                        </div>
+                        @if (job != null)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Quantity</span>
+                                <span class="job-detail-value">@job.Quantity</span>
+                            </div>
+                        }
+                        <div class="job-detail-field">
+                            <span class="job-detail-label">Stage</span>
+                            <span class="job-detail-value" style="@(Execution.ProductionStage?.StageColor != null ? $"border-left: 3px solid {Execution.ProductionStage.StageColor}; padding-left: 8px;" : "")">@(Execution.ProductionStage?.Name ?? "—")</span>
+                        </div>
+                        <div class="job-detail-field">
+                            <span class="job-detail-label">Machine</span>
+                            <span class="job-detail-value">@(Execution.Machine?.Name ?? "Unassigned")</span>
+                        </div>
+                        <div class="job-detail-field">
+                            <span class="job-detail-label">Est. Duration</span>
+                            <span class="job-detail-value">@(Execution.EstimatedHours?.ToString("F1") ?? "?")h @(Execution.SetupHours > 0 ? $"(+{Execution.SetupHours?.ToString("F1")}h setup)" : "")</span>
+                        </div>
+                        @if (Execution.ScheduledStartAt.HasValue)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Scheduled</span>
+                                <span class="job-detail-value">@Execution.ScheduledStartAt.Value.ToLocalTime().ToString("ddd MMM d, h:mm tt") → @(Execution.ScheduledEndAt?.ToLocalTime().ToString("h:mm tt") ?? "?")</span>
+                            </div>
+                        }
+                        @if (Execution.ActualStartAt.HasValue)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Actual Start</span>
+                                <span class="job-detail-value">@Execution.ActualStartAt.Value.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                            </div>
+                        }
+                        @if (Execution.EstimatedCost.HasValue)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Est. Cost</span>
+                                <span class="job-detail-value">@Execution.EstimatedCost.Value.ToString("C2")</span>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(Execution.OperatorName))
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Operator</span>
+                                <span class="job-detail-value">@Execution.OperatorName</span>
+                            </div>
+                        }
+                        @if (Execution.MachineProgram != null)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Program</span>
+                                <span class="job-detail-value">@(Execution.MachineProgram.Name ?? Execution.MachineProgram.ProgramNumber ?? "—")</span>
+                            </div>
+                        }
+                        @if (wo != null)
+                        {
+                            <div class="job-detail-field">
+                                <span class="job-detail-label">Work Order</span>
+                                <span class="job-detail-value"><a href="/workorders/@wo.Id" style="color: var(--primary);">@wo.OrderNumber</a> — @wo.CustomerName</span>
+                            </div>
+                        }
+                    </div>
+
+                    @* ── Learning Accuracy ── *@
+                    @{
+                        var procStage = Execution.ProcessStage;
+                        var prog = Execution.MachineProgram;
+                        var hasLearning = (procStage?.EstimateSource == "Auto" && procStage.ActualSampleCount > 0)
+                            || (prog?.EstimateSource == "Auto" && prog.ActualSampleCount > 0);
+                        var learnSource = prog?.EstimateSource == "Auto" ? prog : null;
+                        var stageSource = procStage?.EstimateSource == "Auto" ? procStage : null;
+                    }
+                    @if (hasLearning)
+                    {
+                        <div class="job-detail-section">
+                            <h4 class="job-detail-section-title">Scheduling Intelligence</h4>
+                            <div class="job-detail-learning">
+                                @if (learnSource != null)
+                                {
+                                    var avgMin = learnSource.ActualAverageDurationMinutes ?? 0;
+                                    var stdDev = learnSource.ActualVarianceMinutes.HasValue ? Math.Sqrt(learnSource.ActualVarianceMinutes.Value) : 0;
+                                    var samples = learnSource.ActualSampleCount ?? 0;
+                                    var confidence = samples >= 10 ? "High" : samples >= 5 ? "Medium" : "Low";
+                                    var confClass = samples >= 10 ? "high" : samples >= 5 ? "medium" : "low";
+                                    <div class="job-detail-learning-row">
+                                        <span class="job-detail-learning-badge job-detail-learning-badge--@confClass">Learned</span>
+                                        <span class="job-detail-learning-stat">@(avgMin / 60.0).ToString("F1")h avg</span>
+                                        @if (stdDev > 0.1)
+                                        {
+                                            <span class="job-detail-learning-stat job-detail-learning-range">±@((stdDev / 60.0).ToString("F1"))h</span>
+                                        }
+                                        <span class="job-detail-learning-meta">from @samples run@(samples != 1 ? "s" : "") · @confidence confidence</span>
+                                    </div>
+                                }
+                                else if (stageSource != null)
+                                {
+                                    var avgMin = stageSource.ActualAverageDurationMinutes ?? 0;
+                                    var stdDev = stageSource.ActualVarianceMinutes.HasValue ? Math.Sqrt(stageSource.ActualVarianceMinutes.Value) : 0;
+                                    var samples = stageSource.ActualSampleCount ?? 0;
+                                    var confidence = samples >= 10 ? "High" : samples >= 5 ? "Medium" : "Low";
+                                    var confClass = samples >= 10 ? "high" : samples >= 5 ? "medium" : "low";
+                                    <div class="job-detail-learning-row">
+                                        <span class="job-detail-learning-badge job-detail-learning-badge--@confClass">Learned</span>
+                                        <span class="job-detail-learning-stat">@((avgMin / 60.0).ToString("F1"))h avg</span>
+                                        @if (stdDev > 0.1)
+                                        {
+                                            <span class="job-detail-learning-stat job-detail-learning-range">±@((stdDev / 60.0).ToString("F1"))h</span>
+                                        }
+                                        <span class="job-detail-learning-meta">from @samples run@(samples != 1 ? "s" : "") · @confidence confidence (stage-level)</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="job-detail-section">
+                            <h4 class="job-detail-section-title">Scheduling Intelligence</h4>
+                            <div class="job-detail-learning">
+                                <div class="job-detail-learning-row">
+                                    <span class="job-detail-learning-badge job-detail-learning-badge--manual">Manual</span>
+                                    <span class="job-detail-learning-meta">Using configured estimates — will learn from actual completions</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @* ── Stage Pipeline (all stages in this job) ── *@
+                    @if (job?.Stages?.Count > 1)
+                    {
+                        <div class="job-detail-section">
+                            <h4 class="job-detail-section-title">Stage Pipeline</h4>
+                            <div class="job-detail-pipeline">
+                                @foreach (var stage in job.Stages.OrderBy(s => s.SortOrder))
+                                {
+                                    var isCurrent = stage.Id == Execution.Id;
+                                    var stageStatusClass = stage.Status switch
+                                    {
+                                        StageExecutionStatus.Completed => "job-detail-stage--done",
+                                        StageExecutionStatus.InProgress => "job-detail-stage--active",
+                                        StageExecutionStatus.Failed => "job-detail-stage--failed",
+                                        _ => "job-detail-stage--pending"
+                                    };
+                                    var stageIcon = stage.Status switch
+                                    {
+                                        StageExecutionStatus.Completed => "✅",
+                                        StageExecutionStatus.InProgress => "▶️",
+                                        StageExecutionStatus.Failed => "❌",
+                                        _ => "⏳"
+                                    };
+                                    <div class="job-detail-stage @stageStatusClass @(isCurrent ? "job-detail-stage--current" : "")">
+                                        <span class="job-detail-stage-icon">@stageIcon</span>
+                                        <div class="job-detail-stage-info">
+                                            <span class="job-detail-stage-name" style="@(stage.ProductionStage?.StageColor != null ? $"border-left: 3px solid {stage.ProductionStage.StageColor}; padding-left: 6px;" : "")">@(stage.ProductionStage?.Name ?? $"Stage {stage.SortOrder}")</span>
+                                            <span class="job-detail-stage-meta">
+                                                @(stage.Machine?.Name ?? "Unassigned") · @(stage.EstimatedHours?.ToString("F1") ?? "?")h
+                                                @if (stage.ScheduledStartAt.HasValue)
+                                                {
+                                                    <text> · @stage.ScheduledStartAt.Value.ToLocalTime().ToString("MMM d HH:mm")</text>
+                                                }
+                                            </span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @* ── Reschedule Controls ── *@
+                    <div class="job-detail-section">
+                        <h4 class="job-detail-section-title">Reschedule</h4>
+                        <div class="job-detail-reschedule-grid">
+                            <div class="form-group">
+                                <label class="form-label">Machine</label>
+                                <select class="form-control" @bind="_machineId">
+                                    <option value="">Unassigned</option>
+                                    @foreach (var m in Machines.Where(m => m.IsAvailableForScheduling))
+                                    {
+                                        <option value="@m.Id">@m.Name (@m.MachineType)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Start</label>
+                                <input class="form-control" type="datetime-local" @bind="_start" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">End</label>
+                                <input class="form-control" type="datetime-local" @bind="_end" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @* ── Actions ── *@
+                <div class="modal-footer job-detail-footer">
+                    <button class="btn btn-primary" @onclick="SaveRescheduleAsync" disabled="@_saving">Save</button>
+                    <button class="btn btn-warning" @onclick="AutoScheduleAsync" disabled="@_saving">⚡ Auto-Schedule</button>
+                    @if (Execution?.JobId != null)
+                    {
+                        <button class="btn btn-danger" @onclick="DeleteJobAsync" disabled="@_saving">
+                            @(_confirmDelete ? "Confirm Delete?" : "Delete Job")
+                        </button>
+                    }
+                    <div style="flex:1;"></div>
+                    <button class="btn btn-secondary" @onclick="Close" disabled="@_saving">Close</button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+
+    /// <summary>Set for stage execution bar clicks.</summary>
+    [Parameter] public StageExecution? Execution { get; set; }
+
+    /// <summary>Set for build bar clicks.</summary>
+    [Parameter] public MachineProgram? Build { get; set; }
+
+    [Parameter] public List<Machine> Machines { get; set; } = [];
+    [Parameter] public string UserName { get; set; } = "System";
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>Raised for build actions (start-print, post-print, release-plate, reschedule, delete).</summary>
+    [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
+
+    private bool IsBuildMode => Build != null;
+    private bool _saving;
+    private string _savingMessage = "Saving...";
+    private bool _confirmDelete;
+
+    // Reschedule fields (for execution mode)
+    private string _machineId = "";
+    private DateTime _start;
+    private DateTime _end;
+
+    protected override void OnParametersSet()
+    {
+        _confirmDelete = false;
+        if (IsVisible && Execution != null)
+        {
+            _machineId = Execution.MachineId?.ToString() ?? "";
+            _start = Execution.ScheduledStartAt ?? Execution.Job?.ScheduledStart ?? DateTime.UtcNow;
+            _end = Execution.ScheduledEndAt ?? Execution.Job?.ScheduledEnd ?? DateTime.UtcNow.AddHours(4);
+        }
+    }
+
+    private string BuildStatusBadge => Build?.ScheduleStatus switch
+    {
+        ProgramScheduleStatus.Scheduled => "primary",
+        ProgramScheduleStatus.Printing => "accent",
+        ProgramScheduleStatus.PostPrint => "info",
+        ProgramScheduleStatus.Completed => "success",
+        _ => "secondary"
+    };
+
+    private string BuildStatusIcon => Build?.ScheduleStatus switch
+    {
+        ProgramScheduleStatus.Scheduled => "📅",
+        ProgramScheduleStatus.Printing => "🖨️",
+        ProgramScheduleStatus.PostPrint => "⏳",
+        ProgramScheduleStatus.Completed => "✅",
+        _ => "📦"
+    };
+
+    // ── Execution Actions ──
+
+    private async Task SaveRescheduleAsync()
+    {
+        if (Execution == null) return;
+        if (_end <= _start) { Toast.ShowError("End time must be after start time."); return; }
+        _saving = true; _savingMessage = "Saving schedule...";
+        StateHasChanged();
+        await Task.Yield();
+        try
+        {
+            int? machineId = int.TryParse(_machineId, out var mid) ? mid : null;
+            await StageService.UpdateScheduleAsync(Execution.Id, _start, _end, machineId);
+            Toast.ShowSuccess("Schedule updated");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _saving = false; }
+    }
+
+    private async Task AutoScheduleAsync()
+    {
+        if (Execution == null) return;
+        _saving = true; _savingMessage = "Auto-scheduling...";
+        StateHasChanged();
+        await Task.Yield();
+        try
+        {
+            await Scheduler.AutoScheduleExecutionAsync(Execution.Id);
+            Toast.ShowSuccess("Auto-scheduled");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteJobAsync()
+    {
+        if (Execution?.JobId == null) return;
+        if (!_confirmDelete) { _confirmDelete = true; return; }
+
+        _saving = true; _savingMessage = "Deleting job...";
+        _confirmDelete = false;
+        StateHasChanged();
+        await Task.Yield();
+        try
+        {
+            await JobService.DeleteJobAsync(Execution.JobId.Value);
+            Toast.ShowSuccess("Job deleted");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _saving = false; }
+    }
+
+    // ── Build Actions ──
+
+    private Task OnStartPrint() => DoBuildAction("start-print");
+    private Task OnPostPrint() => DoBuildAction("post-print");
+    private Task OnReleasePlate() => DoBuildAction("release-plate");
+    private Task OnBuildReschedule() => DoBuildAction("reschedule");
+    private Task OnBuildDelete() => DoBuildAction("delete");
+
+    private async Task DoBuildAction(string action)
+    {
+        if (Build == null) return;
+        _saving = true;
+        _savingMessage = action switch
+        {
+            "start-print" => "Starting print...",
+            "post-print" => "Moving to post-print...",
+            "release-plate" => "Releasing plate...",
+            "reschedule" => "Rescheduling...",
+            "delete" => "Deleting build...",
+            _ => "Processing..."
+        };
+        StateHasChanged();
+        await Task.Yield();
+        try
+        {
+            await OnBuildAction.InvokeAsync((Build, action));
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task Close()
+    {
+        if (_saving) return;
+        await OnClose.InvokeAsync();
+    }
+}

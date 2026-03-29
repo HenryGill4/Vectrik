@@ -11,6 +11,14 @@
         <span class="sched-last-refresh" title="Last refreshed">@LastRefresh.ToLocalTime().ToString("HH:mm:ss")</span>
     </div>
     <div class="sched-topbar-actions">
+        @if (ShowSmartReschedule && ViewMode == "gantt")
+        {
+            <button class="btn btn-accent btn-sm" @onclick="OnSmartReschedule" disabled="@Scheduling"
+                    title="Optimize SLS build schedule: fix overlaps, align changeovers, balance machines">
+                @if (Scheduling) { <span class="spinner" style="width:14px;height:14px;margin-right:4px;"></span> }
+                Smart Reschedule
+            </button>
+        }
         @if (ShowAutoSchedule)
         {
             <button class="btn btn-warning btn-sm" @onclick="OnAutoScheduleAll" disabled="@Scheduling">
@@ -150,6 +158,8 @@
     [Parameter] public EventCallback OnManualRefresh { get; set; }
     [Parameter] public EventCallback OnToggleAutoRefresh { get; set; }
     [Parameter] public EventCallback OnAutoScheduleAll { get; set; }
+    [Parameter] public bool ShowSmartReschedule { get; set; }
+    [Parameter] public EventCallback OnSmartReschedule { get; set; }
     [Parameter] public EventCallback OnNewBuild { get; set; }
     [Parameter] public EventCallback OnNewCncJob { get; set; }
 

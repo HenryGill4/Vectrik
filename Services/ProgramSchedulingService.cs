@@ -383,7 +383,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var notBefore = startAfter ?? DateTime.UtcNow;
         var bestSlot = await FindBestSlotAsync(program.EstimatedPrintHours.Value, notBefore, machineType: "SLS");
 
-        return await ScheduleBuildPlateAsync(machineProgramId, bestSlot.MachineId, startAfter);
+        // Pass the slot's actual start time so ScheduleBuildPlateAsync uses the same slot
+        return await ScheduleBuildPlateAsync(machineProgramId, bestSlot.MachineId, bestSlot.Slot.PrintStart);
     }
 
     // ══════════════════════════════════════════════════════════
@@ -728,12 +729,11 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var sortOrder = 0;
 
         // ── Prefetch: batch-load machines, programs, and cost profiles to avoid N+1 queries ──
-        var machineLookupById = await _db.Machines
-            .Where(m => m.IsActive)
-            .ToDictionaryAsync(m => m.Id, m => m);
-        var machineIdLookup = await _db.Machines
-            .Where(m => m.IsActive && m.MachineId != null)
-            .ToDictionaryAsync(m => m.MachineId!, m => m);
+        var allActiveMachines = await _db.Machines.Where(m => m.IsActive).ToListAsync();
+        var machineLookupById = allActiveMachines.ToDictionary(m => m.Id, m => m);
+        var machineIdLookup = allActiveMachines
+            .Where(m => m.MachineId != null)
+            .ToDictionary(m => m.MachineId!, m => m);
 
         // Prefetch all programs for this part (avoids per-stage GetBestProgramForStageAsync DB hits)
         var partPrograms = await _db.MachinePrograms
@@ -903,10 +903,12 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
         var isContinuous = machine.AutoChangeoverEnabled;
 
-        // Query program-based executions
+        // Query program-based executions — exclude the program being rescheduled
+        // so its old executions (not yet deleted) don't block its new slot.
         var existingExecutions = await _db.StageExecutions
             .Where(e => e.MachineId == machine.Id
                 && e.MachineProgramId != null
+                && (!forProgramId.HasValue || e.MachineProgramId != forProgramId.Value)
                 && e.ScheduledStartAt != null
                 && e.ScheduledEndAt != null
                 && e.Status != StageExecutionStatus.Completed
@@ -1971,6 +1973,105 @@ public class ProgramSchedulingService : IProgramSchedulingService
     }
 
     // Shift time helpers are now in ShiftTimeHelper.cs (shared with SchedulingService)
+
+    // ══════════════════════════════════════════════════════════
+    // Smart Reschedule
+    // ══════════════════════════════════════════════════════════
+
+    public async Task<SmartRescheduleResult> SmartRescheduleBuildsAsync(
+        string userName,
+        IProgress<(int current, int total, string status)>? progress = null)
+    {
+        var actions = new List<SmartRescheduleAction>();
+
+        // Get all movable builds — Scheduled or Ready BuildPlates with slicer data
+        var movableBuilds = await _db.MachinePrograms
+            .Include(p => p.Machine)
+            .Where(p => p.ProgramType == ProgramType.BuildPlate
+                && p.ScheduledDate != null
+                && p.EstimatedPrintHours != null && p.EstimatedPrintHours > 0
+                && (p.ScheduleStatus == ProgramScheduleStatus.Scheduled
+                    || p.ScheduleStatus == ProgramScheduleStatus.Ready))
+            .OrderBy(p => p.ScheduledDate)
+            .ToListAsync();
+
+        if (!movableBuilds.Any())
+            return new SmartRescheduleResult(0, 0, 0, 0, 0, [], 0);
+
+        var total = movableBuilds.Count;
+        progress?.Report((0, total, $"Unlocking {total} build(s)..."));
+
+        // Step 1: Unlock all movable builds so they can be rescheduled fresh
+        foreach (var build in movableBuilds)
+        {
+            try
+            {
+                if (build.IsLocked)
+                    await UnlockProgramAsync(build.Id, userName, "Smart reschedule");
+            }
+            catch { /* Already unlocked or can't unlock — skip */ }
+        }
+
+        // Step 2: Re-schedule each build to the best available slot across all SLS machines.
+        var buildsToSchedule = await _db.MachinePrograms
+            .Include(p => p.Machine)
+            .Where(p => p.ProgramType == ProgramType.BuildPlate
+                && p.EstimatedPrintHours != null && p.EstimatedPrintHours > 0
+                && (p.ScheduleStatus == ProgramScheduleStatus.Ready
+                    || p.ScheduleStatus == ProgramScheduleStatus.None))
+            .OrderBy(p => p.CreatedDate)
+            .ToListAsync();
+
+        // Build a machine name lookup so we don't need extra queries per build
+        var machineNames = await _db.Machines
+            .Where(m => m.IsActive)
+            .ToDictionaryAsync(m => m.Id, m => m.Name);
+
+        var scheduled = 0;
+        for (var i = 0; i < buildsToSchedule.Count; i++)
+        {
+            var build = buildsToSchedule[i];
+
+            // Report progress BEFORE the heavy work (safe — not mid-DB-operation)
+            progress?.Report((i, buildsToSchedule.Count,
+                $"Scheduling {i + 1} of {buildsToSchedule.Count}: {build.Name ?? build.ProgramNumber}..."));
+            await Task.Yield(); // Keep Blazor circuit alive between builds
+
+            try
+            {
+                var oldMachineName = build.MachineId.HasValue && machineNames.TryGetValue(build.MachineId.Value, out var mn)
+                    ? mn : "Unscheduled";
+                var oldStart = build.ScheduledDate ?? DateTime.MinValue;
+
+                // Find best slot across ALL SLS machines
+                var result = await ScheduleBuildPlateAutoMachineAsync(build.Id);
+
+                var newMachineName = machineNames.GetValueOrDefault(result.Slot.MachineId, "?");
+                var changeoverSafe = result.Slot.OperatorAvailableForChangeover;
+
+                actions.Add(new SmartRescheduleAction(
+                    build.Id, build.Name ?? build.ProgramNumber ?? $"Build #{build.Id}",
+                    "Scheduled", oldMachineName, newMachineName, oldStart, result.Slot.PrintStart,
+                    changeoverSafe ? "Changeover safe" : "Changeover outside shift"));
+
+                scheduled++;
+            }
+            catch (Exception ex)
+            {
+                actions.Add(new SmartRescheduleAction(
+                    build.Id, build.Name ?? build.ProgramNumber ?? $"Build #{build.Id}",
+                    "Failed", "", "", DateTime.MinValue, DateTime.MinValue,
+                    $"Failed: {ex.Message}"));
+            }
+        }
+
+        var conflictsFree = actions.Count(a => a.Reason.Contains("safe"));
+
+        progress?.Report((buildsToSchedule.Count, buildsToSchedule.Count, "Complete"));
+
+        return new SmartRescheduleResult(
+            total, scheduled, 0, conflictsFree, 0, actions, 0);
+    }
 
     // ── Draft Programs (Engineer → Scheduler Handoff) ────────
 

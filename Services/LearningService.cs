@@ -77,29 +77,33 @@ public class LearningService : ILearningService
         var autoSwitchThreshold = await GetAutoSwitchThresholdAsync();
 
         var sampleCount = stage.ActualSampleCount ?? 0;
+        var prevAvg = stage.ActualAverageDurationMinutes;
         sampleCount++;
 
         // EMA calculation: newAvg = α * actual + (1 - α) * previousAvg
-        if (stage.ActualAverageDurationMinutes.HasValue)
+        double newAvg;
+        if (prevAvg.HasValue)
         {
-            stage.ActualAverageDurationMinutes =
-                alpha * actualDurationMinutes + (1 - alpha) * stage.ActualAverageDurationMinutes.Value;
+            newAvg = alpha * actualDurationMinutes + (1 - alpha) * prevAvg.Value;
+
+            // EMA variance: tracks how much actual values deviate from the mean
+            var diff = actualDurationMinutes - prevAvg.Value;
+            var prevVar = stage.ActualVarianceMinutes ?? 0;
+            stage.ActualVarianceMinutes = (1 - alpha) * (prevVar + alpha * diff * diff);
         }
         else
         {
-            stage.ActualAverageDurationMinutes = actualDurationMinutes;
+            newAvg = actualDurationMinutes;
+            stage.ActualVarianceMinutes = 0;
         }
 
+        stage.ActualAverageDurationMinutes = newAvg;
         stage.ActualSampleCount = sampleCount;
 
-        // Auto-switch to "Auto" after enough samples
         if (sampleCount >= autoSwitchThreshold && stage.EstimateSource != "Auto")
-        {
             stage.EstimateSource = "Auto";
-        }
 
         stage.LastModifiedDate = DateTime.UtcNow;
-
         await _db.SaveChangesAsync();
     }
 
@@ -112,30 +116,32 @@ public class LearningService : ILearningService
         var autoSwitchThreshold = await GetAutoSwitchThresholdAsync();
 
         var sampleCount = program.ActualSampleCount ?? 0;
+        var prevAvg = program.ActualAverageDurationMinutes;
         sampleCount++;
 
-        // EMA calculation: newAvg = α * actual + (1 - α) * previousAvg
-        if (program.ActualAverageDurationMinutes.HasValue)
+        double newAvg;
+        if (prevAvg.HasValue)
         {
-            program.ActualAverageDurationMinutes =
-                alpha * actualDurationMinutes + (1 - alpha) * program.ActualAverageDurationMinutes.Value;
+            newAvg = alpha * actualDurationMinutes + (1 - alpha) * prevAvg.Value;
+
+            var diff = actualDurationMinutes - prevAvg.Value;
+            var prevVar = program.ActualVarianceMinutes ?? 0;
+            program.ActualVarianceMinutes = (1 - alpha) * (prevVar + alpha * diff * diff);
         }
         else
         {
-            program.ActualAverageDurationMinutes = actualDurationMinutes;
+            newAvg = actualDurationMinutes;
+            program.ActualVarianceMinutes = 0;
         }
 
+        program.ActualAverageDurationMinutes = newAvg;
         program.ActualSampleCount = sampleCount;
         program.TotalRunCount++;
 
-        // Auto-switch to "Auto" after enough samples
         if (sampleCount >= autoSwitchThreshold && program.EstimateSource != "Auto")
-        {
             program.EstimateSource = "Auto";
-        }
 
         program.LastModifiedDate = DateTime.UtcNow;
-
         await _db.SaveChangesAsync();
     }
 }

@@ -136,6 +136,9 @@ public class ProcessStage
     public double? ActualAverageDurationMinutes { get; set; }
     public int? ActualSampleCount { get; set; }
 
+    /// <summary>EMA-smoothed variance (minutes²). Use √ for standard deviation.</summary>
+    public double? ActualVarianceMinutes { get; set; }
+
     [MaxLength(50)]
     public string? EstimateSource { get; set; }
 

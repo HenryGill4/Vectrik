@@ -42,6 +42,8 @@
                  OnManualRefresh="ManualRefreshAsync"
                  OnToggleAutoRefresh="ToggleAutoRefresh"
                  OnAutoScheduleAll="AutoScheduleAll"
+                 ShowSmartReschedule="@(_programs.Any(p => p.ScheduleStatus == ProgramScheduleStatus.Scheduled || p.ScheduleStatus == ProgramScheduleStatus.Ready))"
+                 OnSmartReschedule="SmartRescheduleAll"
                  OnNewBuild="OpenBuildAdvisor"
                  OnNewCncJob="OpenCncWizard"
                  OnShowConflictsOnlyChanged="v => _showConflictsOnly = v"
@@ -170,15 +172,15 @@ else if (_viewMode == "data")
 </div>
 
 @* ── Modals ── *@
-<Vectrik.Components.Pages.Scheduler.Modals.RescheduleModal
-    IsVisible="_showReschedule"
-    Execution="_rescheduleExec"
+<Vectrik.Components.Pages.Scheduler.Modals.JobDetailModal
+    IsVisible="_showJobDetail"
+    Execution="_jobDetailExec"
+    Build="_jobDetailBuild"
     Machines="_machines"
-    InitialMachineId="@_rescheduleMachineId"
-    InitialStart="_rescheduleStart"
-    InitialEnd="_rescheduleEnd"
-    OnClose="() => { _showReschedule = false; }"
-    OnConfirm="OnModalConfirmedAsync" />
+    UserName="@_userName"
+    OnClose="() => { _showJobDetail = false; _jobDetailExec = null; _jobDetailBuild = null; }"
+    OnChanged="OnModalConfirmedAsync"
+    OnBuildAction="HandleBuildActionAsync" />
 
 <Vectrik.Components.Pages.Scheduler.Modals.UnifiedScheduleWizard
     IsVisible="_showScheduleWizard"
@@ -247,12 +249,12 @@ else if (_viewMode == "data")
     private bool _showBuildAdvisor;
     private int? _advisorMachineId;
     private int? _advisorPartId;
-    private bool _showReschedule;
     private ConfirmDialog _confirmDialog = null!;
-    private StageExecution? _rescheduleExec;
-    private string _rescheduleMachineId = "";
-    private DateTime _rescheduleStart;
-    private DateTime _rescheduleEnd;
+
+    // Job detail modal (replaces old RescheduleModal)
+    private bool _showJobDetail;
+    private StageExecution? _jobDetailExec;
+    private MachineProgram? _jobDetailBuild;
 
     private bool _showConflictsOnly;
     private ProgramScheduleStatus? _programStatusFilter;
@@ -334,7 +336,7 @@ else if (_viewMode == "data")
         _autoRefreshTimer = new System.Threading.Timer(async _ =>
         {
             if (_disposed || !_autoRefreshEnabled || _loading || _refreshing || _scheduling
-                || _showBuildAdvisor || _showScheduleWizard || _showReschedule) return;
+                || _showBuildAdvisor || _showScheduleWizard || _showJobDetail) return;
             try
             {
                 await InvokeAsync(async () =>
@@ -562,37 +564,32 @@ else if (_viewMode == "data")
 
     private async Task OnModalConfirmedAsync()
     {
-        _showReschedule = false;
+        _showJobDetail = false;
+        _jobDetailExec = null;
+        _jobDetailBuild = null;
         _showScheduleWizard = false;
         await LoadData(isBackgroundRefresh: true);
     }
 
     private void ShowReschedule(StageExecution exec)
     {
-        _rescheduleExec = exec;
-        _rescheduleMachineId = exec.MachineId?.ToString() ?? "";
-        _rescheduleStart = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? DateTime.UtcNow;
-        _rescheduleEnd = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? DateTime.UtcNow.AddHours(4);
-        _showReschedule = true;
+        _jobDetailExec = exec;
+        _jobDetailBuild = null;
+        _showJobDetail = true;
+    }
+
+    private void ShowBuildDetail(MachineProgram build)
+    {
+        _jobDetailBuild = build;
+        _jobDetailExec = null;
+        _showJobDetail = true;
     }
 
     private void ManualScheduleSingle(StageExecution exec)
     {
-        _rescheduleExec = exec;
-        _rescheduleMachineId = "";
-        _rescheduleStart = DateTime.UtcNow;
-        _rescheduleEnd = DateTime.UtcNow.AddHours(exec.EstimatedHours ?? 4);
-
-        if (exec.ProductionStage?.RequiresMachineAssignment == true)
-        {
-            var compatibleMachine = _machines.FirstOrDefault(m =>
-                m.IsAvailableForScheduling &&
-                m.MachineType.Equals(exec.ProductionStage.Department ?? "", StringComparison.OrdinalIgnoreCase));
-            if (compatibleMachine != null)
-                _rescheduleMachineId = compatibleMachine.Id.ToString();
-        }
-
-        _showReschedule = true;
+        _jobDetailExec = exec;
+        _jobDetailBuild = null;
+        _showJobDetail = true;
     }
 
     private void OpenBuildAdvisor()
@@ -647,57 +644,49 @@ else if (_viewMode == "data")
             if (drag.BarType is "exec" or "group")
             {
                 await Scheduler.AutoScheduleExecutionAsync(drag.EntityId, drag.NewStart);
-                Toast.ShowSuccess($"Rescheduled to {drag.NewStart:MMM d HH:mm}");
             }
             else if (drag.BarType == "build")
             {
                 int targetMachineId;
+                ProgramScheduleResult schedResult;
                 if (drag.TargetMachineId.HasValue && drag.TargetMachineId.Value > 0)
                 {
                     targetMachineId = drag.TargetMachineId.Value;
-                    await ProgramScheduling.ScheduleBuildPlateAsync(drag.EntityId, targetMachineId, drag.NewStart);
+                    schedResult = await ProgramScheduling.ScheduleBuildPlateAsync(drag.EntityId, targetMachineId, drag.NewStart);
                 }
                 else
                 {
-                    var result = await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(drag.EntityId, drag.NewStart);
-                    targetMachineId = result.Slot.MachineId;
+                    schedResult = await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(drag.EntityId, drag.NewStart);
+                    targetMachineId = schedResult.Slot.MachineId;
                 }
 
                 // Auto-cascade: shift downstream builds that now overlap
-                var cascade = await ProgramScheduling.CascadeRescheduleAsync(targetMachineId, drag.EntityId);
-
-                var msg = $"Build rescheduled to {drag.NewStart:MMM d HH:mm}";
-                if (cascade.ShiftedCount > 0)
-                    msg += $" — {cascade.ShiftedCount} build(s) shifted";
-                Toast.ShowSuccess(msg);
-
-                // Check changeover safety — warn if build ends outside operator shift
-                try
-                {
-                    var program = _programs.FirstOrDefault(p => p.Id == drag.EntityId);
-                    var buildEnd = program?.ScheduledDate?.AddHours(program.EstimatedPrintHours ?? 0);
-                    if (buildEnd.HasValue)
-                    {
-                        var changeover = await ProgramScheduling.AnalyzeChangeoverAsync(targetMachineId, buildEnd.Value);
-                        if (!changeover.OperatorAvailable)
-                            Toast.ShowWarning($"Changeover conflict: no operator available at {changeover.ChangeoverStart:MMM d HH:mm}. Machine may go DOWN until next shift.");
-                    }
-                }
-                catch { /* changeover check is advisory, don't block */ }
+                await ProgramScheduling.CascadeRescheduleAsync(targetMachineId, drag.EntityId);
             }
 
+            // Reload data FIRST, then show toast so UI is already updated
             await LoadData(isBackgroundRefresh: true);
+            Toast.ShowSuccess($"Rescheduled to {drag.NewStart:MMM d HH:mm}");
         }
+        catch (TaskCanceledException) { /* Circuit disconnected — safe to ignore */ }
+        catch (ObjectDisposedException) { /* Component disposed — safe to ignore */ }
         catch (Exception ex)
         {
             Toast.ShowError($"Reschedule failed: {ex.Message}");
-            await LoadData(isBackgroundRefresh: true);
+            try { await LoadData(isBackgroundRefresh: true); } catch { }
         }
     }
 
     private async Task HandleBuildActionAsync((MachineProgram Build, string Action) args)
     {
         var (build, action) = args;
+
+        if (action == "detail")
+        {
+            ShowBuildDetail(build);
+            return;
+        }
+
         try
         {
             switch (action)
@@ -735,10 +724,12 @@ else if (_viewMode == "data")
 
             await LoadData(isBackgroundRefresh: true);
         }
+        catch (TaskCanceledException) { }
+        catch (ObjectDisposedException) { }
         catch (Exception ex)
         {
             Toast.ShowError($"Action failed: {ex.Message}");
-            await LoadData(isBackgroundRefresh: true);
+            try { await LoadData(isBackgroundRefresh: true); } catch { }
         }
     }
 
@@ -821,6 +812,32 @@ else if (_viewMode == "data")
             await LoadData(isBackgroundRefresh: true);
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _scheduling = false; }
+    }
+
+    private async Task SmartRescheduleAll()
+    {
+        _scheduling = true;
+        StateHasChanged();
+        await Task.Yield();
+
+        try
+        {
+            var result = await ProgramScheduling.SmartRescheduleBuildsAsync(_userName);
+
+            if (result.HasChanges)
+                Toast.ShowSuccess(result.Summary);
+            else
+                Toast.ShowInfo("Schedule is already optimal — no changes needed.");
+
+            await LoadData(isBackgroundRefresh: true);
+        }
+        catch (TaskCanceledException) { }
+        catch (ObjectDisposedException) { }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Smart reschedule failed: {ex.Message}");
+        }
         finally { _scheduling = false; }
     }
 

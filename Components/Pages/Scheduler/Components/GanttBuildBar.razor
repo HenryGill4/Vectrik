@@ -27,14 +27,14 @@
         ? $"--build-hue: {primaryHue};"
         : "";
 }
-<div class="gantt-build-bar-wrapper @(_showPopover ? "popover-open" : "")" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
+<div class="gantt-build-bar-wrapper" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
      data-program-id="@Build.Id"
      data-bar-type="build"
      data-machine-id="@Build.MachineId">
     <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "")"
          style="@hueStyle"
          title="@ComputeTooltip()"
-         @onclick="TogglePopover"
+         @onclick="OpenDetail"
          @onclick:stopPropagation="true">
         @if (HasChangeoverConflict)
         {
@@ -119,92 +119,7 @@
         </div>
     }
 
-    @if (_showPopover)
-    {
-        <div class="gantt-build-popover-backdrop" @onclick="() => _showPopover = false" @onclick:stopPropagation="true"></div>
-        <div class="gantt-build-popover" @onclick:stopPropagation="true">
-            <div class="gantt-build-popover-header">
-                <strong>@statusIcon @Build.Name</strong>
-                <button class="gantt-build-popover-close" @onclick="() => _showPopover = false" @onclick:stopPropagation="true">✕</button>
-            </div>
-            <div class="gantt-build-popover-body">
-                <div class="gantt-build-popover-row">
-                    <span class="gantt-build-popover-label">Status</span>
-                    <span class="gantt-build-status-badge gantt-build-status-@Build.ScheduleStatus.ToString().ToLower()">@Build.ScheduleStatus</span>
-                </div>
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Parts</span><span>@Build.TotalPartCount (@Build.UniquePartCount @(Build.UniquePartCount == 1 ? "type" : "types"))</span></div>
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Print Time</span><span>@(Build.EstimatedPrintHours?.ToString("F1") ?? "?")h</span></div>
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Start</span><span>@Start.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span></div>
-                <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">End</span><span>@End.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span></div>
-                @if (Build.EstimatedPrintHours.HasValue)
-                {
-                    var costPerHour = 200m; // EOS M4 Onyx hourly rate
-                    var estCost = (decimal)Build.EstimatedPrintHours.Value * costPerHour;
-                    <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Est. Cost</span><span>@estCost.ToString("C0")</span></div>
-                }
-                @if (ChangeoverMinutes > 0)
-                {
-                    <div class="gantt-build-popover-row">
-                        <span class="gantt-build-popover-label">Changeover</span>
-                        <span>@((int)ChangeoverMinutes) min @(HasChangeoverConflict ? "⚠️ No operator" : "✓ Safe")</span>
-                    </div>
-                }
-                @if (DowntimeStart.HasValue && DowntimeEnd.HasValue)
-                {
-                    var dtHours = (DowntimeEnd.Value - DowntimeStart.Value).TotalHours;
-                    <div class="gantt-build-popover-row" style="color: var(--danger);">
-                        <span class="gantt-build-popover-label">Downtime</span>
-                        <span>@(dtHours.ToString("F1"))h — machine stops until operator unloads</span>
-                    </div>
-                }
-                @if (Build.EstimatedPowderKg.HasValue)
-                {
-                    <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Powder</span><span>@Build.EstimatedPowderKg.Value.ToString("F1") kg</span></div>
-                }
-                @if (Build.LayerCount.HasValue)
-                {
-                    <div class="gantt-build-popover-row"><span class="gantt-build-popover-label">Layers</span><span>@Build.LayerCount.Value.ToString("N0")</span></div>
-                }
-                @if (Build.ProgramParts?.Any() == true)
-                {
-                    <div class="gantt-build-popover-parts">
-                        @foreach (var pp in Build.ProgramParts)
-                        {
-                            var woRefs = pp.WorkOrderLine?.WorkOrder;
-                            <div class="gantt-build-popover-part">
-                                <span class="gantt-build-popover-part-num">@(pp.Part?.PartNumber ?? $"Part #{pp.PartId}")</span>
-                                <span class="gantt-build-popover-part-qty">@(pp.Quantity * pp.StackLevel) parts (@pp.Quantity pos × @pp.StackLevel high)</span>
-                                @if (woRefs != null)
-                                {
-                                    <span class="gantt-build-popover-part-wo">@woRefs.OrderNumber — @woRefs.CustomerName</span>
-                                }
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-            <div class="gantt-build-popover-actions">
-                @switch (Build.ScheduleStatus)
-                {
-                    case ProgramScheduleStatus.Scheduled:
-                        <button class="btn btn-sm btn-accent" @onclick="OnStartPrint">🖨️ Start Print</button>
-                        <button class="btn btn-sm btn-secondary" @onclick="OnReschedule">Reschedule</button>
-                        <button class="btn btn-sm btn-danger" @onclick="OnDelete">Delete</button>
-                        <button class="btn btn-sm @(IsSelected ? "btn-warning" : "btn-secondary")" @onclick="OnSelect">@(IsSelected ? "Deselect" : "Select")</button>
-                        break;
-                    case ProgramScheduleStatus.Printing:
-                        <button class="btn btn-sm btn-warning" @onclick="OnPostPrint">🔄 → Post-Print</button>
-                        break;
-                    case ProgramScheduleStatus.PostPrint:
-                        <button class="btn btn-sm btn-success" @onclick="OnReleasePlate">📦 Release Plate</button>
-                        break;
-                    case ProgramScheduleStatus.Completed:
-                        <span style="font-size:0.78rem;color:var(--text-muted);">No actions available</span>
-                        break;
-                }
-            </div>
-        </div>
-    }
+
 </div>
 
 @code {
@@ -223,27 +138,12 @@
     /// <summary>Raised when the user clicks a status action. Value is (MachineProgram, actionKey).</summary>
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
 
-    private bool _showPopover;
-
     private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
 
     /// <summary>Same golden-angle hue as GanttBar.GetJobHue — ensures build bars match their downstream stage bars.</summary>
     private static int GetPartHue(int partId) => partId > 0 ? (int)((partId * 137.508) % 360) : -1;
 
-    private void TogglePopover() => _showPopover = !_showPopover;
-
-    private Task OnStartPrint() => InvokeAction("start-print");
-    private Task OnPostPrint() => InvokeAction("post-print");
-    private Task OnReleasePlate() => InvokeAction("release-plate");
-    private Task OnReschedule() => InvokeAction("reschedule");
-    private Task OnDelete() => InvokeAction("delete");
-    private Task OnSelect() { _showPopover = false; return OnBuildAction.InvokeAsync((Build, "select")); }
-
-    private async Task InvokeAction(string action)
-    {
-        _showPopover = false;
-        await OnBuildAction.InvokeAsync((Build, action));
-    }
+    private Task OpenDetail() => OnBuildAction.InvokeAsync((Build, "detail"));
 
     private string ComputeTooltip()
     {
