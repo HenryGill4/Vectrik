@@ -8,11 +8,13 @@ public class PartService : IPartService
 {
     private readonly TenantDbContext _db;
     private readonly IBuildTemplateService _buildTemplateService;
+    private readonly ICertifiedLayoutService _certifiedLayoutService;
 
-    public PartService(TenantDbContext db, IBuildTemplateService buildTemplateService)
+    public PartService(TenantDbContext db, IBuildTemplateService buildTemplateService, ICertifiedLayoutService certifiedLayoutService)
     {
         _db = db;
         _buildTemplateService = buildTemplateService;
+        _certifiedLayoutService = certifiedLayoutService;
     }
 
     public async Task<List<Part>> GetAllPartsAsync(bool activeOnly = true)
@@ -67,6 +69,7 @@ public class PartService : IPartService
         await _db.SaveChangesAsync();
 
         await _buildTemplateService.InvalidateTemplatesForPartAsync(part.Id);
+        await _certifiedLayoutService.InvalidateLayoutsForPartAsync(part.Id);
 
         return part;
     }

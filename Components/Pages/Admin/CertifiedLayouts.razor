@@ -1,0 +1,485 @@
+@page "/admin/certified-layouts"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
+@inject ICertifiedLayoutService LayoutService
+@inject IPartService PartService
+@inject IMaterialService MaterialService
+@inject ToastService Toast
+@using Vectrik.Models.Enums
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Certified Layouts - Admin - Vectrik</PageTitle>
+
+<AuthorizeView>
+    <Authorized>@{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }</Authorized>
+</AuthorizeView>
+
+<div class="page-header">
+    <h1 class="page-title">Certified Layouts</h1>
+    <div class="page-actions">
+        <select class="form-control" style="width:130px;display:inline-block;" @bind="_filterSize" @bind:after="LoadData">
+            <option value="">All Sizes</option>
+            <option value="Quadrant">Quadrant</option>
+            <option value="Half">Half</option>
+        </select>
+        <select class="form-control" style="width:130px;display:inline-block;" @bind="_filterStatus" @bind:after="LoadData">
+            <option value="">All Statuses</option>
+            @foreach (var s in Enum.GetValues<CertifiedLayoutStatus>()) { <option value="@s">@s</option> }
+        </select>
+        <input class="form-control" style="width:180px;display:inline-block;" placeholder="Search..." @bind="_search" @bind:event="oninput" />
+        <button class="btn btn-primary" @onclick="NewLayout">+ New Layout</button>
+    </div>
+</div>
+
+@if (_layouts == null)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (!FilteredLayouts.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-text">No certified layouts found. Click "+ New Layout" to create one.</div>
+    </div>
+}
+else
+{
+    @if (_needsRecertCount > 0)
+    {
+        <div style="padding: 8px 12px; background: rgba(var(--warning-rgb), 0.1); border: 1px solid rgba(var(--warning-rgb), 0.3); border-radius: 6px; margin-bottom: 12px; font-size: 0.85rem; color: var(--warning); font-weight: 600;">
+            @_needsRecertCount layout@(_needsRecertCount != 1 ? "s" : "") need@(_needsRecertCount == 1 ? "s" : "") recertification
+        </div>
+    }
+
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Size</th>
+                    <th>Part</th>
+                    <th>Positions</th>
+                    <th>Stack</th>
+                    <th>Total Parts</th>
+                    <th>Material</th>
+                    <th>Status</th>
+                    <th>Certified By</th>
+                    <th>Uses</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var l in FilteredLayouts)
+                {
+                    var statusBadge = l.IsCertified ? "badge-success"
+                        : l.NeedsRecertification ? "badge-warning"
+                        : l.Status == CertifiedLayoutStatus.Archived ? "badge-cancelled"
+                        : "badge-secondary";
+                    var statusText = l.NeedsRecertification ? "Needs Recert"
+                        : l.Status.ToString();
+
+                    <tr>
+                        <td style="font-weight: 600;">@l.Name</td>
+                        <td>
+                            <span class="badge @(l.Size == LayoutSize.Half ? "badge-info" : "badge-secondary")" style="font-size: 0.72rem;">
+                                @l.Size
+                            </span>
+                        </td>
+                        <td>@(l.Part?.PartNumber ?? "—")</td>
+                        <td>@l.Positions</td>
+                        <td>@(l.StackLevel)x</td>
+                        <td style="font-weight: 600;">@l.TotalParts</td>
+                        <td>@(l.Material?.Name ?? "—")</td>
+                        <td><span class="badge @statusBadge">@statusText</span></td>
+                        <td style="font-size: 0.8rem;">@(l.CertifiedBy ?? "—")</td>
+                        <td>@l.UseCount</td>
+                        <td style="white-space: nowrap;">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditLayout(l)">Edit</button>
+                            @if (l.Status == CertifiedLayoutStatus.Draft || l.NeedsRecertification)
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => CertifyLayout(l)">Certify</button>
+                            }
+                            @if (l.Status != CertifiedLayoutStatus.Archived)
+                            {
+                                <button class="btn btn-sm btn-danger" @onclick="() => ArchiveLayout(l)">Archive</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@* ── Edit / Create Modal ── *@
+@if (_showForm && _edit != null)
+{
+    <div class="modal-overlay" @onclick="() => _showForm = false">
+        <div class="modal-content" style="max-width: 700px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">@(_edit.Id == 0 ? "New" : "Edit") Certified Layout</span>
+                <button class="modal-close" @onclick="() => _showForm = false">&times;</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+
+            @* ── Size selector ── *@
+            <div class="form-group">
+                <label class="form-label">Layout Size <span style="color:var(--danger);">*</span></label>
+                <div style="display: flex; gap: 12px;">
+                    <label class="cl-size-option @(_edit.Size == LayoutSize.Quadrant ? "cl-size-option--selected" : "")"
+                           @onclick="() => _edit.Size = LayoutSize.Quadrant">
+                        <div class="cl-size-grid">
+                            <div class="cl-size-cell cl-size-cell--active"></div>
+                            <div class="cl-size-cell"></div>
+                            <div class="cl-size-cell"></div>
+                            <div class="cl-size-cell"></div>
+                        </div>
+                        <span>Quadrant (1/4)</span>
+                    </label>
+                    <label class="cl-size-option @(_edit.Size == LayoutSize.Half ? "cl-size-option--selected" : "")"
+                           @onclick="() => _edit.Size = LayoutSize.Half">
+                        <div class="cl-size-grid">
+                            <div class="cl-size-cell cl-size-cell--active"></div>
+                            <div class="cl-size-cell"></div>
+                            <div class="cl-size-cell cl-size-cell--active"></div>
+                            <div class="cl-size-cell"></div>
+                        </div>
+                        <span>Half (1/2)</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Name <span style="color:var(--danger);">*</span></label>
+                <input class="form-control" @bind="_edit.Name" placeholder="e.g. SUP-1234 x10 2-Stack" />
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                @* ── Part selector ── *@
+                <div class="form-group">
+                    <label class="form-label">Part <span style="color:var(--danger);">*</span></label>
+                    <select class="form-control" @bind="_edit.PartId" @bind:after="OnPartChanged">
+                        <option value="0">— Select Part —</option>
+                        @if (_additiveParts != null)
+                        {
+                            @foreach (var p in _additiveParts)
+                            {
+                                <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                @* ── Material (auto from Part) ── *@
+                <div class="form-group">
+                    <label class="form-label">Material</label>
+                    <select class="form-control" @bind="_edit.MaterialId">
+                        <option value="">— No Constraint —</option>
+                        @if (_materials != null)
+                        {
+                            @foreach (var m in _materials)
+                            {
+                                <option value="@m.Id">@m.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                @* ── Stack Level ── *@
+                <div class="form-group">
+                    <label class="form-label">Stack Level <span style="color:var(--danger);">*</span></label>
+                    <select class="form-control" @bind="_edit.StackLevel">
+                        @foreach (var level in _availableStackLevels)
+                        {
+                            <option value="@level">@(level)x Stack</option>
+                        }
+                    </select>
+                </div>
+
+                @* ── Positions ── *@
+                <div class="form-group">
+                    <label class="form-label">Positions <span style="color:var(--danger);">*</span></label>
+                    <input class="form-control" type="number" min="1" max="@_maxPositions" @bind="_edit.Positions" />
+                    @if (_maxPositions < 500)
+                    {
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Max: @_maxPositions (from build config)</span>
+                    }
+                </div>
+            </div>
+
+            @* ── Computed total ── *@
+            <div style="padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; margin-bottom: 12px; font-size: 0.9rem;">
+                <strong>Total Parts:</strong> @_edit.Positions × @_edit.StackLevel = <strong>@(_edit.Positions * _edit.StackLevel)</strong>
+                <span style="margin-left: 12px; color: var(--text-muted);">Slots: @(_edit.Size == LayoutSize.Half ? 2 : 1)</span>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" @bind="_edit.Notes" rows="3" placeholder="Orientation, support strategy, nesting notes..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input class="form-control" @bind="_edit.Description" placeholder="Optional description" />
+            </div>
+
+            @* ── Revision History ── *@
+            @if (_edit.Id > 0 && _revisions.Any())
+            {
+                <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">
+                        Revision History (@_revisions.Count)
+                    </summary>
+                    <div style="margin-top: 8px; max-height: 200px; overflow-y: auto;">
+                        <table class="data-table" style="font-size: 0.78rem;">
+                            <thead><tr><th>Rev</th><th>Date</th><th>By</th><th>Notes</th><th>Prev Positions</th></tr></thead>
+                            <tbody>
+                                @foreach (var rev in _revisions)
+                                {
+                                    <tr>
+                                        <td>@rev.RevisionNumber</td>
+                                        <td>@rev.RevisionDate.ToLocalTime().ToString("MMM d, yyyy")</td>
+                                        <td>@rev.ChangedBy</td>
+                                        <td>@(rev.ChangeNotes ?? "—")</td>
+                                        <td>@rev.PreviousPositions × @(rev.PreviousStackLevel)x</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            }
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="Save" disabled="@_saving">@(_saving ? "Saving..." : "Save")</button>
+                <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Certify Confirmation Modal ── *@
+@if (_showCertifyConfirm && _certifyTarget != null)
+{
+    <div class="modal-overlay" @onclick="() => _showCertifyConfirm = false">
+        <div class="modal-content" style="max-width: 450px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">Certify Layout</span>
+                <button class="modal-close" @onclick="() => _showCertifyConfirm = false">&times;</button>
+            </div>
+            <p style="font-size: 0.9rem;">
+                Certify <strong>@_certifyTarget.Name</strong> (@_certifyTarget.Part?.PartNumber)?
+                This marks the layout as engineer-approved for scheduling.
+            </p>
+            @if (_certifyTarget.NeedsRecertification)
+            {
+                <div class="form-group">
+                    <label class="form-label">Recertification Notes</label>
+                    <input class="form-control" @bind="_recertNotes" placeholder="What changed?" />
+                </div>
+            }
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-success" @onclick="ConfirmCertify" disabled="@_saving">
+                    @(_saving ? "Certifying..." : (_certifyTarget.NeedsRecertification ? "Recertify" : "Certify"))
+                </button>
+                <button class="btn btn-secondary" @onclick="() => _showCertifyConfirm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string _currentUser = "System";
+    private List<CertifiedLayout>? _layouts;
+    private List<Part>? _additiveParts;
+    private List<Material>? _materials;
+    private int _needsRecertCount;
+
+    // Filters
+    private string _filterSize = "";
+    private string _filterStatus = "";
+    private string _search = "";
+
+    // Form state
+    private bool _showForm;
+    private CertifiedLayout? _edit;
+    private string _error = "";
+    private bool _saving;
+    private List<int> _availableStackLevels = [1, 2, 3];
+    private int _maxPositions = 500;
+    private List<CertifiedLayoutRevision> _revisions = [];
+
+    // Certify confirm state
+    private bool _showCertifyConfirm;
+    private CertifiedLayout? _certifyTarget;
+    private string _recertNotes = "";
+
+    private IEnumerable<CertifiedLayout> FilteredLayouts => _layouts?
+        .Where(l => string.IsNullOrEmpty(_search)
+            || l.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || (l.Part?.PartNumber?.Contains(_search, StringComparison.OrdinalIgnoreCase) == true))
+        ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var partsTask = PartService.GetAllPartsAsync();
+        var materialsTask = MaterialService.GetAllMaterialsAsync();
+        await Task.WhenAll(partsTask, materialsTask);
+
+        var allParts = partsTask.Result;
+        _additiveParts = allParts.Where(p => p.AdditiveBuildConfig != null).ToList();
+        _materials = materialsTask.Result;
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        CertifiedLayoutStatus? statusFilter = Enum.TryParse<CertifiedLayoutStatus>(_filterStatus, out var s) ? s : null;
+        LayoutSize? sizeFilter = Enum.TryParse<LayoutSize>(_filterSize, out var sz) ? sz : null;
+
+        _layouts = await LayoutService.GetAllAsync(statusFilter, sizeFilter);
+        _needsRecertCount = _layouts.Count(l => l.NeedsRecertification);
+    }
+
+    private void NewLayout()
+    {
+        _edit = new CertifiedLayout { CreatedBy = _currentUser };
+        _error = "";
+        _revisions = [];
+        _showForm = true;
+        UpdatePartConstraints();
+    }
+
+    private async Task EditLayout(CertifiedLayout layout)
+    {
+        _edit = await LayoutService.GetByIdAsync(layout.Id);
+        if (_edit == null) { Toast.ShowError("Layout not found."); return; }
+        _error = "";
+        _revisions = await LayoutService.GetRevisionsAsync(layout.Id);
+        _showForm = true;
+        UpdatePartConstraints();
+    }
+
+    private void OnPartChanged()
+    {
+        if (_edit == null) return;
+
+        // Auto-set material from part
+        var part = _additiveParts?.FirstOrDefault(p => p.Id == _edit.PartId);
+        if (part?.MaterialEntity != null)
+            _edit.MaterialId = part.MaterialEntity.Id;
+
+        UpdatePartConstraints();
+    }
+
+    private void UpdatePartConstraints()
+    {
+        if (_edit == null) return;
+
+        var part = _additiveParts?.FirstOrDefault(p => p.Id == _edit.PartId);
+        var config = part?.AdditiveBuildConfig;
+
+        if (config != null)
+        {
+            _availableStackLevels = config.AvailableStackLevels;
+            _maxPositions = config.GetPositionsPerBuild(_edit.StackLevel);
+        }
+        else
+        {
+            _availableStackLevels = [1, 2, 3];
+            _maxPositions = 500;
+        }
+    }
+
+    private async Task Save()
+    {
+        if (_edit == null) return;
+
+        _error = "";
+
+        if (string.IsNullOrWhiteSpace(_edit.Name)) { _error = "Name is required."; return; }
+        if (_edit.PartId <= 0) { _error = "Part is required."; return; }
+        if (_edit.Positions < 1) { _error = "Positions must be at least 1."; return; }
+
+        _saving = true;
+        try
+        {
+            if (_edit.Id == 0)
+            {
+                _edit.CreatedBy = _currentUser;
+                await LayoutService.CreateAsync(_edit);
+                Toast.ShowSuccess($"Layout '{_edit.Name}' created.");
+            }
+            else
+            {
+                _edit.LastModifiedBy = _currentUser;
+                await LayoutService.UpdateAsync(_edit);
+                Toast.ShowSuccess($"Layout '{_edit.Name}' updated.");
+            }
+
+            _showForm = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void CertifyLayout(CertifiedLayout layout)
+    {
+        _certifyTarget = layout;
+        _recertNotes = "";
+        _showCertifyConfirm = true;
+    }
+
+    private async Task ConfirmCertify()
+    {
+        if (_certifyTarget == null) return;
+
+        _saving = true;
+        try
+        {
+            if (_certifyTarget.NeedsRecertification)
+            {
+                await LayoutService.RecertifyAsync(_certifyTarget.Id, _currentUser, _recertNotes);
+                Toast.ShowSuccess($"Layout '{_certifyTarget.Name}' recertified.");
+            }
+            else
+            {
+                await LayoutService.CertifyAsync(_certifyTarget.Id, _currentUser);
+                Toast.ShowSuccess($"Layout '{_certifyTarget.Name}' certified.");
+            }
+
+            _showCertifyConfirm = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ArchiveLayout(CertifiedLayout layout)
+    {
+        try
+        {
+            await LayoutService.ArchiveAsync(layout.Id);
+            Toast.ShowSuccess($"Layout '{layout.Name}' archived.");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+}

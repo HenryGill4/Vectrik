@@ -1,6 +1,7 @@
 @* ProgramForm.razor — Unified create/edit form wrapping sub-components *@
 @using Vectrik.Components.Pages.Programs.Components
 @using Vectrik.Components.Pages.Programs.Models
+@using Vectrik.Components.Pages.Scheduler.Components
 @using Vectrik.Models.Enums
 @using Microsoft.AspNetCore.Components.Forms
 
@@ -377,18 +378,31 @@
         </div>
 
         @* ── Program Parts ── *@
-        <ProgramPartsEditor IsBuildPlateEditor="isBuildPlateEditor"
-                            Parts="PartsList"
-                            FilteredParts="@GetFilteredParts()"
-                            SearchTerm="@_partsSearchTerm"
-                            SearchTermChanged="(val) => _partsSearchTerm = val"
-                            SelectedPartId="_selectedAddPartId"
-                            SelectedPartIdChanged="(val) => _selectedAddPartId = val"
-                            Quantity="_addPartQty"
-                            QuantityChanged="(val) => _addPartQty = val"
-                            OnAddPart="HandleAddPart"
-                            OnSetPrimary="HandleSetPrimary"
-                            OnRemovePart="HandleRemovePart" />
+        @if (isBuildPlateEditor && CertifiedLayouts.Any())
+        {
+            <div class="card" style="margin-bottom: 16px;">
+                <h4 style="margin: 0 0 12px 0;">Plate Composition</h4>
+                <PlateLayoutEditor AvailableLayouts="CertifiedLayouts"
+                                   Assignments="PlateAssignments"
+                                   OnAssignmentsChanged="OnPlateAssignmentsChanged"
+                                   ReadOnly="@(!IsNew && Program.IsLocked)" />
+            </div>
+        }
+        else
+        {
+            <ProgramPartsEditor IsBuildPlateEditor="isBuildPlateEditor"
+                                Parts="PartsList"
+                                FilteredParts="@GetFilteredParts()"
+                                SearchTerm="@_partsSearchTerm"
+                                SearchTermChanged="(val) => _partsSearchTerm = val"
+                                SelectedPartId="_selectedAddPartId"
+                                SelectedPartIdChanged="(val) => _selectedAddPartId = val"
+                                Quantity="_addPartQty"
+                                QuantityChanged="(val) => _addPartQty = val"
+                                OnAddPart="HandleAddPart"
+                                OnSetPrimary="HandleSetPrimary"
+                                OnRemovePart="HandleRemovePart" />
+        }
     </div>
 </div>
 
@@ -406,6 +420,9 @@
     [Parameter] public List<MachineProgram>? EdmCandidates { get; set; }
     [Parameter] public HashSet<int> SelectedMachineIds { get; set; } = new();
     [Parameter] public List<CreateBuildPartEntry> PartsList { get; set; } = [];
+    [Parameter] public List<CertifiedLayout> CertifiedLayouts { get; set; } = [];
+    [Parameter] public List<PlateSlotAssignment> PlateAssignments { get; set; } = [];
+    [Parameter] public EventCallback<List<PlateSlotAssignment>> OnPlateAssignmentsChanged { get; set; }
     [Parameter] public string EditMaterialId { get; set; } = "";
     [Parameter] public string EditWorkInstructionId { get; set; } = "";
     [Parameter] public string EditDepowderProgramId { get; set; } = "";
