@@ -226,12 +226,12 @@ public class DispatchScoringService : IDispatchScoringService
         var upcomingMaintenance = await _db.MaintenanceWorkOrders
             .Where(mw => mw.MachineId == machineIdStr
                 && mw.Status != MaintenanceWorkOrderStatus.Completed
-                && mw.Status != MaintenanceWorkOrderStatus.Cancelled
-                && mw.ScheduledDate.HasValue)
+                && mw.Status != MaintenanceWorkOrderStatus.Cancelled)
             .ToListAsync();
 
         var nearest = upcomingMaintenance
-            .OrderBy(mw => mw.ScheduledDate)
+            .Where(mw => mw.ScheduledDate.HasValue)
+            .OrderBy(mw => mw.ScheduledDate!.Value)
             .FirstOrDefault();
 
         if (nearest?.ScheduledDate == null) return 0;

@@ -4,6 +4,7 @@
 @inject Vectrik.Services.IPrintCompletionService PrintCompletionService
 @inject Vectrik.Services.IMaintenanceDispatchService MaintenanceDispatchService
 @inject Vectrik.Services.ToastService Toast
+@inject Vectrik.Data.TenantDbContext Db
 @using Vectrik.Models
 @using Vectrik.Models.Enums
 @using System.Text.Json
@@ -301,6 +302,7 @@
     private SetupDispatch? _currentSetup;
     private List<SetupDispatch> _queue = new();
     private string? _operatorName;
+    private int _currentUserId;
     private string _barcodeScan = "";
 
     // Phase 2: Urgent changeover alert
@@ -319,6 +321,14 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            _operatorName = state.User.Identity?.Name;
+            var userIdClaim = state.User.FindFirst("UserId")?.Value;
+            if (int.TryParse(userIdClaim, out var uid))
+                _currentUserId = uid;
+        }
         await LoadQueueAsync();
     }
 
@@ -405,10 +415,14 @@
         if (_currentSetup == null) return;
         try
         {
-            // Save updated checklist back
-            var entity = _currentSetup;
-            entity.PrePrintChecklistJson = JsonSerializer.Serialize(_prePrintChecklist);
-            await PrintStartService.CompletePrintStartAsync(_currentSetup.Id, 0); // TODO: current user ID
+            // Persist updated checklist to DB before service validates it
+            var entity = await Db.SetupDispatches.FindAsync(_currentSetup.Id);
+            if (entity != null)
+            {
+                entity.PrePrintChecklistJson = JsonSerializer.Serialize(_prePrintChecklist);
+                await Db.SaveChangesAsync();
+            }
+            await PrintStartService.CompletePrintStartAsync(_currentSetup.Id, _currentUserId);
             Toast.ShowSuccess("Print started!");
             await LoadQueueAsync();
         }
@@ -450,7 +464,7 @@
         try
         {
             var checklistJson = JsonSerializer.Serialize(_inspectionChecklist);
-            await PrintCompletionService.CompleteInspectionAsync(_currentSetup.Id, checklistJson, 0); // TODO: current user ID
+            await PrintCompletionService.CompleteInspectionAsync(_currentSetup.Id, checklistJson, _currentUserId);
             Toast.ShowSuccess("Inspection completed!");
             await LoadQueueAsync();
         }
