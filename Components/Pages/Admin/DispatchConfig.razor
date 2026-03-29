@@ -1,0 +1,389 @@
+@page "/admin/dispatch-config"
+@using Vectrik.Services
+@using Vectrik.Models
+@using Vectrik.Models.Enums
+@using Microsoft.EntityFrameworkCore
+@inject Vectrik.Data.TenantDbContext Db
+@inject ISetupDispatchService DispatchService
+@inject ToastService Toast
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+
+<PageTitle>Dispatch Configuration - Vectrik</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Dispatch Configuration</h1>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    @* ── Global Scoring Weights ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <h2 style="font-size: 1.1rem; margin-bottom: 12px;">Scoring Weights</h2>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+            Controls how dispatches are prioritized. Weights should sum to approximately 1.0.
+        </p>
+
+        <div class="dispatch-config-weights">
+            <div class="dispatch-config-slider">
+                <label>Due Date: <strong>@($"{_globalConfig.DueDateWeight:F2}")</strong></label>
+                <input type="range" min="0" max="100" step="5"
+                       value="@((int)(_globalConfig.DueDateWeight * 100))"
+                       @onchange="(e) => OnDueDateWeightChanged(e)" />
+                <span class="dispatch-config-slider-hint">Urgency of work order due dates</span>
+            </div>
+            <div class="dispatch-config-slider">
+                <label>Changeover: <strong>@($"{_globalConfig.ChangeoverPenaltyWeight:F2}")</strong></label>
+                <input type="range" min="0" max="100" step="5"
+                       value="@((int)(_globalConfig.ChangeoverPenaltyWeight * 100))"
+                       @onchange="(e) => OnChangeoverWeightChanged(e)" />
+                <span class="dispatch-config-slider-hint">Minimize changeover time</span>
+            </div>
+            <div class="dispatch-config-slider">
+                <label>Throughput: <strong>@($"{_globalConfig.ThroughputWeight:F2}")</strong></label>
+                <input type="range" min="0" max="100" step="5"
+                       value="@((int)(_globalConfig.ThroughputWeight * 100))"
+                       @onchange="(e) => OnThroughputWeightChanged(e)" />
+                <span class="dispatch-config-slider-hint">Maximize downstream throughput</span>
+            </div>
+            <div class="dispatch-config-weight-sum @(_weightSum < 0.95m || _weightSum > 1.05m ? "dispatch-config-weight-warn" : "")">
+                Sum: @($"{_weightSum:F2}") @(_weightSum < 0.95m || _weightSum > 1.05m ? " (should be ~1.0)" : "")
+            </div>
+        </div>
+    </div>
+
+    @* ── Global Settings ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <h2 style="font-size: 1.1rem; margin-bottom: 12px;">Auto-Dispatch Settings</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px;">
+            <div class="form-group">
+                <label class="form-label"><input type="checkbox" @bind="_globalConfig.AutoDispatchEnabled" style="margin-right: 6px;" />Auto-Dispatch Enabled</label>
+                <span style="font-size: 0.78rem; color: var(--text-secondary);">Generate dispatch suggestions automatically</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><input type="checkbox" @bind="_globalConfig.RequiresSchedulerApproval" style="margin-right: 6px;" />Require Scheduler Approval</label>
+                <span style="font-size: 0.78rem; color: var(--text-secondary);">Auto-dispatches need approval before entering queue</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><input type="checkbox" @bind="_globalConfig.AutoAssignOperator" style="margin-right: 6px;" />Auto-Assign Operator</label>
+                <span style="font-size: 0.78rem; color: var(--text-secondary);">Assign best-proficiency operator automatically</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Max Queue Depth</label>
+                <input type="number" class="form-control" min="1" max="10" @bind="_globalConfig.MaxQueueDepth" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Lookahead (hours)</label>
+                <input type="number" class="form-control" min="1" max="48" @bind="_globalConfig.LookAheadHours" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Batch Grouping Window (hours)</label>
+                <input type="number" class="form-control" min="1" max="24" @bind="_globalConfig.BatchGroupingWindowHours" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Maintenance Buffer (hours)</label>
+                <input type="number" class="form-control" min="0" max="24" @bind="_globalConfig.MaintenanceBufferHours" />
+            </div>
+        </div>
+        <button class="btn btn-accent" style="margin-top: 12px;" @onclick="SaveGlobalConfig">Save Global Settings</button>
+    </div>
+
+    @* ── Per-Machine Configurations ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <h2 style="font-size: 1.1rem; margin-bottom: 12px;">Per-Machine Overrides</h2>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+            Machine-specific configs override global defaults.
+        </p>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Machine</th>
+                    <th>Auto-Dispatch</th>
+                    <th>Auto-Changeover</th>
+                    <th>Queue Depth</th>
+                    <th>Due Date</th>
+                    <th>Changeover</th>
+                    <th>Throughput</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var mc in _machineConfigs)
+                {
+                    <tr>
+                        <td>@mc.Machine?.Name</td>
+                        <td>@(mc.AutoDispatchEnabled ? "On" : "Off")</td>
+                        <td>@(mc.Machine?.AutoChangeoverEnabled == true ? "On" : "Off")</td>
+                        <td>@mc.MaxQueueDepth</td>
+                        <td>@($"{mc.DueDateWeight:F2}")</td>
+                        <td>@($"{mc.ChangeoverPenaltyWeight:F2}")</td>
+                        <td>@($"{mc.ThroughputWeight:F2}")</td>
+                        <td>
+                            <button class="btn btn-xs btn-secondary" @onclick="() => EditMachineConfig(mc)">Edit</button>
+                            <button class="btn btn-xs btn-danger" @onclick="() => DeleteMachineConfig(mc.Id)">Remove</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (_machines.Any(m => !_machineConfigs.Any(mc => mc.MachineId == m.Id)))
+        {
+            <div style="margin-top: 8px;">
+                <select class="form-select" style="display: inline-block; width: auto;" @bind="_addMachineId">
+                    <option value="0">Add machine override...</option>
+                    @foreach (var m in _machines.Where(m => !_machineConfigs.Any(mc => mc.MachineId == m.Id)))
+                    {
+                        <option value="@m.Id">@m.Name</option>
+                    }
+                </select>
+                <button class="btn btn-xs btn-accent" @onclick="AddMachineConfig" disabled="@(_addMachineId == 0)">Add</button>
+            </div>
+        }
+    </div>
+
+    @* ── Dispatch Analytics Summary ── *@
+    <div class="card">
+        <h2 style="font-size: 1.1rem; margin-bottom: 12px;">Dispatch Analytics (Last 30 Days)</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;">
+            <div class="dispatch-analytics-kpi">
+                <span class="dispatch-analytics-value">@_analyticsTotal</span>
+                <span class="dispatch-analytics-label">Total Dispatches</span>
+            </div>
+            <div class="dispatch-analytics-kpi">
+                <span class="dispatch-analytics-value">@($"{_analyticsAvgSetup:F0}") min</span>
+                <span class="dispatch-analytics-label">Avg Setup Time</span>
+            </div>
+            <div class="dispatch-analytics-kpi">
+                <span class="dispatch-analytics-value">@_analyticsChangeovers</span>
+                <span class="dispatch-analytics-label">Changeovers</span>
+            </div>
+            <div class="dispatch-analytics-kpi">
+                <span class="dispatch-analytics-value">@($"{_analyticsComplianceRate:F0}")%</span>
+                <span class="dispatch-analytics-label">On-Time Completion</span>
+            </div>
+            <div class="dispatch-analytics-kpi">
+                <span class="dispatch-analytics-value">@_analyticsBlocked</span>
+                <span class="dispatch-analytics-label">Blocked (Maintenance)</span>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Machine Config Edit Modal ── *@
+@if (_editingMachineConfig != null)
+{
+    <div class="modal-overlay" @onclick="() => _editingMachineConfig = null">
+        <div class="modal-content modal-md" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3>Edit: @_editingMachineConfig.Machine?.Name</h3>
+                <button class="modal-close" @onclick="() => _editingMachineConfig = null">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label"><input type="checkbox" @bind="_editingMachineConfig.AutoDispatchEnabled" style="margin-right: 6px;" />Auto-Dispatch Enabled</label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label"><input type="checkbox" @bind="_editingMachineConfig.AutoAssignOperator" style="margin-right: 6px;" />Auto-Assign Operator</label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Max Queue Depth</label>
+                    <input type="number" class="form-control" min="1" max="10" @bind="_editingMachineConfig.MaxQueueDepth" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Due Date Weight</label>
+                    <input type="number" class="form-control" step="0.05" min="0" max="1" @bind="_editingMachineConfig.DueDateWeight" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Changeover Weight</label>
+                    <input type="number" class="form-control" step="0.05" min="0" max="1" @bind="_editingMachineConfig.ChangeoverPenaltyWeight" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Throughput Weight</label>
+                    <input type="number" class="form-control" step="0.05" min="0" max="1" @bind="_editingMachineConfig.ThroughputWeight" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="() => _editingMachineConfig = null">Cancel</button>
+                <button class="btn btn-accent" @onclick="SaveMachineConfig">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private DispatchConfiguration _globalConfig = new();
+    private List<DispatchConfiguration> _machineConfigs = new();
+    private List<Machine> _machines = new();
+    private DispatchConfiguration? _editingMachineConfig;
+    private int _addMachineId;
+    private decimal _weightSum;
+
+    // Analytics
+    private int _analyticsTotal;
+    private double _analyticsAvgSetup;
+    private int _analyticsChangeovers;
+    private double _analyticsComplianceRate;
+    private int _analyticsBlocked;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Load global config (MachineId == null)
+        _globalConfig = await Db.DispatchConfigurations
+            .FirstOrDefaultAsync(c => c.MachineId == null) ?? new DispatchConfiguration();
+
+        // Load per-machine configs
+        _machineConfigs = await Db.DispatchConfigurations
+            .Include(c => c.Machine)
+            .Where(c => c.MachineId != null)
+            .ToListAsync();
+
+        _machines = await Db.Machines
+            .Where(m => m.IsActive && m.IsAvailableForScheduling)
+            .OrderBy(m => m.Name)
+            .ToListAsync();
+
+        UpdateWeightSum();
+        await LoadAnalyticsAsync();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void UpdateWeightSum()
+    {
+        _weightSum = _globalConfig.DueDateWeight + _globalConfig.ChangeoverPenaltyWeight + _globalConfig.ThroughputWeight;
+    }
+
+    private void OnDueDateWeightChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v))
+            SetWeight(nameof(_globalConfig.DueDateWeight), v);
+    }
+
+    private void OnChangeoverWeightChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v))
+            SetWeight(nameof(_globalConfig.ChangeoverPenaltyWeight), v);
+    }
+
+    private void OnThroughputWeightChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v))
+            SetWeight(nameof(_globalConfig.ThroughputWeight), v);
+    }
+
+    private void SetWeight(string prop, int pctValue)
+    {
+        var val = pctValue / 100m;
+        switch (prop)
+        {
+            case nameof(_globalConfig.DueDateWeight): _globalConfig.DueDateWeight = val; break;
+            case nameof(_globalConfig.ChangeoverPenaltyWeight): _globalConfig.ChangeoverPenaltyWeight = val; break;
+            case nameof(_globalConfig.ThroughputWeight): _globalConfig.ThroughputWeight = val; break;
+        }
+        UpdateWeightSum();
+    }
+
+    private async Task SaveGlobalConfig()
+    {
+        try
+        {
+            if (_globalConfig.Id == 0)
+            {
+                Db.DispatchConfigurations.Add(_globalConfig);
+            }
+            await Db.SaveChangesAsync();
+            Toast.ShowSuccess("Global dispatch settings saved.");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private void EditMachineConfig(DispatchConfiguration config)
+    {
+        _editingMachineConfig = config;
+    }
+
+    private async Task SaveMachineConfig()
+    {
+        if (_editingMachineConfig == null) return;
+        try
+        {
+            await Db.SaveChangesAsync();
+            Toast.ShowSuccess("Machine config saved.");
+            _editingMachineConfig = null;
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task AddMachineConfig()
+    {
+        if (_addMachineId == 0) return;
+        var config = new DispatchConfiguration
+        {
+            MachineId = _addMachineId,
+            DueDateWeight = _globalConfig.DueDateWeight,
+            ChangeoverPenaltyWeight = _globalConfig.ChangeoverPenaltyWeight,
+            ThroughputWeight = _globalConfig.ThroughputWeight,
+            MaxQueueDepth = _globalConfig.MaxQueueDepth,
+            LookAheadHours = _globalConfig.LookAheadHours
+        };
+        Db.DispatchConfigurations.Add(config);
+        await Db.SaveChangesAsync();
+        _addMachineId = 0;
+        await LoadAsync();
+    }
+
+    private async Task DeleteMachineConfig(int id)
+    {
+        var config = await Db.DispatchConfigurations.FindAsync(id);
+        if (config != null)
+        {
+            Db.DispatchConfigurations.Remove(config);
+            await Db.SaveChangesAsync();
+            await LoadAsync();
+            Toast.ShowSuccess("Machine override removed.");
+        }
+    }
+
+    private async Task LoadAnalyticsAsync()
+    {
+        var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
+
+        var recentHistories = await Db.SetupHistories
+            .Where(h => h.CompletedAt >= thirtyDaysAgo)
+            .ToListAsync();
+
+        _analyticsTotal = recentHistories.Count;
+        _analyticsAvgSetup = recentHistories.Count > 0
+            ? recentHistories.Average(h => h.SetupDurationMinutes) : 0;
+        _analyticsChangeovers = recentHistories.Count(h => h.WasChangeover);
+
+        // On-time: dispatches completed within estimated time
+        var recentDispatches = await Db.SetupDispatches
+            .Where(d => d.CompletedAt >= thirtyDaysAgo && d.Status == DispatchStatus.Completed)
+            .ToListAsync();
+
+        var withEstimate = recentDispatches
+            .Where(d => d.EstimatedSetupMinutes.HasValue && d.ActualSetupMinutes.HasValue).ToList();
+        _analyticsComplianceRate = withEstimate.Count > 0
+            ? withEstimate.Count(d => d.ActualSetupMinutes <= d.EstimatedSetupMinutes * 1.1) * 100.0 / withEstimate.Count
+            : 100;
+
+        _analyticsBlocked = await Db.SetupDispatches
+            .CountAsync(d => d.CompletedAt >= thirtyDaysAgo && d.Status == DispatchStatus.Blocked);
+    }
+}

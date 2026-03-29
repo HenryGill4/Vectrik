@@ -52,6 +52,9 @@ public class DataSeedingService : IDataSeedingService
 
         // Scheduler demo data (depends on parts + approaches + stages + machines)
         await SeedSchedulerDemoDataAsync(tenantDb);
+
+        // Dispatch system demo data (depends on machines + programs)
+        await SeedDispatchDemoDataAsync(tenantDb);
     }
 
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
@@ -1286,6 +1289,22 @@ public class DataSeedingService : IDataSeedingService
             ["builds.default_batch_capacity"] = ("60", "Builds", "Default batch capacity for new manufacturing processes"),
             ["scheduler.max_part_types_per_plate"] = ("4", "Scheduling", "Maximum number of different part types allowed on a single build plate"),
             ["scheduler.auto_create_downstream_programs"] = ("true", "Scheduling", "Automatically create placeholder downstream programs when scheduling builds"),
+
+            // Dispatch system settings
+            ["dispatch.auto_enabled"] = ("false", "Dispatch", "Master switch for auto-dispatch generation"),
+            ["dispatch.lookahead_hours"] = ("8", "Dispatch", "How far ahead the auto-dispatch engine looks for candidates"),
+            ["dispatch.changeover_weight"] = ("0.35", "Dispatch", "Changeover optimization weight in dispatch scoring (0.0-1.0)"),
+            ["dispatch.duedate_weight"] = ("0.45", "Dispatch", "Due date urgency weight in dispatch scoring (0.0-1.0)"),
+            ["dispatch.throughput_weight"] = ("0.20", "Dispatch", "Throughput maximization weight in dispatch scoring (0.0-1.0)"),
+            ["dispatch.maintenance_buffer_hours"] = ("4", "Dispatch", "Hours before maintenance to start routing short jobs"),
+            ["dispatch.max_queue_depth"] = ("3", "Dispatch", "Maximum dispatches per machine before auto-dispatch stops"),
+            ["dispatch.setup_ema_alpha"] = ("0.3", "Dispatch", "EMA smoothing factor for setup time learning (0.0-1.0)"),
+            ["dispatch.batch_grouping_window_hours"] = ("4", "Dispatch", "Hours within which same-program jobs are batched into one dispatch"),
+            ["dispatch.require_scheduler_approval"] = ("true", "Dispatch", "Auto-generated dispatches require scheduler approval before entering queue"),
+            ["dispatch.sls_load_lead_hours"] = ("2", "Dispatch", "Hours ahead of build start to create plate load dispatches"),
+            ["dispatch.changeover_alert_hours"] = ("1", "Dispatch", "When to start escalating changeover dispatch priority"),
+            ["dispatch.changeover_urgent_minutes"] = ("30", "Dispatch", "Minutes remaining in shift when changeover becomes URGENT"),
+            ["dispatch.plate_layout_auto_notify"] = ("true", "Dispatch", "Auto-create PlateLayout dispatches when unmet demand detected"),
         };
 
         var existingKeys = await db.SystemSettings
@@ -2998,5 +3017,93 @@ public class DataSeedingService : IDataSeedingService
         await db.SaveChangesAsync();
     }
 
+    private static async Task SeedDispatchDemoDataAsync(TenantDbContext db)
+    {
+        if (await db.DispatchConfigurations.AnyAsync()) return;
+
+        var machines = await db.Machines.Where(m => m.IsActive).ToListAsync();
+        if (machines.Count == 0) return;
+
+        // Global dispatch configuration
+        db.DispatchConfigurations.Add(new DispatchConfiguration
+        {
+            AutoDispatchEnabled = false,
+            MaxQueueDepth = 3,
+            LookAheadHours = 8,
+            DueDateWeight = 0.45m,
+            ChangeoverPenaltyWeight = 0.35m,
+            ThroughputWeight = 0.20m,
+            MaintenanceBufferHours = 4,
+            RequiresVerification = true,
+            AutoAssignOperator = false,
+            NotifyOnDispatch = true,
+            BatchGroupingWindowHours = 4,
+            RequiresSchedulerApproval = true
+        });
+
+        // Per-machine configs for SLS machines
+        foreach (var machine in machines.Where(m => m.IsAdditiveMachine))
+        {
+            db.DispatchConfigurations.Add(new DispatchConfiguration
+            {
+                MachineId = machine.Id,
+                AutoDispatchEnabled = true,
+                MaxQueueDepth = 2,
+                LookAheadHours = 12,
+                DueDateWeight = 0.40m,
+                ChangeoverPenaltyWeight = 0.40m,
+                ThroughputWeight = 0.20m,
+                MaintenanceBufferHours = 6,
+                RequiresVerification = false,
+                AutoAssignOperator = true,
+                NotifyOnDispatch = true,
+                BatchGroupingWindowHours = 8,
+                RequiresSchedulerApproval = false
+            });
+        }
+
+        // Seed operator setup profiles for demo operator
+        var admin = await db.Users.FirstOrDefaultAsync(u => u.Role == "Admin");
+        if (admin != null)
+        {
+            foreach (var machine in machines.Take(3))
+            {
+                db.OperatorSetupProfiles.Add(new OperatorSetupProfile
+                {
+                    UserId = admin.Id,
+                    MachineId = machine.Id,
+                    AverageSetupMinutes = 35 + (machine.Id % 3) * 10,
+                    SampleCount = 8,
+                    VarianceMinutes = 5 + (machine.Id % 3) * 2,
+                    FastestSetupMinutes = 20 + (machine.Id % 3) * 5,
+                    ProficiencyLevel = 4,
+                    IsPreferred = machine.IsAdditiveMachine
+                });
+            }
+        }
+
+        // Seed setup history for analytics
+        var programs = await db.MachinePrograms.Take(3).ToListAsync();
+        var now = DateTime.UtcNow;
+        for (int i = 0; i < 15; i++)
+        {
+            var machine = machines[i % machines.Count];
+            var program = programs.Count > 0 ? programs[i % programs.Count] : null;
+            db.SetupHistories.Add(new SetupHistory
+            {
+                SetupDispatchId = 0,
+                MachineId = machine.Id,
+                MachineProgramId = program?.Id,
+                OperatorUserId = admin?.Id,
+                SetupDurationMinutes = 25 + (i * 3) % 40,
+                ChangeoverDurationMinutes = i % 3 == 0 ? 15 + i : null,
+                WasChangeover = i % 3 == 0,
+                CompletedAt = now.AddDays(-(i * 2)),
+                QualityResult = i % 5 == 0 ? "conditional" : "pass"
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
 
     }
