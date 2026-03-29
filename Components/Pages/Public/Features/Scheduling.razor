@@ -1,0 +1,233 @@
+@page "/features/scheduling"
+@layout Components.Layout.PublicLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Web
+
+<PageTitle>Scheduling &amp; Planning - Vectrik</PageTitle>
+
+<!-- Breadcrumb -->
+<div class="pub-breadcrumb">
+    <a href="/features">Features</a>
+    <span class="pub-breadcrumb-sep">/</span>
+    <span>Scheduling &amp; Planning</span>
+</div>
+
+<!-- Hero -->
+<section class="pub-page-hero">
+    <h1 class="pub-gradient-text">Scheduling &amp; Planning</h1>
+    <p class="pub-page-hero-sub">AI-powered Gantt scheduling built for the realities of SLS production &mdash; changeovers, cooldown chambers, shift windows, and multi-order build plates.</p>
+</section>
+
+<!-- Problem Statement -->
+<section class="pub-section">
+    <div class="pub-feature-detail">
+        <div class="pub-feature-detail-content pub-fade-up">
+            <h2 class="pub-section-title">The Problem with Spreadsheet Scheduling</h2>
+            <p class="pub-about-text">
+                Most additive manufacturers schedule builds using spreadsheets, whiteboards, or generic MES systems that don't understand AM-specific constraints. This leads to missed changeover windows, idle machines on weekends, and constant manual re-planning when priorities shift.
+            </p>
+            <p class="pub-about-text">
+                SLS scheduling is uniquely complex: builds run 20-30 hours unattended, cooldown chambers have limited capacity, and changeovers must happen during operator shifts. A build that finishes at 2 AM Saturday means your $200/hr machine sits idle until Monday &mdash; unless you planned for it.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- Gantt Scheduler Detail -->
+<section class="pub-section pub-section-alt">
+    <div class="pub-feature-spotlight pub-fade-up">
+        <div class="pub-feature-spotlight-text">
+            <div class="pub-feature-spotlight-label">Core Feature</div>
+            <h2>Visual Gantt Scheduler</h2>
+            <p>Drag-and-drop production scheduling across all your machines with real-time timeline visualization. Every build, every stage, and every dependency visible at a glance.</p>
+            <ul class="pub-feature-detail-list">
+                <li>Drag builds between machines or reschedule with a click</li>
+                <li>Shift-period shading highlights off-hours and weekends automatically</li>
+                <li>Changeover segments show directly on build bars</li>
+                <li>Real-time "now" indicator tracks current production position</li>
+                <li>Multi-machine view with downstream stage dependencies (depowder, EDM, CNC)</li>
+                <li>Zoom and scroll through days or weeks of scheduled production</li>
+            </ul>
+        </div>
+        <div class="pub-feature-spotlight-visual">
+            <div class="pub-showcase-frame pub-showcase-frame-sm">
+                <div class="pub-showcase-header">
+                    <span class="pub-dot pub-dot-red"></span>
+                    <span class="pub-dot pub-dot-yellow"></span>
+                    <span class="pub-dot pub-dot-green"></span>
+                    <span class="pub-showcase-title">Gantt Scheduler</span>
+                </div>
+                <div class="pub-showcase-body">
+                    <svg viewBox="0 0 480 200" fill="none" xmlns="http://www.w3.org/2000/svg" class="pub-showcase-svg">
+                        <defs>
+                            <linearGradient id="sBar1" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#3B82F6"/><stop offset="100%" stop-color="#06B6D4"/></linearGradient>
+                            <linearGradient id="sBar2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#8B5CF6"/><stop offset="100%" stop-color="#A78BFA"/></linearGradient>
+                            <linearGradient id="sBar3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#10B981"/><stop offset="100%" stop-color="#34D399"/></linearGradient>
+                        </defs>
+                        <!-- Shift shading -->
+                        <rect x="320" y="0" width="60" height="200" fill="#1F2937" opacity="0.3"/>
+                        <!-- Grid -->
+                        <rect x="0" y="0" width="480" height="50" fill="#111827"/>
+                        <rect x="0" y="50" width="480" height="50" fill="#0D1117"/>
+                        <rect x="0" y="100" width="480" height="50" fill="#111827"/>
+                        <rect x="0" y="150" width="480" height="50" fill="#0D1117"/>
+                        <line x1="80" y1="0" x2="80" y2="200" stroke="#374151" stroke-width="0.5"/>
+                        <!-- Labels -->
+                        <text x="8" y="30" fill="#9CA3AF" font-size="10" font-family="system-ui">EOS M4 #1</text>
+                        <text x="8" y="80" fill="#9CA3AF" font-size="10" font-family="system-ui">EOS M4 #2</text>
+                        <text x="8" y="130" fill="#9CA3AF" font-size="10" font-family="system-ui">Depowder</text>
+                        <text x="8" y="180" fill="#9CA3AF" font-size="10" font-family="system-ui">Wire EDM</text>
+                        <!-- Bars -->
+                        <rect x="90" y="14" width="140" height="22" rx="4" fill="url(#sBar1)" opacity="0.9"/>
+                        <text x="135" y="29" fill="white" font-size="9" font-family="system-ui">Build 2847</text>
+                        <!-- Changeover segment -->
+                        <rect x="230" y="14" width="20" height="22" rx="4" fill="#F59E0B" opacity="0.6"/>
+                        <rect x="250" y="14" width="130" height="22" rx="4" fill="url(#sBar2)" opacity="0.9"/>
+                        <text x="290" y="29" fill="white" font-size="9" font-family="system-ui">Build 2849</text>
+                        <rect x="120" y="64" width="160" height="22" rx="4" fill="url(#sBar2)" opacity="0.9"/>
+                        <text x="175" y="79" fill="white" font-size="9" font-family="system-ui">Build 2848</text>
+                        <rect x="240" y="114" width="60" height="22" rx="4" fill="url(#sBar3)" opacity="0.9"/>
+                        <text x="251" y="129" fill="white" font-size="9" font-family="system-ui">DP-47</text>
+                        <rect x="310" y="164" width="70" height="22" rx="4" fill="#F59E0B" opacity="0.8"/>
+                        <text x="322" y="179" fill="white" font-size="9" font-family="system-ui">EDM-47</text>
+                        <!-- Now line -->
+                        <line x1="200" y1="0" x2="200" y2="200" stroke="#EF4444" stroke-width="1.5" stroke-dasharray="4,3"/>
+                        <circle cx="200" cy="3" r="3" fill="#EF4444"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Build Advisor -->
+<section class="pub-section">
+    <div class="pub-feature-spotlight pub-feature-spotlight-reverse pub-fade-up">
+        <div class="pub-feature-spotlight-text">
+            <div class="pub-feature-spotlight-label">AI-Powered</div>
+            <h2>Next Build Advisor</h2>
+            <p>Stop spending hours manually composing build plates. The Next Build Advisor analyzes your open demand and recommends optimal plate compositions based on real production constraints.</p>
+            <ul class="pub-feature-detail-list">
+                <li>Aggregates unfulfilled demand across all open work orders</li>
+                <li>Groups parts by material compatibility and build approach</li>
+                <li>Evaluates single, double, and triple stack configurations</li>
+                <li>Calculates print duration changes for each stacking option</li>
+                <li>Prioritizes parts with the earliest due dates</li>
+                <li>Recommends the plate composition that maximizes throughput while meeting deadlines</li>
+            </ul>
+        </div>
+        <div class="pub-feature-spotlight-visual">
+            <div class="pub-advisor-mockup">
+                <div class="pub-advisor-header">Next Build Advisor</div>
+                <div class="pub-advisor-rec">
+                    <div class="pub-advisor-rec-label">Recommended Build Plate</div>
+                    <div class="pub-advisor-rec-parts">
+                        <div class="pub-advisor-part">
+                            <span class="pub-advisor-part-name">Bracket-A7</span>
+                            <span class="pub-advisor-part-qty">x4</span>
+                            <span class="pub-advisor-part-stack">Double Stack</span>
+                        </div>
+                        <div class="pub-advisor-part">
+                            <span class="pub-advisor-part-name">Housing-C3</span>
+                            <span class="pub-advisor-part-qty">x2</span>
+                            <span class="pub-advisor-part-stack">Single</span>
+                        </div>
+                        <div class="pub-advisor-part">
+                            <span class="pub-advisor-part-name">Cap-F1</span>
+                            <span class="pub-advisor-part-qty">x6</span>
+                            <span class="pub-advisor-part-stack">Triple Stack</span>
+                        </div>
+                    </div>
+                    <div class="pub-advisor-meta">
+                        <span>Est. Print: 24.5 hrs</span>
+                        <span>Material: IN718</span>
+                        <span class="pub-advisor-safe">Safe Changeover</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Changeover Analysis -->
+<section class="pub-section pub-section-alt">
+    <div class="pub-feature-spotlight pub-fade-up">
+        <div class="pub-feature-spotlight-text">
+            <div class="pub-feature-spotlight-label">Downtime Prevention</div>
+            <h2>Changeover Analysis</h2>
+            <p>The #1 cause of unplanned SLS downtime: a build finishes when no operator is available to remove the previous plate from the cooldown chamber. Vectrik prevents this automatically.</p>
+            <ul class="pub-feature-detail-list">
+                <li>Predicts exactly when each build will finish based on print duration</li>
+                <li>Checks if the changeover falls within an operator's shift window</li>
+                <li>Flags risky sequences with a clear "Machine DOWN until shift" warning</li>
+                <li>Suggests schedule adjustments to align changeovers with operator availability</li>
+                <li>Accounts for cooldown chamber capacity (2 plates per EOS M4)</li>
+                <li>Models auto-changeover timing (~30 min) in all calculations</li>
+            </ul>
+        </div>
+        <div class="pub-feature-spotlight-visual">
+            <div class="pub-changeover-mockup">
+                <div class="pub-changeover-scenario pub-changeover-risky">
+                    <div class="pub-changeover-label">Risky Changeover</div>
+                    <div class="pub-changeover-time">Build finishes: Sat 11:42 PM</div>
+                    <div class="pub-changeover-detail">No operator until Mon 7:00 AM</div>
+                    <div class="pub-changeover-result pub-changeover-result-bad">33 hrs machine downtime</div>
+                </div>
+                <div class="pub-changeover-arrow">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </div>
+                <div class="pub-changeover-scenario pub-changeover-safe">
+                    <div class="pub-changeover-label">Adjusted Schedule</div>
+                    <div class="pub-changeover-time">Build finishes: Mon 9:15 AM</div>
+                    <div class="pub-changeover-detail">Operator on shift at 7:00 AM</div>
+                    <div class="pub-changeover-result pub-changeover-result-good">Continuous operation</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- How It Connects -->
+<section class="pub-section">
+    <h2 class="pub-section-title pub-fade-up">Connected Scheduling</h2>
+    <p class="pub-section-sub pub-fade-up">Scheduling doesn't happen in isolation. Every build connects to downstream operations.</p>
+    <div class="pub-feature-grid pub-feature-grid-3">
+        <div class="pub-card pub-card-compact pub-fade-up">
+            <h3 class="pub-card-title">Demand-Driven</h3>
+            <p class="pub-card-text">The scheduler pulls unfulfilled demand from work orders so you're always building what matters most. Due dates drive priority automatically.</p>
+        </div>
+        <div class="pub-card pub-card-compact pub-fade-up">
+            <h3 class="pub-card-title">Downstream Aware</h3>
+            <p class="pub-card-text">When a build is scheduled, downstream stages (depowder, EDM, CNC) cascade automatically based on configured durations and machine availability.</p>
+        </div>
+        <div class="pub-card pub-card-compact pub-fade-up">
+            <h3 class="pub-card-title">Shift Integrated</h3>
+            <p class="pub-card-text">Operator shifts, machine operating hours, and maintenance windows are all factored into scheduling decisions. No more planning in a vacuum.</p>
+        </div>
+    </div>
+</section>
+
+<!-- Next/Prev Navigation -->
+<section class="pub-section pub-section-alt">
+    <div class="pub-subpage-nav">
+        <div class="pub-subpage-nav-item pub-subpage-nav-disabled">
+            <span class="pub-subpage-nav-dir">Previous</span>
+        </div>
+        <div class="pub-subpage-nav-item">
+            <a href="/features/shop-floor">
+                <span class="pub-subpage-nav-dir">Next</span>
+                <span class="pub-subpage-nav-title">Shop Floor Execution</span>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="pub-cta-banner">
+    <h2 class="pub-gradient-text">See the scheduler in action</h2>
+    <p>Get a live walkthrough of Gantt scheduling, the build advisor, and changeover analysis.</p>
+    <a href="/demo" class="pub-btn pub-btn-primary pub-btn-lg">Request a Demo</a>
+</section>
