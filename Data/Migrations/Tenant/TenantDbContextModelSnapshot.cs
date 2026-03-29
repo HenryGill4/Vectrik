@@ -4032,6 +4032,9 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Property<decimal>("OutsideProcessCost")
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<decimal>("OverheadCostEach")
+                        .HasColumnType("decimal(10,2)");
+
                     b.Property<int>("PartId")
                         .HasColumnType("INTEGER");
 
@@ -4044,8 +4047,14 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Property<decimal>("QuotedPricePerPart")
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<decimal>("SetupCostEach")
+                        .HasColumnType("decimal(10,2)");
+
                     b.Property<double>("SetupMinutes")
                         .HasColumnType("REAL");
+
+                    b.Property<int?>("StackLevel")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 

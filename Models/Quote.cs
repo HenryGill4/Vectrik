@@ -109,6 +109,15 @@ public class QuoteLine
     [Column(TypeName = "decimal(10,2)")]
     public decimal OutsideProcessCost { get; set; }
 
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal OverheadCostEach { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal SetupCostEach { get; set; }
+
+    /// <summary>Stack level used for cost estimate (1=single, 2=double, 3=triple). Null for non-additive parts.</summary>
+    public int? StackLevel { get; set; }
+
     [MaxLength(500)]
     public string? Notes { get; set; }
 

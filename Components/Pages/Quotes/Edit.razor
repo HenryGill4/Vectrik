@@ -85,8 +85,9 @@ else
                         <th>Part</th>
                         <th>Qty</th>
                         <th>Labor (min)</th>
-                        <th>Setup (min)</th>
+                        <th>Setup $/ea</th>
                         <th>Material $/ea</th>
+                        <th>Overhead $/ea</th>
                         <th>Est. Cost/Part</th>
                         <th>Quoted $/Part</th>
                         <th>Line Total</th>
@@ -98,11 +99,18 @@ else
                     @foreach (var line in _quote.Lines)
                     {
                         <tr>
-                            <td>@(line.Part?.PartNumber ?? "—") — @(line.Part?.Name ?? "")</td>
+                            <td>
+                                @(line.Part?.PartNumber ?? "—") — @(line.Part?.Name ?? "")
+                                @if (line.StackLevel.HasValue && line.StackLevel > 1)
+                                {
+                                    <span class="badge badge-info" style="margin-left: 4px; font-size: 0.7rem;">@(line.StackLevel)x Stack</span>
+                                }
+                            </td>
                             <td>@line.Quantity</td>
                             <td>@line.LaborMinutes.ToString("F0")</td>
-                            <td>@line.SetupMinutes.ToString("F0")</td>
+                            <td>@line.SetupCostEach.ToString("C")</td>
                             <td>@line.MaterialCostEach.ToString("C")</td>
+                            <td>@line.OverheadCostEach.ToString("C")</td>
                             <td>@line.EstimatedCostPerPart.ToString("C")</td>
                             <td>@line.QuotedPricePerPart.ToString("C")</td>
                             <td>@((line.QuotedPricePerPart * line.Quantity).ToString("C"))</td>
@@ -165,7 +173,7 @@ else
 }
 
 <!-- Add Line Modal -->
-<AppModal Visible="_showAddLine" VisibleChanged="v => _showAddLine = v" Title="Add Part to Quote" Size="md">
+<AppModal Visible="_showAddLine" VisibleChanged="v => _showAddLine = v" Title="Add Part to Quote" Size="lg">
     <ChildContent>
         <div class="form-group">
             <label class="form-label">Part</label>
@@ -177,32 +185,165 @@ else
                 }
             </select>
         </div>
-        @if (_lineBreakdown != null)
-        {
-            <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px;">Cost Estimate</div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 0.85rem;">
-                    <span>Labor (@_lineBreakdown.TotalLaborMinutes.ToString("F0") min):</span><span>@_lineBreakdown.LaborCost.ToString("C")</span>
-                    <span>Material:</span><span>@_lineBreakdown.MaterialCost.ToString("C")</span>
-                    <span>Overhead:</span><span>@_lineBreakdown.OverheadCost.ToString("C")</span>
-                    <strong>Total/Part:</strong><strong>@_lineBreakdown.TotalCost.ToString("C")</strong>
-                </div>
-            </div>
-        }
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
             <div class="form-group">
                 <label class="form-label">Quantity</label>
-                <input class="form-control" type="number" min="1" @bind="_lineQty" />
+                <input class="form-control" type="number" min="1" @bind="_lineQty" @bind:after="OnQuantityChanged" />
             </div>
             <div class="form-group">
                 <label class="form-label">Quoted Price/Part</label>
                 <input class="form-control" type="number" step="0.01" @bind="_linePrice" />
             </div>
         </div>
+
+        @if (_lineEstimate != null)
+        {
+            <!-- AI-Powered Cost Breakdown -->
+            <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Cost Breakdown</div>
+                    @if (_lineEstimate.PricingTier != null)
+                    {
+                        <span class="badge badge-info">@_lineEstimate.PricingTier</span>
+                    }
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 0.85rem;">
+                    <span>Labor (@_lineEstimate.CostBreakdown.TotalLaborMinutes.ToString("F0") min):</span>
+                    <span>@_lineEstimate.CostBreakdown.LaborCost.ToString("C")</span>
+                    <span>Setup (@_lineEstimate.CostBreakdown.TotalSetupMinutes.ToString("F0") min):</span>
+                    <span>@_lineEstimate.CostBreakdown.SetupCost.ToString("C")</span>
+                    <span>Material:</span>
+                    <span>@_lineEstimate.CostBreakdown.EffectiveMaterialCost.ToString("C")</span>
+                    <span>Overhead:</span>
+                    <span>@_lineEstimate.CostBreakdown.OverheadCost.ToString("C")</span>
+                    @if (_lineEstimate.CostBreakdown.OutsideProcessCost > 0)
+                    {
+                        <span>Outside Process:</span>
+                        <span>@_lineEstimate.CostBreakdown.OutsideProcessCost.ToString("C")</span>
+                    }
+                    @if (_lineEstimate.CostBreakdown.StageMaterialCost > 0)
+                    {
+                        <span>Consumables/Tooling:</span>
+                        <span>@_lineEstimate.CostBreakdown.StageMaterialCost.ToString("C")</span>
+                    }
+                </div>
+                <div style="border-top: 1px solid var(--border-color); margin-top: 8px; padding-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                    <strong>Total Cost (@_lineQty units):</strong>
+                    <strong>@_lineEstimate.CostBreakdown.TotalCost.ToString("C")</strong>
+                    <strong>Cost/Part:</strong>
+                    <strong>@((_lineQty > 0 ? _lineEstimate.CostBreakdown.TotalCost / _lineQty : 0).ToString("C"))</strong>
+                </div>
+            </div>
+
+            <!-- Pricing Suggestion -->
+            <div style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(16, 185, 129, 0.08)); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">Suggested Pricing</div>
+                <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 0.85rem;">
+                    @if (_lineEstimate.PartPricingSellPrice.HasValue && _lineEstimate.PartPricingSellPrice > 0)
+                    {
+                        <span>Configured Sell Price:</span>
+                        <strong style="color: var(--accent);">@_lineEstimate.PartPricingSellPrice.Value.ToString("C")/part</strong>
+                        <button class="btn btn-sm btn-primary" @onclick="() => UsePrice(_lineEstimate.PartPricingSellPrice.Value)">Use</button>
+                    }
+                    <span>Target Margin (@_quote.TargetMarginPct.ToString("F0")%) Price:</span>
+                    <strong style="color: var(--success);">@_lineEstimate.TargetMarginPrice.ToString("C")/part</strong>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => UsePrice(_lineEstimate.TargetMarginPrice)">Use</button>
+                </div>
+            </div>
+
+            <!-- Stacking Options (SLS Parts Only) -->
+            @if (_lineEstimate.IsAdditivePart && _lineEstimate.StackingOptions.Count > 1)
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">Build Stacking Options</div>
+                    <table class="data-table" style="font-size: 0.82rem;">
+                        <thead>
+                            <tr>
+                                <th>Config</th>
+                                <th>Parts/Build</th>
+                                <th>Build Hrs</th>
+                                <th>Builds Req.</th>
+                                <th>Machine $/Part</th>
+                                <th>Total $/Part</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var opt in _lineEstimate.StackingOptions)
+                            {
+                                <tr style="@(opt.IsRecommended ? "background: rgba(16, 185, 129, 0.08);" : "")">
+                                    <td>
+                                        @opt.Label
+                                        @if (opt.IsRecommended)
+                                        {
+                                            <span class="badge badge-active" style="margin-left: 4px; font-size: 0.7rem;">Best</span>
+                                        }
+                                    </td>
+                                    <td>@opt.PartsPerBuild</td>
+                                    <td>@opt.BuildDurationHours.ToString("F1")</td>
+                                    <td>@opt.BuildsRequired</td>
+                                    <td>@opt.MachineCostPerPart.ToString("C")</td>
+                                    <td><strong>@opt.TotalCostPerPart.ToString("C")</strong></td>
+                                    <td>
+                                        @if (!opt.IsRecommended)
+                                        {
+                                            <button class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;"
+                                                    @onclick="() => SelectStackOption(opt)">Select</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <!-- Volume Break Pricing -->
+            @if (_lineEstimate.QuantityBreaks.Count > 1)
+            {
+                <details style="margin-bottom: 12px;">
+                    <summary style="cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--text-primary); padding: 8px 0;">
+                        Volume Break Pricing
+                    </summary>
+                    <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px;">
+                        <table class="data-table" style="font-size: 0.82rem;">
+                            <thead>
+                                <tr>
+                                    <th>Qty</th>
+                                    <th>Setup/Part</th>
+                                    <th>Cost/Part</th>
+                                    <th>Total Cost</th>
+                                    <th>Suggested Price/Part</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var qb in _lineEstimate.QuantityBreaks)
+                                {
+                                    <tr style="@(qb.Quantity == _lineQty ? "background: rgba(99, 102, 241, 0.08); font-weight: 600;" : "")">
+                                        <td>@qb.Quantity</td>
+                                        <td>@qb.SetupCostPerPart.ToString("C")</td>
+                                        <td>@qb.CostPerPart.ToString("C")</td>
+                                        <td>@qb.TotalCost.ToString("C")</td>
+                                        <td>@qb.SuggestedPrice.ToString("C")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            }
+        }
+        else if (_linePartId > 0 && _estimateLoading)
+        {
+            <div style="text-align: center; padding: 20px; color: var(--text-muted);">
+                <span class="spinner"></span> Calculating estimate...
+            </div>
+        }
     </ChildContent>
     <Footer>
         <button class="btn btn-secondary" @onclick="() => _showAddLine = false">Cancel</button>
-        <button class="btn btn-primary" @onclick="AddLine" disabled="@(_linePartId == 0)">Add Line</button>
+        <button class="btn btn-primary" @onclick="AddLine" disabled="@(_linePartId == 0 || _estimateLoading)">Add Line</button>
     </Footer>
 </AppModal>
 
@@ -242,7 +383,8 @@ else
     private int _linePartId;
     private int _lineQty = 1;
     private decimal _linePrice;
-    private PricingBreakdown? _lineBreakdown;
+    private QuoteLineEstimate? _lineEstimate;
+    private bool _estimateLoading;
 
     // Revision
     private bool _showRevisionModal;
@@ -301,23 +443,59 @@ else
     {
         if (_linePartId > 0)
         {
-            try
-            {
-                _lineBreakdown = await PricingEngine.CalculatePartCostAsync(_linePartId, _lineQty);
-                _linePrice = _lineBreakdown.TotalCost > 0 && _quote.TargetMarginPct < 100
-                    ? Math.Round(_lineBreakdown.TotalCost / (1 - _quote.TargetMarginPct / 100), 2)
-                    : 0;
-            }
-            catch
-            {
-                _lineBreakdown = null;
-                _linePrice = 0;
-            }
+            await RefreshEstimate();
         }
         else
         {
-            _lineBreakdown = null;
+            _lineEstimate = null;
         }
+    }
+
+    private async Task OnQuantityChanged()
+    {
+        if (_linePartId > 0 && _lineQty > 0)
+            await RefreshEstimate();
+    }
+
+    private async Task RefreshEstimate()
+    {
+        _estimateLoading = true;
+        StateHasChanged();
+        try
+        {
+            _lineEstimate = await PricingEngine.GetQuoteLineEstimateAsync(
+                _linePartId, Math.Max(1, _lineQty), _quote.TargetMarginPct);
+
+            // Auto-set price: prefer PartPricing sell price, then target margin price
+            if (_lineEstimate.PartPricingSellPrice.HasValue && _lineEstimate.PartPricingSellPrice > 0)
+                _linePrice = _lineEstimate.PartPricingSellPrice.Value;
+            else if (_lineEstimate.TargetMarginPrice > 0)
+                _linePrice = _lineEstimate.TargetMarginPrice;
+            else
+                _linePrice = 0;
+        }
+        catch
+        {
+            _lineEstimate = null;
+            _linePrice = 0;
+        }
+        finally
+        {
+            _estimateLoading = false;
+        }
+    }
+
+    private void UsePrice(decimal price)
+    {
+        _linePrice = price;
+    }
+
+    private void SelectStackOption(StackingOption opt)
+    {
+        // Recalculate price using this stacking option's cost
+        _linePrice = _quote.TargetMarginPct < 100
+            ? Math.Round(opt.TotalCostPerPart / (1 - _quote.TargetMarginPct / 100m), 2)
+            : 0;
     }
 
     private void ShowAddLine()
@@ -325,7 +503,8 @@ else
         _linePartId = 0;
         _lineQty = 1;
         _linePrice = 0;
-        _lineBreakdown = null;
+        _lineEstimate = null;
+        _estimateLoading = false;
         _showAddLine = true;
     }
 
