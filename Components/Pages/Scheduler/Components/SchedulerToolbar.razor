@@ -49,27 +49,15 @@
     <div class="sched-tabs">
         <button class="sched-tab @(ViewMode == "gantt" ? "sched-tab--active" : "")" @onclick='@(() => { _newDropdownOpen = false; OnViewModeChanged.InvokeAsync("gantt"); })'>
             <span class="sched-tab-icon">📅</span>
-            <span class="sched-tab-label">Production</span>
+            <span class="sched-tab-label">Schedule</span>
         </button>
         <button class="sched-tab @(ViewMode == "demand" ? "sched-tab--active" : "")" @onclick='@(() => { _newDropdownOpen = false; OnViewModeChanged.InvokeAsync("demand"); })'>
             <span class="sched-tab-icon">📋</span>
             <span class="sched-tab-label">Demand</span>
         </button>
-        <button class="sched-tab @(ViewMode == "programs" ? "sched-tab--active" : "")" @onclick='@(() => { _newDropdownOpen = false; OnViewModeChanged.InvokeAsync("programs"); })'>
-            <span class="sched-tab-icon">🖨️</span>
-            <span class="sched-tab-label">Programs</span>
-        </button>
-        <button class="sched-tab @(ViewMode == "floor" ? "sched-tab--active" : "")" @onclick='@(() => { _newDropdownOpen = false; OnViewModeChanged.InvokeAsync("floor"); })'>
-            <span class="sched-tab-icon">🔧</span>
-            <span class="sched-tab-label">Floor</span>
-        </button>
         <button class="sched-tab @(ViewMode == "dispatch" ? "sched-tab--active" : "")" @onclick='@(() => { _newDropdownOpen = false; OnViewModeChanged.InvokeAsync("dispatch"); })'>
             <span class="sched-tab-icon">🚀</span>
             <span class="sched-tab-label">Dispatch</span>
-        </button>
-        <button class="sched-tab @(ViewMode == "setup" ? "sched-tab--active" : "")" @onclick='@(() => { _newDropdownOpen = false; OnViewModeChanged.InvokeAsync("setup"); })'>
-            <span class="sched-tab-icon">⚙️</span>
-            <span class="sched-tab-label">Setup</span>
         </button>
         <button class="sched-tab @(ViewMode == "data" ? "sched-tab--active" : "")" @onclick='@(() => { _newDropdownOpen = false; OnViewModeChanged.InvokeAsync("data"); })'>
             <span class="sched-tab-icon">📊</span>
@@ -108,9 +96,6 @@
                     ⚠️ Conflicts
                 </button>
             </div>
-        }
-        else if (ViewMode == "programs")
-        {
             <div class="sched-filter-group">
                 <button class="sched-filter-btn @(ProgramStatusFilter == null ? "sched-filter-btn--active" : "")"
                         @onclick="() => SetProgramStatusFilter(null)">All</button>
@@ -152,7 +137,7 @@
     [Parameter] public ProgramScheduleStatus? ProgramStatusFilter { get; set; }
     [Parameter] public bool ShowOverdueOnly { get; set; }
 
-    private bool HasGanttViewport => ViewMode is "gantt" or "programs" or "data";
+    private bool HasGanttViewport => ViewMode is "gantt" or "data";
 
     [Parameter] public EventCallback<string> OnViewModeChanged { get; set; }
     [Parameter] public EventCallback<int> OnShiftViewport { get; set; }

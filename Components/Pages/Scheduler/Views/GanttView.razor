@@ -1,9 +1,79 @@
 @* ── Gantt View: machines gantt chart with work order sidebar ── *@
 @using Vectrik.Components.Pages.Scheduler.Components
+@using Vectrik.Models.Enums
 
 <div class="sched-layout">
     @* ── Gantt Chart ── *@
     <div class="sched-gantt-panel">
+        @* ── SLS Program Pipeline Strip (collapsible) ── *@
+        @if (BuildPrograms.Any())
+        {
+            var pipelinePrograms = BuildPrograms
+                .Where(p => p.ScheduleStatus is not (ProgramScheduleStatus.Cancelled or ProgramScheduleStatus.Completed))
+                .ToList();
+            var filteredPrograms = ProgramStatusFilter == null ? BuildPrograms : BuildPrograms.Where(p => p.ScheduleStatus == ProgramStatusFilter.Value).ToList();
+            var none = filteredPrograms.Where(p => p.ScheduleStatus == ProgramScheduleStatus.None).ToList();
+            var ready = filteredPrograms.Where(p => p.ScheduleStatus == ProgramScheduleStatus.Ready).ToList();
+            var scheduled = filteredPrograms.Where(p => p.ScheduleStatus == ProgramScheduleStatus.Scheduled).ToList();
+            var printing = filteredPrograms.Where(p => p.ScheduleStatus == ProgramScheduleStatus.Printing).ToList();
+            var postPrint = filteredPrograms.Where(p => p.ScheduleStatus == ProgramScheduleStatus.PostPrint).ToList();
+
+            <details class="gantt-pipeline-details">
+                <summary class="gantt-pipeline-toggle">
+                    SLS Pipeline — @pipelinePrograms.Count active program@(pipelinePrograms.Count != 1 ? "s" : "")
+                </summary>
+                <div class="builds-workflow-indicator">
+                    <div class="workflow-step @(none.Any() ? "workflow-step--active" : "")">
+                        <span class="workflow-step-icon">📝</span>
+                        <span class="workflow-step-label">Draft</span>
+                        <span class="workflow-step-count">@none.Count</span>
+                    </div>
+                    <div class="workflow-arrow">→</div>
+                    <div class="workflow-step @(ready.Any() ? "workflow-step--active" : "")">
+                        <span class="workflow-step-icon">✅</span>
+                        <span class="workflow-step-label">Ready</span>
+                        <span class="workflow-step-count">@ready.Count</span>
+                    </div>
+                    <div class="workflow-arrow">→</div>
+                    <div class="workflow-step @(scheduled.Any() ? "workflow-step--active" : "")">
+                        <span class="workflow-step-icon">📅</span>
+                        <span class="workflow-step-label">Scheduled</span>
+                        <span class="workflow-step-count">@scheduled.Count</span>
+                    </div>
+                    <div class="workflow-arrow">→</div>
+                    <div class="workflow-step @(printing.Any() ? "workflow-step--active" : "")">
+                        <span class="workflow-step-icon">🖨️</span>
+                        <span class="workflow-step-label">Printing</span>
+                        <span class="workflow-step-count">@printing.Count</span>
+                    </div>
+                    <div class="workflow-arrow">→</div>
+                    <div class="workflow-step @(postPrint.Any() ? "workflow-step--active" : "")">
+                        <span class="workflow-step-icon">🔥</span>
+                        <span class="workflow-step-label">Post-Print</span>
+                        <span class="workflow-step-count">@postPrint.Count</span>
+                    </div>
+                </div>
+                <div class="builds-pipeline-summary">
+                    <div class="builds-pipeline-stat">
+                        <span class="builds-pipeline-count">@pipelinePrograms.Count</span>
+                        <span class="builds-pipeline-label">Active Programs</span>
+                    </div>
+                    <div class="builds-pipeline-stat builds-pipeline-stat--ready">
+                        <span class="builds-pipeline-count">@(ready.Count + scheduled.Count)</span>
+                        <span class="builds-pipeline-label">Ready / Scheduled</span>
+                    </div>
+                    <div class="builds-pipeline-stat builds-pipeline-stat--printing">
+                        <span class="builds-pipeline-count">@printing.Count</span>
+                        <span class="builds-pipeline-label">Printing</span>
+                    </div>
+                    <div class="builds-pipeline-stat builds-pipeline-stat--post">
+                        <span class="builds-pipeline-count">@postPrint.Count</span>
+                        <span class="builds-pipeline-label">Post-Print</span>
+                    </div>
+                </div>
+            </details>
+        }
+
         @if (HasSelection)
         {
             <div class="gantt-batch-bar">
@@ -131,6 +201,7 @@
     [Parameter] public DateTime DataRangeEnd { get; set; }
     [Parameter] public double PixelsPerHour { get; set; }
     [Parameter] public bool ShowConflictsOnly { get; set; }
+    [Parameter] public ProgramScheduleStatus? ProgramStatusFilter { get; set; }
     [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
     [Parameter] public EventCallback<List<int>> OnBatchDeleteBuilds { get; set; }

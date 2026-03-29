@@ -90,10 +90,6 @@
             </div>
         </div>
 
-        @* ── Schedule Diagnostic Report ── *@
-        <ScheduleIssueReport Reports="_diagnosticReports" Warnings="_diagnosticWarnings"
-                             OnClear="StateHasChanged" />
-
         @* ── Work Order Cards ── *@
         @if (_statFilter != null)
         {
@@ -297,6 +293,18 @@
                 </div>
             }
         </div>
+
+        @* ── Schedule Diagnostics (collapsible) ── *@
+        @if (_diagnosticReports.Any() || _diagnosticWarnings.Any())
+        {
+            <details class="wo-diagnostics-section">
+                <summary class="wo-diagnostics-toggle">
+                    Diagnostics — @(_diagnosticWarnings.Count) warning@(_diagnosticWarnings.Count != 1 ? "s" : ""), @(_diagnosticReports.Count) report@(_diagnosticReports.Count != 1 ? "s" : "")
+                </summary>
+                <ScheduleIssueReport Reports="_diagnosticReports" Warnings="_diagnosticWarnings"
+                                     OnClear="StateHasChanged" />
+            </details>
+        }
     }
 </div>
 
