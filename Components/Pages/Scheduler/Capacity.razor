@@ -1,317 +1,379 @@
 @page "/scheduler/capacity"
 @inject IStageService StageService
 @inject IOeeService OeeService
+@inject ICapacityPlanningService CapacityService
+@inject IBuildAdvisorService BuildAdvisor
+@inject ISetupDispatchService DispatchService
 @inject ToastService Toast
+@using Vectrik.Models.Enums
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager,Supervisor")]
 
-<PageTitle>Capacity Dashboard - Vectrik</PageTitle>
+<PageTitle>Capacity Management - Vectrik</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">📊 Capacity Dashboard</h1>
-    <a href="scheduler" class="btn btn-secondary">← Scheduler</a>
+    <h1 class="page-title">Machine Capacity Management</h1>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-accent" @onclick="OpenWizard">Smart Assign</button>
+        <a href="scheduler" class="btn btn-secondary">Scheduler</a>
+    </div>
 </div>
 
 @* ── Date Range ── *@
 <div class="sched-controls">
-    <div class="sched-controls-left">
-        <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label">From</label>
-            <input class="form-control" type="date" @bind="_dateFrom" />
-        </div>
-        <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label">To</label>
-            <input class="form-control" type="date" @bind="_dateTo" />
-        </div>
-        <div class="sched-range-btns">
-            <button class="btn btn-sm @(_rangeLabel == "1W" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(7, "1W")'>1W</button>
-            <button class="btn btn-sm @(_rangeLabel == "2W" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(14, "2W")'>2W</button>
-            <button class="btn btn-sm @(_rangeLabel == "1M" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(30, "1M")'>1M</button>
-            <button class="btn btn-sm @(_rangeLabel == "3M" ? "btn-primary" : "btn-secondary")" @onclick='() => SetRange(90, "3M")'>3M</button>
-        </div>
-    </div>
-    <div class="sched-controls-right">
-        <button class="btn btn-primary btn-sm" @onclick="LoadData" style="height: 38px;">🔄 Refresh</button>
+    <div class="sched-date-range">
+        <label>From</label>
+        <input type="date" @bind="_from" @bind:event="oninput" />
+        <label>To</label>
+        <input type="date" @bind="_to" @bind:event="oninput" />
+        <button class="btn btn-xs btn-secondary" @onclick="LoadDataAsync">Refresh</button>
     </div>
 </div>
 
 @if (_loading)
 {
-    <div class="loading"><span class="spinner"></span> Calculating capacity...</div>
+    <div class="loading"><span class="spinner"></span> Loading capacity data...</div>
 }
 else
 {
-    @* ── OEE Summary ── *@
-    <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">📈 OEE Summary</div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
-            <div class="stat-card">
-                <div class="stat-value" style="color: @GetOeeColor(_overallOee.Oee);">@_overallOee.Oee%</div>
-                <div class="stat-label">Overall OEE</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">@_overallOee.Availability%</div>
-                <div class="stat-label">Availability</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">@_overallOee.Performance%</div>
-                <div class="stat-label">Performance</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">@_overallOee.Quality%</div>
-                <div class="stat-label">Quality</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">@_capacity.Count</div>
-                <div class="stat-label">Active Machines</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">@(_capacity.Any() ? Math.Round(_capacity.Average(c => c.UtilizationPct), 1) : 0)%</div>
-                <div class="stat-label">Avg Utilization</div>
-            </div>
+    @* ── Section A: Machine Cards Grid ── *@
+    <div class="capacity-section">
+        <h2>Machine Overview</h2>
+        <div class="capacity-cards">
+            @foreach (var card in _machineCards)
+            {
+                <div class="capacity-card @(card.UtilizationPct > 100 ? "capacity-card--overloaded" : card.UtilizationPct > 85 ? "capacity-card--high" : "")">
+                    <div class="capacity-card-header">
+                        <span class="capacity-card-name">@card.MachineName</span>
+                        <span class="capacity-card-type">@card.MachineType</span>
+                        <span class="capacity-card-status capacity-card-status--@card.Status.ToString().ToLower()">@card.Status</span>
+                    </div>
+
+                    @if (card.CurrentProgramName != null)
+                    {
+                        <div class="capacity-card-program">Loaded: @card.CurrentProgramName</div>
+                    }
+
+                    <div class="capacity-card-util">
+                        <div class="capacity-util-bar">
+                            <div class="capacity-util-fill" style="width: @Math.Min(100, card.UtilizationPct)%; background: @GetUtilColor(card.UtilizationPct)"></div>
+                        </div>
+                        <span class="capacity-util-pct">@($"{card.UtilizationPct:F0}")%</span>
+                        <span class="capacity-util-hours">@($"{card.LoadedHours:F1}")h / @($"{card.AvailableHours:F1}")h</span>
+                    </div>
+
+                    <div class="capacity-card-queue">
+                        <span>@card.QueueCount queued</span>
+                        @if (card.NextDuePart != null)
+                        {
+                            <span class="@(card.NextDueDate < DateTime.UtcNow ? "capacity-overdue" : "")">
+                                Next: @card.NextDuePart @(card.NextDueDate.HasValue ? $"(due {card.NextDueDate.Value:MMM d})" : "")
+                            </span>
+                        }
+                    </div>
+
+                    @if (!card.IsAdditive)
+                    {
+                        <button class="btn btn-xs btn-primary capacity-card-action" @onclick="() => OpenWizardForMachine(card.MachineId)">Assign Work</button>
+                    }
+                </div>
+            }
         </div>
     </div>
 
-    @* ── Capacity by Machine (visual bars) ── *@
-    <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">🏭 Machine Utilization</div>
-        @if (!_capacity.Any())
+    @* ── Section B: Demand Gap Panel ── *@
+    <div class="capacity-section">
+        <h2>Demand Gaps (@_demandGaps.Count parts with unmet demand)</h2>
+        @if (_demandGaps.Any())
         {
-            <div class="empty-state"><div class="empty-state-text">No machines available for scheduling</div></div>
-        }
-        else
-        {
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-                @foreach (var m in _capacity)
-                {
-                    var barColor = m.UtilizationPct switch
-                    {
-                        > 100 => "var(--danger)",
-                        > 85 => "var(--warning)",
-                        > 40 => "var(--success)",
-                        _ => "var(--accent)"
-                    };
-                    var barWidth = Math.Min(m.UtilizationPct, 100);
-                    var openHrs = Math.Max(m.AvailableHours - m.LoadedHours, 0);
-                    <div style="cursor: pointer; padding: 8px; border-radius: 8px; transition: background 0.15s;"
-                         class="@(m.UtilizationPct > 100 ? "sched-row-warn" : "")"
-                         @onclick="() => DrillDown(m.MachineId, m.MachineName)">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px; align-items: baseline;">
-                            <span style="font-weight: 600; font-size: 0.9rem;">
-                                @m.MachineName
-                                <span style="color: var(--text-muted); font-weight: 400; font-size: 0.8rem; margin-left: 4px;">@m.MachineType</span>
-                            </span>
-                            <span style="font-weight: 700; color: @barColor; font-size: 0.9rem;">@m.UtilizationPct%</span>
-                        </div>
-                        <div style="background: var(--bg-tertiary); border-radius: 6px; height: 20px; overflow: hidden; position: relative;">
-                            <div style="background: @barColor; height: 100%; width: @(barWidth)%; border-radius: 6px; transition: width 0.4s ease;"></div>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
-                            <span>@m.LoadedHours hrs loaded / @m.AvailableHours hrs available</span>
-                            <span>@Math.Round(openHrs, 1) hrs open · click for details</span>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
-    </div>
-
-    @* ── Capacity Table ── *@
-    <div class="card" style="margin-bottom: 16px;">
-        <div class="card-header">📋 Detailed Capacity</div>
-        <div style="overflow-x: auto;">
             <table class="data-table">
                 <thead>
-                    <tr><th>Machine</th><th>Type</th><th>Available</th><th>Loaded</th><th>Open</th><th>Utilization</th></tr>
+                    <tr>
+                        <th>Part</th>
+                        <th>Demand</th>
+                        <th>Scheduled</th>
+                        <th>Gap</th>
+                        <th>Machines</th>
+                        <th>Due Date</th>
+                        <th>Priority</th>
+                        <th></th>
+                    </tr>
                 </thead>
                 <tbody>
-                    @foreach (var m in _capacity)
+                    @foreach (var gap in _demandGaps)
                     {
-                        var openHrs = Math.Max(m.AvailableHours - m.LoadedHours, 0);
-                        <tr>
-                            <td style="font-weight: 600;">@m.MachineName</td>
-                            <td>@m.MachineType</td>
-                            <td>@m.AvailableHours h</td>
-                            <td>@m.LoadedHours h</td>
-                            <td>@Math.Round(openHrs, 1) h</td>
-                            <td>
-                                @{
-                                    var badgeClass = m.UtilizationPct switch
-                                    {
-                                        > 100 => "badge-danger",
-                                        > 85 => "badge-warning",
-                                        _ => "badge-success"
-                                    };
-                                }
-                                <span class="badge @badgeClass">@m.UtilizationPct%</span>
-                            </td>
+                        <tr class="@(gap.IsOverdue ? "capacity-row-overdue" : "")">
+                            <td class="font-mono">@gap.PartNumber</td>
+                            <td>@gap.DemandQty</td>
+                            <td>@gap.ScheduledQty</td>
+                            <td><strong>@gap.GapQty</strong></td>
+                            <td>@gap.CapableMachineCount</td>
+                            <td class="@(gap.IsOverdue ? "capacity-overdue" : "")">@gap.EarliestDueDate.ToString("MMM d")</td>
+                            <td><span class="capacity-priority capacity-priority--@gap.HighestPriority.ToString().ToLower()">@gap.HighestPriority</span></td>
+                            <td><button class="btn btn-xs btn-accent" @onclick="() => AssignPart(gap.PartId)">Assign</button></td>
                         </tr>
                     }
                 </tbody>
             </table>
-        </div>
+        }
+        else
+        {
+            <div class="empty-state"><div class="empty-state-text">All demand is covered.</div></div>
+        }
     </div>
 
-    @* ── Per-Machine OEE ── *@
-    @if (_machineOee.Any())
+    @* ── Section C: Bottleneck Alerts ── *@
+    @if (_bottlenecks != null && _bottlenecks.Items.Any())
     {
-        <div class="card">
-            <div class="card-header">⚡ OEE by Machine</div>
-            <div style="overflow-x: auto;">
-                <table class="data-table">
-                    <thead>
-                        <tr><th>Machine</th><th>Availability</th><th>Performance</th><th>Quality</th><th>OEE</th></tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var o in _machineOee)
-                        {
-                            <tr>
-                                <td style="font-weight: 600;">@o.MachineName</td>
-                                <td>@o.Availability%</td>
-                                <td>@o.Performance%</td>
-                                <td>@o.Quality%</td>
-                                <td><span class="badge @(o.Oee >= 85 ? "badge-success" : o.Oee >= 60 ? "badge-warning" : "badge-danger")">@o.Oee%</span></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+        <div class="capacity-section">
+            <h2>Bottleneck Alerts</h2>
+            <div class="capacity-bottlenecks">
+                @foreach (var item in _bottlenecks.Items)
+                {
+                    <div class="capacity-bottleneck capacity-bottleneck--@item.Severity.ToLower()">
+                        <span class="capacity-bottleneck-dept">@item.Department @(item.MachineName != null ? $"({item.MachineName})" : "")</span>
+                        <span>Utilization: @($"{item.UtilizationPct:F0}")% | Queue: @($"{item.QueueHours:F1}")h</span>
+                    </div>
+                }
+                @foreach (var rec in _bottlenecks.Recommendations)
+                {
+                    <div class="capacity-recommendation">@rec</div>
+                }
             </div>
         </div>
     }
 }
 
-@* ── Drill-Down: Jobs for Machine ── *@
-@if (_drillDownJobs != null)
+@* ── Setup Assignment Wizard Modal ── *@
+@if (_showWizard)
 {
-    <div class="modal-overlay" @onclick="CloseDrillDown">
-        <div class="modal-content" style="max-width: 750px;" @onclick:stopPropagation>
+    <div class="modal-overlay" @onclick="CloseWizard">
+        <div class="modal-content modal-lg" @onclick:stopPropagation>
             <div class="modal-header">
-                <span class="modal-title">📋 Scheduled Work — @_drillDownMachineName</span>
-                <button class="modal-close" @onclick="CloseDrillDown">&times;</button>
+                <h3>Smart Setup Assignment</h3>
+                <div class="setup-wizard-steps">
+                    <span class="setup-wizard-step @(_wizardStep == 0 ? "active" : _wizardStep > 0 ? "done" : "")">1. Select Demand</span>
+                    <span class="setup-wizard-step @(_wizardStep == 1 ? "active" : _wizardStep > 1 ? "done" : "")">2. Machine Assignment</span>
+                    <span class="setup-wizard-step @(_wizardStep == 2 ? "active" : "")">3. Confirm</span>
+                </div>
+                <button class="modal-close" @onclick="CloseWizard">&times;</button>
             </div>
-            @if (_drillDownLoading)
-            {
-                <div class="loading"><span class="spinner"></span> Loading scheduled work...</div>
-            }
-            else if (!_drillDownJobs.Any())
-            {
-                <div class="empty-state"><div class="empty-state-text">No scheduled jobs for this machine in the selected period.</div></div>
-            }
-            else
-            {
-                <div style="overflow-x: auto;">
+            <div class="modal-body">
+
+                @if (_wizardStep == 0)
+                {
+                    @* Step 1: Select demand *@
+                    <p style="color: var(--text-secondary); margin-bottom: 12px;">Select parts with unmet demand to assign to machines.</p>
+                    @foreach (var gap in _demandGaps)
+                    {
+                        <label class="setup-wizard-demand-item @(gap.IsOverdue ? "setup-wizard-demand-overdue" : "")">
+                            <input type="checkbox" checked="@_selectedPartIds.Contains(gap.PartId)"
+                                   @onchange="(e) => TogglePartSelection(gap.PartId, (bool)(e.Value ?? false))" />
+                            <span class="font-mono">@gap.PartNumber</span>
+                            <span>x@gap.GapQty needed</span>
+                            <span class="@(gap.IsOverdue ? "capacity-overdue" : "")">Due: @gap.EarliestDueDate.ToString("MMM d")</span>
+                            <span class="capacity-priority capacity-priority--@gap.HighestPriority.ToString().ToLower()">@gap.HighestPriority</span>
+                        </label>
+                    }
+                }
+                else if (_wizardStep == 1)
+                {
+                    @* Step 2: Machine assignment *@
+                    <p style="color: var(--text-secondary); margin-bottom: 12px;">Review recommended machine assignments. The system selected the best option based on changeover, due dates, and throughput.</p>
+                    @foreach (var partId in _selectedPartIds)
+                    {
+                        var partSuggestions = _suggestions.Where(s => s.PartId == partId).ToList();
+                        if (!partSuggestions.Any()) continue;
+                        <div class="setup-wizard-part-group">
+                            <h4 class="font-mono">@partSuggestions.First().PartNumber — x@partSuggestions.First().Quantity</h4>
+                            @foreach (var sug in partSuggestions)
+                            {
+                                <label class="setup-wizard-suggestion @(sug.IsRecommended ? "setup-wizard-suggestion--recommended" : "")">
+                                    <input type="radio" name="assign-@partId" checked="@sug.IsRecommended"
+                                           @onchange="() => SelectSuggestion(partId, sug.MachineId, sug.MachineProgramId)" />
+                                    <span class="setup-wizard-machine">@sug.MachineName</span>
+                                    <span class="setup-wizard-program">@sug.ProgramName</span>
+                                    <span>Setup: @($"{sug.EstimatedSetupMinutes:F0}")m | Run: @($"{sug.EstimatedRunMinutes:F0}")m</span>
+                                    <span class="setup-wizard-score" title="@sug.ScoreReason">Score: @sug.Score</span>
+                                    @if (sug.IsRecommended)
+                                    {
+                                        <span class="setup-wizard-badge">Recommended</span>
+                                    }
+                                </label>
+                            }
+                        </div>
+                    }
+                }
+                else if (_wizardStep == 2)
+                {
+                    @* Step 3: Review & confirm *@
+                    <p style="color: var(--text-secondary); margin-bottom: 12px;">Review assignments before scheduling.</p>
                     <table class="data-table">
-                        <thead>
-                            <tr><th>Stage</th><th>Part</th><th>Start</th><th>End</th><th>Hours</th><th>Status</th></tr>
-                        </thead>
+                        <thead><tr><th>Part</th><th>Machine</th><th>Program</th><th>Setup</th><th>Run</th><th>Total</th></tr></thead>
                         <tbody>
-                            @foreach (var e in _drillDownJobs)
+                            @foreach (var sug in _suggestions.Where(s => s.IsRecommended))
                             {
                                 <tr>
-                                    <td>
-                                        @if (e.ProductionStage != null)
-                                        {
-                                            <span style="display:inline-flex;align-items:center;gap:4px;">
-                                                <span style="width:8px;height:8px;border-radius:50%;background:@(e.ProductionStage.StageColor);display:inline-block;"></span>
-                                                @e.ProductionStage.Name
-                                            </span>
-                                        }
-                                        else { <span>—</span> }
-                                    </td>
-                                    <td style="font-weight: 600;">
-                                        @if (e.MachineProgramId != null)
-                                        {
-                                            <span>📦 @(e.MachineProgram?.Name ?? $"Program #{e.MachineProgramId}")</span>
-                                        }
-                                        else
-                                        {
-                                            @(e.Job?.Part?.PartNumber ?? "—")
-                                        }
-                                    </td>
-                                    <td>@(e.ScheduledStartAt?.ToString("MM/dd HH:mm") ?? "—")</td>
-                                    <td>@(e.ScheduledEndAt?.ToString("MM/dd HH:mm") ?? "—")</td>
-                                    <td>@(e.EstimatedHours?.ToString("F1") ?? "—")</td>
-                                    <td><span class="badge badge-@e.Status.ToString().ToLower()">@e.Status</span></td>
+                                    <td class="font-mono">@sug.PartNumber x@sug.Quantity</td>
+                                    <td>@sug.MachineName</td>
+                                    <td>@sug.ProgramName</td>
+                                    <td>@($"{sug.EstimatedSetupMinutes:F0}")m</td>
+                                    <td>@($"{sug.EstimatedRunMinutes:F0}")m</td>
+                                    <td><strong>@($"{(sug.EstimatedSetupMinutes + sug.EstimatedRunMinutes) / 60:F1}")h</strong></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
-                </div>
-            }
+                }
+            </div>
+            <div class="modal-footer">
+                @if (_wizardStep > 0)
+                {
+                    <button class="btn btn-secondary" @onclick="WizardBack">Back</button>
+                }
+                @if (_wizardStep < 2)
+                {
+                    <button class="btn btn-accent" @onclick="WizardNext"
+                            disabled="@(_wizardStep == 0 && _selectedPartIds.Count == 0)">Next</button>
+                }
+                else
+                {
+                    <button class="btn btn-accent" @onclick="ExecuteAssignments"
+                            disabled="@(!_suggestions.Any(s => s.IsRecommended))">
+                        Schedule @_suggestions.Count(s => s.IsRecommended) Assignment(s)
+                    </button>
+                }
+                <button class="btn btn-secondary" @onclick="CloseWizard">Cancel</button>
+            </div>
         </div>
     </div>
 }
 
 @code {
     private bool _loading = true;
-    private DateTime _dateFrom = DateTime.UtcNow.Date;
-    private DateTime _dateTo = DateTime.UtcNow.Date.AddDays(28);
-    private string _rangeLabel = "1M";
-    private List<MachineCapacityInfo> _capacity = new();
-    private OeeData _overallOee = new(0, "Overall", 0, 0, 0, 0);
-    private List<OeeData> _machineOee = new();
+    private DateTime _from = DateTime.UtcNow.Date;
+    private DateTime _to = DateTime.UtcNow.Date.AddDays(7);
+    private List<MachineCapacityCard> _machineCards = new();
+    private List<DemandGapItem> _demandGaps = new();
+    private BottleneckReport? _bottlenecks;
 
-    // Drill-down
-    private List<StageExecution>? _drillDownJobs;
-    private string _drillDownMachineName = "";
-    private bool _drillDownLoading;
+    // Wizard state
+    private bool _showWizard;
+    private int _wizardStep;
+    private List<int> _selectedPartIds = new();
+    private List<MachineAssignmentSuggestion> _suggestions = new();
+    private int? _wizardMachineFilter;
+
+    [CascadingParameter] private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
+    private int _currentUserId;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            var claim = state.User.FindFirst("UserId")?.Value;
+            if (int.TryParse(claim, out var uid)) _currentUserId = uid;
+        }
+        await LoadDataAsync();
     }
 
-    private async Task LoadData()
+    private async Task LoadDataAsync()
     {
         _loading = true;
         StateHasChanged();
 
-        try
-        {
-            _capacity = await StageService.GetMachineCapacityAsync(_dateFrom, _dateTo);
-            _overallOee = await OeeService.GetOverallOeeAsync(_dateFrom, _dateTo);
-            _machineOee = await OeeService.GetAllMachineOeeAsync(_dateFrom, _dateTo);
-        }
-        catch (Exception ex)
-        {
-            Toast.ShowError($"Error loading capacity: {ex.Message}");
-        }
+        _machineCards = await CapacityService.GetMachineCapacityCardsAsync(_from, _to);
+        _demandGaps = await CapacityService.GetDemandGapsAsync();
+        _bottlenecks = await BuildAdvisor.AnalyzeBottlenecksAsync(_from, _to);
 
         _loading = false;
+        StateHasChanged();
     }
 
-    private async Task SetRange(int days, string label)
+    private static string GetUtilColor(double pct) => pct switch
     {
-        _rangeLabel = label;
-        _dateTo = _dateFrom.AddDays(days);
-        await LoadData();
-    }
-
-    private string GetOeeColor(decimal oee) => oee switch
-    {
-        >= 85 => "var(--success)",
-        >= 60 => "var(--warning)",
-        _ => "var(--danger)"
+        > 100 => "var(--danger)",
+        > 85 => "#f59e0b",
+        > 40 => "var(--accent)",
+        _ => "#22c55e"
     };
 
-    private async Task DrillDown(int machineId, string machineName)
+    // ── Wizard ────────────────────────────────────────────────
+
+    private void OpenWizard()
     {
-        _drillDownMachineName = machineName;
-        _drillDownJobs = new();
-        _drillDownLoading = true;
+        _showWizard = true;
+        _wizardStep = 0;
+        _selectedPartIds = new();
+        _suggestions = new();
+        _wizardMachineFilter = null;
+    }
+
+    private void OpenWizardForMachine(int machineId)
+    {
+        OpenWizard();
+        _wizardMachineFilter = machineId;
+    }
+
+    private void CloseWizard()
+    {
+        _showWizard = false;
+    }
+
+    private void TogglePartSelection(int partId, bool selected)
+    {
+        if (selected && !_selectedPartIds.Contains(partId))
+            _selectedPartIds.Add(partId);
+        else if (!selected)
+            _selectedPartIds.Remove(partId);
+    }
+
+    private void AssignPart(int partId)
+    {
+        OpenWizard();
+        _selectedPartIds = new List<int> { partId };
+    }
+
+    private async Task WizardNext()
+    {
+        if (_wizardStep == 0 && _selectedPartIds.Count > 0)
+        {
+            // Generate suggestions
+            _suggestions = await CapacityService.SuggestAssignmentsAsync(_selectedPartIds);
+
+            // Filter to specific machine if opened from machine card
+            if (_wizardMachineFilter.HasValue)
+            {
+                foreach (var s in _suggestions)
+                    s.IsRecommended = s.MachineId == _wizardMachineFilter.Value && s.IsRecommended;
+            }
+        }
+        _wizardStep++;
+    }
+
+    private void WizardBack()
+    {
+        if (_wizardStep > 0) _wizardStep--;
+    }
+
+    private void SelectSuggestion(int partId, int machineId, int programId)
+    {
+        foreach (var s in _suggestions.Where(s => s.PartId == partId))
+            s.IsRecommended = s.MachineId == machineId && s.MachineProgramId == programId;
+    }
+
+    private async Task ExecuteAssignments()
+    {
         try
         {
-            var all = await StageService.GetScheduledExecutionsAsync(_dateFrom, _dateTo);
-            _drillDownJobs = all.Where(e => e.MachineId == machineId).OrderBy(e => e.ScheduledStartAt).ToList();
+            var created = await CapacityService.ExecuteAssignmentsAsync(_suggestions, _currentUserId);
+            Toast.ShowSuccess($"Scheduled {created.Count} assignment(s) with setup dispatches.");
+            _showWizard = false;
+            await LoadDataAsync();
         }
         catch (Exception ex)
         {
-            Toast.ShowError($"Error: {ex.Message}");
-        }
-        finally
-        {
-            _drillDownLoading = false;
+            Toast.ShowError(ex.Message);
         }
     }
-
-    private void CloseDrillDown() => _drillDownJobs = null;
 }

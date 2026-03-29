@@ -154,6 +154,7 @@ builder.Services.AddScoped<IDispatchScoringService, DispatchScoringService>();
 builder.Services.AddScoped<IDispatchGenerationService, DispatchGenerationService>();
 builder.Services.AddScoped<IMaintenanceDispatchService, MaintenanceDispatchService>();
 builder.Services.AddScoped<IDispatchLearningService, DispatchLearningService>();
+builder.Services.AddScoped<ICapacityPlanningService, CapacityPlanningService>();
 builder.Services.AddHostedService<DispatchGenerationBackgroundService>();
 
 // Email
