@@ -55,6 +55,26 @@ public class DataSeedingService : IDataSeedingService
 
         // Dispatch system demo data (depends on machines + programs)
         await SeedDispatchDemoDataAsync(tenantDb);
+
+        // Shift assignments (depends on machines + users + shifts)
+        await SeedShiftAssignmentsAsync(tenantDb);
+
+        // Part pricing, notes (depends on parts from scheduler seed)
+        await SeedPartPricingAsync(tenantDb);
+        await SeedPartNotesAsync(tenantDb);
+
+        // Quotes, RFQs (depends on parts + work orders)
+        await SeedQuotesAsync(tenantDb);
+        await SeedRfqRequestsAsync(tenantDb);
+
+        // Shipments (depends on completed work orders)
+        await SeedShipmentsAsync(tenantDb);
+
+        // Work order comments (depends on work orders + users)
+        await SeedWorkOrderCommentsAsync(tenantDb);
+
+        // Quality records (depends on parts + jobs)
+        await SeedQualityDemoDataAsync(tenantDb);
     }
 
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
@@ -1184,21 +1204,23 @@ public class DataSeedingService : IDataSeedingService
         var settings = new List<SystemSetting>
         {
             // Existing settings
-            new() { Key = "CompanyName", Value = "My Company", Category = "Branding", Description = "Company name displayed in the app", LastModifiedBy = "System" },
+            new() { Key = "CompanyName", Value = "Polite Society Industries", Category = "Branding", Description = "Company name displayed in the app", LastModifiedBy = "System" },
             new() { Key = "SerialNumberPrefix", Value = "SN", Category = "Serial", Description = "Prefix for generated serial numbers", LastModifiedBy = "System" },
             new() { Key = "ShowDebugBuildForm", Value = "true", Category = "Debug", Description = "Show the debug build file form on the Builds page", LastModifiedBy = "System" },
             new() { Key = "DefaultDueDateDays", Value = "30", Category = "General", Description = "Default number of days for work order due dates", LastModifiedBy = "System" },
             new() { Key = "DelayReasonCodes", Value = "Material Shortage,Machine Breakdown,Operator Unavailable,Quality Hold,Tooling Issue,Other", Category = "General", Description = "Comma-separated delay reason codes", LastModifiedBy = "System" },
 
             // Branding (Stage 0.5)
-            new() { Key = "company.name", Value = "", Category = "Branding", Description = "Company name on all documents", LastModifiedBy = "System" },
-            new() { Key = "company.logo_url", Value = "", Category = "Branding", Description = "Logo for reports/packing lists", LastModifiedBy = "System" },
-            new() { Key = "company.address", Value = "", Category = "Branding", Description = "Address for documents", LastModifiedBy = "System" },
+            new() { Key = "company.name", Value = "Polite Society Industries", Category = "Branding", Description = "Company name on all documents", LastModifiedBy = "System" },
+            new() { Key = "company.logo_url", Value = "/uploads/logos/psi-shield.svg", Category = "Branding", Description = "Logo for reports/packing lists", LastModifiedBy = "System" },
+            new() { Key = "company.address", Value = "4201 Industrial Blvd, Suite 120\nAustin, TX 78745", Category = "Branding", Description = "Address for documents", LastModifiedBy = "System" },
+            new() { Key = "company.phone", Value = "(512) 555-0147", Category = "Branding", Description = "Company phone number", LastModifiedBy = "System" },
+            new() { Key = "company.email", Value = "info@politesocietyind.com", Category = "Branding", Description = "Company email", LastModifiedBy = "System" },
 
             // Defense identifiers
-            new() { Key = "company.cage_code", Value = "", Category = "Defense", Description = "CAGE code for DLMS transactions", LastModifiedBy = "System" },
+            new() { Key = "company.cage_code", Value = "8P4K7", Category = "Defense", Description = "CAGE code for DLMS transactions", LastModifiedBy = "System" },
             new() { Key = "company.dodaac", Value = "", Category = "Defense", Description = "DoD Activity Address Code", LastModifiedBy = "System" },
-            new() { Key = "company.duns", Value = "", Category = "Defense", Description = "DUNS/SAM UEI number", LastModifiedBy = "System" },
+            new() { Key = "company.duns", Value = "078451236", Category = "Defense", Description = "DUNS/SAM UEI number", LastModifiedBy = "System" },
 
             // Numbering
             new() { Key = "numbering.separator", Value = "-", Category = "Numbering", Description = "Separator between prefix and number", LastModifiedBy = "System" },
@@ -1224,7 +1246,7 @@ public class DataSeedingService : IDataSeedingService
 
             // Shipping
             new() { Key = "shipping.require_coc", Value = "true", Category = "Shipping", Description = "Require Certificate of Conformance", LastModifiedBy = "System" },
-            new() { Key = "shipping.default_carrier", Value = "", Category = "Shipping", Description = "Default carrier name", LastModifiedBy = "System" },
+            new() { Key = "shipping.default_carrier", Value = "FedEx", Category = "Shipping", Description = "Default carrier name", LastModifiedBy = "System" },
             new() { Key = "shipping.generate_asn", Value = "false", Category = "Shipping", Description = "Auto-generate ASN (DLMS 856)", LastModifiedBy = "System" },
 
             // Inventory
@@ -1403,6 +1425,39 @@ public class DataSeedingService : IDataSeedingService
                 PasswordHash = _authService.HashPassword("test123"),
                 Role = "QualityInspector",
                 Department = "Quality",
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                Username = "operator3",
+                FullName = "Marcus Hayes",
+                Email = "marcus@politesocietyind.com",
+                PasswordHash = _authService.HashPassword("test123"),
+                Role = "Operator",
+                Department = "Post-Process",
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                Username = "operator4",
+                FullName = "Brianna Torres",
+                Email = "brianna@politesocietyind.com",
+                PasswordHash = _authService.HashPassword("test123"),
+                Role = "Operator",
+                Department = "Finishing",
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            },
+            new()
+            {
+                Username = "shipping",
+                FullName = "Sam Nguyen",
+                Email = "sam@politesocietyind.com",
+                PasswordHash = _authService.HashPassword("test123"),
+                Role = "Operator",
+                Department = "Shipping",
                 CreatedBy = "System",
                 LastModifiedBy = "System"
             }
@@ -2612,19 +2667,19 @@ public class DataSeedingService : IDataSeedingService
         }
 
         // ── Completed & shipped ──
-        var wo1 = await CreateWO("WO-00001", "Silencer Shop",     "SS-2026-1001", 60, -30,
+        var wo1 = await CreateWO("WO-00001", "Silencer Shop",     "SS-2026-1001", 60, -42,
             WorkOrderStatus.Complete, JobPriority.Normal,
             [(tinman, 112)]);                                      // 2× Tinman builds (56/build)
 
-        var wo2 = await CreateWO("WO-00002", "Capitol Armory",    "CA-2026-0341", 52, -22,
+        var wo2 = await CreateWO("WO-00002", "Capitol Armory",    "CA-2026-0341", 52, -35,
             WorkOrderStatus.Complete, JobPriority.Normal,
             [(handyman, 192)]);                                    // 3× Handyman builds (64/build)
 
-        var wo3 = await CreateWO("WO-00003", "Silencer Central",  "SC-2026-0080", 45, -15,
+        var wo3 = await CreateWO("WO-00003", "Silencer Central",  "SC-2026-0080", 45, -28,
             WorkOrderStatus.Complete, JobPriority.High,
             [(gargoyle, 144)]);                                    // 2× Gargoyle builds (72/build)
 
-        var wo4 = await CreateWO("WO-00004", "Silencer Shop",     "SS-2026-1102", 38, -8,
+        var wo4 = await CreateWO("WO-00004", "Silencer Shop",     "SS-2026-1102", 38, -2,
             WorkOrderStatus.Complete, JobPriority.Normal,
             [(tinman, 168), (pilate, 96)]);                        // 3× Tinman + 1× Pilate
 
@@ -2878,20 +2933,20 @@ public class DataSeedingService : IDataSeedingService
             tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
             "M4-1", now.AddDays(-38), wo4, tinmanRouting);
 
-        // B5: Tinman 56x → wo4 batch 2
+        // B5: Tinman 56x → wo4 batch 2 (kept older for history)
         await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #4",
             tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-33), wo4, tinmanRouting);
+            "M4-1", now.AddDays(-6), wo4, tinmanRouting);
 
-        // B6: Tinman 56x → wo5 batch 1
+        // B6: Tinman 56x → wo5 batch 1 (visible in Gantt lookback)
         await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #5",
             tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-18), wo5, tinmanRouting);
+            "M4-1", now.AddDays(-5), wo5, tinmanRouting);
 
-        // B7: Tinman 56x → wo5 batch 2
+        // B7: Tinman 56x → wo5 batch 2 (visible in Gantt lookback, just before active)
         await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #6",
             tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-13), wo5, tinmanRouting);
+            "M4-1", now.AddDays(-3.5), wo5, tinmanRouting);
 
         // ════════════════════════════════════════════════════════════
         // COMPLETED BUILDS — M4-2 (7 builds: Handyman, Gargoyle, Pilate)
@@ -2917,20 +2972,20 @@ public class DataSeedingService : IDataSeedingService
             gargoyle, 72, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli", masterGargoyle.Id,
             "M4-2", now.AddDays(-35), wo3, gargoyleRouting);
 
-        // B12: Tinman 56x → wo4 batch 3 (wo4 needed 3× Tinman = 168)
+        // B12: Tinman 56x → wo4 batch 3 (visible in Gantt lookback)
         await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #7",
             tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-2", now.AddDays(-30), wo4, tinmanRouting);
+            "M4-2", now.AddDays(-6.5), wo4, tinmanRouting);
 
-        // B13: Pilate 96x → wo4 (1× Pilate for wo4)
+        // B13: Pilate 96x → wo4 (visible in Gantt lookback)
         await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Pilate 96x — Run #1",
             pilate, 96, 16.0, 2333, 140, 9.8, "EMC_Pilate_96x_v1.sli", masterPilate.Id,
-            "M4-2", now.AddDays(-16), wo4, pilateRouting);
+            "M4-2", now.AddDays(-5), wo4, pilateRouting);
 
-        // B14: Handyman 64x → wo5 (1× Handyman for wo5)
+        // B14: Handyman 64x → wo5 (visible in Gantt lookback, just before active)
         await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #4",
             handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
-            "M4-2", now.AddDays(-8), wo5, handymanRouting);
+            "M4-2", now.AddDays(-3), wo5, handymanRouting);
 
         // ════════════════════════════════════════════════════════════
         // ACTIVE BUILDS — currently on the machines
@@ -2982,29 +3037,111 @@ public class DataSeedingService : IDataSeedingService
         }
 
         // ════════════════════════════════════════════════════════════
-        // READY BUILDS — prepared for scheduling (not yet on timeline)
-        // These are build plate programs with parts assigned and slicer
-        // data entered, ready for the scheduler or Next Build Advisor
-        // to place on a machine. They do NOT block machine time.
+        // SCHEDULED BUILDS — queued for the near future (visible on Gantt lookahead)
+        // These have ScheduledDate set so they render as bars on the Gantt.
         // ════════════════════════════════════════════════════════════
 
-        // M4-1: Tinman 56x ready to schedule → wo8
-        var readyM41 = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #8", ProgramType.BuildPlate,
+        // M4-1 next up: Tinman 56x → wo8 (starts after active Gargoyle finishes + changeover)
+        var m41NextStart = activeM41Start.AddHours(18.5 + 1.0); // Gargoyle finishes + 1h changeover
+        var schedM41a = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #8", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Scheduled, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
+            false, m41NextStart, null, null, null, masterTinman.Id, "M4-1");
+        await LinkProgParts(schedM41a, [(tinman, 56, 1, wo8)]);
+        {
+            var j = await CreateJob(tinman, Mid("M4-1"), 56, JobScope.Build, JobStatus.Scheduled,
+                m41NextStart, m41NextStart.AddHours(50), null, null, wo8);
+            await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
+                m41NextStart, m41NextStart.AddHours(22.5), null, null, 22.5, null, 5063m, null, schedM41a.Id);
+            await db.SaveChangesAsync();
+        }
+
+        // M4-1 after that: Gargoyle 72x → wo8 (starts after Tinman)
+        var m41Next2Start = m41NextStart.AddHours(22.5 + 1.0);
+        var schedM41b = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #4", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Scheduled, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
+            false, m41Next2Start, null, null, null, masterGargoyle.Id, "M4-1");
+        await LinkProgParts(schedM41b, [(gargoyle, 72, 1, wo8)]);
+        {
+            var j = await CreateJob(gargoyle, Mid("M4-1"), 72, JobScope.Build, JobStatus.Scheduled,
+                m41Next2Start, m41Next2Start.AddHours(50), null, null, wo8);
+            await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
+                m41Next2Start, m41Next2Start.AddHours(18.5), null, null, 18.5, null, 4163m, null, schedM41b.Id);
+            await db.SaveChangesAsync();
+        }
+
+        // M4-1 third: Tinman 56x → wo8 (4th Tinman build for wo8's 224 total)
+        var m41Next3Start = m41Next2Start.AddHours(18.5 + 1.0);
+        var schedM41c = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #9", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Scheduled, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
+            false, m41Next3Start, null, null, null, masterTinman.Id, "M4-1");
+        await LinkProgParts(schedM41c, [(tinman, 56, 1, wo8)]);
+        {
+            var j = await CreateJob(tinman, Mid("M4-1"), 56, JobScope.Build, JobStatus.Scheduled,
+                m41Next3Start, m41Next3Start.AddHours(50), null, null, wo8);
+            await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
+                m41Next3Start, m41Next3Start.AddHours(22.5), null, null, 22.5, null, 5063m, null, schedM41c.Id);
+            await db.SaveChangesAsync();
+        }
+
+        // M4-2 next up: Handyman 64x → wo9 (starts after Pilate DS changeover)
+        // M4-2 is in post-print (Pilate DS done printing), machine is actually free for next build
+        var m42NextStart = now.AddHours(2); // starts in ~2 hours once changeover done
+        var schedM42a = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #5", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
+            false, m42NextStart, null, null, null, masterHandyman.Id, "M4-2");
+        await LinkProgParts(schedM42a, [(handyman, 64, 1, wo9)]);
+        {
+            var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
+                m42NextStart, m42NextStart.AddHours(50), null, null, wo9);
+            await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
+                m42NextStart, m42NextStart.AddHours(20.0), null, null, 20.0, null, 4500m, null, schedM42a.Id);
+            await db.SaveChangesAsync();
+        }
+
+        // M4-2 after that: Handyman 64x → wo9 batch 2
+        var m42Next2Start = m42NextStart.AddHours(20.0 + 1.0);
+        var schedM42b = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #6", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
+            false, m42Next2Start, null, null, null, masterHandyman.Id, "M4-2");
+        await LinkProgParts(schedM42b, [(handyman, 64, 1, wo9)]);
+        {
+            var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
+                m42Next2Start, m42Next2Start.AddHours(50), null, null, wo9);
+            await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
+                m42Next2Start, m42Next2Start.AddHours(20.0), null, null, 20.0, null, 4500m, null, schedM42b.Id);
+            await db.SaveChangesAsync();
+        }
+
+        // M4-2 third: Handyman 64x → wo9 batch 3 (last of 3 needed for 192 total)
+        var m42Next3Start = m42Next2Start.AddHours(20.0 + 1.0);
+        var schedM42c = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #7", ProgramType.BuildPlate,
+            ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
+            false, m42Next3Start, null, null, null, masterHandyman.Id, "M4-2");
+        await LinkProgParts(schedM42c, [(handyman, 64, 1, wo9)]);
+        {
+            var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
+                m42Next3Start, m42Next3Start.AddHours(50), null, null, wo9);
+            await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
+                m42Next3Start, m42Next3Start.AddHours(20.0), null, null, 20.0, null, 4500m, null, schedM42c.Id);
+            await db.SaveChangesAsync();
+        }
+
+        // ════════════════════════════════════════════════════════════
+        // READY BUILDS — prepared but not yet scheduled
+        // These have no ScheduledDate — available for the Next Build Advisor
+        // ════════════════════════════════════════════════════════════
+
+        // Tinman 56x ready (for remaining wo8 demand after scheduled builds)
+        var readyM41 = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #10", ProgramType.BuildPlate,
             ProgramScheduleStatus.Ready, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
-            false, null, null, null, null, masterTinman.Id, "M4-1");
+            false, null, null, null, null, masterTinman.Id);
         await LinkProgParts(readyM41, [(tinman, 56, 1, wo8)]);
 
-        // M4-2: Handyman 64x ready to schedule → wo9
-        var readyM42 = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #5", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
-            false, null, null, null, null, masterHandyman.Id, "M4-2");
-        await LinkProgParts(readyM42, [(handyman, 64, 1, wo9)]);
-
-        // M4-1: Gargoyle 72x ready to schedule → wo8
-        var readyM41b = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #4", ProgramType.BuildPlate,
+        // Gargoyle 72x ready (for wo10)
+        var readyM41b = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #5", ProgramType.BuildPlate,
             ProgramScheduleStatus.Ready, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
-            false, null, null, null, null, masterGargoyle.Id, "M4-1");
-        await LinkProgParts(readyM41b, [(gargoyle, 72, 1, wo8)]);
+            false, null, null, null, null, masterGargoyle.Id);
+        await LinkProgParts(readyM41b, [(gargoyle, 72, 1, wo10)]);
 
         // ════════════════════════════════════════════════════════════
         // UPDATE WO LINE QUANTITIES — mark produced/shipped
@@ -3158,6 +3295,620 @@ public class DataSeedingService : IDataSeedingService
         }
 
         await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
+    //  Shift Assignments (machines + operators to shifts)
+    // ──────────────────────────────────────────────
+    private static async Task SeedShiftAssignmentsAsync(TenantDbContext db)
+    {
+        if (await db.MachineShiftAssignments.AnyAsync()) return;
+
+        var shifts = await db.OperatingShifts.ToListAsync();
+        var machines = await db.Machines.Where(m => m.IsActive).ToListAsync();
+        var users = await db.Users.ToListAsync();
+        if (shifts.Count == 0 || machines.Count == 0) return;
+
+        var dayShift = shifts.FirstOrDefault(s => s.Name.Contains("Day"));
+        var nightShift = shifts.FirstOrDefault(s => s.Name.Contains("Night"));
+        if (dayShift == null) return;
+
+        // Assign all machines to day shift
+        foreach (var machine in machines)
+        {
+            db.MachineShiftAssignments.Add(new MachineShiftAssignment
+            {
+                MachineId = machine.Id,
+                OperatingShiftId = dayShift.Id
+            });
+        }
+
+        // SLS machines also run on night shift (they run 24/7)
+        if (nightShift != null)
+        {
+            foreach (var machine in machines.Where(m => m.IsAdditiveMachine))
+            {
+                db.MachineShiftAssignments.Add(new MachineShiftAssignment
+                {
+                    MachineId = machine.Id,
+                    OperatingShiftId = nightShift.Id
+                });
+            }
+        }
+
+        // Assign operators to shifts
+        var opsByDept = new Dictionary<string, string[]>
+        {
+            ["SLS"] = ["operator1"],
+            ["Machining"] = ["operator2"],
+            ["Post-Process"] = ["operator3"],
+            ["Finishing"] = ["operator4"],
+            ["Shipping"] = ["shipping"],
+            ["Quality"] = ["qcinspector"],
+            ["Operations"] = ["manager"]
+        };
+
+        foreach (var (dept, usernames) in opsByDept)
+        {
+            foreach (var username in usernames)
+            {
+                var user = users.FirstOrDefault(u => u.Username == username);
+                if (user != null)
+                {
+                    db.UserShiftAssignments.Add(new UserShiftAssignment
+                    {
+                        UserId = user.Id,
+                        OperatingShiftId = dayShift.Id,
+                        IsPrimary = true,
+                        EffectiveFrom = DateTime.UtcNow.AddDays(-90),
+                        AssignedBy = "System"
+                    });
+                }
+            }
+        }
+
+        // Jake (SLS) also covers night shift for changeovers
+        var jake = users.FirstOrDefault(u => u.Username == "operator1");
+        if (jake != null && nightShift != null)
+        {
+            db.UserShiftAssignments.Add(new UserShiftAssignment
+            {
+                UserId = jake.Id,
+                OperatingShiftId = nightShift.Id,
+                IsPrimary = false,
+                EffectiveFrom = DateTime.UtcNow.AddDays(-30),
+                AssignedBy = "System"
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
+    //  Part Pricing
+    // ──────────────────────────────────────────────
+    private static async Task SeedPartPricingAsync(TenantDbContext db)
+    {
+        if (await db.PartPricings.AnyAsync()) return;
+
+        var parts = await db.Parts.Where(p => p.IsActive).ToListAsync();
+        if (parts.Count == 0) return;
+
+        var pricingMap = new Dictionary<string, (decimal sell, decimal matCost, decimal matWeight, decimal margin, string tier)>
+        {
+            ["EMC-TIN-001"] = (599.00m, 88.00m, 0.290m, 85.3m, "Standard"),
+            ["EMC-HAN-001"] = (599.00m, 82.00m, 0.265m, 86.3m, "Standard"),
+            ["EMC-GAR-001"] = (599.00m, 78.00m, 0.230m, 87.0m, "Standard"),
+            ["EMC-PIL-001"] = (299.00m, 52.00m, 0.155m, 82.6m, "Standard"),
+        };
+
+        foreach (var part in parts)
+        {
+            if (!pricingMap.TryGetValue(part.PartNumber, out var p)) continue;
+            db.PartPricings.Add(new PartPricing
+            {
+                PartId = part.Id,
+                SellPricePerUnit = p.sell,
+                MaterialCostPerUnit = p.matCost,
+                MaterialWeightPerUnitKg = p.matWeight,
+                TargetMarginPct = p.margin,
+                PricingTier = p.tier,
+                Currency = "USD",
+                MinimumOrderQty = 56,
+                EffectiveDate = DateTime.UtcNow.AddDays(-90),
+                PricingNotes = part.PartNumber == "EMC-PIL-001"
+                    ? "Volume pricing: 500+ units at $269, 1000+ at $249"
+                    : "Volume pricing: 500+ units at $549, 1000+ at $499",
+                CreatedBy = "System", LastModifiedBy = "System"
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
+    //  Part Notes
+    // ──────────────────────────────────────────────
+    private static async Task SeedPartNotesAsync(TenantDbContext db)
+    {
+        if (await db.PartNotes.AnyAsync()) return;
+
+        var parts = await db.Parts.Where(p => p.IsActive).ToDictionaryAsync(p => p.PartNumber, p => p);
+        if (parts.Count == 0) return;
+
+        var notes = new List<PartNote>();
+
+        if (parts.TryGetValue("EMC-TIN-001", out var tinman))
+        {
+            notes.Add(new PartNote { PartId = tinman.Id, Title = "Thread spec update — ATF Form 4", NoteType = "Engineering",
+                Content = "Mount thread changed to 1.375x24 RH per final ATF approval (was 1.375x24 LH in prototype). All tooling updated. CNC program BP-TIN-THREAD-v3 is current.", CreatedBy = "Henry Gill" });
+            notes.Add(new PartNote { PartId = tinman.Id, Title = "Double-stack build validated", NoteType = "Manufacturing",
+                Content = "DS builds (80x) confirmed stable at 245mm height. No warping observed across 4 runs. Recommend DS for orders >100 units to improve throughput.", CreatedBy = "Jake Marshall" });
+        }
+
+        if (parts.TryGetValue("EMC-HAN-001", out var handyman))
+        {
+            notes.Add(new PartNote { PartId = handyman.Id, Title = "Bore concentricity critical", NoteType = "Quality",
+                Content = "Bore concentricity tolerance tightened to 0.002\" TIR per customer feedback. QC must use the dedicated bore gauge (CAL-0034) for every part. See NCR-00001 for history.", CreatedBy = "Ana Reyes", IsPinned = true });
+        }
+
+        if (parts.TryGetValue("EMC-GAR-001", out var gargoyle))
+        {
+            notes.Add(new PartNote { PartId = gargoyle.Id, Title = "Blast media change — glass bead", NoteType = "Manufacturing",
+                Content = "Switched from alumina 120 grit to glass bead 100 grit. Alumina was embedding particles in the bore that caused thread gauge failures. Glass bead gives equivalent surface finish without contamination risk.", CreatedBy = "Marcus Hayes" });
+            notes.Add(new PartNote { PartId = gargoyle.Id, Title = "5.56mm gas port alignment", NoteType = "Engineering",
+                Content = "Gas port alignment is critical for 5.56mm suppression. CNC fixture PSI-FIX-GAR-01 has alignment pins — do not use generic fixture.", CreatedBy = "Henry Gill" });
+        }
+
+        if (parts.TryGetValue("EMC-PIL-001", out var pilate))
+        {
+            notes.Add(new PartNote { PartId = pilate.Id, Title = "DS builds confirmed — no warping", NoteType = "Engineering",
+                Content = "Double-stack builds (144x) confirmed at 193mm height with current support strategy. EOS recommended 0.5mm additional offset between layers which resolved the minor warping seen in early prototypes.", CreatedBy = "Henry Gill" });
+            notes.Add(new PartNote { PartId = pilate.Id, Title = "Reduced CNC time", NoteType = "Manufacturing",
+                Content = "CNC cycle time reduced from 12 min to 8 min per part by switching to the 4-flute carbide end mill (TOOL-EM-6MM) and updating feed rates. Program BP-PIL-CNC-v4 is current.", CreatedBy = "Ryan Cole" });
+        }
+
+        db.PartNotes.AddRange(notes);
+        await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
+    //  Quotes
+    // ──────────────────────────────────────────────
+    private static async Task SeedQuotesAsync(TenantDbContext db)
+    {
+        if (await db.Quotes.AnyAsync()) return;
+
+        var parts = await db.Parts.Where(p => p.IsActive).ToDictionaryAsync(p => p.PartNumber, p => p);
+        var wos = await db.WorkOrders.ToListAsync();
+        if (parts.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+
+        // QT-00001: Silencer Shop initial Tinman order → accepted, converted to WO-00001
+        var wo1 = wos.FirstOrDefault(w => w.OrderNumber == "WO-00001");
+        var qt1 = new Quote
+        {
+            QuoteNumber = "QT-00001", CustomerName = "Silencer Shop",
+            CustomerEmail = "purchasing@silencershop.com", CustomerPhone = "(512) 931-4556",
+            Status = QuoteStatus.Accepted, RevisionNumber = 1,
+            TotalEstimatedCost = 9856.00m, QuotedPrice = 67088.00m,
+            EstimatedLaborCost = 5200.00m, EstimatedMaterialCost = 3256.00m, EstimatedOverheadCost = 1400.00m,
+            Markup = 580.7m, TargetMarginPct = 85.3m,
+            CreatedDate = now.AddDays(-75), ExpirationDate = now.AddDays(-45),
+            SentAt = now.AddDays(-74), AcceptedAt = now.AddDays(-65),
+            ConvertedWorkOrderId = wo1?.Id,
+            CreatedBy = "Henry Gill", LastModifiedBy = "Henry Gill"
+        };
+        db.Quotes.Add(qt1);
+        await db.SaveChangesAsync();
+        if (parts.TryGetValue("EMC-TIN-001", out var tin))
+        {
+            db.QuoteLines.Add(new QuoteLine { QuoteId = qt1.Id, PartId = tin.Id, Quantity = 112,
+                EstimatedCostPerPart = 88.00m, QuotedPricePerPart = 599.00m,
+                LaborMinutes = 26.0, SetupMinutes = 8.0, MaterialCostEach = 50.75m });
+        }
+        await db.SaveChangesAsync();
+
+        // QT-00002: Capitol Armory — Handyman + Gargoyle → accepted, converted to WO-00002/WO-00003
+        var wo2 = wos.FirstOrDefault(w => w.OrderNumber == "WO-00002");
+        var qt2 = new Quote
+        {
+            QuoteNumber = "QT-00002", CustomerName = "Capitol Armory",
+            CustomerEmail = "orders@capitolarmory.com", CustomerPhone = "(512) 961-8585",
+            Status = QuoteStatus.Accepted, RevisionNumber = 1,
+            TotalEstimatedCost = 27024.00m, QuotedPrice = 200208.00m,
+            EstimatedLaborCost = 15000.00m, EstimatedMaterialCost = 8524.00m, EstimatedOverheadCost = 3500.00m,
+            TargetMarginPct = 86.5m,
+            CreatedDate = now.AddDays(-68), ExpirationDate = now.AddDays(-38),
+            SentAt = now.AddDays(-67), AcceptedAt = now.AddDays(-57),
+            ConvertedWorkOrderId = wo2?.Id,
+            CreatedBy = "Henry Gill", LastModifiedBy = "Henry Gill"
+        };
+        db.Quotes.Add(qt2);
+        await db.SaveChangesAsync();
+        if (parts.TryGetValue("EMC-HAN-001", out var han))
+            db.QuoteLines.Add(new QuoteLine { QuoteId = qt2.Id, PartId = han.Id, Quantity = 192,
+                EstimatedCostPerPart = 82.00m, QuotedPricePerPart = 599.00m,
+                LaborMinutes = 24.0, SetupMinutes = 7.0, MaterialCostEach = 46.50m });
+        if (parts.TryGetValue("EMC-GAR-001", out var gar))
+            db.QuoteLines.Add(new QuoteLine { QuoteId = qt2.Id, PartId = gar.Id, Quantity = 144,
+                EstimatedCostPerPart = 78.00m, QuotedPricePerPart = 599.00m,
+                LaborMinutes = 22.0, SetupMinutes = 6.5, MaterialCostEach = 40.25m });
+        await db.SaveChangesAsync();
+
+        // QT-00003: Silencer Central — mixed order, sent but awaiting response
+        var qt3 = new Quote
+        {
+            QuoteNumber = "QT-00003", CustomerName = "Silencer Central",
+            CustomerEmail = "procurement@silencercentral.com", CustomerPhone = "(605) 286-3014",
+            Status = QuoteStatus.Sent, RevisionNumber = 1,
+            TotalEstimatedCost = 18600.00m, QuotedPrice = 131780.00m,
+            EstimatedLaborCost = 10200.00m, EstimatedMaterialCost = 5900.00m, EstimatedOverheadCost = 2500.00m,
+            TargetMarginPct = 85.9m,
+            CreatedDate = now.AddDays(-5), ExpirationDate = now.AddDays(25),
+            SentAt = now.AddDays(-4),
+            CreatedBy = "Henry Gill", LastModifiedBy = "Henry Gill"
+        };
+        db.Quotes.Add(qt3);
+        await db.SaveChangesAsync();
+        if (tin != null) db.QuoteLines.Add(new QuoteLine { QuoteId = qt3.Id, PartId = tin.Id, Quantity = 56,
+            EstimatedCostPerPart = 88.00m, QuotedPricePerPart = 599.00m,
+            LaborMinutes = 26.0, SetupMinutes = 8.0, MaterialCostEach = 50.75m });
+        if (han != null) db.QuoteLines.Add(new QuoteLine { QuoteId = qt3.Id, PartId = han.Id, Quantity = 64,
+            EstimatedCostPerPart = 82.00m, QuotedPricePerPart = 599.00m,
+            LaborMinutes = 24.0, SetupMinutes = 7.0, MaterialCostEach = 46.50m });
+        if (gar != null) db.QuoteLines.Add(new QuoteLine { QuoteId = qt3.Id, PartId = gar.Id, Quantity = 72,
+            EstimatedCostPerPart = 78.00m, QuotedPricePerPart = 599.00m,
+            LaborMinutes = 22.0, SetupMinutes = 6.5, MaterialCostEach = 40.25m });
+        await db.SaveChangesAsync();
+
+        // QT-00004: Palmetto State Armory — 1000x Pilate, draft being prepared
+        var qt4 = new Quote
+        {
+            QuoteNumber = "QT-00004", CustomerName = "Palmetto State Armory",
+            CustomerEmail = "sourcing@palmettostatearmory.com", CustomerPhone = "(803) 724-6950",
+            Status = QuoteStatus.Draft, RevisionNumber = 1,
+            TotalEstimatedCost = 52000.00m, QuotedPrice = 249000.00m,
+            EstimatedLaborCost = 28000.00m, EstimatedMaterialCost = 16000.00m, EstimatedOverheadCost = 8000.00m,
+            TargetMarginPct = 79.1m,
+            CreatedDate = now.AddDays(-1), ExpirationDate = now.AddDays(29),
+            CreatedBy = "Derek Simmons", LastModifiedBy = "Derek Simmons",
+            Notes = "Volume pricing request — 1000 units at $249/ea. Need to verify powder inventory before committing. Lead time ~8 weeks."
+        };
+        db.Quotes.Add(qt4);
+        await db.SaveChangesAsync();
+        if (parts.TryGetValue("EMC-PIL-001", out var pil))
+            db.QuoteLines.Add(new QuoteLine { QuoteId = qt4.Id, PartId = pil.Id, Quantity = 1000,
+                EstimatedCostPerPart = 52.00m, QuotedPricePerPart = 249.00m,
+                LaborMinutes = 14.0, SetupMinutes = 3.0, MaterialCostEach = 27.25m,
+                Notes = "Volume discount applied — standard MSRP $299" });
+        await db.SaveChangesAsync();
+
+        // QT-00005: Silencer Shop reorder — accepted, converted to WO-00008/09/10
+        var wo8 = wos.FirstOrDefault(w => w.OrderNumber == "WO-00008");
+        var qt5 = new Quote
+        {
+            QuoteNumber = "QT-00005", CustomerName = "Silencer Shop",
+            CustomerEmail = "purchasing@silencershop.com", CustomerPhone = "(512) 931-4556",
+            Status = QuoteStatus.Accepted, RevisionNumber = 1,
+            TotalEstimatedCost = 42768.00m, QuotedPrice = 295204.00m,
+            EstimatedLaborCost = 24000.00m, EstimatedMaterialCost = 13268.00m, EstimatedOverheadCost = 5500.00m,
+            TargetMarginPct = 85.5m,
+            CreatedDate = now.AddDays(-10), ExpirationDate = now.AddDays(20),
+            SentAt = now.AddDays(-9), AcceptedAt = now.AddDays(-4),
+            ConvertedWorkOrderId = wo8?.Id,
+            CreatedBy = "Henry Gill", LastModifiedBy = "Henry Gill"
+        };
+        db.Quotes.Add(qt5);
+        await db.SaveChangesAsync();
+        if (tin != null) db.QuoteLines.Add(new QuoteLine { QuoteId = qt5.Id, PartId = tin.Id, Quantity = 280,
+            EstimatedCostPerPart = 88.00m, QuotedPricePerPart = 549.00m,
+            LaborMinutes = 26.0, SetupMinutes = 8.0, MaterialCostEach = 50.75m,
+            Notes = "500+ unit pricing" });
+        if (gar != null) db.QuoteLines.Add(new QuoteLine { QuoteId = qt5.Id, PartId = gar.Id, Quantity = 216,
+            EstimatedCostPerPart = 78.00m, QuotedPricePerPart = 549.00m,
+            LaborMinutes = 22.0, SetupMinutes = 6.5, MaterialCostEach = 40.25m,
+            Notes = "500+ unit pricing" });
+        await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
+    //  RFQ Requests
+    // ──────────────────────────────────────────────
+    private static async Task SeedRfqRequestsAsync(TenantDbContext db)
+    {
+        if (await db.RfqRequests.AnyAsync()) return;
+
+        var now = DateTime.UtcNow;
+        var qt5 = await db.Quotes.FirstOrDefaultAsync(q => q.QuoteNumber == "QT-00005");
+
+        db.RfqRequests.AddRange(
+            new RfqRequest
+            {
+                CompanyName = "Rugged Suppressors", ContactName = "Matt Jensen",
+                Email = "matt@ruggedsuppressors.com", Phone = "(770) 565-1820",
+                Description = "Looking for OEM manufacturing partner for a new .300 Win Mag suppressor design. Ti-6Al-4V construction, full-auto rated. We have STEP files ready. Need 200 units/month starting Q3. Can you quote DMLS production with your EOS M4 capacity?",
+                Quantity = 200, Material = "Ti-6Al-4V", NeededByDate = now.AddDays(90),
+                Status = "New", SubmittedDate = now.AddDays(-1)
+            },
+            new RfqRequest
+            {
+                CompanyName = "SilencerCo", ContactName = "Alex Park",
+                Email = "manufacturing@silencerco.com", Phone = "(801) 417-5384",
+                Description = "Partnership inquiry: We're evaluating additive manufacturing for our next-gen Omega 36M line. Interested in your Ti-6Al-4V DMLS capability and capacity. Would like to schedule a facility tour and discuss NDA for prototype production. Initial run would be 500 units for qualification.",
+                Quantity = 500, Material = "Ti-6Al-4V", NeededByDate = now.AddDays(120),
+                Status = "Reviewed", SubmittedDate = now.AddDays(-8),
+                ReviewedBy = "Henry Gill", ReviewedDate = now.AddDays(-6)
+            },
+            new RfqRequest
+            {
+                CompanyName = "Silencer Shop", ContactName = "Mike Williams",
+                Email = "purchasing@silencershop.com", Phone = "(512) 931-4556",
+                Description = "Reorder request: Need updated pricing for next quarter allocation. Looking at 280x Tinman + 216x Gargoyle. Can you beat current pricing with a 6-month commitment?",
+                Quantity = 496, Material = "Ti-6Al-4V",
+                Status = "Quoted", SubmittedDate = now.AddDays(-12),
+                ReviewedBy = "Henry Gill", ReviewedDate = now.AddDays(-10),
+                ConvertedQuoteId = qt5?.Id
+            }
+        );
+
+        await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
+    //  Shipments for completed work orders
+    // ──────────────────────────────────────────────
+    private static async Task SeedShipmentsAsync(TenantDbContext db)
+    {
+        if (await db.Shipments.AnyAsync()) return;
+
+        var wos = await db.WorkOrders.Include(w => w.Lines).Where(w => w.Status == WorkOrderStatus.Complete).ToListAsync();
+        if (wos.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        int shipNum = 1;
+
+        var carriers = new[] { "FedEx Freight", "UPS Freight", "FedEx Freight", "FedEx Freight" };
+        var trackingPrefixes = new[] { "7489", "1Z5E", "7491", "7493" };
+
+        foreach (var wo in wos.OrderBy(w => w.OrderNumber))
+        {
+            var shippedAt = wo.DueDate.AddDays(-3);
+            var shipment = new Shipment
+            {
+                ShipmentNumber = $"SHP-{shipNum:D5}",
+                WorkOrderId = wo.Id,
+                Status = ShipmentStatus.Delivered,
+                CarrierName = carriers[Math.Min(shipNum - 1, carriers.Length - 1)],
+                TrackingNumber = $"{trackingPrefixes[Math.Min(shipNum - 1, trackingPrefixes.Length - 1)]}{900000 + shipNum * 1234}",
+                PackageCount = Math.Max(1, wo.Lines?.Sum(l => l.Quantity) / 50 ?? 1),
+                ShipperNotes = $"Shipped to {wo.CustomerName}. All parts serialized and CoC included.",
+                ShippedBy = "Sam Nguyen",
+                ShippedAt = shippedAt,
+                CreatedDate = shippedAt.AddHours(-2)
+            };
+            db.Shipments.Add(shipment);
+            await db.SaveChangesAsync();
+
+            if (wo.Lines != null)
+            {
+                foreach (var line in wo.Lines)
+                {
+                    db.ShipmentLines.Add(new ShipmentLine
+                    {
+                        ShipmentId = shipment.Id,
+                        WorkOrderLineId = line.Id,
+                        QuantityShipped = line.Quantity
+                    });
+                }
+                await db.SaveChangesAsync();
+            }
+
+            shipNum++;
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    //  Work Order Comments
+    // ──────────────────────────────────────────────
+    private static async Task SeedWorkOrderCommentsAsync(TenantDbContext db)
+    {
+        if (await db.WorkOrderComments.AnyAsync()) return;
+
+        var wos = await db.WorkOrders.ToDictionaryAsync(w => w.OrderNumber, w => w);
+        var users = await db.Users.ToDictionaryAsync(u => u.Username, u => u);
+        if (wos.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        var comments = new List<WorkOrderComment>();
+
+        if (wos.TryGetValue("WO-00001", out var wo1))
+        {
+            comments.Add(new WorkOrderComment { WorkOrderId = wo1.Id,
+                Content = "First production run for Silencer Shop. Two builds of 56x Tinman completed on M4-1 without issues. All 112 units passed QC.",
+                AuthorName = "Henry Gill", AuthorUserId = users.GetValueOrDefault("admin")?.Id, CreatedDate = now.AddDays(-35) });
+            comments.Add(new WorkOrderComment { WorkOrderId = wo1.Id,
+                Content = "Shipment SHP-00001 picked up by FedEx. CoC and material certs included per PO requirements.",
+                AuthorName = "Sam Nguyen", AuthorUserId = users.GetValueOrDefault("shipping")?.Id, CreatedDate = now.AddDays(-33) });
+        }
+
+        if (wos.TryGetValue("WO-00005", out var wo5))
+        {
+            comments.Add(new WorkOrderComment { WorkOrderId = wo5.Id,
+                Content = "Expedite request from Capitol Armory — they're running low on Tinman inventory. Both Tinman builds completed, Handyman build done on M4-2. All parts through CNC, moving to engraving.",
+                AuthorName = "Derek Simmons", AuthorUserId = users.GetValueOrDefault("manager")?.Id, CreatedDate = now.AddDays(-5) });
+            comments.Add(new WorkOrderComment { WorkOrderId = wo5.Id,
+                Content = "112x Tinman finished QC — all pass. 64x Handyman in engraving now, should be done by end of shift.",
+                AuthorName = "Ana Reyes", AuthorUserId = users.GetValueOrDefault("qcinspector")?.Id, CreatedDate = now.AddDays(-3) });
+        }
+
+        if (wos.TryGetValue("WO-00006", out var wo6))
+        {
+            comments.Add(new WorkOrderComment { WorkOrderId = wo6.Id,
+                Content = "Gargoyle run #3 printing on M4-1 — started this morning, ~60% complete. Should finish overnight. First batch of 72 already through packaging.",
+                AuthorName = "Jake Marshall", AuthorUserId = users.GetValueOrDefault("operator1")?.Id, CreatedDate = now.AddHours(-6) });
+        }
+
+        if (wos.TryGetValue("WO-00008", out var wo8))
+        {
+            comments.Add(new WorkOrderComment { WorkOrderId = wo8.Id,
+                Content = "Customer confirmed OK to ship partial — first Tinman batch ASAP, remainder on standard schedule. 4x Tinman + 1x Gargoyle builds needed total.",
+                AuthorName = "Derek Simmons", AuthorUserId = users.GetValueOrDefault("manager")?.Id, CreatedDate = now.AddDays(-2) });
+            comments.Add(new WorkOrderComment { WorkOrderId = wo8.Id,
+                Content = "Tinman 56x ready to schedule on M4-1 (BP queued). Gargoyle 72x also prepped. Waiting for current Gargoyle run to finish on M4-1.",
+                AuthorName = "Henry Gill", AuthorUserId = users.GetValueOrDefault("admin")?.Id, CreatedDate = now.AddDays(-1) });
+        }
+
+        if (wos.TryGetValue("WO-00009", out var wo9))
+        {
+            comments.Add(new WorkOrderComment { WorkOrderId = wo9.Id,
+                Content = "RUSH — Silencer Central needs 192x Handyman for dealer allocation. Prioritize M4-2 for 3 consecutive Handyman builds. 64x per build = 3 builds needed.",
+                AuthorName = "Derek Simmons", AuthorUserId = users.GetValueOrDefault("manager")?.Id, CreatedDate = now.AddDays(-1), IsInternal = true });
+        }
+
+        if (wos.TryGetValue("WO-00010", out var wo10))
+        {
+            comments.Add(new WorkOrderComment { WorkOrderId = wo10.Id,
+                Content = "Mixed order from Silencer Shop — 144x Gargoyle, 96x Pilate, 56x Tinman. Standard lead time, no rush. Schedule after WO-00008 and WO-00009.",
+                AuthorName = "Henry Gill", AuthorUserId = users.GetValueOrDefault("admin")?.Id, CreatedDate = now.AddHours(-12) });
+        }
+
+        db.WorkOrderComments.AddRange(comments);
+        await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
+    //  Quality Records (NCRs + SPC data)
+    // ──────────────────────────────────────────────
+    private static async Task SeedQualityDemoDataAsync(TenantDbContext db)
+    {
+        if (await db.NonConformanceReports.AnyAsync()) return;
+
+        var parts = await db.Parts.Where(p => p.IsActive).ToDictionaryAsync(p => p.PartNumber, p => p);
+        var jobs = await db.Jobs.Where(j => j.Status == JobStatus.Completed).Take(5).ToListAsync();
+        var now = DateTime.UtcNow;
+
+        // NCR-00001: Bore concentricity issue on Handyman
+        if (parts.TryGetValue("EMC-HAN-001", out var handyman))
+        {
+            var job = jobs.FirstOrDefault(j => j.PartId == handyman.Id);
+            var ncr1 = new NonConformanceReport
+            {
+                NcrNumber = "NCR-00001",
+                PartId = handyman.Id,
+                JobId = job?.Id,
+                Type = NcrType.InProcess,
+                Description = "3 units from Handyman Run #2 found with bore concentricity exceeding 0.003\" TIR (spec is 0.002\" TIR). Root cause: CNC fixture PSI-FIX-HAN-01 had worn locating pin causing 0.001\" shift. Fixture repaired and recalibrated.",
+                QuantityAffected = "3",
+                Severity = NcrSeverity.Major,
+                Disposition = NcrDisposition.Rework,
+                Status = NcrStatus.Closed,
+                ReportedByUserId = "Ana Reyes",
+                ReportedAt = now.AddDays(-40),
+                ClosedAt = now.AddDays(-37)
+            };
+            db.NonConformanceReports.Add(ncr1);
+            await db.SaveChangesAsync();
+
+            // Corrective action for NCR-00001
+            db.CorrectiveActions.Add(new CorrectiveAction
+            {
+                CapaNumber = "CAPA-00001",
+                Type = CapaType.Corrective,
+                ProblemStatement = "3 Handyman units from Run #2 exceeded bore concentricity spec (0.003\" TIR vs 0.002\" max).",
+                RootCauseAnalysis = "CNC fixture PSI-FIX-HAN-01 had worn locating pin causing 0.001\" shift. Pin wear was not detected during routine visual inspection.",
+                ImmediateAction = "Replaced worn locating pin on PSI-FIX-HAN-01. Re-machined the 3 affected parts — all passed re-inspection.",
+                LongTermAction = "Implemented weekly fixture inspection checklist for all CNC fixtures. Added bore concentricity to first-article inspection for every Handyman batch.",
+                PreventiveAction = "Added locating pin wear measurement to preventive maintenance schedule — replace at 0.0005\" wear or every 500 cycles.",
+                OwnerId = "Ryan Cole",
+                DueDate = now.AddDays(-35),
+                CompletedAt = now.AddDays(-36),
+                EffectivenessVerification = "Verified: 4 subsequent Handyman batches (256 units) all within spec. No recurrence.",
+                Status = CapaStatus.Closed,
+                CreatedAt = now.AddDays(-39)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // NCR-00002: Thread gauge failure on Gargoyle
+        if (parts.TryGetValue("EMC-GAR-001", out var gargoyle))
+        {
+            var job = jobs.FirstOrDefault(j => j.PartId == gargoyle.Id);
+            db.NonConformanceReports.Add(new NonConformanceReport
+            {
+                NcrNumber = "NCR-00002",
+                PartId = gargoyle.Id,
+                JobId = job?.Id,
+                Type = NcrType.InProcess,
+                Description = "1 unit from Gargoyle Run #1 failed thread go/no-go gauge. Investigation showed embedded alumina particles from sandblasting contaminated the thread form. Switched blast media to glass bead per engineering recommendation.",
+                QuantityAffected = "1",
+                Severity = NcrSeverity.Minor,
+                Disposition = NcrDisposition.Scrap,
+                Status = NcrStatus.Closed,
+                ReportedByUserId = "Ana Reyes",
+                ReportedAt = now.AddDays(-42),
+                ClosedAt = now.AddDays(-40)
+            });
+        }
+
+        // NCR-00003: Incoming material — powder moisture content
+        db.NonConformanceReports.Add(new NonConformanceReport
+        {
+            NcrNumber = "NCR-00003",
+            Type = NcrType.IncomingMaterial,
+            Description = "Inconel 718 powder lot IN718-2026-001 received with moisture content 0.08% (spec max 0.05%). Quarantined pending vendor response. Supplier (Carpenter Technology) notified — replacement shipment expected within 5 business days.",
+            QuantityAffected = "60 kg",
+            Severity = NcrSeverity.Major,
+            Disposition = NcrDisposition.ReturnToVendor,
+            Status = NcrStatus.Dispositioned,
+            ReportedByUserId = "Marcus Hayes",
+            ReportedAt = now.AddDays(-5)
+        });
+        await db.SaveChangesAsync();
+
+        // SPC Data — bore diameter measurements for Tinman (shows process capability)
+        if (parts.TryGetValue("EMC-TIN-001", out var tinman))
+        {
+            var rng = new Random(42); // deterministic
+            var spcPoints = new List<SpcDataPoint>();
+            for (int i = 0; i < 50; i++)
+            {
+                // Nominal 1.375", tolerance ±0.002"
+                var variation = (rng.NextDouble() - 0.5) * 0.003; // ±0.0015" — well within spec
+                spcPoints.Add(new SpcDataPoint
+                {
+                    PartId = tinman.Id,
+                    CharacteristicName = "Bore Diameter",
+                    MeasuredValue = 1.375m + (decimal)variation,
+                    NominalValue = 1.375m,
+                    TolerancePlus = 0.002m,
+                    ToleranceMinus = 0.002m,
+                    JobId = jobs.Count > 0 ? jobs[i % jobs.Count].Id : null,
+                    RecordedAt = now.AddDays(-50).AddHours(i * 12)
+                });
+            }
+            db.SpcDataPoints.AddRange(spcPoints);
+
+            // Also add thread pitch diameter measurements
+            for (int i = 0; i < 30; i++)
+            {
+                var variation = (rng.NextDouble() - 0.5) * 0.002;
+                spcPoints.Add(new SpcDataPoint
+                {
+                    PartId = tinman.Id,
+                    CharacteristicName = "Thread Pitch Diameter",
+                    MeasuredValue = 1.3410m + (decimal)variation,
+                    NominalValue = 1.3410m,
+                    TolerancePlus = 0.0015m,
+                    ToleranceMinus = 0.0015m,
+                    JobId = jobs.Count > 0 ? jobs[i % jobs.Count].Id : null,
+                    RecordedAt = now.AddDays(-30).AddHours(i * 12)
+                });
+            }
+            db.SpcDataPoints.AddRange(spcPoints);
+            await db.SaveChangesAsync();
+        }
     }
 
     }
