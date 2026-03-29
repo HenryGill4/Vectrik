@@ -96,7 +96,22 @@ public class Machine
     /// </summary>
     public bool IsAdditiveMachine { get; set; }
 
+    // ── Dispatch System ──────────────────────────────────────
+
+    /// <summary>
+    /// FK to the program currently loaded/set up on this machine.
+    /// Bridges scheduler intent vs floor reality for accurate changeover scoring.
+    /// </summary>
+    public int? CurrentProgramId { get; set; }
+
+    /// <summary>Current setup state of the machine from a dispatch perspective.</summary>
+    public MachineSetupState SetupState { get; set; } = MachineSetupState.Unknown;
+
+    /// <summary>When the last setup change occurred on this machine.</summary>
+    public DateTime? LastSetupChangeAt { get; set; }
+
     // Navigation
+    public virtual MachineProgram? CurrentProgram { get; set; }
     public virtual ICollection<MachineComponent> Components { get; set; } = new List<MachineComponent>();
     public virtual ICollection<MachineProgramAssignment> ProgramAssignments { get; set; } = new List<MachineProgramAssignment>();
     public virtual ICollection<MachineShiftAssignment> ShiftAssignments { get; set; } = new List<MachineShiftAssignment>();

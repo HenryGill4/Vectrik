@@ -118,6 +118,16 @@ public class MachineProgram
     /// </summary>
     public int TotalRunCount { get; set; }
 
+    // ── Setup EMA (Dispatch System) ─────────────────────────
+    /// <summary>EMA of actual setup duration for this program (minutes).</summary>
+    public double? ActualAverageSetupMinutes { get; set; }
+
+    /// <summary>Number of setup samples used in the EMA calculation.</summary>
+    public int SetupSampleCount { get; set; }
+
+    /// <summary>EMA-smoothed setup time variance (minutes²).</summary>
+    public double? SetupVarianceMinutes { get; set; }
+
     // ── Audit ────────────────────────────────────────────────
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime LastModifiedDate { get; set; } = DateTime.UtcNow;

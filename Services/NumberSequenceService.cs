@@ -20,6 +20,7 @@ public class NumberSequenceService : INumberSequenceService
         ["Job"] = ("numbering.job_prefix", "numbering.job_digits", "numbering.job_counter", "JOB", 5),
         ["CAPA"] = ("numbering.capa_prefix", "numbering.capa_digits", "numbering.capa_counter", "CAPA", 5),
         ["BuildPlate"] = ("numbering.bp_prefix", "numbering.bp_digits", "numbering.bp_counter", "BP", 5),
+        ["Dispatch"] = ("numbering.dsp_prefix", "numbering.dsp_digits", "numbering.dsp_counter", "DSP", 5),
     };
 
     public NumberSequenceService(TenantDbContext db)

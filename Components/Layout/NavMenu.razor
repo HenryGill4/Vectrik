@@ -159,13 +159,19 @@
             }
 
             @* ──────────── SHOP FLOOR ──────────── *@
-            @if (SectionVisible("shopfloor", ["Operator Queue", .. GetStageNames()]))
+            @if (SectionVisible("shopfloor", ["Operator Queue", "Setup Queue", .. GetStageNames()]))
             {
                 <NavSection @ref="_sectionRefs[SectionId.ShopFloor]" Title="Shop Floor" SectionKey="shopfloor">
                     @if (ItemVisible("Operator Queue"))
                     {
                         <NavLink class="nav-item" href="shopfloor">
                             <VIcon Name="factory" /> Operator Queue
+                        </NavLink>
+                    }
+                    @if (ItemVisible("Setup Queue"))
+                    {
+                        <NavLink class="nav-item" href="shopfloor/setup-queue">
+                            <VIcon Name="build" /> Setup Queue
                         </NavLink>
                     }
                     @if (_stages is not null)

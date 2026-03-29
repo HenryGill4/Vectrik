@@ -241,3 +241,20 @@ public enum ShipmentStatus
     Shipped,
     Delivered
 }
+
+// Setup Dispatch System
+public enum DispatchStatus
+{
+    Queued, Assigned, InProgress, PendingVerification, Verified, Completed,
+    Cancelled, Deferred, Blocked
+}
+
+public enum DispatchType
+{
+    Setup, Changeover, Maintenance, BuildPlateLoad, Inspection, Teardown
+}
+
+public enum MachineSetupState
+{
+    Unknown, SetUp, ChangingOver, AwaitingSetup, Running, MaintenanceDue, MaintenanceInProgress
+}
