@@ -3,6 +3,7 @@
 @inject IAnalyticsService AnalyticsService
 @inject IPartPricingService PricingService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @inject ToastService Toast
 
 <PageTitle>Profit Dashboard - Vectrik</PageTitle>
@@ -756,12 +757,12 @@ else if (_summary != null)
         };
     }
 
-    private void ExportCsv()
+    private async Task ExportCsv()
     {
         if (_byPart.Count == 0) return;
         var csv = "PartNumber,PartName,Produced,SellPrice,CostPerUnit,Revenue,Cost,Profit,Margin%\n" +
             string.Join("\n", _byPart.Select(r =>
                 $"{r.PartNumber},{r.PartName},{r.TotalProduced},{r.SellPricePerUnit:F2},{r.CostPerUnit:F2},{r.TotalRevenue:F2},{r.TotalCost:F2},{r.Profit:F2},{r.MarginPct:F1}"));
-        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+        await JS.InvokeVoidAsync("downloadCsv", "profit-dashboard.csv", csv);
     }
 }

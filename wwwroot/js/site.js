@@ -25,6 +25,19 @@ window.changePasswordApi = async function (currentPassword, newPassword) {
     }
 };
 
+// ── CSV download helper (Blob-based, avoids data: URI CSP issues) ──
+window.downloadCsv = function (filename, csvContent) {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};
+
 // ── Theme management ──
 window.vectrik = window.vectrik || {};
 window.opcentrix = window.vectrik; // backwards compat

@@ -3,6 +3,7 @@
 @inject IOeeService OeeService
 @inject IAnalyticsService AnalyticsService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>OEE Dashboard - Vectrik</PageTitle>
 
@@ -146,11 +147,11 @@ else
     private static string OeeColor(decimal oee) =>
         oee >= 85 ? "var(--success)" : oee >= 60 ? "var(--warning)" : "var(--danger)";
 
-    private void ExportCsv()
+    private async Task ExportCsv()
     {
         if (!_machineOees.Any()) return;
         var csv = "Machine,Availability%,Performance%,Quality%,OEE%\n" +
             string.Join("\n", _machineOees.Select(m => $"{m.MachineName},{m.Availability:F1},{m.Performance:F1},{m.Quality:F1},{m.Oee:F1}"));
-        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+        await JS.InvokeVoidAsync("downloadCsv", "machine-oee.csv", csv);
     }
 }

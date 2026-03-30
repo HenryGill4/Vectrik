@@ -373,16 +373,8 @@ else
     private async Task LoadCustomers()
     {
         _customers = await CustomerPricing.GetAllCustomersAsync(_showInactive);
-        // Reload detail if needed
-        foreach (var c in _customers)
-        {
-            var full = await CustomerPricing.GetCustomerByIdAsync(c.Id);
-            if (full != null)
-            {
-                c.PricingRules = full.PricingRules;
-                c.Contracts = full.Contracts;
-            }
-        }
+        // PricingRules and Contracts are loaded on-demand when a customer is selected
+        // via SelectCustomer — no need to N+1 load them for the list view.
     }
 
     private async Task SelectCustomer(int id)

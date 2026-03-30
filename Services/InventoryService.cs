@@ -157,11 +157,34 @@ public class InventoryService : IInventoryService
 
         if (lotId.HasValue)
         {
+            // Deduct from the specified lot, but only up to the lot's current qty.
+            // If the lot doesn't cover the full amount, continue FIFO across other lots.
             var lot = await _db.InventoryLots.FindAsync(lotId.Value);
-            if (lot != null)
+            var remaining = qty;
+            if (lot != null && lot.CurrentQty > 0)
             {
-                lot.CurrentQty -= qty;
+                var deduct = Math.Min(remaining, lot.CurrentQty);
+                lot.CurrentQty -= deduct;
+                remaining -= deduct;
                 if (lot.CurrentQty <= 0) lot.Status = LotStatus.Depleted;
+            }
+
+            // FIFO: consume from remaining active lots if the specified lot was insufficient
+            if (remaining > 0)
+            {
+                var activeLots = await _db.InventoryLots
+                    .Where(l => l.InventoryItemId == itemId && l.Status == LotStatus.Available && l.CurrentQty > 0)
+                    .OrderBy(l => l.ReceivedAt)
+                    .ToListAsync();
+
+                foreach (var activeLot in activeLots)
+                {
+                    if (remaining <= 0) break;
+                    var deduct = Math.Min(remaining, activeLot.CurrentQty);
+                    activeLot.CurrentQty -= deduct;
+                    remaining -= deduct;
+                    if (activeLot.CurrentQty <= 0) activeLot.Status = LotStatus.Depleted;
+                }
             }
         }
 

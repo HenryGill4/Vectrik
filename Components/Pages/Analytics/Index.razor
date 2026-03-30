@@ -3,6 +3,7 @@
 @inject IAnalyticsService AnalyticsService
 @inject IOeeService OeeService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Analytics - Vectrik</PageTitle>
 
@@ -185,11 +186,11 @@ else
     private void GoToQuality() => Nav.NavigateTo("/analytics/quality");
     private void GoToOee() => Nav.NavigateTo("/analytics/oee");
 
-    private void ExportCsv()
+    private async Task ExportCsv()
     {
         if (_utilizations == null || !_utilizations.Any()) return;
         var csv = "Machine,Utilization%,ScheduledHrs,ActualHrs\n" +
             string.Join("\n", _utilizations.Select(m => $"{m.MachineName},{m.UtilizationPercent:F1},{m.TotalScheduledHours:F1},{m.TotalActualHours:F1}"));
-        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+        await JS.InvokeVoidAsync("downloadCsv", "analytics-dashboard.csv", csv);
     }
 }

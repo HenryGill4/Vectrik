@@ -3,6 +3,7 @@
 @inject IAnalyticsService AnalyticsService
 @inject ISpcService SpcService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Quality Metrics - Vectrik</PageTitle>
 
@@ -167,11 +168,11 @@ else
         }
     }
 
-    private void ExportCsv()
+    private async Task ExportCsv()
     {
         if (!_scrapByPart.Any()) return;
         var csv = "PartNumber,PartName,TotalProduced,Scrapped,ScrapRate%\n" +
             string.Join("\n", _scrapByPart.Select(r => $"{r.PartNumber},{r.PartName},{r.TotalProduced},{r.Scrapped},{r.ScrapRatePct:F1}"));
-        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+        await JS.InvokeVoidAsync("downloadCsv", "quality-report.csv", csv);
     }
 }

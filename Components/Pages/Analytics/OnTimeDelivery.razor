@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject IAnalyticsService AnalyticsService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>On-Time Delivery - Vectrik</PageTitle>
 
@@ -125,11 +126,11 @@ else
         if (e.Key == "Enter") await LoadDataAsync();
     }
 
-    private void ExportCsv()
+    private async Task ExportCsv()
     {
         if (!_rows.Any()) return;
         var csv = "WO#,Customer,DueDate,CompletedDate,DeltaDays,OnTime\n" +
             string.Join("\n", _rows.Select(r => $"{r.OrderNumber},{r.CustomerName},{r.DueDate:yyyy-MM-dd},{r.CompletedDate:yyyy-MM-dd},{r.DeltaDays},{r.IsOnTime}"));
-        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+        await JS.InvokeVoidAsync("downloadCsv", "on-time-delivery.csv", csv);
     }
 }

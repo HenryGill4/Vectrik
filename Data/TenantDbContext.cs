@@ -1286,5 +1286,28 @@ public class TenantDbContext : DbContext
                 .HasForeignKey(e => e.ProductionStageId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
+
+        // ── Shipping ─────────────────────────────────────────────
+
+        modelBuilder.Entity<Shipment>(entity =>
+        {
+            entity.HasIndex(e => e.ShipmentNumber).IsUnique();
+            entity.HasOne(e => e.WorkOrder)
+                .WithMany()
+                .HasForeignKey(e => e.WorkOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ShipmentLine>(entity =>
+        {
+            entity.HasOne(e => e.Shipment)
+                .WithMany(e => e.Lines)
+                .HasForeignKey(e => e.ShipmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.WorkOrderLine)
+                .WithMany()
+                .HasForeignKey(e => e.WorkOrderLineId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 }

@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject IAnalyticsService AnalyticsService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Cost Analysis - Vectrik</PageTitle>
 
@@ -149,11 +150,11 @@ else
         if (e.Key == "Enter") await LoadDataAsync();
     }
 
-    private void ExportCsv()
+    private async Task ExportCsv()
     {
         if (!_rows.Any()) return;
         var csv = "Job#,PartNumber,Customer,Quoted,Actual,Variance$,Variance%,Margin%\n" +
             string.Join("\n", _rows.Select(r => $"{r.JobId},{r.PartNumber},{r.CustomerName},{r.QuotedCost:F2},{r.ActualCost:F2},{r.VarianceDollar:F2},{r.VariancePct:F1},{r.MarginPct:F1}"));
-        Nav.NavigateTo($"data:text/csv;charset=utf-8,{Uri.EscapeDataString(csv)}", forceLoad: true);
+        await JS.InvokeVoidAsync("downloadCsv", "cost-analysis.csv", csv);
     }
 }

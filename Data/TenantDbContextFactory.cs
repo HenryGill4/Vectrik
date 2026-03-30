@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Vectrik.Services.Platform;
@@ -10,7 +11,9 @@ public class TenantDbContextFactory
 
     // Track which tenant DBs have already been migrated this app lifetime
     // to avoid calling Migrate() on every single request.
-    private static readonly HashSet<string> _migratedTenants = new(StringComparer.OrdinalIgnoreCase);
+    // ConcurrentDictionary allows lock-free reads via ContainsKey; the lock
+    // is only used to serialise the one-time Migrate() call per tenant.
+    private static readonly ConcurrentDictionary<string, byte> _migratedTenants = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object _migrateLock = new();
 
     public TenantDbContextFactory(ITenantContext tenantContext)
@@ -48,14 +51,14 @@ public class TenantDbContextFactory
         var context = new TenantDbContext(options);
 
         // Apply pending migrations once per tenant per app lifetime.
-        if (!_migratedTenants.Contains(tenantCode))
+        if (!_migratedTenants.ContainsKey(tenantCode))
         {
             lock (_migrateLock)
             {
-                if (!_migratedTenants.Contains(tenantCode))
+                if (!_migratedTenants.ContainsKey(tenantCode))
                 {
                     context.Database.Migrate();
-                    _migratedTenants.Add(tenantCode);
+                    _migratedTenants.TryAdd(tenantCode, 0);
                 }
             }
         }
@@ -83,14 +86,14 @@ public class TenantDbContextFactory
 
         var context = new TenantDbContext(options);
 
-        if (!_migratedTenants.Contains(tenantCode))
+        if (!_migratedTenants.ContainsKey(tenantCode))
         {
             lock (_migrateLock)
             {
-                if (!_migratedTenants.Contains(tenantCode))
+                if (!_migratedTenants.ContainsKey(tenantCode))
                 {
                     context.Database.Migrate();
-                    _migratedTenants.Add(tenantCode);
+                    _migratedTenants.TryAdd(tenantCode, 0);
                 }
             }
         }
