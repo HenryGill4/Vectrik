@@ -1,5 +1,5 @@
 @page "/quotes/analytics"
-@inject IQuoteAnalyticsService Analytics
+@inject IQuoteAnalyticsService AnalyticsSvc
 @inject NavigationManager Nav
 @inject ToastService Toast
 
@@ -367,13 +367,13 @@ else if (_pipeline != null)
             var to = DateTime.UtcNow;
             var from = to.AddDays(-_dayRange);
 
-            var pipelineTask = Analytics.GetPipelineMetricsAsync(from, to);
-            var accuracyTask = Analytics.GetQuoteAccuracyAsync(from, to);
-            var correctionsTask = Analytics.GetCorrectionFactorsAsync();
-            var customersTask = Analytics.GetPerformanceByCustomerAsync(from, to);
-            var lossTask = Analytics.GetLossReasonsAsync(from, to);
-            var sensitivityTask = Analytics.GetPriceSensitivityAsync(from, to);
-            var trendTask = Analytics.GetQuoteTrendAsync(from, to);
+            var pipelineTask = AnalyticsSvc.GetPipelineMetricsAsync(from, to);
+            var accuracyTask = AnalyticsSvc.GetQuoteAccuracyAsync(from, to);
+            var correctionsTask = AnalyticsSvc.GetCorrectionFactorsAsync();
+            var customersTask = AnalyticsSvc.GetPerformanceByCustomerAsync(from, to);
+            var lossTask = AnalyticsSvc.GetLossReasonsAsync(from, to);
+            var sensitivityTask = AnalyticsSvc.GetPriceSensitivityAsync(from, to);
+            var trendTask = AnalyticsSvc.GetQuoteTrendAsync(from, to);
 
             await Task.WhenAll(pipelineTask, accuracyTask, correctionsTask,
                 customersTask, lossTask, sensitivityTask, trendTask);
