@@ -96,6 +96,11 @@ public class Machine
     /// </summary>
     public bool IsAdditiveMachine { get; set; }
 
+    /// <summary>
+    /// Number of tool magazine slots on this machine (0 = unlimited/not applicable).
+    /// </summary>
+    public int ToolSlotCount { get; set; }
+
     // ── Dispatch System ──────────────────────────────────────
 
     /// <summary>
