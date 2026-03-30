@@ -16,6 +16,7 @@ public class MachineCapacityCard
     public int MachineId { get; set; }
     public string MachineName { get; set; } = string.Empty;
     public string MachineType { get; set; } = string.Empty;
+    public string? Department { get; set; }
     public MachineStatus Status { get; set; }
     public string? CurrentProgramName { get; set; }
     public double UtilizationPct { get; set; }
@@ -25,6 +26,8 @@ public class MachineCapacityCard
     public string? NextDuePart { get; set; }
     public DateTime? NextDueDate { get; set; }
     public bool IsAdditive { get; set; }
+    public int ToolSlotCount { get; set; }
+    public int LoadedToolCount { get; set; }
 }
 
 public class DemandGapItem
@@ -55,4 +58,5 @@ public class MachineAssignmentSuggestion
     public int Score { get; set; }
     public string ScoreReason { get; set; } = string.Empty;
     public bool IsRecommended { get; set; }
+    public int ToolChangeCount { get; set; }
 }

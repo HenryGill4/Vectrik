@@ -75,11 +75,62 @@ public class DispatchGenerationService : IDispatchGenerationService
                 .GroupBy(se => se.MachineProgramId!.Value)
                 .ToList();
 
-            // Create temporary dispatches for scoring
+            // Create temporary dispatches for scoring — detect tool mismatches
             var scoreCandidates = new List<SetupDispatch>();
+
+            // Load current machine's tooling for changeover analysis
+            List<ProgramToolingItem>? currentTools = null;
+            if (machine.CurrentProgramId.HasValue)
+            {
+                currentTools = await _db.Set<ProgramToolingItem>()
+                    .Where(t => t.MachineProgramId == machine.CurrentProgramId.Value && t.IsActive)
+                    .ToListAsync();
+            }
+
             foreach (var group in groups)
             {
                 var firstExecution = group.First();
+                var isChangeover = machine.CurrentProgramId.HasValue
+                    && machine.CurrentProgramId.Value != group.Key;
+
+                // Analyze tool changes if this is a changeover
+                string? toolingRequired = null;
+                double? changeoverMinutes = null;
+                if (isChangeover && currentTools != null && currentTools.Count > 0)
+                {
+                    var targetTools = await _db.Set<ProgramToolingItem>()
+                        .Where(t => t.MachineProgramId == group.Key && t.IsActive)
+                        .ToListAsync();
+
+                    if (targetTools.Count > 0)
+                    {
+                        var currentByPos = currentTools.ToDictionary(t => t.ToolPosition, t => t.Name);
+                        var changes = new List<string>();
+                        foreach (var target in targetTools)
+                        {
+                            if (!currentByPos.TryGetValue(target.ToolPosition, out var currentName))
+                                changes.Add($"Add {target.ToolPosition}: {target.Name}");
+                            else if (!currentName.Equals(target.Name, StringComparison.OrdinalIgnoreCase))
+                                changes.Add($"Swap {target.ToolPosition}: {currentName} → {target.Name}");
+                        }
+                        // Check for tools to remove (in current but not in target)
+                        var targetPositions = targetTools.Select(t => t.ToolPosition).ToHashSet();
+                        foreach (var cur in currentTools.Where(t => !targetPositions.Contains(t.ToolPosition)))
+                            changes.Add($"Remove {cur.ToolPosition}: {cur.Name}");
+
+                        if (changes.Count > 0)
+                        {
+                            toolingRequired = string.Join("; ", changes);
+                            changeoverMinutes = 5 + (changes.Count * 2.5); // ~2.5 min per tool change + 5 min base
+                        }
+                    }
+                }
+
+                var estSetup = changeoverMinutes
+                    ?? firstExecution.MachineProgram?.ActualAverageSetupMinutes
+                    ?? firstExecution.MachineProgram?.SetupTimeMinutes
+                    ?? 30;
+
                 var tempDispatch = new SetupDispatch
                 {
                     MachineId = machine.Id,
@@ -87,8 +138,11 @@ public class DispatchGenerationService : IDispatchGenerationService
                     StageExecutionId = firstExecution.Id,
                     JobId = firstExecution.JobId,
                     PartId = firstExecution.Job?.PartId,
-                    EstimatedSetupMinutes = firstExecution.MachineProgram?.ActualAverageSetupMinutes
-                        ?? firstExecution.MachineProgram?.SetupTimeMinutes ?? 30
+                    DispatchType = isChangeover ? DispatchType.Changeover : DispatchType.Setup,
+                    ChangeoverFromProgramId = isChangeover ? machine.CurrentProgramId : null,
+                    ChangeoverToProgramId = isChangeover ? group.Key : null,
+                    ToolingRequired = toolingRequired,
+                    EstimatedSetupMinutes = estSetup
                 };
                 scoreCandidates.Add(tempDispatch);
             }
@@ -117,7 +171,7 @@ public class DispatchGenerationService : IDispatchGenerationService
 
                 var dispatch = await _dispatchService.CreateManualDispatchAsync(
                     machineId: machine.Id,
-                    type: DispatchType.Setup,
+                    type: candidate.DispatchType,
                     machineProgramId: candidate.MachineProgramId,
                     stageExecutionId: execution.Id,
                     jobId: execution.JobId,
@@ -125,13 +179,17 @@ public class DispatchGenerationService : IDispatchGenerationService
                     estimatedSetupMinutes: candidate.EstimatedSetupMinutes,
                     notes: $"Auto-generated. Score: {score.FinalScore}");
 
-                // Mark as auto-generated
+                // Mark as auto-generated and set changeover/tooling fields
                 var entity = await _db.SetupDispatches.FindAsync(dispatch.Id);
                 if (entity != null)
                 {
                     entity.IsAutoGenerated = true;
                     entity.ScoreBreakdownJson = score.ScoreBreakdownJson;
                     entity.PriorityReason = score.PriorityReason;
+                    entity.ChangeoverFromProgramId = candidate.ChangeoverFromProgramId;
+                    entity.ChangeoverToProgramId = candidate.ChangeoverToProgramId;
+                    if (!string.IsNullOrEmpty(candidate.ToolingRequired))
+                        entity.ToolingRequired = candidate.ToolingRequired;
 
                     if (config.RequiresSchedulerApproval)
                     {

@@ -88,7 +88,7 @@ public class DataSeedingService : IDataSeedingService
             {
                 Name = "SLS/LPBF Printing", StageSlug = "sls-printing", Department = "SLS",
                 DefaultDurationHours = 8.0, HasBuiltInPage = true,
-                DefaultHourlyRate = 225.00m, DefaultSetupMinutes = 60,
+                DefaultHourlyRate = 85.00m, DefaultSetupMinutes = 0,
                 DisplayOrder = 1, StageIcon = "🖨️", StageColor = "#3B82F6",
                 RequiresMachineAssignment = true, RequiresQualityCheck = false,
                 DefaultMachineId = "M4-1",
@@ -178,8 +178,8 @@ public class DataSeedingService : IDataSeedingService
             new()
             {
                 Name = "CNC Turning", StageSlug = "cnc-turning", Department = "Machining",
-                DefaultDurationHours = 0.33, HasBuiltInPage = true,
-                DefaultHourlyRate = 90.00m, DefaultSetupMinutes = 25,
+                DefaultDurationHours = 0.25, HasBuiltInPage = true,
+                DefaultHourlyRate = 90.00m, DefaultSetupMinutes = 10,
                 DisplayOrder = 10, StageIcon = "🔩", StageColor = "#0891B2",
                 RequiresMachineAssignment = true,
                 DefaultMachineId = "LATHE1",
@@ -333,9 +333,17 @@ public class DataSeedingService : IDataSeedingService
             },
             new()
             {
-                MachineId = "LATHE1", Name = "CNC Lathe", MachineType = "CNC-Turning",
+                MachineId = "LATHE1", Name = "Haas ST-20Y #1", MachineType = "CNC-Turning",
                 MachineModel = "Haas ST-20Y", Department = "Machining",
-                Priority = 4, HourlyRate = 95.00m, CreatedBy = "System", LastModifiedBy = "System"
+                Priority = 4, HourlyRate = 90.00m, ToolSlotCount = 15,
+                CreatedBy = "System", LastModifiedBy = "System"
+            },
+            new()
+            {
+                MachineId = "LATHE2", Name = "Haas ST-20Y #2", MachineType = "CNC-Turning",
+                MachineModel = "Haas ST-20Y", Department = "Machining",
+                Priority = 4, HourlyRate = 90.00m, ToolSlotCount = 15,
+                CreatedBy = "System", LastModifiedBy = "System"
             },
 
             // === WORKSTATION MACHINES (one per stage that lacks dedicated equipment) ===
@@ -810,7 +818,7 @@ public class DataSeedingService : IDataSeedingService
     /// </summary>
     private static List<ProductionStage> GetExpectedProductionStages() =>
     [
-        new() { Name = "SLS/LPBF Printing", StageSlug = "sls-printing", Department = "SLS", DefaultDurationHours = 8.0, HasBuiltInPage = true, DefaultHourlyRate = 225.00m, DefaultSetupMinutes = 60, DisplayOrder = 1, StageIcon = "🖨️", StageColor = "#3B82F6", RequiresMachineAssignment = true, DefaultMachineId = "M4-1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "SLS/LPBF Printing", StageSlug = "sls-printing", Department = "SLS", DefaultDurationHours = 8.0, HasBuiltInPage = true, DefaultHourlyRate = 85.00m, DefaultSetupMinutes = 0, DisplayOrder = 1, StageIcon = "🖨️", StageColor = "#3B82F6", RequiresMachineAssignment = true, DefaultMachineId = "M4-1", CreatedBy = "System", LastModifiedBy = "System" },
         new() { Name = "Depowdering", StageSlug = "depowdering", Department = "Post-Process", DefaultDurationHours = 1.0, HasBuiltInPage = true, DefaultHourlyRate = 55.00m, DefaultSetupMinutes = 10, DisplayOrder = 2, StageIcon = "💨", StageColor = "#F59E0B", RequiresMachineAssignment = true, DefaultMachineId = "INC1", CreatedBy = "System", LastModifiedBy = "System" },
         new() { Name = "Heat Treatment", StageSlug = "heat-treatment", Department = "Post-Process", DefaultDurationHours = 4.0, HasBuiltInPage = true, DefaultHourlyRate = 65.00m, DefaultSetupMinutes = 20, DisplayOrder = 3, StageIcon = "🔥", StageColor = "#EF4444", RequiresMachineAssignment = true, DefaultMachineId = "HT1", CreatedBy = "System", LastModifiedBy = "System" },
         new() { Name = "Wire EDM", StageSlug = "wire-edm", Department = "EDM", DefaultDurationHours = 2.0, HasBuiltInPage = true, DefaultHourlyRate = 85.00m, DefaultSetupMinutes = 25, DisplayOrder = 4, StageIcon = "⚡", StageColor = "#8B5CF6", RequiresMachineAssignment = true, DefaultMachineId = "EDM1", CreatedBy = "System", LastModifiedBy = "System" },
@@ -819,7 +827,7 @@ public class DataSeedingService : IDataSeedingService
         new() { Name = "Surface Finishing", StageSlug = "surface-finishing", Department = "Finishing", DefaultDurationHours = 0.33, HasBuiltInPage = true, DefaultHourlyRate = 45.00m, DefaultSetupMinutes = 10, DisplayOrder = 7, StageIcon = "🎨", StageColor = "#EC4899", RequiresMachineAssignment = true, DefaultMachineId = "FINISH1", CreatedBy = "System", LastModifiedBy = "System" },
         new() { Name = "Quality Control", StageSlug = "qc", Department = "Quality", DefaultDurationHours = 0.083, HasBuiltInPage = true, DefaultHourlyRate = 75.00m, DefaultSetupMinutes = 15, DisplayOrder = 8, StageIcon = "✅", StageColor = "#14B8A6", RequiresQualityCheck = true, RequiresMachineAssignment = true, DefaultMachineId = "QC1", CreatedBy = "System", LastModifiedBy = "System" },
         new() { Name = "Shipping", StageSlug = "shipping", Department = "Shipping", DefaultDurationHours = 0.083, HasBuiltInPage = true, DefaultHourlyRate = 35.00m, DefaultSetupMinutes = 5, DisplayOrder = 9, StageIcon = "🚚", StageColor = "#6366F1", RequiresMachineAssignment = true, DefaultMachineId = "SHIP1", CreatedBy = "System", LastModifiedBy = "System" },
-        new() { Name = "CNC Turning", StageSlug = "cnc-turning", Department = "Machining", DefaultDurationHours = 0.33, HasBuiltInPage = true, DefaultHourlyRate = 90.00m, DefaultSetupMinutes = 25, DisplayOrder = 10, StageIcon = "🔩", StageColor = "#0891B2", RequiresMachineAssignment = true, DefaultMachineId = "LATHE1", CreatedBy = "System", LastModifiedBy = "System" },
+        new() { Name = "CNC Turning", StageSlug = "cnc-turning", Department = "Machining", DefaultDurationHours = 0.25, HasBuiltInPage = true, DefaultHourlyRate = 90.00m, DefaultSetupMinutes = 10, DisplayOrder = 10, StageIcon = "🔩", StageColor = "#0891B2", RequiresMachineAssignment = true, DefaultMachineId = "LATHE1", CreatedBy = "System", LastModifiedBy = "System" },
         new() { Name = "Assembly", StageSlug = "assembly", Department = "Assembly", DefaultDurationHours = 0.167, HasBuiltInPage = true, DefaultHourlyRate = 60.00m, DefaultSetupMinutes = 10, DisplayOrder = 11, StageIcon = "🔧", StageColor = "#7C3AED", RequiresMachineAssignment = true, DefaultMachineId = "ASSY1", CreatedBy = "System", LastModifiedBy = "System" },
         new() { Name = "Sandblasting", StageSlug = "sandblasting", Department = "Finishing", DefaultDurationHours = 0.25, DefaultHourlyRate = 40.00m, DefaultSetupMinutes = 5, DisplayOrder = 12, StageIcon = "🌪️", StageColor = "#A3A3A3", RequiresMachineAssignment = true, DefaultMachineId = "BLAST1", CreatedBy = "System", LastModifiedBy = "System" },
         new() { Name = "External Coating", StageSlug = "external-coating", Department = "External", DefaultDurationHours = 0, IsExternalOperation = true, DefaultTurnaroundDays = 14, DefaultHourlyRate = 0.00m, DefaultSetupMinutes = 0, DisplayOrder = 13, StageIcon = "🏢", StageColor = "#D97706", RequiresQualityCheck = true, RequiresMachineAssignment = true, DefaultMachineId = "EXT-COAT", CreatedBy = "System", LastModifiedBy = "System" },
@@ -968,6 +976,29 @@ public class DataSeedingService : IDataSeedingService
             }
         }
 
+        // Ensure ALL CNC-Turning machines are assigned to the CNC Turning stage.
+        var turningMachineIds = machines
+            .Where(m => m.MachineType == "CNC-Turning" && m.IsActive)
+            .Select(m => m.Id)
+            .ToList();
+
+        if (turningMachineIds.Count > 0)
+        {
+            foreach (var stage in stages.Where(s => s.StageSlug == "cnc-turning"))
+            {
+                var existingIds = stage.GetAssignedMachineIntIds();
+                foreach (var mid in turningMachineIds)
+                {
+                    if (!existingIds.Contains(mid))
+                    {
+                        existingIds.Add(mid);
+                        dirty = true;
+                    }
+                }
+                stage.AssignedMachineIds = string.Join(",", existingIds);
+            }
+        }
+
         if (dirty)
         {
             await db.SaveChangesAsync();
@@ -1037,9 +1068,9 @@ public class DataSeedingService : IDataSeedingService
                     new() { Slug = "depowdering",     Level = ProcessingLevel.Build },
                     new() { Slug = "heat-treatment",  Level = ProcessingLevel.Build },
                     new() { Slug = "wire-edm",        Level = ProcessingLevel.Build, IsPlateReleaseTrigger = true },
-                    new() { Slug = "sandblasting",    Level = ProcessingLevel.Batch, BatchCapacityOverride = 20 },
                     new() { Slug = "cnc-machining",   Level = ProcessingLevel.Part },
                     new() { Slug = "laser-engraving", Level = ProcessingLevel.Batch, BatchCapacityOverride = 36 },
+                    new() { Slug = "sandblasting",    Level = ProcessingLevel.Batch, BatchCapacityOverride = 20 },
                     new() { Slug = "qc",              Level = ProcessingLevel.Part },
                     new() { Slug = "packaging",       Level = ProcessingLevel.Batch, BatchCapacityOverride = 50 },
                 ])
@@ -1054,9 +1085,9 @@ public class DataSeedingService : IDataSeedingService
                     new() { Slug = "sls-printing",    Level = ProcessingLevel.Build, DurationFromBuildConfig = true },
                     new() { Slug = "depowdering",     Level = ProcessingLevel.Build },
                     new() { Slug = "wire-edm",        Level = ProcessingLevel.Build, IsPlateReleaseTrigger = true },
-                    new() { Slug = "sandblasting",    Level = ProcessingLevel.Batch, BatchCapacityOverride = 20 },
-                    new() { Slug = "cnc-machining",   Level = ProcessingLevel.Part },
+                    new() { Slug = "cnc-turning",     Level = ProcessingLevel.Part },
                     new() { Slug = "laser-engraving", Level = ProcessingLevel.Batch, BatchCapacityOverride = 36 },
+                    new() { Slug = "sandblasting",    Level = ProcessingLevel.Batch, BatchCapacityOverride = 20 },
                     new() { Slug = "qc",              Level = ProcessingLevel.Part },
                     new() { Slug = "packaging",       Level = ProcessingLevel.Batch, BatchCapacityOverride = 50 },
                 ])
@@ -1911,10 +1942,11 @@ public class DataSeedingService : IDataSeedingService
             db.ManufacturingProcesses.Add(process);
             await db.SaveChangesAsync();
 
+            // Suppressor (No HT) routing: SLS → Depowder → Wire EDM → CNC Turning → Laser Engraving → Sandblasting → QC → Packaging
             var order = 1;
             var processStages = new List<ProcessStage>();
 
-            // Build-level stages
+            // === BUILD-LEVEL STAGES ===
             if (stageBySlug.TryGetValue("sls-printing", out var slsStage))
             {
                 processStages.Add(new ProcessStage
@@ -1955,26 +1987,6 @@ public class DataSeedingService : IDataSeedingService
                 });
             }
 
-            if (stageBySlug.TryGetValue("heat-treatment", out var htStage))
-            {
-                processStages.Add(new ProcessStage
-                {
-                    ManufacturingProcessId = process.Id,
-                    ProductionStageId = htStage.Id,
-                    ExecutionOrder = order++,
-                    ProcessingLevel = ProcessingLevel.Build,
-                    SetupDurationMode = DurationMode.PerBuild,
-                    SetupTimeMinutes = 30,
-                    RunDurationMode = DurationMode.PerBuild,
-                    RunTimeMinutes = 210,
-                    AssignedMachineId = MachineIntId("HT1"),
-                    IsRequired = true,
-                    IsBlocking = true,
-                    CreatedBy = "System",
-                    LastModifiedBy = "System"
-                });
-            }
-
             if (stageBySlug.TryGetValue("wire-edm", out var edmStage))
             {
                 var wireEdmPs = new ProcessStage
@@ -1984,9 +1996,9 @@ public class DataSeedingService : IDataSeedingService
                     ExecutionOrder = order++,
                     ProcessingLevel = ProcessingLevel.Build,
                     SetupDurationMode = DurationMode.PerBuild,
-                    SetupTimeMinutes = 20,
+                    SetupTimeMinutes = 25,
                     RunDurationMode = DurationMode.PerBuild,
-                    RunTimeMinutes = 100,
+                    RunTimeMinutes = 90,
                     AssignedMachineId = MachineIntId("EDM1"),
                     IsRequired = true,
                     IsBlocking = true,
@@ -1996,78 +2008,32 @@ public class DataSeedingService : IDataSeedingService
                 processStages.Add(wireEdmPs);
             }
 
-            // Batch-level stages
-            if (stageBySlug.TryGetValue("sandblasting", out var sbStage))
+            // === PART-LEVEL STAGES ===
+            if (stageBySlug.TryGetValue("cnc-turning", out var turningStage))
             {
                 processStages.Add(new ProcessStage
                 {
                     ManufacturingProcessId = process.Id,
-                    ProductionStageId = sbStage.Id,
-                    ExecutionOrder = order++,
-                    ProcessingLevel = ProcessingLevel.Batch,
-                    SetupDurationMode = DurationMode.PerBatch,
-                    SetupTimeMinutes = 5,
-                    RunDurationMode = DurationMode.PerBatch,
-                    RunTimeMinutes = 15,
-                    BatchCapacityOverride = 20,
-                    AssignedMachineId = MachineIntId("BLAST1"),
-                    AllowRebatching = true,
-                    IsRequired = false,
-                    AllowSkip = true,
-                    CreatedBy = "System",
-                    LastModifiedBy = "System"
-                });
-            }
-
-            // Surface Finishing (batch-level, after sandblasting)
-            if (stageBySlug.TryGetValue("surface-finishing", out var sfStage))
-            {
-                processStages.Add(new ProcessStage
-                {
-                    ManufacturingProcessId = process.Id,
-                    ProductionStageId = sfStage.Id,
-                    ExecutionOrder = order++,
-                    ProcessingLevel = ProcessingLevel.Batch,
-                    SetupDurationMode = DurationMode.PerBatch,
-                    SetupTimeMinutes = 10,
-                    RunDurationMode = DurationMode.PerBatch,
-                    RunTimeMinutes = 20,
-                    BatchCapacityOverride = 30,
-                    AssignedMachineId = MachineIntId("FINISH1"),
-                    IsRequired = false,
-                    AllowSkip = true,
-                    CreatedBy = "System",
-                    LastModifiedBy = "System"
-                });
-            }
-
-            // Part-level stages
-            if (stageBySlug.TryGetValue("cnc-machining", out var cncStage))
-            {
-                processStages.Add(new ProcessStage
-                {
-                    ManufacturingProcessId = process.Id,
-                    ProductionStageId = cncStage.Id,
+                    ProductionStageId = turningStage.Id,
                     ExecutionOrder = order++,
                     ProcessingLevel = ProcessingLevel.Part,
-                    SetupDurationMode = DurationMode.PerBatch,
-                    SetupTimeMinutes = 30,
+                    SetupDurationMode = DurationMode.None,
                     RunDurationMode = DurationMode.PerPart,
-                    RunTimeMinutes = 8,
-                    AssignedMachineId = MachineIntId("CNC1"),
+                    RunTimeMinutes = 6,
+                    AssignedMachineId = MachineIntId("LATHE1"),
                     PreferredMachineIds = string.Join(",",
-                        new[] { "CNC1", "CNC2", "CNC3", "CNC4" }
+                        new[] { "LATHE1", "LATHE2" }
                             .Select(id => MachineIntId(id))
                             .Where(id => id.HasValue)
                             .Select(id => id!.Value)),
                     IsRequired = true,
                     IsBlocking = true,
-                    RequiresQualityCheck = false,
                     CreatedBy = "System",
                     LastModifiedBy = "System"
                 });
             }
 
+            // === BATCH-LEVEL STAGES ===
             if (stageBySlug.TryGetValue("laser-engraving", out var engStage))
             {
                 processStages.Add(new ProcessStage
@@ -2076,15 +2042,35 @@ public class DataSeedingService : IDataSeedingService
                     ProductionStageId = engStage.Id,
                     ExecutionOrder = order++,
                     ProcessingLevel = ProcessingLevel.Batch,
-                    SetupDurationMode = DurationMode.PerBatch,
-                    SetupTimeMinutes = 5,
+                    SetupDurationMode = DurationMode.None,
                     RunDurationMode = DurationMode.PerBatch,
-                    RunTimeMinutes = 15,
+                    RunTimeMinutes = 5,
                     BatchCapacityOverride = 36,
                     AssignedMachineId = MachineIntId("ENGRAVE1"),
                     RequiresSerialNumber = true,
                     IsRequired = true,
                     IsBlocking = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+            }
+
+            if (stageBySlug.TryGetValue("sandblasting", out var sbStage))
+            {
+                processStages.Add(new ProcessStage
+                {
+                    ManufacturingProcessId = process.Id,
+                    ProductionStageId = sbStage.Id,
+                    ExecutionOrder = order++,
+                    ProcessingLevel = ProcessingLevel.Batch,
+                    SetupDurationMode = DurationMode.None,
+                    RunDurationMode = DurationMode.PerBatch,
+                    RunTimeMinutes = 0,
+                    BatchCapacityOverride = 20,
+                    AssignedMachineId = MachineIntId("BLAST1"),
+                    AllowRebatching = true,
+                    IsRequired = true,
+                    IsBlocking = false,
                     CreatedBy = "System",
                     LastModifiedBy = "System"
                 });
@@ -2098,10 +2084,9 @@ public class DataSeedingService : IDataSeedingService
                     ProductionStageId = qcStage.Id,
                     ExecutionOrder = order++,
                     ProcessingLevel = ProcessingLevel.Part,
-                    SetupDurationMode = DurationMode.PerBatch,
-                    SetupTimeMinutes = 5,
+                    SetupDurationMode = DurationMode.None,
                     RunDurationMode = DurationMode.PerPart,
-                    RunTimeMinutes = 5,
+                    RunTimeMinutes = 2,
                     AssignedMachineId = MachineIntId("QC1"),
                     RequiresQualityCheck = true,
                     IsRequired = true,
@@ -2119,10 +2104,9 @@ public class DataSeedingService : IDataSeedingService
                     ProductionStageId = pkgStage.Id,
                     ExecutionOrder = order++,
                     ProcessingLevel = ProcessingLevel.Batch,
-                    SetupDurationMode = DurationMode.PerBatch,
-                    SetupTimeMinutes = 5,
+                    SetupDurationMode = DurationMode.None,
                     RunDurationMode = DurationMode.PerBatch,
-                    RunTimeMinutes = 10,
+                    RunTimeMinutes = 3,
                     BatchCapacityOverride = 50,
                     AssignedMachineId = MachineIntId("PACK1"),
                     IsRequired = true,
@@ -2620,19 +2604,26 @@ public class DataSeedingService : IDataSeedingService
 
         // ════════════════════════════════════════════════════════════
         // MANUFACTURING PROCESSES — one per part, all Suppressor (No HT)
-        // SLS → Depowder → Wire EDM → Sandblast → CNC → Engrave → QC → Pack
+        // SLS → Depowder → Wire EDM → CNC Turning → Laser Engraving → Sandblasting → QC → Packaging
         // ════════════════════════════════════════════════════════════
 
-        var suppProcessRouting = new (string slug, ProcessingLevel lvl, double? setup, double? run, string machineId, bool slicer, bool release, int? batch)[] {
+        // Part-to-lathe assignment: Tinman+Handyman → LATHE1, Gargoyle+Pilate → LATHE2
+        var partLatheMap = new Dictionary<int, string> {
+            { tinman.Id, "LATHE1" }, { handyman.Id, "LATHE1" },
+            { gargoyle.Id, "LATHE2" }, { pilate.Id, "LATHE2" }
+        };
+
+        (string slug, ProcessingLevel lvl, double? setup, double? run, string machineId, bool slicer, bool release, int? batch)[]
+            SuppRouting(string latheId) => [
             ("sls-printing",    ProcessingLevel.Build, null, null, "M4-1",    true,  false, null),
             ("depowdering",     ProcessingLevel.Build, 15,  45,   "INC1",    false, false, null),
             ("wire-edm",        ProcessingLevel.Build, 25,  90,   "EDM1",    false, true,  null),
-            ("sandblasting",    ProcessingLevel.Batch, null, 15,  "BLAST1",  false, false, 20),
-            ("cnc-machining",   ProcessingLevel.Part,  30,  18,   "CNC1",    false, false, null),
+            ("cnc-turning",     ProcessingLevel.Part,  null, 6,   latheId,   false, false, null),
             ("laser-engraving", ProcessingLevel.Batch, null, 5,   "ENGRAVE1",false, false, 36),
-            ("qc",              ProcessingLevel.Part,  null, 5,   "QC1",     false, false, null),
+            ("sandblasting",    ProcessingLevel.Batch, null, 0,   "BLAST1",  false, false, 20),
+            ("qc",              ProcessingLevel.Part,  null, 2,   "QC1",     false, false, null),
             ("packaging",       ProcessingLevel.Batch, null, 3,   "PACK1",   false, false, 50),
-        };
+        ];
 
         foreach (var part in new[] { tinman, handyman, gargoyle, pilate })
         {
@@ -2644,7 +2635,8 @@ public class DataSeedingService : IDataSeedingService
             db.ManufacturingProcesses.Add(proc);
             await db.SaveChangesAsync();
             var ord = 1;
-            foreach (var r in suppProcessRouting)
+            var latheId = partLatheMap.GetValueOrDefault(part.Id, "LATHE1");
+            foreach (var r in SuppRouting(latheId))
             {
                 if (!stages.TryGetValue(r.slug, out var stg)) continue;
                 var durationMode = r.lvl switch {
@@ -2803,59 +2795,192 @@ public class DataSeedingService : IDataSeedingService
             false, null, null, null, null, null);
         await LinkProgParts(masterPilateDs, [(pilate, 72, 1, wo10), (pilate, 72, 2, wo10)]);
 
+        // ── CNC Turning Programs — one per part with specific tool lists ──
+        // Each suppressor caliber needs different bore bars and thread mills.
+        // Shared tools: T1 OD insert, chamfer, part-off are common across all.
+
+        async Task<MachineProgram> CreateCncProgram(string progNum, string name, Part part, string latheId,
+            (string pos, string toolName, bool isFixture)[] tools)
+        {
+            var prog = new MachineProgram
+            {
+                ProgramNumber = progNum, Name = name,
+                ProgramType = ProgramType.Standard, Status = ProgramStatus.Active,
+                ScheduleStatus = ProgramScheduleStatus.Ready, MachineType = "CNC-Turning",
+                MachineId = Mid(latheId), PartId = part.Id,
+                SetupTimeMinutes = 12, RunTimeMinutes = 6, CycleTimeMinutes = 6,
+                IsLocked = true, CreatedBy = "System", LastModifiedBy = "System"
+            };
+            db.MachinePrograms.Add(prog);
+            await db.SaveChangesAsync();
+
+            db.ProgramParts.Add(new ProgramPart { MachineProgramId = prog.Id, PartId = part.Id, Quantity = 1, StackLevel = 1 });
+
+            var order = 1;
+            foreach (var (pos, toolName, isFixture) in tools)
+            {
+                db.Set<ProgramToolingItem>().Add(new ProgramToolingItem
+                {
+                    MachineProgramId = prog.Id, ToolPosition = pos, Name = toolName,
+                    IsFixture = isFixture, SortOrder = order++, IsActive = true,
+                    WearLifeHours = isFixture ? null : 40.0, WarningThresholdPercent = 80,
+                    CreatedBy = "System", LastModifiedBy = "System"
+                });
+            }
+            await db.SaveChangesAsync();
+            return prog;
+        }
+
+        // Tinman 7.62mm → LATHE1
+        var cncTinman = await CreateCncProgram("EMC-TIN-001-TURN-01", "Tinman 7.62mm CNC Turning", tinman, "LATHE1",
+        [
+            ("T1", "CNMG 120408 Face/Turn OD Insert", false),
+            ("T2", "7.62mm Carbide Bore Bar", false),
+            ("T3", "5/8-24 UNEF Thread Mill", false),
+            ("T4", "2mm ID Groove Tool", false),
+            ("T5", "45° Chamfer Tool", false),
+            ("T6", "3mm Part-Off Blade", false),
+        ]);
+
+        // Handyman 9mm → LATHE1
+        var cncHandyman = await CreateCncProgram("EMC-HAN-001-TURN-01", "Handyman 9mm CNC Turning", handyman, "LATHE1",
+        [
+            ("T1", "CNMG 120408 Face/Turn OD Insert", false),
+            ("T2", "9mm Carbide Bore Bar", false),
+            ("T3", "5/8-24 UNEF Thread Mill", false),
+            ("T4", "2mm ID Groove Tool", false),
+            ("T5", "45° Chamfer Tool", false),
+            ("T6", "3mm Part-Off Blade", false),
+            ("T7", "M13.5x1 LH Thread Tap", false),
+        ]);
+
+        // Gargoyle 5.56mm → LATHE2
+        var cncGargoyle = await CreateCncProgram("EMC-GAR-001-TURN-01", "Gargoyle 5.56mm CNC Turning", gargoyle, "LATHE2",
+        [
+            ("T1", "CNMG 120408 Face/Turn OD Insert", false),
+            ("T2", "5.56mm Carbide Bore Bar", false),
+            ("T3", "1/2-28 UNEF Thread Mill", false),
+            ("T4", "2mm ID Groove Tool", false),
+            ("T5", "45° Chamfer Tool", false),
+            ("T6", "3mm Part-Off Blade", false),
+        ]);
+
+        // Pilate .22LR → LATHE2
+        var cncPilate = await CreateCncProgram("EMC-PIL-001-TURN-01", "Pilate .22LR CNC Turning", pilate, "LATHE2",
+        [
+            ("T1", "CNMG 120408 Face/Turn OD Insert", false),
+            ("T2", ".22 Cal Carbide Bore Bar", false),
+            ("T3", "1/2-28 UNEF Thread Mill", false),
+            ("T4", "45° Chamfer Tool", false),
+            ("T5", "3mm Part-Off Blade", false),
+        ]);
+
+        // Map part → CNC program for use in routing and dispatch
+        var partCncPrograms = new Dictionary<int, MachineProgram> {
+            { tinman.Id, cncTinman }, { handyman.Id, cncHandyman },
+            { gargoyle.Id, cncGargoyle }, { pilate.Id, cncPilate }
+        };
+
+        // Link ProcessStage.MachineProgramId for CNC Turning stages to per-part programs
+        var cncTurningStageId = stages.TryGetValue("cnc-turning", out var cncStg) ? cncStg.Id : 0;
+        if (cncTurningStageId > 0)
+        {
+            var cncProcessStages = await db.ProcessStages
+                .Include(ps => ps.ManufacturingProcess)
+                .Where(ps => ps.ProductionStageId == cncTurningStageId)
+                .ToListAsync();
+            foreach (var ps in cncProcessStages)
+            {
+                if (ps.ManufacturingProcess != null
+                    && partCncPrograms.TryGetValue(ps.ManufacturingProcess.PartId, out var prog))
+                {
+                    ps.MachineProgramId = prog.Id;
+                }
+            }
+            await db.SaveChangesAsync();
+        }
+
         // ════════════════════════════════════════════════════════════
         // STAGE ROUTING TEMPLATES — per-build cost/time definitions
-        // Costs derived from EOS M4 ONYX production model: ~$88/part total
-        //   SLS: ~$48 | Depowder: ~$3 | EDM: ~$15 | Blast: ~$1
-        //   CNC: ~$15 | Engrave: ~$1  | QC: ~$5   | Pack: ~$1
+        // Routing: SLS → Depowder → Wire EDM → CNC Turning → Laser Engraving → Sandblasting → QC → Packaging
+        // CNC Turning: 10min setup + 5min run = 15min/part @ $90/hr
         // (stageSlug, defaultMachineId, estimatedHours, estimatedCost)
         // ════════════════════════════════════════════════════════════
 
-        // Tinman 56x: 7.62mm, largest body, longest CNC per part
+        // Tinman 56x: 7.62mm — 56 parts × 6min/part CNC = 5.6h → LATHE1
         var tinmanRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 22.5, 5063m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 2.0, 170m), ("sandblasting", "BLAST1", 1.0, 40m),
-            ("cnc-machining", "CNC1", 18.7, 1776m), ("laser-engraving", "ENGRAVE1", 0.5, 28m),
-            ("qc", "QC1", 4.7, 350m), ("packaging", "PACK1", 0.6, 20m) };
+            ("sls-printing", "M4-1", 22.5, 1913m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE1", 5.6, 504m),
+            ("laser-engraving", "ENGRAVE1", 0.14, 8m), ("sandblasting", "BLAST1", 0.0, 0m),
+            ("qc", "QC1", 1.87, 140m), ("packaging", "PACK1", 0.06, 2m) };
 
-        // Tinman 80x DS: double-stack version
+        // Tinman 80x DS: double-stack — 80 parts × 6min = 8.0h → LATHE1
         var tinmanDsRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 30.0, 6750m), ("depowdering", "INC1", 1.3, 72m),
-            ("wire-edm", "EDM1", 2.6, 221m), ("sandblasting", "BLAST1", 1.3, 52m),
-            ("cnc-machining", "CNC1", 26.7, 2533m), ("laser-engraving", "ENGRAVE1", 0.7, 39m),
-            ("qc", "QC1", 6.7, 500m), ("packaging", "PACK1", 0.8, 28m) };
+            ("sls-printing", "M4-1", 30.0, 2550m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE1", 8.0, 720m),
+            ("laser-engraving", "ENGRAVE1", 0.19, 10m), ("sandblasting", "BLAST1", 0.0, 0m),
+            ("qc", "QC1", 2.67, 200m), ("packaging", "PACK1", 0.08, 3m) };
 
-        // Handyman 64x: 9mm, medium body
+        // Handyman 64x: 9mm — 64 parts × 6min = 6.4h → LATHE1
         var handymanRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 20.0, 4500m), ("depowdering", "INC1", 0.9, 50m),
-            ("wire-edm", "EDM1", 1.8, 153m), ("sandblasting", "BLAST1", 0.9, 36m),
-            ("cnc-machining", "CNC1", 16.0, 1520m), ("laser-engraving", "ENGRAVE1", 0.5, 28m),
-            ("qc", "QC1", 5.3, 400m), ("packaging", "PACK1", 0.6, 21m) };
+            ("sls-printing", "M4-1", 20.0, 1700m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE1", 6.4, 576m),
+            ("laser-engraving", "ENGRAVE1", 0.15, 8m), ("sandblasting", "BLAST1", 0.0, 0m),
+            ("qc", "QC1", 2.13, 160m), ("packaging", "PACK1", 0.06, 2m) };
 
-        // Gargoyle 72x: 5.56mm, compact AR-specific, high plate density
+        // Gargoyle 72x: 5.56mm — 72 parts × 6min = 7.2h → LATHE2
         var gargoyleRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 18.5, 4163m), ("depowdering", "INC1", 0.8, 44m),
-            ("wire-edm", "EDM1", 1.7, 145m), ("sandblasting", "BLAST1", 0.9, 36m),
-            ("cnc-machining", "CNC1", 18.0, 1710m), ("laser-engraving", "ENGRAVE1", 0.6, 33m),
-            ("qc", "QC1", 6.0, 450m), ("packaging", "PACK1", 0.7, 25m) };
+            ("sls-printing", "M4-1", 18.5, 1573m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE2", 7.2, 648m),
+            ("laser-engraving", "ENGRAVE1", 0.17, 9m), ("sandblasting", "BLAST1", 0.0, 0m),
+            ("qc", "QC1", 2.4, 180m), ("packaging", "PACK1", 0.07, 2m) };
 
-        // Pilate 96x: .22lr, smallest Ti suppressor, highest plate density
+        // Pilate 96x: .22lr — 96 parts × 6min = 9.6h → LATHE2
         var pilateRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 16.0, 3600m), ("depowdering", "INC1", 0.7, 39m),
-            ("wire-edm", "EDM1", 1.4, 119m), ("sandblasting", "BLAST1", 0.8, 32m),
-            ("cnc-machining", "CNC1", 12.0, 1140m), ("laser-engraving", "ENGRAVE1", 0.4, 22m),
-            ("qc", "QC1", 4.0, 300m), ("packaging", "PACK1", 0.5, 18m) };
+            ("sls-printing", "M4-1", 16.0, 1360m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE2", 9.6, 864m),
+            ("laser-engraving", "ENGRAVE1", 0.22, 12m), ("sandblasting", "BLAST1", 0.0, 0m),
+            ("qc", "QC1", 3.2, 240m), ("packaging", "PACK1", 0.1, 3m) };
 
-        // Pilate 144x DS: double-stack version
+        // Pilate 144x DS: double-stack — 144 parts × 6min = 14.4h → LATHE2
         var pilateDsRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 22.0, 4950m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 1.9, 162m), ("sandblasting", "BLAST1", 1.1, 44m),
-            ("cnc-machining", "CNC1", 18.0, 1710m), ("laser-engraving", "ENGRAVE1", 0.6, 33m),
-            ("qc", "QC1", 6.0, 450m), ("packaging", "PACK1", 0.7, 25m) };
+            ("sls-printing", "M4-1", 22.0, 1870m), ("depowdering", "INC1", 1.0, 55m),
+            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE2", 14.4, 1296m),
+            ("laser-engraving", "ENGRAVE1", 0.33, 18m), ("sandblasting", "BLAST1", 0.0, 0m),
+            ("qc", "QC1", 4.8, 360m), ("packaging", "PACK1", 0.15, 5m) };
 
         // ════════════════════════════════════════════════════════════
         // JOBS + STAGE EXECUTIONS — helpers
         // ════════════════════════════════════════════════════════════
+
+        // Shift-aware scheduling: operator stages only run Mon-Fri 06:00-18:00.
+        // SLS printing runs 24/7 unmanned; everything else needs operators.
+        static DateTime SkipWeekend(DateTime dt)
+        {
+            // If Saturday, advance to Monday 06:00
+            if (dt.DayOfWeek == DayOfWeek.Saturday)
+                return dt.Date.AddDays(2).AddHours(6);
+            // If Sunday, advance to Monday 06:00
+            if (dt.DayOfWeek == DayOfWeek.Sunday)
+                return dt.Date.AddDays(1).AddHours(6);
+            return dt;
+        }
+
+        // Advance a time past weekends and outside shift hours (before 6am → wait for 6am)
+        static DateTime NextShiftStart(DateTime dt)
+        {
+            dt = SkipWeekend(dt);
+            // If before 6am, wait until 6am same day
+            if (dt.Hour < 6)
+                dt = dt.Date.AddHours(6);
+            // If after 18:00, advance to next weekday 6am
+            if (dt.Hour >= 18)
+            {
+                dt = dt.Date.AddDays(1).AddHours(6);
+                dt = SkipWeekend(dt);
+            }
+            return dt;
+        }
 
         int jobNum = 1;
 
@@ -2895,6 +3020,26 @@ public class DataSeedingService : IDataSeedingService
                 CreatedBy = "System", LastModifiedBy = "System" });
         }
 
+        // Machine watermarks — tracks when each machine is next free (prevents overlaps)
+        var machineWatermark = new Dictionary<string, DateTime>();
+
+        // Get or update the next available time for a machine (no overlaps)
+        DateTime GetMachineAvailable(string machineId, DateTime earliest)
+        {
+            var shifted = NextShiftStart(earliest);
+            if (machineWatermark.TryGetValue(machineId, out var watermark))
+            {
+                var afterWatermark = NextShiftStart(watermark.AddHours(0.25)); // 15min gap between jobs
+                if (afterWatermark > shifted) shifted = afterWatermark;
+            }
+            return shifted;
+        }
+
+        void SetMachineWatermark(string machineId, DateTime endTime)
+        {
+            machineWatermark[machineId] = endTime;
+        }
+
         // ── Helper: create a fully completed build with all stage executions ──
         async Task<MachineProgram> CompletedBuild(int idx, string num, string name,
             Part part, int qty, double printHrs, int layers, double height, double powder,
@@ -2923,11 +3068,18 @@ public class DataSeedingService : IDataSeedingService
             foreach (var (slug, mid, hrs, cost) in routing)
             {
                 var actualMachine = slug == "sls-printing" ? machine : mid;
+                // SLS runs 24/7; all other stages need operators and must not overlap
+                if (slug != "sls-printing")
+                    t = GetMachineAvailable(actualMachine, t);
+
+                var stageEnd = t.AddHours(hrs);
                 await CreateStageExec(j, slug, actualMachine, StageExecutionStatus.Completed,
-                    t, t.AddHours(hrs), t.AddHours(0.15), t.AddHours(hrs * v + 0.15),
+                    t, stageEnd, t.AddHours(0.15), t.AddHours(hrs * v + 0.15),
                     hrs, hrs * v, cost, cost * (decimal)v,
                     slug == "sls-printing" ? prog.Id : null);
-                t = t.AddHours(hrs + 0.3);
+                if (slug != "sls-printing")
+                    SetMachineWatermark(actualMachine, stageEnd);
+                t = stageEnd.AddHours(0.15);
             }
             await db.SaveChangesAsync();
             return prog;
@@ -3027,11 +3179,15 @@ public class DataSeedingService : IDataSeedingService
             var j = await CreateJob(gargoyle, Mid("M4-1"), 72, JobScope.Build, JobStatus.InProgress,
                 activeM41Start, activeM41Start.AddHours(50), activeM41Start, null, wo6);
             await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.InProgress,
-                activeM41Start, activeM41Start.AddHours(18.5), activeM41Start, null, 18.5, null, 4163m, null, activeM41.Id);
+                activeM41Start, activeM41Start.AddHours(18.5), activeM41Start, null, 18.5, null, 1573m, null, activeM41.Id);
+            var m41DepowStart = GetMachineAvailable("INC1", activeM41Start.AddHours(19.0));
             await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.NotStarted,
-                activeM41Start.AddHours(19.0), activeM41Start.AddHours(19.8), null, null, 0.8, null, 44m, null);
+                m41DepowStart, m41DepowStart.AddHours(0.8), null, null, 0.8, null, 44m, null);
+            SetMachineWatermark("INC1", m41DepowStart.AddHours(0.8));
+            var m41EdmStart = GetMachineAvailable("EDM1", m41DepowStart.AddHours(1.0));
             await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.NotStarted,
-                activeM41Start.AddHours(20.3), activeM41Start.AddHours(22.0), null, null, 1.7, null, 145m, null);
+                m41EdmStart, m41EdmStart.AddHours(1.7), null, null, 1.7, null, 145m, null);
+            SetMachineWatermark("EDM1", m41EdmStart.AddHours(1.7));
             await db.SaveChangesAsync();
         }
 
@@ -3048,17 +3204,23 @@ public class DataSeedingService : IDataSeedingService
             // print completed
             await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.Completed,
                 activeM42Start, activeM42Start.AddHours(22.0), activeM42Start, activeM42End,
-                22.0, 22.0, 4950m, 4950m, activeM42.Id);
+                22.0, 22.0, 1870m, 1870m, activeM42.Id);
             // depowder in progress (started 3 hours ago)
+            var m42DepowStart = GetMachineAvailable("INC1", activeM42End.AddHours(0.5));
             await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.InProgress,
-                activeM42End.AddHours(0.5), activeM42End.AddHours(1.5), now.AddHours(-3), null,
+                m42DepowStart, m42DepowStart.AddHours(1.0), now.AddHours(-3), null,
                 1.0, null, 55m, null);
+            SetMachineWatermark("INC1", m42DepowStart.AddHours(1.0));
             // wire-edm not started yet
+            var m42EdmStart = GetMachineAvailable("EDM1", m42DepowStart.AddHours(1.2));
             await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.NotStarted,
-                activeM42End.AddHours(2.0), activeM42End.AddHours(3.9), null, null, 1.9, null, 162m, null);
-            // sandblasting not started
-            await CreateStageExec(j, "sandblasting", "BLAST1", StageExecutionStatus.NotStarted,
-                activeM42End.AddHours(4.4), activeM42End.AddHours(5.5), null, null, 1.1, null, 44m, null);
+                m42EdmStart, m42EdmStart.AddHours(1.92), null, null, 1.92, null, 163m, null);
+            SetMachineWatermark("EDM1", m42EdmStart.AddHours(1.92));
+            // cnc-turning not started (Pilate → LATHE2, 144 parts × 6min = 14.4h)
+            var m42CncStart = GetMachineAvailable("LATHE2", m42EdmStart.AddHours(2.1));
+            await CreateStageExec(j, "cnc-turning", "LATHE2", StageExecutionStatus.NotStarted,
+                m42CncStart, m42CncStart.AddHours(14.4), null, null, 14.4, null, 1296m, null);
+            SetMachineWatermark("LATHE2", m42CncStart.AddHours(14.4));
             await db.SaveChangesAsync();
         }
 
@@ -3067,8 +3229,53 @@ public class DataSeedingService : IDataSeedingService
         // These have ScheduledDate set so they render as bars on the Gantt.
         // ════════════════════════════════════════════════════════════
 
+        // ── Helper: calculate next SLS build start after changeover ──
+        // Auto-changeover is 30min. If the previous build ends outside operator shift,
+        // the machine goes DOWN until an operator can clear the cooldown chamber.
+        static DateTime NextBuildStart(DateTime previousBuildEnd)
+        {
+            const double changeoverHours = 0.5; // 30 minutes
+
+            // Check if the changeover window (when operator must unload cooldown) falls in shift
+            bool duringShift = previousBuildEnd.DayOfWeek != DayOfWeek.Saturday
+                && previousBuildEnd.DayOfWeek != DayOfWeek.Sunday
+                && previousBuildEnd.Hour >= 6 && previousBuildEnd.Hour < 18;
+
+            if (duringShift)
+            {
+                // Operator available — safe changeover, next build starts after 30min
+                return previousBuildEnd.AddHours(changeoverHours);
+            }
+            else
+            {
+                // No operator — machine goes DOWN until next shift start, then 30min changeover
+                var nextShift = NextShiftStart(previousBuildEnd);
+                return nextShift.AddHours(changeoverHours);
+            }
+        }
+
+        // ── Helper: create all downstream stage executions for a scheduled build ──
+        async Task CreateScheduledDownstream(Job job, DateTime printEnd,
+            (string slug, string mid, double hrs, decimal cost)[] routing, int? progId = null)
+        {
+            // Skip sls-printing (index 0) — already created by caller
+            var t = printEnd.AddHours(0.5);
+            foreach (var (slug, mid, hrs, cost) in routing.Skip(1))
+            {
+                // Find earliest slot: after predecessor AND after this machine is free
+                t = GetMachineAvailable(mid, t);
+                var end = t.AddHours(hrs);
+                await CreateStageExec(job, slug, mid, StageExecutionStatus.NotStarted,
+                    t, end, null, null, hrs, null, cost, null);
+                SetMachineWatermark(mid, end);
+                t = end.AddHours(0.15); // small gap before next stage
+            }
+            await db.SaveChangesAsync();
+        }
+
         // M4-1 next up: Tinman 56x → wo8 (starts after active Gargoyle finishes + changeover)
-        var m41NextStart = activeM41Start.AddHours(18.5 + 1.0); // Gargoyle finishes + 1h changeover
+        var m41PrevEnd = activeM41Start.AddHours(18.5); // Gargoyle finishes
+        var m41NextStart = NextBuildStart(m41PrevEnd);
         var schedM41a = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #8", ProgramType.BuildPlate,
             ProgramScheduleStatus.Scheduled, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
             false, m41NextStart, null, null, null, masterTinman.Id, "M4-1");
@@ -3077,12 +3284,12 @@ public class DataSeedingService : IDataSeedingService
             var j = await CreateJob(tinman, Mid("M4-1"), 56, JobScope.Build, JobStatus.Scheduled,
                 m41NextStart, m41NextStart.AddHours(50), null, null, wo8);
             await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
-                m41NextStart, m41NextStart.AddHours(22.5), null, null, 22.5, null, 5063m, null, schedM41a.Id);
-            await db.SaveChangesAsync();
+                m41NextStart, m41NextStart.AddHours(22.5), null, null, 22.5, null, 1913m, null, schedM41a.Id);
+            await CreateScheduledDownstream(j, m41NextStart.AddHours(22.5), tinmanRouting, schedM41a.Id);
         }
 
         // M4-1 after that: Gargoyle 72x → wo8 (starts after Tinman)
-        var m41Next2Start = m41NextStart.AddHours(22.5 + 1.0);
+        var m41Next2Start = NextBuildStart(m41NextStart.AddHours(22.5));
         var schedM41b = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #4", ProgramType.BuildPlate,
             ProgramScheduleStatus.Scheduled, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
             false, m41Next2Start, null, null, null, masterGargoyle.Id, "M4-1");
@@ -3091,12 +3298,12 @@ public class DataSeedingService : IDataSeedingService
             var j = await CreateJob(gargoyle, Mid("M4-1"), 72, JobScope.Build, JobStatus.Scheduled,
                 m41Next2Start, m41Next2Start.AddHours(50), null, null, wo8);
             await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
-                m41Next2Start, m41Next2Start.AddHours(18.5), null, null, 18.5, null, 4163m, null, schedM41b.Id);
-            await db.SaveChangesAsync();
+                m41Next2Start, m41Next2Start.AddHours(18.5), null, null, 18.5, null, 1573m, null, schedM41b.Id);
+            await CreateScheduledDownstream(j, m41Next2Start.AddHours(18.5), gargoyleRouting, schedM41b.Id);
         }
 
         // M4-1 third: Tinman 56x → wo8 (4th Tinman build for wo8's 224 total)
-        var m41Next3Start = m41Next2Start.AddHours(18.5 + 1.0);
+        var m41Next3Start = NextBuildStart(m41Next2Start.AddHours(18.5));
         var schedM41c = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #9", ProgramType.BuildPlate,
             ProgramScheduleStatus.Scheduled, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
             false, m41Next3Start, null, null, null, masterTinman.Id, "M4-1");
@@ -3105,13 +3312,13 @@ public class DataSeedingService : IDataSeedingService
             var j = await CreateJob(tinman, Mid("M4-1"), 56, JobScope.Build, JobStatus.Scheduled,
                 m41Next3Start, m41Next3Start.AddHours(50), null, null, wo8);
             await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
-                m41Next3Start, m41Next3Start.AddHours(22.5), null, null, 22.5, null, 5063m, null, schedM41c.Id);
-            await db.SaveChangesAsync();
+                m41Next3Start, m41Next3Start.AddHours(22.5), null, null, 22.5, null, 1913m, null, schedM41c.Id);
+            await CreateScheduledDownstream(j, m41Next3Start.AddHours(22.5), tinmanRouting, schedM41c.Id);
         }
 
         // M4-2 next up: Handyman 64x → wo9 (starts after Pilate DS changeover)
-        // M4-2 is in post-print (Pilate DS done printing), machine is actually free for next build
-        var m42NextStart = now.AddHours(2); // starts in ~2 hours once changeover done
+        // M4-2 print finished at activeM42End, use changeover logic
+        var m42NextStart = NextBuildStart(activeM42End);
         var schedM42a = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #5", ProgramType.BuildPlate,
             ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
             false, m42NextStart, null, null, null, masterHandyman.Id, "M4-2");
@@ -3120,12 +3327,12 @@ public class DataSeedingService : IDataSeedingService
             var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
                 m42NextStart, m42NextStart.AddHours(50), null, null, wo9);
             await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
-                m42NextStart, m42NextStart.AddHours(20.0), null, null, 20.0, null, 4500m, null, schedM42a.Id);
-            await db.SaveChangesAsync();
+                m42NextStart, m42NextStart.AddHours(20.0), null, null, 20.0, null, 1700m, null, schedM42a.Id);
+            await CreateScheduledDownstream(j, m42NextStart.AddHours(20.0), handymanRouting, schedM42a.Id);
         }
 
         // M4-2 after that: Handyman 64x → wo9 batch 2
-        var m42Next2Start = m42NextStart.AddHours(20.0 + 1.0);
+        var m42Next2Start = NextBuildStart(m42NextStart.AddHours(20.0));
         var schedM42b = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #6", ProgramType.BuildPlate,
             ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
             false, m42Next2Start, null, null, null, masterHandyman.Id, "M4-2");
@@ -3134,12 +3341,12 @@ public class DataSeedingService : IDataSeedingService
             var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
                 m42Next2Start, m42Next2Start.AddHours(50), null, null, wo9);
             await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
-                m42Next2Start, m42Next2Start.AddHours(20.0), null, null, 20.0, null, 4500m, null, schedM42b.Id);
-            await db.SaveChangesAsync();
+                m42Next2Start, m42Next2Start.AddHours(20.0), null, null, 20.0, null, 1700m, null, schedM42b.Id);
+            await CreateScheduledDownstream(j, m42Next2Start.AddHours(20.0), handymanRouting, schedM42b.Id);
         }
 
         // M4-2 third: Handyman 64x → wo9 batch 3 (last of 3 needed for 192 total)
-        var m42Next3Start = m42Next2Start.AddHours(20.0 + 1.0);
+        var m42Next3Start = NextBuildStart(m42Next2Start.AddHours(20.0));
         var schedM42c = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #7", ProgramType.BuildPlate,
             ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
             false, m42Next3Start, null, null, null, masterHandyman.Id, "M4-2");
@@ -3148,8 +3355,8 @@ public class DataSeedingService : IDataSeedingService
             var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
                 m42Next3Start, m42Next3Start.AddHours(50), null, null, wo9);
             await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
-                m42Next3Start, m42Next3Start.AddHours(20.0), null, null, 20.0, null, 4500m, null, schedM42c.Id);
-            await db.SaveChangesAsync();
+                m42Next3Start, m42Next3Start.AddHours(20.0), null, null, 20.0, null, 1700m, null, schedM42c.Id);
+            await CreateScheduledDownstream(j, m42Next3Start.AddHours(20.0), handymanRouting, schedM42c.Id);
         }
 
         // ════════════════════════════════════════════════════════════
@@ -3168,6 +3375,23 @@ public class DataSeedingService : IDataSeedingService
             ProgramScheduleStatus.Ready, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
             false, null, null, null, null, masterGargoyle.Id);
         await LinkProgParts(readyM41b, [(gargoyle, 72, 1, wo10)]);
+
+        // ════════════════════════════════════════════════════════════
+        // LINK CNC PROGRAMS TO STAGE EXECUTIONS — enables tool-based dispatch
+        // ════════════════════════════════════════════════════════════
+        if (cncTurningStageId > 0)
+        {
+            var cncExecs = await db.StageExecutions
+                .Include(se => se.Job)
+                .Where(se => se.ProductionStageId == cncTurningStageId && se.MachineProgramId == null)
+                .ToListAsync();
+            foreach (var se in cncExecs)
+            {
+                if (se.Job != null && partCncPrograms.TryGetValue(se.Job.PartId, out var prog))
+                    se.MachineProgramId = prog.Id;
+            }
+            if (cncExecs.Any()) await db.SaveChangesAsync();
+        }
 
         // ════════════════════════════════════════════════════════════
         // UPDATE WO LINE QUANTITIES — mark produced/shipped
@@ -3268,8 +3492,38 @@ public class DataSeedingService : IDataSeedingService
             });
         }
 
+        // Per-machine configs for CNC Turning lathes (auto-dispatch with part-specific setup)
+        var cncTurningStage = await db.ProductionStages.FirstOrDefaultAsync(s => s.StageSlug == "cnc-turning");
+        foreach (var latheId in new[] { "LATHE1", "LATHE2" })
+        {
+            var lathe = machines.FirstOrDefault(m => m.MachineId == latheId);
+            if (lathe != null)
+            {
+                db.DispatchConfigurations.Add(new DispatchConfiguration
+                {
+                    MachineId = lathe.Id,
+                    ProductionStageId = cncTurningStage?.Id,
+                    AutoDispatchEnabled = true,
+                    MaxQueueDepth = 3,
+                    LookAheadHours = 24,
+                    DueDateWeight = 0.35m,
+                    ChangeoverPenaltyWeight = 0.45m,
+                    ThroughputWeight = 0.20m,
+                    MaintenanceBufferHours = 4,
+                    RequiresVerification = true,
+                    AutoAssignOperator = true,
+                    NotifyOnDispatch = true,
+                    BatchGroupingWindowHours = 12,
+                    RequiresSchedulerApproval = false
+                });
+            }
+        }
+
         // Seed operator setup profiles for demo operator
         var admin = await db.Users.FirstOrDefaultAsync(u => u.Role == "Admin");
+        var operator1 = await db.Users.FirstOrDefaultAsync(u => u.Username == "operator1");
+        var operator2 = await db.Users.FirstOrDefaultAsync(u => u.Username == "operator2");
+
         if (admin != null)
         {
             foreach (var machine in machines.Take(3))
@@ -3288,8 +3542,63 @@ public class DataSeedingService : IDataSeedingService
             }
         }
 
+        // Lathe-specific operator setup profiles — trained operators for each part/lathe combo
+        var lathe1 = machines.FirstOrDefault(m => m.MachineId == "LATHE1");
+        var lathe2 = machines.FirstOrDefault(m => m.MachineId == "LATHE2");
+
+        // LATHE1 setup profiles: Tinman + Handyman (operator1 is primary, admin backup)
+        if (lathe1 != null)
+        {
+            foreach (var (user, proficiency, isPreferred) in new[] {
+                (operator1, 5, true), (admin, 3, false) })
+            {
+                if (user == null) continue;
+                db.OperatorSetupProfiles.Add(new OperatorSetupProfile
+                {
+                    UserId = user.Id,
+                    MachineId = lathe1.Id,
+                    AverageSetupMinutes = 12,
+                    SampleCount = 25,
+                    VarianceMinutes = 3,
+                    FastestSetupMinutes = 8,
+                    ProficiencyLevel = proficiency,
+                    IsPreferred = isPreferred
+                });
+            }
+        }
+
+        // LATHE2 setup profiles: Gargoyle + Pilate (operator2 is primary, admin backup)
+        if (lathe2 != null)
+        {
+            foreach (var (user, proficiency, isPreferred) in new[] {
+                (operator2, 5, true), (admin, 3, false) })
+            {
+                if (user == null) continue;
+                db.OperatorSetupProfiles.Add(new OperatorSetupProfile
+                {
+                    UserId = user.Id,
+                    MachineId = lathe2.Id,
+                    AverageSetupMinutes = 10,
+                    SampleCount = 30,
+                    VarianceMinutes = 2,
+                    FastestSetupMinutes = 7,
+                    ProficiencyLevel = proficiency,
+                    IsPreferred = isPreferred
+                });
+            }
+        }
+
         // Seed completed dispatches + history for analytics
         var programs = await db.MachinePrograms.Take(3).ToListAsync();
+        // Set CurrentProgramId on lathes (what's currently loaded)
+        // LATHE1 has Tinman program loaded, LATHE2 has Gargoyle program loaded
+        var lathe1Db = await db.Machines.FirstOrDefaultAsync(m => m.MachineId == "LATHE1");
+        var lathe2Db = await db.Machines.FirstOrDefaultAsync(m => m.MachineId == "LATHE2");
+        var cncTinmanProg = await db.MachinePrograms.FirstOrDefaultAsync(p => p.ProgramNumber == "EMC-TIN-001-TURN-01");
+        var cncGargoyleProg = await db.MachinePrograms.FirstOrDefaultAsync(p => p.ProgramNumber == "EMC-GAR-001-TURN-01");
+        if (lathe1Db != null && cncTinmanProg != null) { lathe1Db.CurrentProgramId = cncTinmanProg.Id; lathe1Db.SetupState = MachineSetupState.SetUp; }
+        if (lathe2Db != null && cncGargoyleProg != null) { lathe2Db.CurrentProgramId = cncGargoyleProg.Id; lathe2Db.SetupState = MachineSetupState.SetUp; }
+        await db.SaveChangesAsync();
         var now = DateTime.UtcNow;
         for (int i = 0; i < 15; i++)
         {
@@ -3329,6 +3638,155 @@ public class DataSeedingService : IDataSeedingService
                 CompletedAt = completedAt,
                 QualityResult = i % 5 == 0 ? "conditional" : "pass"
             });
+        }
+
+        // Lathe-specific dispatches — completed setups for CNC Turning program
+        // LATHE1: Tinman + Handyman setups (10 completed dispatches)
+        // LATHE2: Gargoyle + Pilate setups (10 completed dispatches)
+        // Lookup per-part CNC programs for dispatch history
+        var cncHandymanProg = await db.MachinePrograms.FirstOrDefaultAsync(p => p.ProgramNumber == "EMC-HAN-001-TURN-01");
+        var cncPilateProg = await db.MachinePrograms.FirstOrDefaultAsync(p => p.ProgramNumber == "EMC-PIL-001-TURN-01");
+        var latheDispProgMap = new Dictionary<string, MachineProgram?> {
+            { "Tinman", cncTinmanProg }, { "Handyman", cncHandymanProg },
+            { "Gargoyle", cncGargoyleProg }, { "Pilate", cncPilateProg }
+        };
+
+        var latheDispatches = new[] {
+            (lathe1, operator1, "Tinman",   12.0, 10.5),
+            (lathe1, operator1, "Handyman", 11.0, 10.0),
+            (lathe1, operator1, "Tinman",   12.5, 11.0),
+            (lathe1, operator1, "Handyman", 10.5, 9.5),
+            (lathe1, operator1, "Tinman",   11.5, 10.0),
+            (lathe2, operator2, "Gargoyle",  9.0,  8.0),
+            (lathe2, operator2, "Pilate",    8.5,  7.5),
+            (lathe2, operator2, "Gargoyle", 10.0,  8.5),
+            (lathe2, operator2, "Pilate",    9.5,  8.0),
+            (lathe2, operator2, "Gargoyle",  9.0,  7.0),
+        };
+        for (int i = 0; i < latheDispatches.Length; i++)
+        {
+            var (lathe, op, partName, estMin, actMin) = latheDispatches[i];
+            if (lathe == null) continue;
+            var completedAt = now.AddDays(-(i * 3 + 1));
+            var isChangeover = i > 0 && latheDispatches[i].Item3 != latheDispatches[i - 1].Item3
+                && latheDispatches[i].Item1 == latheDispatches[i - 1].Item1;
+            latheDispProgMap.TryGetValue(partName, out var dispProg);
+
+            var dispatch = new SetupDispatch
+            {
+                DispatchNumber = $"DSP-LATHE-{i + 1:D4}",
+                MachineId = lathe.Id,
+                MachineProgramId = dispProg?.Id,
+                DispatchType = isChangeover ? DispatchType.Changeover : DispatchType.Setup,
+                Status = DispatchStatus.Completed,
+                Priority = 60,
+                EstimatedSetupMinutes = estMin,
+                ActualSetupMinutes = actMin,
+                QueuedAt = completedAt.AddHours(-1),
+                StartedAt = completedAt.AddMinutes(-actMin),
+                CompletedAt = completedAt,
+                AssignedOperatorId = op?.Id,
+                CreatedBy = "seed"
+            };
+            db.SetupDispatches.Add(dispatch);
+            await db.SaveChangesAsync();
+
+            db.SetupHistories.Add(new SetupHistory
+            {
+                SetupDispatchId = dispatch.Id,
+                MachineId = lathe.Id,
+                MachineProgramId = dispProg?.Id,
+                OperatorUserId = op?.Id,
+                SetupDurationMinutes = actMin,
+                ChangeoverDurationMinutes = isChangeover ? actMin * 0.4 : null,
+                WasChangeover = isChangeover,
+                CompletedAt = completedAt,
+                QualityResult = "pass"
+            });
+        }
+
+        // ── Pending changeover dispatches — tool swaps needed for queued demand ──
+        // LATHE1 has Tinman loaded, but Handyman parts are queued → changeover needed
+        // LATHE2 has Gargoyle loaded, but Pilate parts are queued → changeover needed
+        var cncHandymanProg2 = await db.MachinePrograms.FirstOrDefaultAsync(p => p.ProgramNumber == "EMC-HAN-001-TURN-01");
+        var cncPilateProg2 = await db.MachinePrograms.FirstOrDefaultAsync(p => p.ProgramNumber == "EMC-PIL-001-TURN-01");
+
+        // Find a Handyman CNC execution on LATHE1 that needs changeover
+        var lathe1IntId = lathe1?.Id ?? 0;
+        var hanProgId = cncHandymanProg2?.Id ?? 0;
+        var handymanExec = lathe1IntId > 0 && hanProgId > 0 ? await db.StageExecutions
+            .Include(se => se.Job)
+            .Where(se => se.ProductionStageId == cncTurningStage.Id
+                && se.MachineId == lathe1IntId
+                && se.Status == StageExecutionStatus.NotStarted
+                && se.MachineProgramId == hanProgId
+                && se.SetupDispatchId == null)
+            .FirstOrDefaultAsync() : null;
+
+        if (handymanExec != null && lathe1 != null && cncHandymanProg2 != null)
+        {
+            var d = new SetupDispatch
+            {
+                DispatchNumber = "DSP-PEND-0001",
+                MachineId = lathe1.Id,
+                MachineProgramId = cncHandymanProg2.Id,
+                StageExecutionId = handymanExec.Id,
+                JobId = handymanExec.JobId,
+                PartId = handymanExec.Job?.PartId,
+                DispatchType = DispatchType.Changeover,
+                Status = DispatchStatus.Queued,
+                Priority = 70,
+                PriorityReason = "Tool changeover: Tinman → Handyman (2 tool changes: bore bar T2, thread tap T7)",
+                ChangeoverFromProgramId = cncTinmanProg?.Id,
+                ChangeoverToProgramId = cncHandymanProg2.Id,
+                ToolingRequired = "Swap T2: 7.62mm bore bar → 9mm bore bar; Add T7: M13.5x1 LH thread tap",
+                EstimatedSetupMinutes = 12,
+                IsAutoGenerated = true,
+                QueuedAt = now,
+                CreatedBy = "system"
+            };
+            db.SetupDispatches.Add(d);
+            await db.SaveChangesAsync();
+            handymanExec.SetupDispatchId = d.Id;
+        }
+
+        // Find a Pilate CNC execution on LATHE2 that needs changeover
+        var lathe2IntId = lathe2?.Id ?? 0;
+        var pilProgId = cncPilateProg2?.Id ?? 0;
+        var pilateExec = lathe2IntId > 0 && pilProgId > 0 ? await db.StageExecutions
+            .Include(se => se.Job)
+            .Where(se => se.ProductionStageId == cncTurningStage.Id
+                && se.MachineId == lathe2IntId
+                && se.Status == StageExecutionStatus.NotStarted
+                && se.MachineProgramId == pilProgId
+                && se.SetupDispatchId == null)
+            .FirstOrDefaultAsync() : null;
+
+        if (pilateExec != null && lathe2 != null && cncPilateProg2 != null)
+        {
+            var d = new SetupDispatch
+            {
+                DispatchNumber = "DSP-PEND-0002",
+                MachineId = lathe2.Id,
+                MachineProgramId = cncPilateProg2.Id,
+                StageExecutionId = pilateExec.Id,
+                JobId = pilateExec.JobId,
+                PartId = pilateExec.Job?.PartId,
+                DispatchType = DispatchType.Changeover,
+                Status = DispatchStatus.Queued,
+                Priority = 65,
+                PriorityReason = "Tool changeover: Gargoyle → Pilate (2 tool changes: bore bar T2, remove groove tool T4)",
+                ChangeoverFromProgramId = cncGargoyleProg?.Id,
+                ChangeoverToProgramId = cncPilateProg2.Id,
+                ToolingRequired = "Swap T2: 5.56mm bore bar → .22 bore bar; Remove T4: ID groove tool (Pilate uses T4 for chamfer)",
+                EstimatedSetupMinutes = 10,
+                IsAutoGenerated = true,
+                QueuedAt = now,
+                CreatedBy = "system"
+            };
+            db.SetupDispatches.Add(d);
+            await db.SaveChangesAsync();
+            pilateExec.SetupDispatchId = d.Id;
         }
 
         await db.SaveChangesAsync();

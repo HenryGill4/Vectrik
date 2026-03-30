@@ -100,12 +100,7 @@ else if (_viewMode == "demand")
 }
 else if (_viewMode == "dispatch")
 {
-    <DispatchView DemandSummaries="_dispatchDemand"
-                  MachineAvailability="_machineAvailability"
-                  Recommendations="_dispatchRecommendations"
-                  Templates="_dispatchTemplates"
-                  DraftPrograms="_draftPrograms"
-                  OnOpenAdvisorForMachine="OpenBuildAdvisorForMachine"
+    <DispatchView OnOpenAdvisorForMachine="OpenBuildAdvisorForMachine"
                   OnOpenAdvisorForPart="OpenBuildAdvisorForPart"
                   OnInstantiateTemplate="HandleInstantiateTemplateAsync"
                   OnRefreshRequested="() => LoadData(isBackgroundRefresh: true)" />
@@ -198,12 +193,7 @@ else if (_viewMode == "data")
     private List<OperatingShift> _shifts = new();
     private BottleneckReport? _bottleneckReport;
 
-    // Dispatch view data
-    private List<DemandSummary> _dispatchDemand = new();
-    private List<MachineAvailabilitySummary> _machineAvailability = new();
-    private List<BuildRecommendation> _dispatchRecommendations = new();
-    private List<BuildTemplate> _dispatchTemplates = new();
-    private List<MachineProgram> _draftPrograms = new();
+    // (Dispatch view is now self-loading — no parent data needed)
 
     private GanttView? _ganttView;
     private PartPathView? _partPathView;
@@ -366,7 +356,7 @@ else if (_viewMode == "data")
                 await LoadDemandDataAsync();
                 break;
             case "dispatch":
-                await LoadDispatchDataAsync();
+                // Dispatch view is self-loading
                 break;
             case "data":
                 await LoadDataViewAsync();
@@ -397,26 +387,7 @@ else if (_viewMode == "data")
         _executions = await StageService.GetScheduledExecutionsAsync(_dataRangeStart, _dataRangeEnd);
     }
 
-    private async Task LoadDispatchDataAsync()
-    {
-        _dispatchDemand = await BuildAdvisor.GetAggregateDemandAsync();
-        _machineAvailability = await BuildAdvisor.GetMachineAvailabilitySummaryAsync();
-        _draftPrograms = await ProgramScheduling.GetDraftProgramsAwaitingScheduleAsync();
-
-        // Load templates matched to current demand
-        var demandPartIds = _dispatchDemand.Where(d => d.IsAdditive && d.NetRemaining > 0).Select(d => d.PartId).ToList();
-        _dispatchTemplates = await TemplateService.GetTemplatesWithDemandMatchAsync(demandPartIds);
-
-        // Get recommendations for each SLS machine (in parallel)
-        var recTasks = SlsMachines.Select(async m =>
-        {
-            try { return await BuildAdvisor.RecommendNextBuildAsync(m.Id); }
-            catch { return null; }
-        });
-        _dispatchRecommendations = (await Task.WhenAll(recTasks))
-            .Where(r => r != null && r.Plate.Parts.Any())
-            .ToList()!;
-    }
+    // Dispatch view is self-loading — no parent data method needed
 
     private async Task OnViewModeChangedAsync(string newMode)
     {
