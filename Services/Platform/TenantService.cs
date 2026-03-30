@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Vectrik.Data;
 using Vectrik.Models;
 using Vectrik.Models.Platform;
@@ -85,7 +86,12 @@ public class TenantService : ITenantService
 
     public async Task<Tenant> UpdateTenantAsync(Tenant tenant)
     {
-        _platformDb.Tenants.Update(tenant);
+        var entry = _platformDb.Entry(tenant);
+        if (entry.State == EntityState.Detached)
+            _platformDb.Tenants.Update(tenant);
+        // If already tracked (Added/Modified/Unchanged), just mark modified
+        else if (entry.State == EntityState.Unchanged)
+            entry.State = EntityState.Modified;
         await _platformDb.SaveChangesAsync();
         return tenant;
     }
@@ -115,28 +121,45 @@ public class TenantService : ITenantService
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
 
-        // Use an explicit connection so PRAGMA foreign_keys = OFF survives across
-        // all commands executed by MigrateAsync (SQLite table-rebuild migrations
-        // can fail with 'FOREIGN KEY constraint failed' when FK enforcement is on).
-        await using var connection = new SqliteConnection($"Data Source={dbPath}");
-        await connection.OpenAsync();
-
-        await using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "PRAGMA foreign_keys = OFF;";
-            await cmd.ExecuteNonQueryAsync();
-        }
-
+        var connStr = $"Data Source={dbPath}";
         var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlite(connection)
+            .UseSqlite(connStr)
+            .ConfigureWarnings(w => w.Ignore(
+                Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
             .Options;
 
         using var tenantDb = new TenantDbContext(options);
-        await tenantDb.Database.MigrateAsync();
 
-        // Re-enable FK enforcement for seeding and normal operation
-        await tenantDb.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
+        // Check if this is a new database BEFORE opening the connection.
+        var isNew = !File.Exists(dbPath) || new FileInfo(dbPath).Length == 0;
 
+        if (isNew)
+        {
+            await tenantDb.Database.EnsureCreatedAsync();
+
+            // EnsureCreated doesn't populate __EFMigrationsHistory, so Migrate()
+            // in TenantDbContextFactory would re-run all migrations and fail.
+            // Seed the history table with all known migration IDs.
+            await tenantDb.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+                    ""MigrationId"" TEXT NOT NULL PRIMARY KEY,
+                    ""ProductVersion"" TEXT NOT NULL
+                );");
+            var migrationsAssembly = tenantDb.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrationsAssembly>();
+            foreach (var migrationId in migrationsAssembly.Migrations.Keys)
+            {
+                await tenantDb.Database.ExecuteSqlRawAsync(
+                    $@"INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") VALUES ('{migrationId}', '10.0.0');");
+            }
+        }
+        else
+        {
+            await tenantDb.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF;");
+            await tenantDb.Database.MigrateAsync();
+            await tenantDb.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
+        }
+
+        // Use DataSeedingService when available
         var seedingService = _serviceProvider.GetService<IDataSeedingService>();
         if (seedingService != null)
         {

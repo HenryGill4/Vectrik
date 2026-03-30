@@ -68,7 +68,13 @@ public class DispatchGenerationBackgroundService : BackgroundService
 
     private async Task GenerateForTenantAsync(string tenantCode, CancellationToken stoppingToken)
     {
-        using var tenantDb = TenantDbContextFactory.CreateDbContext(tenantCode);
+        // Create a scope and set the tenant context BEFORE resolving any tenant-scoped services.
+        // This ensures TenantDbContextFactory (and all services that depend on it) use the correct tenant DB.
+        using var scope = _scopeFactory.CreateScope();
+        var tenantContext = (Platform.TenantContext)scope.ServiceProvider.GetRequiredService<Platform.ITenantContext>();
+        tenantContext.TenantCode = tenantCode;
+
+        var tenantDb = scope.ServiceProvider.GetRequiredService<TenantDbContext>();
 
         // Check if auto-dispatch is globally enabled
         var autoEnabled = await tenantDb.SystemSettings
@@ -76,8 +82,6 @@ public class DispatchGenerationBackgroundService : BackgroundService
         if (autoEnabled?.Value?.Equals("true", StringComparison.OrdinalIgnoreCase) != true)
             return;
 
-        // Create a scoped service provider with the tenant DB context
-        using var scope = _scopeFactory.CreateScope();
         var generationService = scope.ServiceProvider.GetRequiredService<IDispatchGenerationService>();
 
         var generated = await generationService.GenerateDispatchSuggestionsAsync();

@@ -480,7 +480,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var notBefore = startAfter ?? DateTime.UtcNow;
         var bestSlot = await FindBestSlotAsync(copy.EstimatedPrintHours!.Value, notBefore, machineType: "SLS");
 
-        return await ScheduleBuildPlateAsync(copy.Id, bestSlot.MachineId, startAfter);
+        return await ScheduleBuildPlateAsync(copy.Id, bestSlot.MachineId, bestSlot.Slot.PrintStart);
     }
 
     // ══════════════════════════════════════════════════════════
@@ -540,6 +540,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var executions = new List<StageExecution>();
         var currentStart = notBefore;
         var sortOrder = 0;
+        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
 
         if (process?.Stages.Any() == true)
         {
@@ -565,7 +566,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 var costEstimate = await _costService.EstimateCostAsync(
                     stage.ProductionStageId, estimatedHours, quantity, 1);
 
-                var scheduledEnd = currentStart.AddHours(estimatedHours);
+                var scheduledEnd = ShiftTimeHelper.AdvanceByWorkHours(currentStart, estimatedHours, shifts);
 
                 var execution = new StageExecution
                 {
@@ -600,7 +601,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 ? programDuration.TotalMinutes / 60.0
                 : 1.0;
 
-            var scheduledEnd = currentStart.AddHours(estimatedHours);
+            var scheduledEnd = ShiftTimeHelper.AdvanceByWorkHours(currentStart, estimatedHours, shifts);
             var defaultStageId = await GetOrCreateDefaultStageIdAsync(program.MachineType ?? "CNC");
 
             var execution = new StageExecution
@@ -677,7 +678,10 @@ public class ProgramSchedulingService : IProgramSchedulingService
                     throw new InvalidOperationException("No machine assigned to the build plate program.");
 
                 var buildResult = await ScheduleBuildPlateAsync(buildPlateProgram.Id, machineId.Value, startAfter);
-                var buildJob = buildResult.StageExecutions.FirstOrDefault()?.Job;
+                var buildJobId = buildResult.StageExecutions.FirstOrDefault()?.JobId;
+                var buildJob = buildJobId.HasValue
+                    ? await _db.Jobs.FindAsync(buildJobId.Value)
+                    : null;
 
                 return new WorkOrderScheduleResult(
                     buildJob?.Id ?? 0,

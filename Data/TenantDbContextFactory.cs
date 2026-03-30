@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Vectrik.Services.Platform;
 
 namespace Vectrik.Data;
@@ -41,6 +42,7 @@ public class TenantDbContextFactory
 
         var options = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlite($"Data Source={dbPath}")
+            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
             .Options;
 
         var context = new TenantDbContext(options);
@@ -76,6 +78,7 @@ public class TenantDbContextFactory
 
         var options = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlite($"Data Source={dbPath}")
+            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
             .Options;
 
         var context = new TenantDbContext(options);

@@ -17,7 +17,7 @@ public enum WorkOrderStatus
 
 public enum QuoteStatus
 {
-    Draft, Sent, Accepted, Rejected, Expired
+    Draft, Sent, Accepted, Rejected, Expired, Archived
 }
 
 public enum QuoteLossReason

@@ -1,4 +1,5 @@
 @page "/shopfloor/stage/{Slug}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject IStageService StageService
 @inject IMachineProgramService ProgramService
 @inject ToastService Toast
@@ -58,8 +59,8 @@ else
                                 <td><input type="checkbox" checked="@_selectedQueueIds.Contains(exec.Id)" @onchange="e => ToggleQueueSelection(exec.Id, (bool)(e.Value ?? false))" /></td>
                                 <td>@exec.Job?.Part?.PartNumber</td>
                                 <td>#@exec.JobId</td>
-                                <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
-                                <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
+                                <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority.ToString() ?? "—")</span></td>
+                                <td>@(exec.Job?.ScheduledEnd.ToString("MM/dd") ?? "—")</td>
                                 <td><button class="btn btn-sm btn-primary" @onclick="() => StartWork(exec.Id)" disabled="@_actionInProgress">Start</button></td>
                             </tr>
                         }

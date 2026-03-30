@@ -26,11 +26,11 @@ public class SchedulingService : ISchedulingService
     public async Task<JobScheduleDiagnostic> AutoScheduleJobWithDiagnosticsAsync(int jobId, DateTime? startAfter = null)
     {
         var diag = new JobScheduleDiagnostic();
-        await AutoScheduleJobCoreAsync(jobId, startAfter, diag);
+        diag = await AutoScheduleJobCoreAsync(jobId, startAfter, diag) ?? diag;
         return diag;
     }
 
-    private async Task AutoScheduleJobCoreAsync(int jobId, DateTime? startAfter, JobScheduleDiagnostic? diagnostics)
+    private async Task<JobScheduleDiagnostic?> AutoScheduleJobCoreAsync(int jobId, DateTime? startAfter, JobScheduleDiagnostic? diagnostics)
     {
         var job = await _db.Jobs
             .Include(j => j.Stages).ThenInclude(s => s.ProductionStage)
@@ -52,7 +52,7 @@ public class SchedulingService : ISchedulingService
         }
 
         var executions = job.Stages.OrderBy(s => s.SortOrder).ToList();
-        if (!executions.Any()) return;
+        if (!executions.Any()) return diagnostics;
 
         if (diagnostics is not null)
             diagnostics = diagnostics with { ExecutionCount = executions.Count };
@@ -212,7 +212,7 @@ public class SchedulingService : ISchedulingService
                         .Select(e => e.Job!.PartId)
                         .FirstOrDefaultAsync();
 
-                    if (lastPartOnMachine != job.PartId)
+                    if (lastPartOnMachine > 0 && lastPartOnMachine != job.PartId)
                         effectiveDuration += setupChangeover / 60.0; // Convert minutes to hours
                 }
 
@@ -258,6 +258,7 @@ public class SchedulingService : ISchedulingService
 
         job.LastModifiedDate = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+        return diagnostics;
     }
 
     public async Task<StageExecution> AutoScheduleExecutionAsync(int executionId, DateTime? startAfter = null)
@@ -332,7 +333,10 @@ public class SchedulingService : ISchedulingService
         var setupHours = exec.SetupHours ?? 0;
         var totalDuration = duration + setupHours;
 
-        var capableMachines = ResolveMachines(exec.ProductionStage!, requirement, exec.ProcessStage, allMachines);
+        if (exec.ProductionStage == null)
+            return exec;
+
+        var capableMachines = ResolveMachines(exec.ProductionStage, requirement, exec.ProcessStage, allMachines);
 
         if (capableMachines.Any())
         {

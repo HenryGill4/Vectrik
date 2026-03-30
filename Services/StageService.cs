@@ -179,6 +179,8 @@ public class StageService : IStageService
         var execution = await _db.StageExecutions
             .Include(e => e.ProductionStage)
             .Include(e => e.Job)
+                .ThenInclude(j => j!.Part)
+            .Include(e => e.Job)
                 .ThenInclude(j => j!.Stages)
             .FirstOrDefaultAsync(e => e.Id == executionId);
 

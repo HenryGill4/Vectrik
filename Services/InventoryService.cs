@@ -184,19 +184,83 @@ public class InventoryService : IInventoryService
 
     public async Task TransferAsync(int itemId, decimal qty, int fromLocationId, int toLocationId, string userId)
     {
+        var item = await _db.InventoryItems.FindAsync(itemId)
+            ?? throw new InvalidOperationException("Item not found.");
+
+        if (qty <= 0)
+            throw new InvalidOperationException("Transfer quantity must be greater than zero.");
+
+        // Find lots at the source location, oldest first (FIFO)
+        var sourceLots = await _db.InventoryLots
+            .Where(l => l.InventoryItemId == itemId
+                     && l.StockLocationId == fromLocationId
+                     && l.Status != LotStatus.Depleted
+                     && l.CurrentQty > 0)
+            .OrderBy(l => l.ReceivedAt)
+            .ToListAsync();
+
+        var totalAvailable = sourceLots.Sum(l => l.CurrentQty);
+        if (totalAvailable < qty)
+            throw new InvalidOperationException(
+                $"Insufficient stock at source location. Available: {totalAvailable}, Requested: {qty}");
+
+        var qtyBefore = item.CurrentStockQty;
+        var remaining = qty;
+
+        // Deduct from source lots FIFO and create/add to destination lots
+        foreach (var sourceLot in sourceLots)
+        {
+            if (remaining <= 0) break;
+
+            var deduct = Math.Min(sourceLot.CurrentQty, remaining);
+            sourceLot.CurrentQty -= deduct;
+            if (sourceLot.CurrentQty <= 0)
+                sourceLot.Status = LotStatus.Depleted;
+
+            // Find or create a matching lot at the destination location
+            var destLot = await _db.InventoryLots
+                .FirstOrDefaultAsync(l => l.InventoryItemId == itemId
+                                       && l.StockLocationId == toLocationId
+                                       && l.LotNumber == sourceLot.LotNumber
+                                       && l.Status != LotStatus.Depleted);
+
+            if (destLot != null)
+            {
+                destLot.CurrentQty += deduct;
+            }
+            else
+            {
+                _db.InventoryLots.Add(new InventoryLot
+                {
+                    InventoryItemId = itemId,
+                    LotNumber = sourceLot.LotNumber,
+                    CertificateNumber = sourceLot.CertificateNumber,
+                    ReceivedQty = deduct,
+                    CurrentQty = deduct,
+                    StockLocationId = toLocationId,
+                    ReceivedAt = DateTime.UtcNow,
+                    Status = LotStatus.Available
+                });
+            }
+
+            remaining -= deduct;
+        }
+
         _db.InventoryTransactions.Add(new InventoryTransaction
         {
             InventoryItemId = itemId,
             TransactionType = TransactionType.Transfer,
-            Quantity = 0,
-            QuantityBefore = 0,
-            QuantityAfter = 0,
+            Quantity = qty,
+            QuantityBefore = qtyBefore,
+            QuantityAfter = qtyBefore, // Transfer doesn't change total stock, just location
             FromLocationId = fromLocationId,
             ToLocationId = toLocationId,
             PerformedByUserId = userId,
             Reference = $"Transfer {fromLocationId} → {toLocationId}",
             TransactedAt = DateTime.UtcNow
         });
+
+        item.LastModifiedDate = DateTime.UtcNow;
         await _db.SaveChangesAsync();
     }
 

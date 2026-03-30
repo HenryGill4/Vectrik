@@ -1,4 +1,5 @@
 @page "/shopfloor"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @implements IDisposable
 @inject IStageService StageService
 @inject IMachineProgramService MachineProgramService
@@ -167,8 +168,8 @@
                                         }
                                     </td>
                                     <td>@(exec.ProductionStage?.Name ?? "—")</td>
-                                    <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
-                                    <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
+                                    <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority.ToString() ?? "—")</span></td>
+                                    <td>@(exec.Job?.ScheduledEnd.ToString("MM/dd") ?? "—")</td>
                                     <td>@(exec.Machine?.Name ?? "—")</td>
                                     <td>
                                         @if (_currentExecution == null)
@@ -211,8 +212,8 @@
                                         }
                                     </td>
                                     <td>@(exec.ProductionStage?.Name ?? "—")</td>
-                                    <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower())">@exec.Job?.Priority</span></td>
-                                    <td>@exec.Job?.ScheduledEnd.ToString("MM/dd")</td>
+                                    <td><span class="badge badge-@(exec.Job?.Priority.ToString().ToLower() ?? "normal")">@(exec.Job?.Priority.ToString() ?? "—")</span></td>
+                                    <td>@(exec.Job?.ScheduledEnd.ToString("MM/dd") ?? "—")</td>
                                     <td>@(exec.Machine?.Name ?? "—")</td>
                                     <td>
                                         @if (_currentExecution == null)
@@ -465,7 +466,7 @@
             // Build-level stage toast with context
             if (_currentExecution?.MachineProgramId != null)
             {
-                var nextStage = _currentExecution.ProductionStage.StageSlug switch
+                var nextStage = _currentExecution.ProductionStage?.StageSlug switch
                 {
                     "sls-printing" => "Depowdering",
                     "depowdering" => "Wire EDM",

@@ -1151,6 +1151,10 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.PricingContractId)
                 .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ConvertedWorkOrder)
+                .WithMany()
+                .HasForeignKey(e => e.ConvertedWorkOrderId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Setup Dispatch System ────────────────────────────────

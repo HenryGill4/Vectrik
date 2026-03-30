@@ -1,4 +1,5 @@
 @page "/quotes"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject IQuoteService QuoteService
 @inject IQuoteAnalyticsService QuoteAnalytics
 @inject ITenantFeatureService Features
@@ -212,7 +213,7 @@ else
     {
         foreach (var id in _selectedIds.ToList())
         {
-            try { await QuoteService.UpdateStatusAsync(id, QuoteStatus.Expired); } catch { }
+            try { await QuoteService.UpdateStatusAsync(id, QuoteStatus.Archived); } catch { }
         }
         _selectedIds.Clear();
         _allQuotes = await QuoteService.GetAllQuotesAsync();
@@ -225,7 +226,7 @@ else
         var expired = _allQuotes.Where(q => q.Status == QuoteStatus.Expired && q.ExpirationDate < DateTime.UtcNow).ToList();
         foreach (var q in expired)
         {
-            try { await QuoteService.UpdateStatusAsync(q.Id, QuoteStatus.Expired); } catch { }
+            try { await QuoteService.UpdateStatusAsync(q.Id, QuoteStatus.Archived); } catch { }
         }
         _allQuotes = await QuoteService.GetAllQuotesAsync();
         FilterByStatus(_statusFilter);
@@ -239,6 +240,7 @@ else
         QuoteStatus.Accepted => "badge-active",
         QuoteStatus.Rejected => "badge-cancelled",
         QuoteStatus.Expired => "badge-cancelled",
+        QuoteStatus.Archived => "badge-cancelled",
         _ => ""
     };
 }

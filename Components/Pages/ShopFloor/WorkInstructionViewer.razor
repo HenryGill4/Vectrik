@@ -1,4 +1,5 @@
 @page "/shopfloor/instructions/{Id:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject IWorkInstructionService InstructionService
 @inject ToastService Toast
 
@@ -168,12 +169,14 @@ else
 
 @code {
     [Parameter] public int Id { get; set; }
+    [CascadingParameter] private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
 
     private WorkInstruction? _instruction;
     private List<WorkInstructionStep> _orderedSteps = new();
     private int _currentStepIndex;
     private HashSet<int> _signedOffSteps = new();
     private int? _expandedMediaId;
+    private string _currentUserId = "Operator";
 
     private WorkInstructionStep CurrentStep => _orderedSteps[_currentStepIndex];
 
@@ -185,6 +188,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUserId = state.User.FindFirst("UserId")?.Value
+                ?? state.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                ?? "Operator";
+        }
+
         _instruction = await InstructionService.GetByIdAsync(Id);
         if (_instruction != null)
             _orderedSteps = _instruction.Steps.OrderBy(s => s.StepOrder).ToList();
@@ -225,7 +236,7 @@ else
                 WorkInstructionStepId = _orderedSteps[_currentStepIndex].Id,
                 FeedbackType = _feedbackType,
                 Comment = _feedbackComment?.Trim(),
-                OperatorUserId = "Operator" // TODO: Get from auth context
+                OperatorUserId = _currentUserId
             };
 
             await InstructionService.SubmitFeedbackAsync(feedback);

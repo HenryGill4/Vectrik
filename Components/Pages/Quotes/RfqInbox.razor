@@ -133,6 +133,8 @@ else
 <ConfirmDialog @ref="_confirm" />
 
 @code {
+    [CascadingParameter] private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
+
     private bool _loading = true;
     private List<RfqRequest> _allRfqs = new();
     private List<RfqRequest> _filtered = new();
@@ -140,6 +142,7 @@ else
     private RfqRequest? _selectedRfq;
     private bool _showDetail;
     private ConfirmDialog _confirm = null!;
+    private string _currentUser = "System";
 
     // Decline
     private bool _showDecline;
@@ -148,6 +151,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUser = state.User.FindFirst("FullName")?.Value
+                ?? state.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                ?? "System";
+        }
+
         try
         {
             _allRfqs = await QuoteService.GetRfqRequestsAsync();
@@ -183,7 +194,7 @@ else
         if (!await _confirm.ShowAsync($"Convert RFQ from {rfq.CompanyName} to a new quote?")) return;
         try
         {
-            var quote = await QuoteService.ConvertRfqToQuoteAsync(rfq.Id, "System");
+            var quote = await QuoteService.ConvertRfqToQuoteAsync(rfq.Id, _currentUser);
             Toast.ShowSuccess("Quote created from RFQ");
             Nav.NavigateTo($"/quotes/{quote.Id}/edit");
         }
@@ -205,7 +216,7 @@ else
         if (_declineRfq == null || string.IsNullOrWhiteSpace(_declineReason)) return;
         try
         {
-            await QuoteService.DeclineRfqAsync(_declineRfq.Id, _declineReason, "System");
+            await QuoteService.DeclineRfqAsync(_declineRfq.Id, _declineReason, _currentUser);
             _showDecline = false;
             _allRfqs = await QuoteService.GetRfqRequestsAsync();
             Filter(_filter);

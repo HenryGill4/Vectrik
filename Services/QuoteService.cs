@@ -243,7 +243,9 @@ public class QuoteService : IQuoteService
         quote.TotalEstimatedCost = quote.Lines.Sum(l => l.EstimatedCostPerPart * l.Quantity);
         quote.QuotedPrice = quote.Lines.Sum(l => l.QuotedPricePerPart * l.Quantity);
         quote.Markup = quote.QuotedPrice - quote.TotalEstimatedCost;
-        quote.EstimatedLaborCost = quote.Lines.Sum(l => (decimal)l.LaborMinutes / 60m * l.Quantity);
+        // TODO: Replace hardcoded rate with SystemSetting "costing.default_labor_rate" (see PricingEngineService.GetDefaultLaborRateAsync)
+        const decimal laborHourlyRate = 75m;
+        quote.EstimatedLaborCost = quote.Lines.Sum(l => (decimal)l.LaborMinutes / 60m * laborHourlyRate * l.Quantity);
         quote.EstimatedMaterialCost = quote.Lines.Sum(l => l.MaterialCostEach * l.Quantity);
         quote.EstimatedOverheadCost = quote.Lines.Sum(l => l.OverheadCostEach * l.Quantity);
         quote.LastModifiedDate = DateTime.UtcNow;
