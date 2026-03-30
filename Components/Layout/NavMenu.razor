@@ -39,7 +39,7 @@
             @* ──────────── PRODUCTION ──────────── *@
             @if (!isOperator)
             {
-                @if (SectionVisible("production", "Production Scheduler", "Capacity Dashboard", "Work Orders", "Quotes", "RFQ Inbox", "SLS Builds", "Production Batches", "Operation Costs", "Workflows"))
+                @if (SectionVisible("production", "Production Scheduler", "Capacity Dashboard", "Work Orders", "Quotes", "RFQ Inbox", "SLS Builds", "Production Batches", "Operation Costs", "Approvals", "Workflows"))
                 {
                     <NavSection @ref="_sectionRefs[SectionId.Production]" Title="Production" SectionKey="production">
                         @if (ItemVisible("Production Scheduler"))
@@ -91,6 +91,12 @@
                         {
                             <NavLink class="nav-item nav-item-admin" href="admin/operation-costs">
                                 <VIcon Name="receipt" /> Operation Costs
+                            </NavLink>
+                        }
+                        @if (ItemVisible("Approvals"))
+                        {
+                            <NavLink class="nav-item" href="approvals">
+                                <VIcon Name="check-circle" /> Approvals
                             </NavLink>
                         }
                         @if (isAdmin && ItemVisible("Workflows"))
@@ -416,6 +422,9 @@
                                 <VIcon Name="tag" /> Branding
                             </NavLink>
                         }
+                        <NavLink class="nav-item nav-item-admin" href="admin">
+                            <VIcon Name="shield" /> Admin Dashboard
+                        </NavLink>
                     }
                 </NavSection>
             }
@@ -502,6 +511,7 @@
         ("builds", SectionId.Production),
         ("production", SectionId.Production),
         ("admin/operation-costs", SectionId.Production),
+        ("approvals", SectionId.Production),
         ("admin/workflows", SectionId.Production),
         ("parts", SectionId.Engineering),
         ("programs", SectionId.Engineering),

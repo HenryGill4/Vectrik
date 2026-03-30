@@ -13,6 +13,7 @@
 @inject ITenantFeatureService Features
 @inject IWorkInstructionService WorkInstructionService
 @inject ICertifiedLayoutService CertifiedLayoutService
+@inject IWorkflowEngine WorkflowEngine
 @using System.Security.Claims
 @using System.Text.Json
 @using Microsoft.AspNetCore.Components.Authorization
@@ -1163,6 +1164,23 @@ else
         _buildProcessing = true;
         try
         {
+            // Gate activation behind workflow if defined
+            if (await WorkflowEngine.HasWorkflowAsync("MachineProgram"))
+            {
+                var pending = await WorkflowEngine.GetPendingAsync("MachineProgram", plate.Id);
+                if (pending == null)
+                {
+                    await WorkflowEngine.StartAsync("MachineProgram", plate.Id);
+                    Toast.ShowInfo("Program activation submitted for approval.");
+                    return;
+                }
+                if (pending.Status == "Pending")
+                {
+                    Toast.ShowWarning("Program is awaiting approval before activation.");
+                    return;
+                }
+            }
+
             plate.Status = ProgramStatus.Active;
             plate.LastModifiedBy = _currentUser;
             plate.LastModifiedDate = DateTime.UtcNow;

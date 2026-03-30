@@ -1,8 +1,10 @@
 @page "/quality/capa"
 @inject IQualityService QualityService
+@inject IWorkflowEngine WorkflowEngine
 @inject NavigationManager Nav
 @inject ToastService Toast
 @inject ITenantFeatureService Features
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>CAPA Board - Vectrik</PageTitle>
 
@@ -189,6 +191,24 @@ else
             }
             else
             {
+                // Check for workflow approval on closure
+                if (_edit.Status == CapaStatus.Closed && await WorkflowEngine.HasWorkflowAsync("CAPA"))
+                {
+                    var pending = await WorkflowEngine.GetPendingAsync("CAPA", _edit.Id);
+                    if (pending == null)
+                    {
+                        await WorkflowEngine.StartAsync("CAPA", _edit.Id);
+                        Toast.ShowInfo("CAPA closure submitted for approval.");
+                        _showForm = false;
+                        return;
+                    }
+                    if (pending.Status == "Pending")
+                    {
+                        Toast.ShowWarning("CAPA is awaiting approval before it can be closed.");
+                        return;
+                    }
+                }
+
                 await QualityService.UpdateCapaAsync(_edit);
                 Toast.ShowSuccess("CAPA updated.");
             }

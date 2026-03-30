@@ -1,5 +1,6 @@
 @inject IWorkflowEngine WorkflowEngine
 @inject ToastService Toast
+@using Microsoft.AspNetCore.Components.Authorization
 
 @if (Instance != null)
 {
@@ -12,6 +13,7 @@
         @if (Instance.WorkflowDefinition != null)
         {
             var steps = Instance.WorkflowDefinition.Steps.OrderBy(s => s.StepOrder).ToList();
+            var currentStep = steps.FirstOrDefault(s => s.StepOrder == Instance.CurrentStepOrder);
             <div style="margin-bottom: 12px;">
                 @foreach (var step in steps)
                 {
@@ -29,41 +31,94 @@
                     </div>
                 }
             </div>
-        }
 
-        <div style="display: flex; gap: 8px;">
-            <button class="btn btn-success" @onclick="Approve">✅ Approve</button>
-            <button class="btn btn-danger" @onclick="Reject">❌ Reject</button>
-        </div>
+            @if (_canAct)
+            {
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="text" class="form-control" style="flex: 1;" placeholder="Comment (optional)" @bind="_comment" />
+                    <button class="btn btn-success" @onclick="Approve" disabled="@_processing">✅ Approve</button>
+                    <button class="btn btn-danger" @onclick="Reject" disabled="@_processing">❌ Reject</button>
+                </div>
+            }
+            else if (currentStep != null)
+            {
+                <div style="color: var(--text-muted); font-style: italic;">
+                    Waiting for <strong>@(currentStep.AssignToRole ?? "assigned user")</strong> to review.
+                </div>
+            }
+        }
     </div>
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
     [Parameter] public WorkflowInstance? Instance { get; set; }
     [Parameter] public EventCallback<WorkflowInstance> OnApproved { get; set; }
     [Parameter] public EventCallback<WorkflowInstance> OnRejected { get; set; }
 
+    private string _currentUserId = "System";
+    private string _currentRole = "";
+    private string _comment = "";
+    private bool _canAct;
+    private bool _processing;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUserId = state.User.FindFirst("UserId")?.Value ?? state.User.Identity?.Name ?? "System";
+            _currentRole = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+        }
+
+        // Check if current user's role matches the current step's AssignToRole
+        _canAct = false;
+        if (Instance?.WorkflowDefinition != null)
+        {
+            var currentStep = Instance.WorkflowDefinition.Steps
+                .FirstOrDefault(s => s.StepOrder == Instance.CurrentStepOrder);
+            if (currentStep != null)
+            {
+                _canAct = string.IsNullOrEmpty(currentStep.AssignToRole)
+                    || string.Equals(_currentRole, currentStep.AssignToRole, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(_currentRole, "Admin", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+    }
+
     private async Task Approve()
     {
-        if (Instance == null) return;
+        if (Instance == null || _processing) return;
+        _processing = true;
         try
         {
-            var result = await WorkflowEngine.ApproveAsync(Instance.Id, "System");
+            var result = await WorkflowEngine.ApproveAsync(Instance.Id, _currentUserId, string.IsNullOrWhiteSpace(_comment) ? null : _comment);
             if (result != null)
+            {
+                Toast.ShowSuccess("Approved");
+                _comment = "";
                 await OnApproved.InvokeAsync(result);
+            }
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _processing = false; }
     }
 
     private async Task Reject()
     {
-        if (Instance == null) return;
+        if (Instance == null || _processing) return;
+        _processing = true;
         try
         {
-            var result = await WorkflowEngine.RejectAsync(Instance.Id, "System");
+            var result = await WorkflowEngine.RejectAsync(Instance.Id, _currentUserId, string.IsNullOrWhiteSpace(_comment) ? null : _comment);
             if (result != null)
+            {
+                Toast.ShowError("Rejected", "Workflow");
+                _comment = "";
                 await OnRejected.InvokeAsync(result);
+            }
         }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _processing = false; }
     }
 }

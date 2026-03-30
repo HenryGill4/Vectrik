@@ -1,6 +1,7 @@
 @page "/maintenance/workorders"
 @inject IMaintenanceService MaintenanceService
 @inject IMachineService MachineService
+@inject IWorkflowEngine WorkflowEngine
 @inject ToastService Toast
 @inject NavigationManager Nav
 @inject ITenantFeatureService Features
@@ -216,6 +217,23 @@ else
         if (!confirmed) return;
         try
         {
+            // Gate completion behind workflow if defined
+            if (newStatus == MaintenanceWorkOrderStatus.Completed && await WorkflowEngine.HasWorkflowAsync("MaintenanceWorkOrder"))
+            {
+                var pending = await WorkflowEngine.GetPendingAsync("MaintenanceWorkOrder", wo.Id);
+                if (pending == null)
+                {
+                    await WorkflowEngine.StartAsync("MaintenanceWorkOrder", wo.Id);
+                    Toast.ShowInfo("Completion submitted for approval.");
+                    return;
+                }
+                if (pending.Status == "Pending")
+                {
+                    Toast.ShowWarning("Maintenance WO is awaiting approval before completion.");
+                    return;
+                }
+            }
+
             await MaintenanceService.UpdateStatusAsync(wo.Id, newStatus, "System");
             Toast.ShowSuccess($"WO #{wo.Id} → {newStatus}");
             await LoadWorkOrders();
