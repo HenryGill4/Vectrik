@@ -1,34 +1,34 @@
 @* ProgramCard.razor — Individual program card for the list view *@
 
-<div class="card @(IsSelected ? "card-selected" : "") @(IsBatchSelected ? "card-batch-selected" : "")" style="margin-bottom: 8px; cursor: pointer; border-left: 3px solid @GetStatusColor(Program.Status);"
+<div class="card prog-card prog-card--@Program.Status.ToString().ToLower() @(IsSelected ? "card-selected" : "") @(IsBatchSelected ? "card-batch-selected" : "")"
      @onclick="OnClick">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-        <div style="display: flex; gap: 8px; align-items: flex-start; min-width: 0;">
+    <div class="prog-card-body">
+        <div class="prog-card-main">
             <input type="checkbox" checked="@IsBatchSelected" style="margin-top: 3px; flex-shrink: 0;"
                    @onclick:stopPropagation @onchange="HandleBatchToggle" />
-            <div style="min-width: 0;">
-                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <div class="prog-card-content">
+                <div class="prog-card-title-row">
                     <strong>@Program.ProgramNumber</strong>
                     <span class="badge badge-@Program.Status.ToString().ToLower()">@Program.Status</span>
                     <span class="badge badge-secondary">v@(Program.Version)</span>
                     @if (Program.IsBuildPlate)
                     {
-                        <span class="badge badge-info">🏗️ Build Plate</span>
+                        <span class="badge badge-info">Build Plate</span>
                     }
                     else if (!string.IsNullOrEmpty(Program.MachineType))
                     {
                         <span class="badge badge-info">@Program.MachineType</span>
                     }
                 </div>
-                <div style="color: var(--text-muted); font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@Program.Name</div>
+                <div class="prog-card-name" title="@Program.Name">@Program.Name</div>
                 @if (Program.IsBuildPlate)
                 {
-                    <div style="font-size: 0.8em; margin-top: 2px;">🔩 @Program.TotalPartCount part@(Program.TotalPartCount != 1 ? "s" : "") (@Program.UniquePartCount unique)</div>
+                    <div class="prog-card-meta">@Program.TotalPartCount part@(Program.TotalPartCount != 1 ? "s" : "") (@Program.UniquePartCount unique)</div>
                 }
                 else if (Program.Part != null)
                 {
-                    <div style="font-size: 0.8em; margin-top: 2px;">
-                        🔩 @Program.Part.PartNumber
+                    <div class="prog-card-meta">
+                        @Program.Part.PartNumber
                         @if (Program.ProgramParts?.Any() == true)
                         {
                             <span style="color:var(--text-muted);"> + @Program.ProgramParts.Count additional</span>
@@ -37,58 +37,58 @@
                 }
                 else if (Program.ProgramParts?.Any() == true)
                 {
-                    <div style="font-size: 0.8em; margin-top: 2px;">🔩 @Program.TotalPartCount part@(Program.TotalPartCount != 1 ? "s" : "") (@Program.UniquePartCount unique)</div>
+                    <div class="prog-card-meta">@Program.TotalPartCount part@(Program.TotalPartCount != 1 ? "s" : "") (@Program.UniquePartCount unique)</div>
                 }
                 @{ var assignedCount = Program.MachineAssignments?.Count ?? 0; }
                 @if (assignedCount > 0)
                 {
-                    <div style="font-size: 0.8em; margin-top: 2px; color: var(--text-muted);">🖥️ @assignedCount machine@(assignedCount != 1 ? "s" : "")</div>
+                    <div class="prog-card-meta">@assignedCount machine@(assignedCount != 1 ? "s" : "")</div>
                 }
             </div>
-        </div> @* close checkbox + content flex wrapper *@
-        <div style="display: flex; gap: 4px; align-items: center; flex-shrink: 0;">
+        </div>
+        <div class="prog-card-badges">
             @if (FeedbackCount > 0)
             {
-                <span class="badge badge-warning" title="@FeedbackCount unresolved feedback">💬 @FeedbackCount</span>
+                <span class="badge badge-warning" title="@FeedbackCount unresolved feedback">@FeedbackCount</span>
             }
             @if (Program.IsBuildPlate && Program.HasSlicerData)
             {
-                <span class="badge badge-info" title="Slicer data available">📐</span>
+                <span class="badge badge-info" title="Slicer data available">Sliced</span>
             }
             @if (Program.IsBuildPlate && Program.HasPostProcessingPrograms)
             {
-                <span class="badge badge-success" title="Post-processing programs linked">🔗</span>
+                <span class="badge badge-success" title="Post-processing programs linked">Post</span>
             }
             else if (Program.IsBuildPlate && (Program.DepowderProgramId.HasValue || Program.EdmProgramId.HasValue))
             {
-                <span class="badge badge-warning" title="Partial post-processing — missing depowder or EDM">🔗</span>
+                <span class="badge badge-warning" title="Partial post-processing — missing depowder or EDM">Post</span>
             }
             @if (Program.EstimateSource == "Auto")
             {
-                <span class="badge badge-success" title="Duration auto-learned from @Program.ActualSampleCount runs">🧠</span>
+                <span class="badge badge-success" title="Duration auto-learned from @Program.ActualSampleCount runs">Learned</span>
             }
         </div>
     </div>
 
     @* Compact stats row *@
-    <div style="display: flex; gap: 12px; margin-top: 6px; font-size: 0.78em; color: var(--text-muted);">
+    <div class="prog-card-stats">
         @if (Program.IsBuildPlate && Program.EstimatedPrintHours.HasValue)
         {
-            <span title="Estimated print duration">🖨️ @Program.EstimatedPrintHours.Value.ToString("F1")h</span>
+            <span title="Estimated print duration">Print: @Program.EstimatedPrintHours.Value.ToString("F1")h</span>
         }
         else if (Program.ActualAverageDurationMinutes.HasValue)
         {
-            <span title="Learned average duration">⏱️ @Program.ActualAverageDurationMinutes.Value.ToString("F1")m (EMA)</span>
+            <span title="Learned average duration">Avg: @Program.ActualAverageDurationMinutes.Value.ToString("F1")m</span>
         }
         else if (Program.CycleTimeMinutes.HasValue)
         {
-            <span title="Configured cycle time">⏱️ @Program.CycleTimeMinutes.Value.ToString("F1")m</span>
+            <span title="Configured cycle time">Cycle: @Program.CycleTimeMinutes.Value.ToString("F1")m</span>
         }
         @if (Program.TotalRunCount > 0)
         {
-            <span title="Total completed runs">🔄 @Program.TotalRunCount runs</span>
+            <span title="Total completed runs">Runs: @Program.TotalRunCount</span>
         }
-        <span>📁 @(Program.Files?.Count ?? 0)</span>
+        <span>Files: @(Program.Files?.Count ?? 0)</span>
     </div>
 </div>
 
@@ -101,13 +101,4 @@
     [Parameter] public EventCallback OnBatchToggle { get; set; }
 
     private async Task HandleBatchToggle() => await OnBatchToggle.InvokeAsync();
-
-    private static string GetStatusColor(ProgramStatus status) => status switch
-    {
-        ProgramStatus.Active => "var(--success)",
-        ProgramStatus.Draft => "var(--warning)",
-        ProgramStatus.Superseded => "var(--text-muted)",
-        ProgramStatus.Archived => "var(--text-muted)",
-        _ => "var(--border-color)"
-    };
 }

@@ -1,39 +1,53 @@
-@* ProgramList.razor — Program card list with KPI grid and batch toolbar *@
+@* ProgramList.razor — Program card list with KPI strip, sort, and batch toolbar *@
 @using Vectrik.Components.Pages.Programs.Components
 @using Vectrik.Models.Enums
 
-@* ── KPI Summary ── *@
-<div class="kpi-grid" style="margin-bottom: 16px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
-    <div class="kpi-card"><div class="kpi-label">Total Programs</div><div class="kpi-value">@AllPrograms.Count</div></div>
-    <div class="kpi-card"><div class="kpi-label">Active</div><div class="kpi-value" style="color:var(--success)">@AllPrograms.Count(p => p.Status == ProgramStatus.Active)</div></div>
-    <div class="kpi-card" style="cursor:pointer;" @onclick="OnTogglePendingSetup">
-        <div class="kpi-label">Needs Setup</div>
-        <div class="kpi-value" style="color:@(PendingSetupCount > 0 ? "var(--warning)" : "var(--text-muted)")">@PendingSetupCount</div>
+@* ── Compact KPI Strip (4 metrics) ── *@
+<div class="prog-kpi-strip">
+    <div class="prog-kpi">
+        <div class="prog-kpi-value">@AllPrograms.Count</div>
+        <div class="prog-kpi-label">Total</div>
     </div>
-    <div class="kpi-card">
-        <div class="kpi-label">Needing Review</div>
-        <div class="kpi-value" style="color:@(TotalUnresolvedFeedback > 0 ? "var(--warning)" : "var(--text-muted)")">@TotalUnresolvedFeedback</div>
+    <div class="prog-kpi">
+        <div class="prog-kpi-value" style="color:var(--success)">@AllPrograms.Count(p => p.Status == ProgramStatus.Active)</div>
+        <div class="prog-kpi-label">Active</div>
     </div>
-    <div class="kpi-card">
-        <div class="kpi-label">Tooling Alerts</div>
-        <div class="kpi-value" style="color:@(MaintenanceAlertCount > 0 ? "var(--danger)" : "var(--text-muted)")">@MaintenanceAlertCount</div>
+    <div class="prog-kpi prog-kpi--clickable @(PendingSetupCount > 0 ? "prog-kpi--warning" : "")" @onclick="OnTogglePendingSetup">
+        <div class="prog-kpi-value" style="color:@(PendingSetupCount > 0 ? "var(--warning)" : "var(--text-muted)")">@PendingSetupCount</div>
+        <div class="prog-kpi-label">Setup</div>
     </div>
-    <div class="kpi-card"><div class="kpi-label">Auto-Learned</div><div class="kpi-value">@AllPrograms.Count(p => p.EstimateSource == "Auto")</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Runs</div><div class="kpi-value">@AllPrograms.Sum(p => p.TotalRunCount)</div></div>
+    @{
+        var alertTotal = TotalUnresolvedFeedback + MaintenanceAlertCount;
+    }
+    <div class="prog-kpi @(alertTotal > 0 ? "prog-kpi--danger" : "")">
+        <div class="prog-kpi-value" style="color:@(alertTotal > 0 ? "var(--danger)" : "var(--text-muted)")">@alertTotal</div>
+        <div class="prog-kpi-label">Alerts</div>
+    </div>
 </div>
 
 @if (!Programs.Any())
 {
     <div class="empty-state">
-        <div class="empty-state-icon">📄</div>
+        <div class="empty-state-icon">No programs</div>
         <div class="empty-state-text">No machine programs match your filters. Adjust filters or create a new program.</div>
     </div>
 }
 else
 {
-    @* ── Batch Actions Toolbar ── *@
-    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.82rem;">
-        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-secondary); margin: 0;">
+    @* ── Sort + Batch Actions ── *@
+    <div class="prog-sort">
+        <span>Sort:</span>
+        <select class="form-control" @bind="SortField" @bind:after="HandleSortChanged">
+            <option value="number">Program #</option>
+            <option value="name">Name</option>
+            <option value="status">Status</option>
+            <option value="runs">Most Runs</option>
+            <option value="recent">Recently Updated</option>
+        </select>
+    </div>
+
+    <div class="prog-batch-bar">
+        <label class="prog-batch-label">
             <input type="checkbox" checked="@(_batchSelectedIds.Count == Programs.Count && Programs.Any())"
                    @onchange="ToggleBatchSelectAll" />
             Select all
@@ -43,7 +57,7 @@ else
             <span style="color: var(--text-muted);">@_batchSelectedIds.Count selected</span>
             @if (_confirmingDelete)
             {
-                <span style="color: var(--danger); font-weight: 600;">Are you sure? @_batchSelectedIds.Count program(s) will be deleted.</span>
+                <span class="prog-batch-confirm">Are you sure? @_batchSelectedIds.Count program(s) will be deleted.</span>
                 <button class="btn btn-sm btn-danger" @onclick="ConfirmBatchDelete">Yes, Delete</button>
                 <button class="btn btn-sm btn-secondary" @onclick="() => _confirmingDelete = false">Cancel</button>
             }
@@ -82,10 +96,14 @@ else
     [Parameter] public EventCallback<MachineProgram> OnSelectProgram { get; set; }
     [Parameter] public EventCallback<HashSet<int>> OnBatchDelete { get; set; }
     [Parameter] public EventCallback OnTogglePendingSetup { get; set; }
+    [Parameter] public string SortField { get; set; } = "number";
+    [Parameter] public EventCallback<string> OnSortChanged { get; set; }
 
     // Internal batch state
     private HashSet<int> _batchSelectedIds = new();
     private bool _confirmingDelete;
+
+    private async Task HandleSortChanged() => await OnSortChanged.InvokeAsync(SortField);
 
     private void ToggleBatchSelect(int programId)
     {

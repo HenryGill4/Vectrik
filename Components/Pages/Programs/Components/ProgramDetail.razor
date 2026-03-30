@@ -5,15 +5,15 @@
 <div>
     @* ── Detail Header ── *@
     <div class="card" style="margin-bottom: 12px;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div class="prog-detail-header">
             <div>
-                <h3 style="margin: 0 0 4px 0;">@Program.ProgramNumber — @Program.Name</h3>
+                <h3 class="prog-detail-title">@Program.ProgramNumber — @Program.Name</h3>
                 <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                     <span class="badge badge-@Program.Status.ToString().ToLower()">@Program.Status</span>
                     <span class="badge badge-secondary">v@(Program.Version)</span>
                     @if (Program.IsBuildPlate)
                     {
-                        <span class="badge badge-info">🏗️ Build Plate</span>
+                        <span class="badge badge-info">Build Plate</span>
                     }
                     else if (!string.IsNullOrEmpty(Program.MachineType))
                     {
@@ -21,29 +21,29 @@
                     }
                     @if (Program.HasSlicerData)
                     {
-                        <span class="badge badge-info">📐 Sliced</span>
+                        <span class="badge badge-info">Sliced</span>
                     }
                     @if (Program.EstimateSource == "Auto")
                     {
-                        <span class="badge badge-success">🧠 Auto-Learned</span>
+                        <span class="badge badge-success">Auto-Learned</span>
                     }
                 </div>
             </div>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn btn-sm btn-secondary" @onclick="OnEdit">✏️ Edit</button>
-                <button class="btn btn-sm btn-secondary" @onclick="OnNewVersion">📝 New Version</button>
-                <button class="btn btn-sm btn-secondary" @onclick="OnClone">📋 Clone</button>
-                <button class="btn btn-sm btn-danger" @onclick="OnDelete">🗑</button>
+            <div class="prog-detail-actions">
+                <button class="btn btn-sm btn-secondary" @onclick="OnEdit">Edit</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnNewVersion">New Version</button>
+                <button class="btn btn-sm btn-secondary" @onclick="OnClone">Clone</button>
+                <button class="btn btn-sm btn-danger" @onclick="OnDelete">Delete</button>
             </div>
         </div>
 
         @if (!string.IsNullOrEmpty(Program.Description))
         {
-            <div style="margin-top: 8px; color: var(--text-muted); font-size: 0.9em;">@Program.Description</div>
+            <div class="prog-detail-description">@Program.Description</div>
         }
 
         @* ── Overview Grid ── *@
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 12px;">
+        <div class="prog-detail-overview">
             @if (Program.IsBuildPlate)
             {
                 <div><span class="form-label">Parts on Plate</span><div>@Program.TotalPartCount total (@Program.UniquePartCount unique)</div></div>
@@ -84,28 +84,25 @@
         </div>
     </div>
 
-    @* ── Tab Bar ── *@
-    <div style="display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 12px; border-bottom: 2px solid var(--border-color);">
+    @* ── Tab Bar (underline style) ── *@
+    <div class="prog-tab-bar">
         @if (Program.IsBuildPlate)
         {
-            <button class="btn btn-sm @(ActiveTab == "buildplate" ? "btn-primary" : "btn-secondary")"
-                    style="border-radius: 6px 6px 0 0;"
+            <button class="prog-tab @(ActiveTab == "buildplate" ? "prog-tab--active" : "")"
                     @onclick="@(() => OnTabChanged.InvokeAsync("buildplate"))">
-                🏗️ Build Plate
+                Build Plate
             </button>
         }
         else if (Program.ProgramParts?.Any() == true)
         {
-            <button class="btn btn-sm @(ActiveTab == "parts" ? "btn-primary" : "btn-secondary")"
-                    style="border-radius: 6px 6px 0 0;"
+            <button class="prog-tab @(ActiveTab == "parts" ? "prog-tab--active" : "")"
                     @onclick="@(() => OnTabChanged.InvokeAsync("parts"))">
-                🔩 Parts (@Program.ProgramParts.Count)
+                Parts (@Program.ProgramParts.Count)
             </button>
         }
         @foreach (var tab in _detailTabs)
         {
-            <button class="btn btn-sm @(ActiveTab == tab.Key ? "btn-primary" : "btn-secondary")"
-                    style="border-radius: 6px 6px 0 0;"
+            <button class="prog-tab @(ActiveTab == tab.Key ? "prog-tab--active" : "")"
                     @onclick="() => OnTabChanged.InvokeAsync(tab.Key)">
                 @tab.Value
             </button>
@@ -163,8 +160,8 @@
         @* Parts tab for Standard programs with additional parts *@
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <h4 style="margin: 0;">🔩 Additional Parts</h4>
-                <button class="btn btn-sm btn-primary" @onclick="OnEdit">✏️ Edit Parts</button>
+                <h4 style="margin: 0;">Additional Parts</h4>
+                <button class="btn btn-sm btn-primary" @onclick="OnEdit">Edit Parts</button>
             </div>
 
             @if (Program.ProgramParts?.Any() == true)
@@ -189,7 +186,7 @@
                                     }
                                     @if (!string.IsNullOrEmpty(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material))
                                     {
-                                        <div style="font-size:0.75rem;color:var(--text-secondary);">🧪 @(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material)</div>
+                                        <div style="font-size:0.75rem;color:var(--text-secondary);">@(pp.Part?.MaterialEntity?.Name ?? pp.Part?.Material)</div>
                                     }
                                 </td>
                                 <td style="text-align:center">@pp.Quantity</td>
@@ -275,11 +272,11 @@
 
     private readonly Dictionary<string, string> _detailTabs = new()
     {
-        ["machines"] = "🖥️ Machines",
-        ["tooling"] = "🔧 Tooling",
-        ["learning"] = "🧠 Learning",
-        ["feedback"] = "💬 Feedback",
-        ["parameters"] = "⚙️ Parameters",
-        ["files"] = "📁 Files"
+        ["machines"] = "Machines",
+        ["tooling"] = "Tooling",
+        ["learning"] = "Learning",
+        ["feedback"] = "Feedback",
+        ["parameters"] = "Parameters",
+        ["files"] = "Files"
     };
 }

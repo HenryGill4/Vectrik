@@ -7050,35 +7050,280 @@ dialog#components-reconnect-modal button:hover {
     .program-pending-banner { font-size: 0.88rem; }
 }
 
-/* Programs page — two-panel layout */
+/* ══════════════════════════════════════════════════════
+   Programs Page
+   ══════════════════════════════════════════════════════ */
+
+/* ── Two-panel layout ── */
 .prog-two-panel {
     display: grid;
     grid-template-columns: 380px 1fr;
     gap: 16px;
+    transition: grid-template-columns 0.2s ease;
 }
-/* Programs form — two-column grid */
+.prog-two-panel--single {
+    grid-template-columns: 1fr;
+}
+
+/* ── Filter controls ── */
+.prog-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.prog-filter-control {
+    width: 140px;
+}
+.prog-filter-search {
+    width: 200px;
+}
+.prog-view-toggle {
+    display: inline-flex;
+    gap: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-right: 12px;
+}
+.prog-view-toggle .btn {
+    border-radius: 0;
+}
+
+/* ── Compact KPI strip (fits 380px panel) ── */
+.prog-kpi-strip {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+.prog-kpi {
+    flex: 1 1 0;
+    min-width: 70px;
+    padding: 8px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    text-align: center;
+    transition: border-color var(--transition-fast);
+}
+.prog-kpi:hover {
+    border-color: rgba(var(--accent-rgb), 0.3);
+}
+.prog-kpi--clickable {
+    cursor: pointer;
+}
+.prog-kpi--warning {
+    border-color: var(--warning);
+}
+.prog-kpi--danger {
+    border-color: var(--danger);
+}
+.prog-kpi-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+.prog-kpi-label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+/* ── Sort control ── */
+.prog-sort {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.prog-sort select {
+    font-size: 0.8rem;
+    padding: 3px 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+}
+
+/* ── Batch toolbar ── */
+.prog-batch-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 0.82rem;
+}
+.prog-batch-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    margin: 0;
+}
+.prog-batch-confirm {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+/* ── Program card ── */
+.prog-card {
+    margin-bottom: 8px;
+    cursor: pointer;
+    border-left: 3px solid var(--border);
+}
+.prog-card--draft { border-left-color: var(--warning); }
+.prog-card--active { border-left-color: var(--success); }
+.prog-card--superseded,
+.prog-card--archived { border-left-color: var(--text-muted); }
+
+.prog-card-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.prog-card-main {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    min-width: 0;
+}
+.prog-card-content {
+    min-width: 0;
+}
+.prog-card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.prog-card-name {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.prog-card-meta {
+    font-size: 0.8em;
+    margin-top: 2px;
+    color: var(--text-muted);
+}
+.prog-card-badges {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+}
+.prog-card-stats {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 0.78em;
+    color: var(--text-muted);
+}
+
+/* ── Detail header ── */
+.prog-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.prog-detail-title {
+    margin: 0 0 4px 0;
+    font-size: 1.1rem;
+}
+.prog-detail-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+.prog-detail-description {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.prog-detail-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+}
+
+/* ── Underline tab bar ── */
+.prog-tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 16px;
+    overflow-x: auto;
+}
+.prog-tab {
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.prog-tab:hover {
+    color: var(--text-primary);
+}
+.prog-tab--active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+}
+
+/* ── Programs form ── */
 .prog-form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
 }
-/* Programs form — inner field pairs */
 .prog-form-fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
 }
+
+/* ── Programs responsive ── */
 @media (max-width: 768px) {
     .prog-two-panel {
         grid-template-columns: 280px 1fr !important;
     }
+    .prog-kpi { padding: 6px 4px; }
+    .prog-kpi-value { font-size: 1rem; }
 }
 @media (max-width: 600px) {
-    .prog-two-panel {
+    .prog-two-panel,
+    .prog-two-panel--single {
         grid-template-columns: 1fr !important;
     }
     .prog-form-grid {
         grid-template-columns: 1fr;
+    }
+    .prog-detail-actions {
+        flex-direction: column;
+    }
+    .prog-filter-control,
+    .prog-filter-search {
+        width: 100%;
     }
 }
 @media (max-width: 480px) {

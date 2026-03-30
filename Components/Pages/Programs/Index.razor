@@ -34,22 +34,24 @@
 <div class="page-header">
     <h1 class="page-title">Machine Programs</h1>
     <div class="page-actions">
-        <div style="display:inline-flex; gap: 2px; margin-right: 12px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden;">
-            <button class="btn btn-sm @(_pageView == "programs" ? "btn-primary" : "btn-secondary")" style="border-radius: 0;" @onclick='() => SwitchView("programs")'>📄 Programs</button>
-            <button class="btn btn-sm @(_pageView == "machines" ? "btn-primary" : "btn-secondary")" style="border-radius: 0;" @onclick='() => SwitchView("machines")'>🖥️ Machine Setup</button>
+        <div class="prog-view-toggle">
+            <button class="btn btn-sm @(_pageView == "programs" ? "btn-primary" : "btn-secondary")" @onclick='() => SwitchView("programs")'>Programs</button>
+            <button class="btn btn-sm @(_pageView == "machines" ? "btn-primary" : "btn-secondary")" @onclick='() => SwitchView("machines")'>Machine Setup</button>
         </div>
         @if (_pageView == "programs")
         {
-            <select class="form-control" style="width:140px;display:inline-block" @bind="_filterStatus" @bind:after="ApplyFilters">
-                <option value="">All Statuses</option>
-                @foreach (var s in Enum.GetValues<ProgramStatus>()) { <option value="@s">@s</option> }
-            </select>
-            <select class="form-control" style="width:140px;display:inline-block" @bind="_filterMachineType" @bind:after="ApplyFilters">
-                <option value="">All Types</option>
-                @if (_machineTypes != null) { @foreach (var t in _machineTypes) { <option value="@t">@t</option> } }
-            </select>
-            <input class="form-control" style="width:200px;display:inline-block" placeholder="Search programs…" @bind="_searchTerm" @bind:after="ApplyFilters" />
-            <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="ShowCreate">+ New Program</button>
+            <div class="prog-filters">
+                <select class="form-control prog-filter-control" @bind="_filterStatus" @bind:after="ApplyFilters">
+                    <option value="">All Statuses</option>
+                    @foreach (var s in Enum.GetValues<ProgramStatus>()) { <option value="@s">@s</option> }
+                </select>
+                <select class="form-control prog-filter-control" @bind="_filterMachineType" @bind:after="ApplyFilters">
+                    <option value="">All Types</option>
+                    @if (_machineTypes != null) { @foreach (var t in _machineTypes) { <option value="@t">@t</option> } }
+                </select>
+                <input class="form-control prog-filter-search" placeholder="Search programs…" @bind="_searchTerm" @bind:after="ApplyFilters" />
+                <button class="btn btn-primary" @onclick="ShowCreate">+ New Program</button>
+            </div>
         }
     </div>
 </div>
@@ -106,7 +108,7 @@ else
     {
         @if (!_filteredPrograms.Any())
         {
-            @* KPI grid still shown above empty state *@
+            @* KPI strip still shown above empty state *@
             <ProgramList Programs="_filteredPrograms"
                          AllPrograms="_programs"
                          SelectedProgram="_selectedProgram"
@@ -114,6 +116,8 @@ else
                          PendingSetupCount="@_pendingSetupStages.Count"
                          TotalUnresolvedFeedback="_totalUnresolvedFeedback"
                          MaintenanceAlertCount="@_maintenanceAlerts.Count"
+                         SortField="_sortField"
+                         OnSortChanged="HandleSortChanged"
                          OnSelectProgram="SelectProgram"
                          OnBatchDelete="BatchDeleteSelectedAsync"
                          OnTogglePendingSetup="() => _showPendingSetup = !_showPendingSetup" />
@@ -121,7 +125,7 @@ else
         else
         {
             @* ── Two-Panel Layout: Program List + Detail ── *@
-            <div class="prog-two-panel" style="@(_selectedProgram != null ? "" : "grid-template-columns: 1fr !important;")">
+            <div class="prog-two-panel @(_selectedProgram == null ? "prog-two-panel--single" : "")">
 
                 @* ── LEFT: Program List ── *@
                 <div>
@@ -132,6 +136,8 @@ else
                                  PendingSetupCount="@_pendingSetupStages.Count"
                                  TotalUnresolvedFeedback="_totalUnresolvedFeedback"
                                  MaintenanceAlertCount="@_maintenanceAlerts.Count"
+                                 SortField="_sortField"
+                                 OnSortChanged="HandleSortChanged"
                                  OnSelectProgram="SelectProgram"
                                  OnBatchDelete="BatchDeleteSelectedAsync"
                                  OnTogglePendingSetup="() => _showPendingSetup = !_showPendingSetup" />
@@ -256,6 +262,7 @@ else
     private string _filterStatus = "";
     private string _filterMachineType = "";
     private string _searchTerm = "";
+    private string _sortField = "number";
 
     // Editor
     private bool _showEditor;
@@ -381,7 +388,20 @@ else
                             || (p.Part?.PartNumber?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
                             || (p.Machine?.Name?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
 
-        _filteredPrograms = q.ToList();
+        _filteredPrograms = _sortField switch
+        {
+            "name" => q.OrderBy(p => p.Name).ToList(),
+            "status" => q.OrderBy(p => p.Status).ThenBy(p => p.ProgramNumber).ToList(),
+            "runs" => q.OrderByDescending(p => p.TotalRunCount).ToList(),
+            "recent" => q.OrderByDescending(p => p.LastModifiedDate).ToList(),
+            _ => q.OrderBy(p => p.ProgramNumber).ToList(),
+        };
+    }
+
+    private void HandleSortChanged(string field)
+    {
+        _sortField = field;
+        ApplyFilters();
     }
 
     private void SwitchView(string view) => _pageView = view;
@@ -391,7 +411,17 @@ else
     private async Task SelectProgram(MachineProgram program)
     {
         _selectedProgram = await ProgramService.GetByIdAsync(program.Id);
-        _activeTab = _selectedProgram?.IsBuildPlate == true ? "buildplate" : "machines";
+
+        // Preserve current tab when switching programs, unless the tab is invalid for the new program
+        var isBuildPlate = _selectedProgram?.IsBuildPlate == true;
+        var hasParts = _selectedProgram?.ProgramParts?.Any() == true;
+        if (_activeTab == "buildplate" && !isBuildPlate)
+            _activeTab = "machines";
+        else if (_activeTab == "parts" && (isBuildPlate || !hasParts))
+            _activeTab = isBuildPlate ? "buildplate" : "machines";
+        else if (string.IsNullOrEmpty(_activeTab))
+            _activeTab = isBuildPlate ? "buildplate" : "machines";
+
         await LoadDetailData();
     }
 
