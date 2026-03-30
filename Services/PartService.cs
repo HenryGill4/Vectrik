@@ -491,7 +491,10 @@ public class PartService : IPartService
         }
         node.TotalMaterialCost = directCost;
 
-        visited.Remove(partId); // allow same part in different branches
+        // Do NOT remove partId from visited — once a part has been expanded,
+        // keep it in the set to prevent infinite recursion in diamond-shaped or
+        // cyclic BOMs. For diamond BOMs (A→B→D, A→C→D), D is expanded only on
+        // the first branch; subsequent references return a stub node (line 450).
         return node;
     }
 

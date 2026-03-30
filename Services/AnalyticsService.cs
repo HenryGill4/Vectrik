@@ -62,9 +62,9 @@ public class AnalyticsService : IAnalyticsService
         var avgCost = 0m;
         if (completedJobs.Count > 0)
         {
-            var totalCost = 0m;
-            foreach (var job in completedJobs)
-                totalCost += await CalculateJobCostAsync(job.Id);
+            var jobIds = completedJobs.Select(j => j.Id).ToList();
+            var jobCosts = await BatchCalculateJobCostsAsync(jobIds);
+            var totalCost = jobCosts.Values.Sum();
             var totalParts = completedJobs.Sum(j => j.ProducedQuantity);
             avgCost = totalParts > 0 ? totalCost / totalParts : 0;
         }
@@ -115,6 +115,125 @@ public class AnalyticsService : IAnalyticsService
         }
 
         return totalCost;
+    }
+
+    /// <summary>
+    /// Batch-calculates costs for multiple jobs in 2-3 queries instead of N+1.
+    /// Preloads all stage executions, cost profiles, and production stages upfront.
+    /// </summary>
+    private async Task<Dictionary<int, decimal>> BatchCalculateJobCostsAsync(List<int> jobIds)
+    {
+        if (jobIds.Count == 0) return new();
+
+        // Load all completed stage executions for these jobs in one query
+        var allExecutions = await _db.StageExecutions
+            .Include(e => e.ProductionStage)
+            .Where(e => e.JobId.HasValue && jobIds.Contains(e.JobId.Value) && e.Status == StageExecutionStatus.Completed)
+            .ToListAsync();
+
+        // Load all cost profiles and production stages for in-memory estimation
+        var costProfiles = await _db.StageCostProfiles
+            .Include(p => p.ProductionStage)
+            .ToListAsync();
+        var profileByStage = costProfiles.ToDictionary(p => p.ProductionStageId);
+        var stages = await _db.ProductionStages.ToListAsync();
+        var stageById = stages.ToDictionary(s => s.Id);
+
+        var execsByJob = allExecutions.GroupBy(e => e.JobId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = new Dictionary<int, decimal>();
+        foreach (var jobId in jobIds)
+        {
+            var totalCost = 0m;
+            if (execsByJob.TryGetValue(jobId, out var executions))
+            {
+                foreach (var exec in executions)
+                {
+                    if (exec.ActualCost.HasValue)
+                    {
+                        totalCost += exec.ActualCost.Value;
+                    }
+                    else
+                    {
+                        var hours = exec.ActualHours ?? exec.EstimatedHours ?? 0;
+                        var partCount = exec.BatchPartCount ?? 1;
+                        var estimate = EstimateCostInMemory(
+                            exec.ProductionStageId, hours, partCount, profileByStage, stageById);
+                        totalCost += estimate.TotalCost + (exec.MaterialCost ?? 0);
+                    }
+                }
+            }
+            result[jobId] = totalCost;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Pure in-memory cost estimation using preloaded cost profiles and stages.
+    /// Mirrors the logic in StageCostService.EstimateCostAsync without DB calls.
+    /// </summary>
+    private static StageCostEstimate EstimateCostInMemory(
+        int productionStageId,
+        double durationHours,
+        int partCount,
+        Dictionary<int, StageCostProfile> profileByStage,
+        Dictionary<int, ProductionStage> stageById)
+    {
+        if (profileByStage.TryGetValue(productionStageId, out var profile))
+        {
+            var laborCost = profile.LaborCostPerHour * (decimal)durationHours;
+            var equipmentCost = profile.EquipmentCostPerHour * (decimal)durationHours;
+            var overheadCost = profile.OverheadCostPerHour * (decimal)durationHours;
+            var partCosts = profile.PerPartCost * partCount;
+            var toolingCost = profile.ToolingCostPerRun; // batchCount=1 default
+
+            var directTimeCost = laborCost + equipmentCost + overheadCost;
+            var overheadMarkup = directTimeCost * (decimal)(profile.OverheadPercent / 100);
+            var totalTimeCost = directTimeCost + overheadMarkup;
+
+            var externalCost = 0m;
+            if (profile.ExternalVendorCostPerPart > 0 || profile.ExternalShippingCost > 0)
+            {
+                externalCost = (profile.ExternalVendorCostPerPart * partCount)
+                    + profile.ExternalShippingCost;
+                externalCost *= (1 + (decimal)(profile.ExternalMarkupPercent / 100));
+            }
+
+            var total = totalTimeCost + partCosts + toolingCost + externalCost;
+            var costPerPart = partCount > 0 ? total / partCount : total;
+
+            return new StageCostEstimate(
+                LaborCost: laborCost,
+                EquipmentCost: equipmentCost,
+                OverheadCost: overheadCost + overheadMarkup,
+                PerPartCost: partCosts,
+                ToolingCost: toolingCost,
+                ExternalCost: externalCost,
+                TotalCost: total,
+                CostPerPart: costPerPart,
+                FullyLoadedHourlyRate: profile.FullyLoadedHourlyRate,
+                UsedCostProfile: true);
+        }
+
+        // Fallback: use ProductionStage.DefaultHourlyRate
+        var fallbackRate = stageById.TryGetValue(productionStageId, out var stage)
+            ? stage.DefaultHourlyRate
+            : 85m;
+        var fallbackTotal = fallbackRate * (decimal)durationHours;
+        var fallbackPerPart = partCount > 0 ? fallbackTotal / partCount : fallbackTotal;
+
+        return new StageCostEstimate(
+            LaborCost: fallbackTotal,
+            EquipmentCost: 0,
+            OverheadCost: 0,
+            PerPartCost: 0,
+            ToolingCost: 0,
+            ExternalCost: 0,
+            TotalCost: fallbackTotal,
+            CostPerPart: fallbackPerPart,
+            FullyLoadedHourlyRate: fallbackRate,
+            UsedCostProfile: false);
     }
 
     public async Task<decimal> CalculateWorkOrderCostAsync(int workOrderId)
@@ -526,12 +645,40 @@ public class AnalyticsService : IAnalyticsService
         var totalParts = 0;
         var unprofitableCount = 0;
 
+        // Batch-load all data upfront to avoid N+1 queries
+        var jobIds = jobs.Select(j => j.Id).ToList();
+        var jobCosts = await BatchCalculateJobCostsAsync(jobIds);
+
+        // Preload all stage executions for cost category breakdown
+        var allExecs = await _db.StageExecutions
+            .Where(e => e.JobId.HasValue && jobIds.Contains(e.JobId.Value) && e.Status == StageExecutionStatus.Completed)
+            .ToListAsync();
+        var execsByJob = allExecs.GroupBy(e => e.JobId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+
+        // Preload cost profiles and production stages for in-memory estimation
+        var costProfiles = await _db.StageCostProfiles
+            .Include(p => p.ProductionStage)
+            .ToListAsync();
+        var profileByStage = costProfiles.ToDictionary(p => p.ProductionStageId);
+        var stages = await _db.ProductionStages.ToListAsync();
+        var stageById = stages.ToDictionary(s => s.Id);
+
+        // Preload quote lines for jobs that need them
+        var quoteIds = jobs
+            .Where(j => !pricingLookup.ContainsKey(j.PartId) && j.WorkOrderLine?.WorkOrder?.QuoteId != null)
+            .Select(j => j.WorkOrderLine!.WorkOrder!.QuoteId!.Value)
+            .Distinct()
+            .ToList();
+        var quoteLines = quoteIds.Count > 0
+            ? await _db.QuoteLines.Where(ql => quoteIds.Contains(ql.QuoteId)).ToListAsync()
+            : new List<QuoteLine>();
+
         foreach (var job in jobs)
         {
             var produced = job.ProducedQuantity;
             totalParts += produced;
 
-            var jobCost = await CalculateJobCostAsync(job.Id);
+            var jobCost = jobCosts.GetValueOrDefault(job.Id, 0m);
             totalCost += jobCost;
 
             // Revenue from pricing or quote
@@ -541,28 +688,26 @@ public class AnalyticsService : IAnalyticsService
                 revenue = pricing.SellPricePerUnit * produced;
                 totalMaterial += pricing.MaterialCostPerUnit * produced;
             }
-            else if (job.WorkOrderLine?.WorkOrder?.Quote != null)
+            else if (job.WorkOrderLine?.WorkOrder?.QuoteId != null)
             {
-                var quoteLines = await _db.QuoteLines
-                    .Where(ql => ql.QuoteId == job.WorkOrderLine.WorkOrder.QuoteId && ql.PartId == job.PartId)
-                    .FirstOrDefaultAsync();
-                revenue = quoteLines != null ? quoteLines.QuotedPricePerPart * produced : 0;
+                var ql = quoteLines.FirstOrDefault(
+                    ql => ql.QuoteId == job.WorkOrderLine.WorkOrder.QuoteId && ql.PartId == job.PartId);
+                revenue = ql != null ? ql.QuotedPricePerPart * produced : 0;
             }
 
             totalRevenue += revenue;
 
-            // Cost category breakdown from stage executions
-            var executions = await _db.StageExecutions
-                .Where(e => e.JobId == job.Id && e.Status == StageExecutionStatus.Completed)
-                .ToListAsync();
-
-            foreach (var exec in executions)
+            // Cost category breakdown from preloaded stage executions
+            if (execsByJob.TryGetValue(job.Id, out var jobExecs))
             {
-                var hours = exec.ActualHours ?? exec.EstimatedHours ?? 0;
-                var partCount = exec.BatchPartCount ?? 1;
-                var estimate = await _costService.EstimateCostAsync(exec.ProductionStageId, hours, partCount);
-                totalLabor += estimate.LaborCost;
-                totalOverhead += estimate.OverheadCost;
+                foreach (var exec in jobExecs)
+                {
+                    var hours = exec.ActualHours ?? exec.EstimatedHours ?? 0;
+                    var partCount = exec.BatchPartCount ?? 1;
+                    var estimate = EstimateCostInMemory(exec.ProductionStageId, hours, partCount, profileByStage, stageById);
+                    totalLabor += estimate.LaborCost;
+                    totalOverhead += estimate.OverheadCost;
+                }
             }
 
             if (revenue < jobCost) unprofitableCount++;
