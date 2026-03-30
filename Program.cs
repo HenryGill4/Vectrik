@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Vectrik.Components;
@@ -25,6 +26,7 @@ TaskScheduler.UnobservedTaskException += (sender, e) =>
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -279,6 +281,71 @@ app.UseAntiforgery();
 // Health check endpoint for Azure App Service monitoring
 app.MapGet("/healthz", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
     .AllowAnonymous();
+
+// Password change endpoint — handles cookie re-signing (can't do this from interactive Blazor)
+app.MapPost("/api/account/change-password", async (HttpContext httpContext) =>
+{
+    if (httpContext.User.Identity?.IsAuthenticated != true)
+        return Results.Unauthorized();
+
+    var form = await httpContext.Request.ReadFormAsync();
+    var currentPassword = form["currentPassword"].ToString();
+    var newPassword = form["newPassword"].ToString();
+
+    var tenantCode = httpContext.User.FindFirst("TenantCode")?.Value;
+    var userIdStr = httpContext.User.FindFirst("UserId")?.Value;
+    if (string.IsNullOrEmpty(tenantCode) || !int.TryParse(userIdStr, out var userId))
+        return Results.BadRequest(new { error = "Unable to determine your account." });
+
+    var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } h
+        ? Path.Combine(h, "data") : "data";
+    var dbPath = Path.Combine(dataRoot, "tenants", $"{tenantCode}.db");
+    if (!File.Exists(dbPath))
+        return Results.BadRequest(new { error = "Tenant database not found." });
+
+    var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<TenantDbContext>()
+        .UseSqlite($"Data Source={dbPath}")
+        .Options;
+
+    using var db = new TenantDbContext(options);
+    var user = await db.Users.FindAsync(userId);
+    if (user == null)
+        return Results.BadRequest(new { error = "User not found." });
+
+    var auth = httpContext.RequestServices.GetRequiredService<IAuthService>();
+    if (!auth.VerifyPassword(currentPassword, user.PasswordHash))
+        return Results.BadRequest(new { error = "Current password is incorrect." });
+
+    if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
+        return Results.BadRequest(new { error = "New password must be at least 8 characters." });
+    if (newPassword == currentPassword)
+        return Results.BadRequest(new { error = "New password must be different from current password." });
+
+    user.PasswordHash = auth.HashPassword(newPassword);
+    user.MustChangePassword = false;
+    user.LastModifiedDate = DateTime.UtcNow;
+    user.LastModifiedBy = user.Username;
+    await db.SaveChangesAsync();
+
+    // Re-sign cookie with updated claims
+    var authResult = new Vectrik.Services.Auth.AuthResult
+    {
+        Success = true, TenantCode = tenantCode,
+        CompanyName = httpContext.User.FindFirst("CompanyName")?.Value,
+        Username = user.Username, FullName = user.FullName,
+        Role = user.Role, UserId = user.Id,
+        IsPlatformUser = false, MustChangePassword = false
+    };
+    var principal = auth.GetClaimsPrincipal(authResult);
+    if (principal != null)
+    {
+        await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await httpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal,
+            new Microsoft.AspNetCore.Authentication.AuthenticationProperties
+                { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12) });
+    }
+    return Results.Ok(new { success = true });
+}).RequireAuthorization();
 
 app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
