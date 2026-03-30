@@ -174,84 +174,89 @@ var app = builder.Build();
 
 // Ensure platform DB is created and seeded
 // Wrapped in try-catch to handle concurrent startup (Azure may start multiple workers)
-using (var scope = app.Services.CreateScope())
+try
 {
+    using var scope = app.Services.CreateScope();
     var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
     platformDb.Database.Migrate();
 
-    try
+    // Ensure platform admin exists
+    var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
+    if (!platformDb.PlatformUsers.Any(u => u.Username == "henry"))
     {
-        // Ensure platform admin exists
-        var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
-        if (!platformDb.PlatformUsers.Any(u => u.Username == "henry"))
+        platformDb.PlatformUsers.Add(new Vectrik.Models.Platform.PlatformUser
         {
-            platformDb.PlatformUsers.Add(new Vectrik.Models.Platform.PlatformUser
+            Username = "henry",
+            PasswordHash = authService.HashPassword("Vectrik2026!"),
+            Role = "SuperAdmin"
+        });
+        platformDb.SaveChanges();
+    }
+
+    // Seed demo tenant if none exists
+    var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
+    if (!platformDb.Tenants.Any())
+    {
+        Task.Run(async () =>
+            await tenantService.CreateTenantAsync("demo", "Polite Society Industries", "System",
+                logoUrl: "/uploads/logos/psi-shield.svg", primaryColor: "#a1a1aa")
+        ).GetAwaiter().GetResult();
+    }
+    else
+    {
+        // Ensure existing tenants have seeded data (handles deleted/recreated tenant DBs)
+        foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
+        {
+            Task.Run(async () =>
+                await tenantService.SeedTenantDatabaseAsync(tenant.Code)
+            ).GetAwaiter().GetResult();
+        }
+    }
+
+    // Seed default feature flags for demo tenant
+    if (!platformDb.TenantFeatureFlags.Any(f => f.TenantCode == "demo"))
+    {
+        var coreFlags = new[]
+        {
+            "module.quoting", "module.workorders", "module.instructions",
+            "module.shopfloor", "module.quality", "module.inventory",
+            "module.analytics", "module.pdm", "module.costing",
+            "module.tools", "module.maintenance", "module.purchasing",
+            "module.timeclock", "module.documents", "module.shipping",
+            "module.crm", "module.compliance", "module.training",
+            "sls", "advanced.spc", "advanced.workflows", "advanced.custom_fields",
+            "dlms", "dlms.iuid", "dlms.wawf", "dlms.gfm", "dlms.cdrl"
+        };
+        var enabledByDefault = new HashSet<string>
+        {
+            "module.quoting", "module.workorders", "module.shopfloor",
+            "module.quality", "module.inventory", "module.analytics",
+            "module.pdm", "module.maintenance", "module.instructions",
+            "module.costing", "module.shipping", "sls",
+            "advanced.spc", "advanced.workflows", "advanced.custom_fields"
+        };
+        foreach (var key in coreFlags)
+        {
+            platformDb.TenantFeatureFlags.Add(new Vectrik.Models.Platform.TenantFeatureFlag
             {
-                Username = "henry",
-                PasswordHash = authService.HashPassword("Vectrik2026!"),
-                Role = "SuperAdmin"
+                TenantCode = "demo",
+                FeatureKey = key,
+                IsEnabled = enabledByDefault.Contains(key),
+                EnabledAt = enabledByDefault.Contains(key) ? DateTime.UtcNow : null
             });
-            platformDb.SaveChanges();
         }
-
-        // Seed demo tenant if none exists
-        if (!platformDb.Tenants.Any())
-        {
-            var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
-            tenantService.CreateTenantAsync("demo", "Polite Society Industries", "System",
-                logoUrl: "/uploads/logos/psi-shield.svg", primaryColor: "#a1a1aa").GetAwaiter().GetResult();
-        }
-        else
-        {
-            // Ensure existing tenants have seeded data (handles deleted/recreated tenant DBs)
-            var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
-            foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
-            {
-                tenantService.SeedTenantDatabaseAsync(tenant.Code).GetAwaiter().GetResult();
-            }
-        }
-
-        // Seed default feature flags for demo tenant
-        if (!platformDb.TenantFeatureFlags.Any(f => f.TenantCode == "demo"))
-        {
-            var coreFlags = new[]
-            {
-                "module.quoting", "module.workorders", "module.instructions",
-                "module.shopfloor", "module.quality", "module.inventory",
-                "module.analytics", "module.pdm", "module.costing",
-                "module.tools", "module.maintenance", "module.purchasing",
-                "module.timeclock", "module.documents", "module.shipping",
-                "module.crm", "module.compliance", "module.training",
-                "sls", "advanced.spc", "advanced.workflows", "advanced.custom_fields",
-                "dlms", "dlms.iuid", "dlms.wawf", "dlms.gfm", "dlms.cdrl"
-            };
-            var enabledByDefault = new HashSet<string>
-            {
-                "module.quoting", "module.workorders", "module.shopfloor",
-                "module.quality", "module.inventory", "module.analytics",
-                "module.pdm", "module.maintenance", "module.instructions",
-                "module.costing", "module.shipping", "sls",
-                "advanced.spc", "advanced.workflows", "advanced.custom_fields"
-            };
-            foreach (var key in coreFlags)
-            {
-                platformDb.TenantFeatureFlags.Add(new Vectrik.Models.Platform.TenantFeatureFlag
-                {
-                    TenantCode = "demo",
-                    FeatureKey = key,
-                    IsEnabled = enabledByDefault.Contains(key),
-                    EnabledAt = enabledByDefault.Contains(key) ? DateTime.UtcNow : null
-                });
-            }
-            platformDb.SaveChanges();
-        }
+        platformDb.SaveChanges();
     }
-    catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
-        when (ex.InnerException?.Message.Contains("UNIQUE constraint") == true)
-    {
-        // Another process already seeded — safe to ignore
-        app.Logger.LogWarning("Seed data already exists (concurrent startup). Continuing.");
-    }
+}
+catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
+    when (ex.InnerException?.Message.Contains("UNIQUE constraint") == true)
+{
+    // Another process already seeded — safe to ignore
+    app.Logger.LogWarning("Seed data already exists (concurrent startup). Continuing.");
+}
+catch (Exception ex)
+{
+    app.Logger.LogError(ex, "Database seeding failed. App will continue but data may be incomplete.");
 }
 
 // Configure the HTTP request pipeline.
