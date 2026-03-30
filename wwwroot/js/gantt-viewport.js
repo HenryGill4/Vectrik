@@ -117,6 +117,50 @@ function debouncedZoomNotify(anchorTimeHours, anchorViewportX) {
     }, 60);
 }
 
+// ── Zoom anchor + MutationObserver ─────────────────────────────────────────
+// When JS zooms immediately, Blazor re-renders ~60-100ms later and patches
+// the DOM. The browser may reflow and disturb scrollLeft. The MutationObserver
+// restores scrollLeft in the same microtask as the DOM mutation (before the
+// browser paints), eliminating visible jank.
+let _zoomAnchor = null; // { timeHours, viewportX }
+let _innerObserver = null;
+let _zoomAnchorClearId = 0;
+
+function setZoomAnchor(timeHours, viewportX) {
+    _zoomAnchor = { timeHours, viewportX };
+    // Clear anchor after the Blazor re-render cycle is certainly complete.
+    // This prevents the observer from incorrectly restoring scroll on
+    // unrelated DOM mutations (e.g. data refresh).
+    clearTimeout(_zoomAnchorClearId);
+    _zoomAnchorClearId = setTimeout(() => { _zoomAnchor = null; }, 500);
+}
+
+function setupInnerObserver() {
+    if (_innerObserver) _innerObserver.disconnect();
+    if (!_inner || !_container) return;
+
+    _innerObserver = new MutationObserver(() => {
+        if (!_zoomAnchor || !isAlive()) return;
+        // Blazor patched the DOM — restore scroll before the browser paints.
+        _container.scrollLeft = _zoomAnchor.timeHours * _pixelsPerHour - _zoomAnchor.viewportX;
+    });
+
+    _innerObserver.observe(_inner, {
+        attributes: true,
+        attributeFilter: ['style'],
+        childList: true
+    });
+}
+
+function teardownInnerObserver() {
+    if (_innerObserver) {
+        _innerObserver.disconnect();
+        _innerObserver = null;
+    }
+    _zoomAnchor = null;
+    clearTimeout(_zoomAnchorClearId);
+}
+
 function touchDist(t) {
     const dx = t[0].clientX - t[1].clientX;
     const dy = t[0].clientY - t[1].clientY;
@@ -132,6 +176,7 @@ function bindToContainer(containerEl) {
     }
     updateInnerWidth();
     attachListeners();
+    setupInnerObserver();
     return true;
 }
 
@@ -238,6 +283,7 @@ export function dispose() {
     _disposed = true;
     _initialized = false;
     _isDragging = false;
+    teardownInnerObserver();
     detachListeners();
     _dotNetRef = null;
     _container = null;
@@ -267,23 +313,32 @@ export function applyZoom(pixelsPerHour) {
     // Save center time using current JS _pixelsPerHour (DOM still at old positions)
     const centerX = _container.scrollLeft + _container.clientWidth / 2;
     const centerTimeHours = centerX / _pixelsPerHour;
+    const halfWidth = _container.clientWidth / 2;
 
     _pixelsPerHour = clampZoom(pixelsPerHour);
     updateInnerWidth();
 
     // Restore center — scroll persists through Blazor re-render
-    _container.scrollLeft = centerTimeHours * _pixelsPerHour - _container.clientWidth / 2;
+    _container.scrollLeft = centerTimeHours * _pixelsPerHour - halfWidth;
+
+    // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
+    setZoomAnchor(centerTimeHours, halfWidth);
 }
 
 /**
  * Called by C# OnAfterRenderAsync after Ctrl+wheel/pinch zoom.
  * Blazor has re-rendered tick/bar positions. JS already has the correct
- * _pixelsPerHour — this only restores scrollLeft as a safety net in case
+ * _pixelsPerHour — this restores scrollLeft as a safety net in case
  * the Blazor DOM diff displaced the scroll position.
+ * The MutationObserver usually handles this first (same-frame), so this
+ * is a belt-and-suspenders fallback via SignalR.
  */
 export function syncScrollToAnchor(anchorTimeHours, anchorViewportX) {
     if (!isAlive() || !_inner) return;
     _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
+    // Clear anchor — the observer's job is done for this zoom cycle
+    _zoomAnchor = null;
+    clearTimeout(_zoomAnchorClearId);
 }
 
 export function getViewport() {
@@ -371,6 +426,9 @@ function onWheel(e) {
     updateInnerWidth();
     _container.scrollLeft = cursorTimeHours * _pixelsPerHour - cursorViewportX;
 
+    // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
+    setZoomAnchor(cursorTimeHours, cursorViewportX);
+
     // Debounce C# notification — rapid wheel events batch into one re-render
     debouncedZoomNotify(cursorTimeHours, cursorViewportX);
 }
@@ -447,6 +505,9 @@ function onTouchMove(e) {
         _pixelsPerHour = newPph;
         updateInnerWidth();
         _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
+
+        // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
+        setZoomAnchor(anchorTimeHours, anchorViewportX);
 
         debouncedZoomNotify(anchorTimeHours, anchorViewportX);
         return;
