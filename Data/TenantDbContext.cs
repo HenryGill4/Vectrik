@@ -148,6 +148,14 @@ public class TenantDbContext : DbContext
     // Part Pricing
     public DbSet<PartPricing> PartPricings { get; set; }
 
+    // Smart Pricing
+    public DbSet<PartSignature> PartSignatures { get; set; }
+
+    // Customer Pricing
+    public DbSet<Customer> Customers { get; set; }
+    public DbSet<CustomerPricingRule> CustomerPricingRules { get; set; }
+    public DbSet<PricingContract> PricingContracts { get; set; }
+
     // Shipping
     public DbSet<Shipment> Shipments { get; set; }
     public DbSet<ShipmentLine> ShipmentLines { get; set; }
@@ -1084,6 +1092,58 @@ public class TenantDbContext : DbContext
                 .WithOne(e => e.Pricing)
                 .HasForeignKey<PartPricing>(e => e.PartId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PartSignature — 1:1 with Part (smart pricing feature vectors)
+        modelBuilder.Entity<PartSignature>(entity =>
+        {
+            entity.HasIndex(e => e.PartId).IsUnique();
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Customer Pricing ─────────────────────────────────────
+
+        modelBuilder.Entity<Customer>(entity =>
+        {
+            entity.HasIndex(e => e.Name);
+            entity.HasIndex(e => e.Code).IsUnique().HasFilter("\"Code\" IS NOT NULL");
+        });
+
+        modelBuilder.Entity<CustomerPricingRule>(entity =>
+        {
+            entity.HasIndex(e => new { e.CustomerId, e.PartId });
+            entity.HasOne(e => e.Customer)
+                .WithMany(c => c.PricingRules)
+                .HasForeignKey(e => e.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PricingContract>(entity =>
+        {
+            entity.HasIndex(e => e.ContractNumber).IsUnique();
+            entity.HasOne(e => e.Customer)
+                .WithMany(c => c.Contracts)
+                .HasForeignKey(e => e.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Quote>(entity =>
+        {
+            entity.HasOne(e => e.Customer)
+                .WithMany()
+                .HasForeignKey(e => e.CustomerId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.PricingContract)
+                .WithMany()
+                .HasForeignKey(e => e.PricingContractId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Setup Dispatch System ────────────────────────────────

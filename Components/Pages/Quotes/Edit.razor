@@ -3,6 +3,8 @@
 @inject IQuoteService QuoteService
 @inject IPartService PartService
 @inject IPricingEngineService PricingEngine
+@inject ISmartPricingService SmartPricing
+@inject ICustomerPricingService CustomerPricing
 @inject ITenantFeatureService Features
 @inject ICustomFieldService CustomFieldService
 @inject NavigationManager Nav
@@ -37,6 +39,19 @@ else
         <h3 class="card-title">Quote Information</h3>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
             <div class="form-group">
+                <label class="form-label">Customer <span style="color:var(--danger)">*</span></label>
+                <div style="display: flex; gap: 6px;">
+                    <select class="form-control" value="@(_quote.CustomerId ?? 0)" @onchange="OnCustomerSelected" style="flex: 1;">
+                        <option value="0">-- Manual Entry --</option>
+                        @foreach (var c in _customers)
+                        {
+                            <option value="@c.Id">@c.Name @(c.Tier != CustomerTier.Standard ? $"({c.Tier})" : "")</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => _showNewCustomer = true" title="New Customer">+</button>
+                </div>
+            </div>
+            <div class="form-group">
                 <label class="form-label">Customer Name <span style="color:var(--danger)">*</span></label>
                 <input class="form-control" @bind="_quote.CustomerName" />
             </div>
@@ -63,8 +78,50 @@ else
                     <input class="form-control" @bind="_quote.ContractNumber" />
                 </div>
             }
+            @if (_activeContracts.Any())
+            {
+                <div class="form-group">
+                    <label class="form-label">Pricing Contract</label>
+                    <select class="form-control" @bind="_quote.PricingContractId">
+                        <option value="">None</option>
+                        @foreach (var ct in _activeContracts)
+                        {
+                            <option value="@ct.Id">@ct.ContractNumber — @ct.BlanketDiscountPct% off (expires @ct.EndDate.ToString("MMM yyyy"))</option>
+                        }
+                    </select>
+                </div>
+            }
         </div>
-        <div class="form-group">
+
+        @* Customer pricing summary strip *@
+        @if (_customerSummary != null)
+        {
+            <div style="display: flex; gap: 16px; align-items: center; padding: 8px 12px; margin-top: 8px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(16, 185, 129, 0.06)); border-radius: 6px; font-size: 0.82rem;">
+                <span class="badge @(_customerSummary.Tier == CustomerTier.Platinum || _customerSummary.Tier == CustomerTier.Strategic ? "badge-active" : _customerSummary.Tier == CustomerTier.Gold ? "badge-warning" : "badge-info")">
+                    @_customerSummary.Tier
+                </span>
+                @if (_customerSummary.DefaultDiscountPct > 0)
+                {
+                    <span>Default Discount: <strong>@_customerSummary.DefaultDiscountPct%</strong></span>
+                }
+                @if (_customerSummary.ActiveContractCount > 0)
+                {
+                    <span>Contracts: <strong>@_customerSummary.ActiveContractCount active</strong></span>
+                }
+                @if (_customerSummary.ActiveRuleCount > 0)
+                {
+                    <span>Part Rules: <strong>@_customerSummary.ActiveRuleCount</strong></span>
+                }
+                <span>Win Rate: <strong style="color: @(_customerSummary.WinRate >= 50 ? "var(--success)" : "var(--warning)")">@_customerSummary.WinRate%</strong></span>
+                @if (_customerSummary.TotalWonValue > 0)
+                {
+                    <span>Won: <strong>@_customerSummary.TotalWonValue.ToString("C0")</strong></span>
+                }
+                <span style="color: var(--text-muted);">Net @_customerSummary.PaymentTermDays</span>
+            </div>
+        }
+
+        <div class="form-group" style="margin-top: 8px;">
             <label class="form-label">Notes</label>
             <textarea class="form-control" @bind="_quote.Notes" rows="2"></textarea>
         </div>
@@ -85,8 +142,9 @@ else
                         <th>Part</th>
                         <th>Qty</th>
                         <th>Labor (min)</th>
-                        <th>Setup (min)</th>
+                        <th>Setup $/ea</th>
                         <th>Material $/ea</th>
+                        <th>Overhead $/ea</th>
                         <th>Est. Cost/Part</th>
                         <th>Quoted $/Part</th>
                         <th>Line Total</th>
@@ -98,11 +156,18 @@ else
                     @foreach (var line in _quote.Lines)
                     {
                         <tr>
-                            <td>@(line.Part?.PartNumber ?? "—") — @(line.Part?.Name ?? "")</td>
+                            <td>
+                                @(line.Part?.PartNumber ?? "—") — @(line.Part?.Name ?? "")
+                                @if (line.StackLevel.HasValue && line.StackLevel > 1)
+                                {
+                                    <span class="badge badge-info" style="margin-left: 4px; font-size: 0.7rem;">@(line.StackLevel)x Stack</span>
+                                }
+                            </td>
                             <td>@line.Quantity</td>
                             <td>@line.LaborMinutes.ToString("F0")</td>
-                            <td>@line.SetupMinutes.ToString("F0")</td>
+                            <td>@line.SetupCostEach.ToString("C")</td>
                             <td>@line.MaterialCostEach.ToString("C")</td>
+                            <td>@line.OverheadCostEach.ToString("C")</td>
                             <td>@line.EstimatedCostPerPart.ToString("C")</td>
                             <td>@line.QuotedPricePerPart.ToString("C")</td>
                             <td>@((line.QuotedPricePerPart * line.Quantity).ToString("C"))</td>
@@ -165,7 +230,7 @@ else
 }
 
 <!-- Add Line Modal -->
-<AppModal Visible="_showAddLine" VisibleChanged="v => _showAddLine = v" Title="Add Part to Quote" Size="md">
+<AppModal Visible="_showAddLine" VisibleChanged="v => _showAddLine = v" Title="Add Part to Quote" Size="lg">
     <ChildContent>
         <div class="form-group">
             <label class="form-label">Part</label>
@@ -177,32 +242,294 @@ else
                 }
             </select>
         </div>
-        @if (_lineBreakdown != null)
-        {
-            <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px;">Cost Estimate</div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 0.85rem;">
-                    <span>Labor (@_lineBreakdown.TotalLaborMinutes.ToString("F0") min):</span><span>@_lineBreakdown.LaborCost.ToString("C")</span>
-                    <span>Material:</span><span>@_lineBreakdown.MaterialCost.ToString("C")</span>
-                    <span>Overhead:</span><span>@_lineBreakdown.OverheadCost.ToString("C")</span>
-                    <strong>Total/Part:</strong><strong>@_lineBreakdown.TotalCost.ToString("C")</strong>
-                </div>
-            </div>
-        }
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
             <div class="form-group">
                 <label class="form-label">Quantity</label>
-                <input class="form-control" type="number" min="1" @bind="_lineQty" />
+                <input class="form-control" type="number" min="1" @bind="_lineQty" @bind:after="OnQuantityChanged" />
             </div>
             <div class="form-group">
                 <label class="form-label">Quoted Price/Part</label>
                 <input class="form-control" type="number" step="0.01" @bind="_linePrice" />
             </div>
         </div>
+
+        @if (_lineEstimate != null)
+        {
+            <!-- AI-Powered Cost Breakdown -->
+            <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Cost Breakdown</div>
+                    @if (_lineEstimate.PricingTier != null)
+                    {
+                        <span class="badge badge-info">@_lineEstimate.PricingTier</span>
+                    }
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 0.85rem;">
+                    <span>Labor (@_lineEstimate.CostBreakdown.TotalLaborMinutes.ToString("F0") min):</span>
+                    <span>@_lineEstimate.CostBreakdown.LaborCost.ToString("C")</span>
+                    <span>Setup (@_lineEstimate.CostBreakdown.TotalSetupMinutes.ToString("F0") min):</span>
+                    <span>@_lineEstimate.CostBreakdown.SetupCost.ToString("C")</span>
+                    <span>Material:</span>
+                    <span>@_lineEstimate.CostBreakdown.EffectiveMaterialCost.ToString("C")</span>
+                    <span>Overhead:</span>
+                    <span>@_lineEstimate.CostBreakdown.OverheadCost.ToString("C")</span>
+                    @if (_lineEstimate.CostBreakdown.OutsideProcessCost > 0)
+                    {
+                        <span>Outside Process:</span>
+                        <span>@_lineEstimate.CostBreakdown.OutsideProcessCost.ToString("C")</span>
+                    }
+                    @if (_lineEstimate.CostBreakdown.StageMaterialCost > 0)
+                    {
+                        <span>Consumables/Tooling:</span>
+                        <span>@_lineEstimate.CostBreakdown.StageMaterialCost.ToString("C")</span>
+                    }
+                </div>
+                <div style="border-top: 1px solid var(--border-color); margin-top: 8px; padding-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                    <strong>Total Cost (@_lineQty units):</strong>
+                    <strong>@_lineEstimate.CostBreakdown.TotalCost.ToString("C")</strong>
+                    <strong>Cost/Part:</strong>
+                    <strong>@((_lineQty > 0 ? _lineEstimate.CostBreakdown.TotalCost / _lineQty : 0).ToString("C"))</strong>
+                </div>
+            </div>
+
+            <!-- Pricing Suggestion -->
+            <div style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(16, 185, 129, 0.08)); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">Suggested Pricing</div>
+                <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 0.85rem;">
+                    @if (_lineEstimate.PartPricingSellPrice.HasValue && _lineEstimate.PartPricingSellPrice > 0)
+                    {
+                        <span>Configured Sell Price:</span>
+                        <strong style="color: var(--accent);">@_lineEstimate.PartPricingSellPrice.Value.ToString("C")/part</strong>
+                        <button class="btn btn-sm btn-primary" @onclick="() => UsePrice(_lineEstimate.PartPricingSellPrice.Value)">Use</button>
+                    }
+                    <span>Target Margin (@_quote.TargetMarginPct.ToString("F0")%) Price:</span>
+                    <strong style="color: var(--success);">@_lineEstimate.TargetMarginPrice.ToString("C")/part</strong>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => UsePrice(_lineEstimate.TargetMarginPrice)">Use</button>
+                </div>
+            </div>
+
+            <!-- Customer-Specific Pricing -->
+            @if (_customerPriceResult != null && _customerPriceResult.HasCustomerPricing && _customerPriceResult.DiscountPct > 0)
+            {
+                <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(249, 115, 22, 0.08)); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <div style="font-size: 0.85rem; font-weight: 600;">Customer Pricing</div>
+                        <span class="badge badge-warning" style="font-size: 0.7rem;">@_customerPriceResult.PriceSource</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 0.85rem;">
+                        <span>
+                            @_customerPriceResult.RuleDescription
+                        </span>
+                        <strong style="color: var(--warning);">@_customerPriceResult.ResolvedPrice.ToString("C")/part</strong>
+                        <button class="btn btn-sm btn-primary" @onclick="() => UsePrice(_customerPriceResult.ResolvedPrice)">Use</button>
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">
+                        Standard: @_customerPriceResult.StandardPrice.ToString("C") | Discount: @_customerPriceResult.DiscountAmount.ToString("C") (@_customerPriceResult.DiscountPct%)
+                    </div>
+                </div>
+            }
+
+            <!-- Stacking Options (SLS Parts Only) -->
+            @if (_lineEstimate.IsAdditivePart && _lineEstimate.StackingOptions.Count > 1)
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">Build Stacking Options</div>
+                    <table class="data-table" style="font-size: 0.82rem;">
+                        <thead>
+                            <tr>
+                                <th>Config</th>
+                                <th>Parts/Build</th>
+                                <th>Build Hrs</th>
+                                <th>Builds Req.</th>
+                                <th>Machine $/Part</th>
+                                <th>Total $/Part</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var opt in _lineEstimate.StackingOptions)
+                            {
+                                <tr style="@(opt.IsRecommended ? "background: rgba(16, 185, 129, 0.08);" : "")">
+                                    <td>
+                                        @opt.Label
+                                        @if (opt.IsRecommended)
+                                        {
+                                            <span class="badge badge-active" style="margin-left: 4px; font-size: 0.7rem;">Best</span>
+                                        }
+                                    </td>
+                                    <td>@opt.PartsPerBuild</td>
+                                    <td>@opt.BuildDurationHours.ToString("F1")</td>
+                                    <td>@opt.BuildsRequired</td>
+                                    <td>@opt.MachineCostPerPart.ToString("C")</td>
+                                    <td><strong>@opt.TotalCostPerPart.ToString("C")</strong></td>
+                                    <td>
+                                        @if (!opt.IsRecommended)
+                                        {
+                                            <button class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;"
+                                                    @onclick="() => SelectStackOption(opt)">Select</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <!-- Volume Break Pricing -->
+            @if (_lineEstimate.QuantityBreaks.Count > 1)
+            {
+                <details style="margin-bottom: 12px;">
+                    <summary style="cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--text-primary); padding: 8px 0;">
+                        Volume Break Pricing
+                    </summary>
+                    <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px;">
+                        <table class="data-table" style="font-size: 0.82rem;">
+                            <thead>
+                                <tr>
+                                    <th>Qty</th>
+                                    <th>Setup/Part</th>
+                                    <th>Cost/Part</th>
+                                    <th>Total Cost</th>
+                                    <th>Suggested Price/Part</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var qb in _lineEstimate.QuantityBreaks)
+                                {
+                                    <tr style="@(qb.Quantity == _lineQty ? "background: rgba(99, 102, 241, 0.08); font-weight: 600;" : "")">
+                                        <td>@qb.Quantity</td>
+                                        <td>@qb.SetupCostPerPart.ToString("C")</td>
+                                        <td>@qb.CostPerPart.ToString("C")</td>
+                                        <td>@qb.TotalCost.ToString("C")</td>
+                                        <td>@qb.SuggestedPrice.ToString("C")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            }
+
+            <!-- AI-Powered Smart Pricing -->
+            @if (_smartPrice != null)
+            {
+                <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(59, 130, 246, 0.06)); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div style="font-size: 0.85rem; font-weight: 600;">AI-Powered Estimate</div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <span class="badge @(_smartPrice.ConfidenceScore >= 50 ? "badge-active" : _smartPrice.ConfidenceScore >= 25 ? "badge-warning" : "badge-cancelled")"
+                                  style="font-size: 0.7rem;">
+                                @_smartPrice.ConfidenceLabel Confidence (@_smartPrice.ConfidenceScore%)
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 10px; text-align: center;">
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Parametric</div>
+                            <div style="font-size: 1rem; font-weight: 600;">@_smartPrice.ParametricCostPerPart.ToString("C")</div>
+                        </div>
+                        @if (_smartPrice.SimilarPartCostPerPart.HasValue)
+                        {
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Similar Parts Avg</div>
+                                <div style="font-size: 1rem; font-weight: 600;">@_smartPrice.SimilarPartCostPerPart.Value.ToString("C")</div>
+                            </div>
+                        }
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">AI Blended</div>
+                            <div style="font-size: 1.1rem; font-weight: 700; color: var(--accent);">@_smartPrice.AiEstimatedCostPerPart.ToString("C")</div>
+                        </div>
+                    </div>
+
+                    @if (_smartPrice.RecommendedSellPrice > 0)
+                    {
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: rgba(16, 185, 129, 0.08); border-radius: 6px; margin-bottom: 8px;">
+                            <span style="font-size: 0.85rem;">AI Recommended Price:</span>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <strong style="color: var(--success); font-size: 1rem;">@_smartPrice.RecommendedSellPrice.ToString("C")/part</strong>
+                                <button class="btn btn-sm btn-primary" @onclick="() => UsePrice(_smartPrice.RecommendedSellPrice)">Use</button>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_smartPrice.AccuracyAdjustmentNote))
+                    {
+                        <div style="font-size: 0.78rem; color: var(--warning); padding: 4px 0;">
+                            @_smartPrice.AccuracyAdjustmentNote
+                        </div>
+                    }
+
+                    <!-- Complexity Badge -->
+                    @if (_smartPrice.Complexity.Score > 0)
+                    {
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Complexity:</span>
+                            <span class="badge @(_smartPrice.Complexity.Tier == "Simple" ? "badge-active" : _smartPrice.Complexity.Tier == "Moderate" ? "badge-info" : _smartPrice.Complexity.Tier == "Complex" ? "badge-warning" : "badge-cancelled")">
+                                @_smartPrice.Complexity.Tier (@_smartPrice.Complexity.Score.ToString("F1")/10)
+                            </span>
+                        </div>
+                    }
+
+                    <!-- Similar Parts -->
+                    @if (_smartPrice.SimilarParts.Any(s => s.CompletedJobCount > 0))
+                    {
+                        <details>
+                            <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 600; color: var(--text-primary); padding: 4px 0;">
+                                Similar Parts (@_smartPrice.SimilarParts.Count(s => s.CompletedJobCount > 0) with actuals)
+                            </summary>
+                            <table class="data-table" style="font-size: 0.78rem; margin-top: 6px;">
+                                <thead>
+                                    <tr>
+                                        <th>Part</th>
+                                        <th>Match</th>
+                                        <th>Actual $/Part</th>
+                                        <th>Est. $/Part</th>
+                                        <th>Accuracy</th>
+                                        <th>Jobs</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var sp in _smartPrice.SimilarParts.Where(s => s.CompletedJobCount > 0).Take(5))
+                                    {
+                                        <tr>
+                                            <td>@sp.PartNumber — @sp.PartName</td>
+                                            <td>
+                                                <span style="color: @(sp.SimilarityScore >= 70 ? "var(--success)" : sp.SimilarityScore >= 40 ? "var(--warning)" : "var(--text-muted)")">
+                                                    @sp.SimilarityScore.ToString("F0")%
+                                                </span>
+                                            </td>
+                                            <td>@sp.ActualCostPerPart.ToString("C")</td>
+                                            <td>@sp.EstimatedCostPerPart.ToString("C")</td>
+                                            <td>@(sp.CostAccuracyRatio > 0 ? sp.CostAccuracyRatio.ToString("F2") + "x" : "—")</td>
+                                            <td>@sp.CompletedJobCount</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </details>
+                    }
+                </div>
+            }
+            else if (_linePartId > 0 && !_estimateLoading && _lineEstimate != null)
+            {
+                <div style="text-align: center; padding: 8px; color: var(--text-muted); font-size: 0.82rem;">
+                    <span class="spinner" style="width: 14px; height: 14px;"></span> Loading AI pricing...
+                </div>
+            }
+        }
+        else if (_linePartId > 0 && _estimateLoading)
+        {
+            <div style="text-align: center; padding: 20px; color: var(--text-muted);">
+                <span class="spinner"></span> Calculating estimate...
+            </div>
+        }
     </ChildContent>
     <Footer>
         <button class="btn btn-secondary" @onclick="() => _showAddLine = false">Cancel</button>
-        <button class="btn btn-primary" @onclick="AddLine" disabled="@(_linePartId == 0)">Add Line</button>
+        <button class="btn btn-primary" @onclick="AddLine" disabled="@(_linePartId == 0 || _estimateLoading)">Add Line</button>
     </Footer>
 </AppModal>
 
@@ -220,6 +547,55 @@ else
     </Footer>
 </AppModal>
 
+<!-- Quick Add Customer Modal -->
+<AppModal Visible="_showNewCustomer" VisibleChanged="v => _showNewCustomer = v" Title="New Customer" Size="md">
+    <ChildContent>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+                <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                <input class="form-control" @bind="_newCustomer.Name" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Code</label>
+                <input class="form-control" @bind="_newCustomer.Code" placeholder="e.g. ACME" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input class="form-control" @bind="_newCustomer.Email" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input class="form-control" @bind="_newCustomer.Phone" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Tier</label>
+                <select class="form-control" @bind="_newCustomer.Tier">
+                    @foreach (var t in Enum.GetValues<CustomerTier>())
+                    {
+                        <option value="@t">@t</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Default Discount %</label>
+                <input class="form-control" type="number" step="0.5" @bind="_newCustomer.DefaultDiscountPct" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Payment Terms (days)</label>
+                <input class="form-control" type="number" @bind="_newCustomer.PaymentTermDays" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Default Margin %</label>
+                <input class="form-control" type="number" step="0.5" @bind="_newCustomer.DefaultMarginPct" />
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showNewCustomer = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="SaveNewCustomer">Save Customer</button>
+    </Footer>
+</AppModal>
+
 <ConfirmDialog @ref="_confirm" />
 <NavigationLock OnBeforeInternalNavigation="OnBeforeNavigation" ConfirmExternalNavigation="_hasChanges" />
 
@@ -233,6 +609,14 @@ else
     private List<Part> _parts = new();
     private ConfirmDialog _confirm = null!;
 
+    // Customer
+    private List<Customer> _customers = new();
+    private List<PricingContract> _activeContracts = new();
+    private CustomerPricingSummary? _customerSummary;
+    private CustomerPriceResult? _customerPriceResult;
+    private bool _showNewCustomer;
+    private Customer _newCustomer = new();
+
     // Custom fields
     private List<CustomFieldDefinition> _customFieldDefs = new();
     private Dictionary<string, string> _customFieldValues = new();
@@ -242,7 +626,9 @@ else
     private int _linePartId;
     private int _lineQty = 1;
     private decimal _linePrice;
-    private PricingBreakdown? _lineBreakdown;
+    private QuoteLineEstimate? _lineEstimate;
+    private SmartPriceRecommendation? _smartPrice;
+    private bool _estimateLoading;
 
     // Revision
     private bool _showRevisionModal;
@@ -262,11 +648,14 @@ else
         {
             _showDlms = Features.IsEnabled("dlms");
             _parts = await PartService.GetAllPartsAsync();
+            _customers = await CustomerPricing.GetAllCustomersAsync();
 
             if (Id > 0)
             {
                 _quote = await QuoteService.GetQuoteByIdAsync(Id) ?? new Quote();
                 _isNew = false;
+                if (_quote.CustomerId.HasValue)
+                    await LoadCustomerContext(_quote.CustomerId.Value);
             }
             else
             {
@@ -301,23 +690,93 @@ else
     {
         if (_linePartId > 0)
         {
-            try
-            {
-                _lineBreakdown = await PricingEngine.CalculatePartCostAsync(_linePartId, _lineQty);
-                _linePrice = _lineBreakdown.TotalCost > 0 && _quote.TargetMarginPct < 100
-                    ? Math.Round(_lineBreakdown.TotalCost / (1 - _quote.TargetMarginPct / 100), 2)
-                    : 0;
-            }
-            catch
-            {
-                _lineBreakdown = null;
-                _linePrice = 0;
-            }
+            await RefreshEstimate();
         }
         else
         {
-            _lineBreakdown = null;
+            _lineEstimate = null;
         }
+    }
+
+    private async Task OnQuantityChanged()
+    {
+        if (_linePartId > 0 && _lineQty > 0)
+            await RefreshEstimate();
+    }
+
+    private async Task RefreshEstimate()
+    {
+        _estimateLoading = true;
+        _smartPrice = null;
+        _customerPriceResult = null;
+        StateHasChanged();
+        try
+        {
+            _lineEstimate = await PricingEngine.GetQuoteLineEstimateAsync(
+                _linePartId, Math.Max(1, _lineQty), _quote.TargetMarginPct);
+
+            // Determine standard price (PartPricing sell price or target margin price)
+            decimal standardPrice = 0;
+            if (_lineEstimate.PartPricingSellPrice.HasValue && _lineEstimate.PartPricingSellPrice > 0)
+                standardPrice = _lineEstimate.PartPricingSellPrice.Value;
+            else if (_lineEstimate.TargetMarginPrice > 0)
+                standardPrice = _lineEstimate.TargetMarginPrice;
+
+            // Resolve customer-specific pricing if a customer is selected
+            if (_quote.CustomerId.HasValue && _quote.CustomerId > 0 && standardPrice > 0)
+            {
+                _customerPriceResult = await CustomerPricing.ResolveCustomerPriceAsync(
+                    _quote.CustomerId.Value, _linePartId, Math.Max(1, _lineQty), standardPrice);
+
+                // Auto-set price: prefer customer-resolved price
+                _linePrice = _customerPriceResult.HasCustomerPricing && _customerPriceResult.DiscountPct > 0
+                    ? _customerPriceResult.ResolvedPrice
+                    : standardPrice;
+            }
+            else
+            {
+                _linePrice = standardPrice;
+            }
+        }
+        catch
+        {
+            _lineEstimate = null;
+            _linePrice = 0;
+        }
+        finally
+        {
+            _estimateLoading = false;
+        }
+
+        // Fetch AI-powered smart pricing in the background (non-blocking)
+        _ = LoadSmartPriceAsync();
+    }
+
+    private async Task LoadSmartPriceAsync()
+    {
+        try
+        {
+            _smartPrice = await SmartPricing.GetSmartPriceAsync(
+                _linePartId, Math.Max(1, _lineQty), _quote.TargetMarginPct);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            _smartPrice = null;
+        }
+    }
+
+    private void UsePrice(decimal price)
+    {
+        _linePrice = price;
+    }
+
+    private void SelectStackOption(StackingOption opt)
+    {
+        // Recalculate price using this stacking option's cost
+        _linePrice = _quote.TargetMarginPct < 100
+            ? Math.Round(opt.TotalCostPerPart / (1 - _quote.TargetMarginPct / 100m), 2)
+            : 0;
     }
 
     private void ShowAddLine()
@@ -325,7 +784,9 @@ else
         _linePartId = 0;
         _lineQty = 1;
         _linePrice = 0;
-        _lineBreakdown = null;
+        _lineEstimate = null;
+        _smartPrice = null;
+        _estimateLoading = false;
         _showAddLine = true;
     }
 
@@ -437,6 +898,83 @@ else
             _quote = await QuoteService.GetQuoteByIdAsync(_quote.Id) ?? _quote;
             _showRevisionModal = false;
             Toast.ShowSuccess($"Revision R{_quote.RevisionNumber} saved");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+    }
+
+    private async Task OnCustomerSelected(ChangeEventArgs e)
+    {
+        var val = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        if (val > 0)
+        {
+            _quote.CustomerId = val;
+            var customer = _customers.FirstOrDefault(c => c.Id == val);
+            if (customer != null)
+            {
+                _quote.CustomerName = customer.Name;
+                _quote.CustomerEmail = customer.Email;
+                _quote.CustomerPhone = customer.Phone;
+                _quote.IsDefenseContract = customer.IsDefenseCustomer;
+                _quote.CustomerDiscountPct = customer.DefaultDiscountPct;
+                if (customer.DefaultMarginPct.HasValue)
+                    _quote.TargetMarginPct = customer.DefaultMarginPct.Value;
+            }
+            await LoadCustomerContext(val);
+        }
+        else
+        {
+            _quote.CustomerId = null;
+            _quote.PricingContractId = null;
+            _quote.CustomerDiscountPct = 0;
+            _customerSummary = null;
+            _activeContracts = new();
+        }
+        _hasChanges = true;
+    }
+
+    private async Task LoadCustomerContext(int customerId)
+    {
+        try
+        {
+            _customerSummary = await CustomerPricing.GetCustomerPricingSummaryAsync(customerId);
+            _activeContracts = await CustomerPricing.GetContractsForCustomerAsync(customerId);
+            _activeContracts = _activeContracts
+                .Where(c => c.Status == ContractStatus.Active && c.EndDate >= DateTime.UtcNow)
+                .ToList();
+        }
+        catch
+        {
+            _customerSummary = null;
+            _activeContracts = new();
+        }
+    }
+
+    private async Task SaveNewCustomer()
+    {
+        if (string.IsNullOrWhiteSpace(_newCustomer.Name))
+        {
+            Toast.ShowError("Customer name is required.");
+            return;
+        }
+        try
+        {
+            var saved = await CustomerPricing.SaveCustomerAsync(_newCustomer);
+            _customers = await CustomerPricing.GetAllCustomersAsync();
+            _quote.CustomerId = saved.Id;
+            _quote.CustomerName = saved.Name;
+            _quote.CustomerEmail = saved.Email;
+            _quote.CustomerPhone = saved.Phone;
+            _quote.CustomerDiscountPct = saved.DefaultDiscountPct;
+            if (saved.DefaultMarginPct.HasValue)
+                _quote.TargetMarginPct = saved.DefaultMarginPct.Value;
+            await LoadCustomerContext(saved.Id);
+            _showNewCustomer = false;
+            _newCustomer = new Customer();
+            _hasChanges = true;
+            Toast.ShowSuccess($"Customer '{saved.Name}' created");
         }
         catch (Exception ex)
         {
