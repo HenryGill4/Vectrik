@@ -1,0 +1,499 @@
+@page "/quotes/customers"
+@inject ICustomerPricingService CustomerPricing
+@inject IPartService PartService
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Customer Pricing - Vectrik</PageTitle>
+
+<div class="page-header">
+    <div>
+        <button class="btn btn-sm btn-secondary" @onclick='() => Nav.NavigateTo("/quotes")' style="margin-bottom: 8px;">← Quotes</button>
+        <h1 class="page-title">Customer Pricing</h1>
+    </div>
+    <button class="btn btn-primary" @onclick="ShowNewCustomer">+ New Customer</button>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else
+{
+    <!-- Customer List -->
+    <div class="card" style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 class="card-title" style="margin: 0;">Customers (@_customers.Count)</h3>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <label style="font-size: 0.82rem; color: var(--text-muted);">
+                    <input type="checkbox" @bind="_showInactive" @bind:after="LoadCustomers" /> Show Inactive
+                </label>
+            </div>
+        </div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Code</th>
+                    <th>Tier</th>
+                    <th>Default Discount</th>
+                    <th>Target Margin</th>
+                    <th>Payment Terms</th>
+                    <th>Pricing Rules</th>
+                    <th>Contracts</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _customers)
+                {
+                    <tr style="@(!c.IsActive ? "opacity: 0.5;" : "") @(_selectedCustomerId == c.Id ? "background: rgba(99, 102, 241, 0.08);" : "")"
+                        @onclick="() => SelectCustomer(c.Id)">
+                        <td>
+                            <strong>@c.Name</strong>
+                            @if (c.IsDefenseCustomer)
+                            {
+                                <span class="badge badge-warning" style="margin-left: 4px; font-size: 0.7rem;">Defense</span>
+                            }
+                        </td>
+                        <td>@(c.Code ?? "—")</td>
+                        <td>
+                            <span class="badge @(c.Tier == CustomerTier.Platinum || c.Tier == CustomerTier.Strategic ? "badge-active" : c.Tier == CustomerTier.Gold ? "badge-warning" : c.Tier == CustomerTier.Silver ? "badge-info" : "badge-secondary")">
+                                @c.Tier
+                            </span>
+                        </td>
+                        <td>@(c.DefaultDiscountPct > 0 ? $"{c.DefaultDiscountPct}%" : "—")</td>
+                        <td>@(c.DefaultMarginPct.HasValue ? $"{c.DefaultMarginPct}%" : "—")</td>
+                        <td>Net @c.PaymentTermDays</td>
+                        <td>@(c.PricingRules?.Count(r => r.ExpirationDate == null || r.ExpirationDate > DateTime.UtcNow) ?? 0)</td>
+                        <td>@(c.Contracts?.Count(ct => ct.Status == ContractStatus.Active) ?? 0)</td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditCustomer(c)" @onclick:stopPropagation="true">Edit</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (_selectedCustomer != null)
+    {
+        <!-- Customer Detail Panel -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <!-- Pricing Rules -->
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 class="card-title" style="margin: 0;">Pricing Rules</h3>
+                    <button class="btn btn-sm btn-primary" @onclick="ShowAddRule">+ Add Rule</button>
+                </div>
+
+                @if (_rules.Any())
+                {
+                    <table class="data-table" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Part</th>
+                                <th>Price</th>
+                                <th>Discount</th>
+                                <th>Qty Range</th>
+                                <th>Expires</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in _rules)
+                            {
+                                var isExpired = r.ExpirationDate.HasValue && r.ExpirationDate < DateTime.UtcNow;
+                                <tr style="@(isExpired ? "opacity: 0.5;" : "")">
+                                    <td>@(r.Part?.PartNumber ?? "—")</td>
+                                    <td>@(r.NegotiatedPricePerUnit.HasValue ? r.NegotiatedPricePerUnit.Value.ToString("C") : "—")</td>
+                                    <td>@(r.DiscountPct > 0 ? $"{r.DiscountPct}%" : "—")</td>
+                                    <td>@r.MinQuantity@(r.MaxQuantity.HasValue ? $"–{r.MaxQuantity}" : "+")</td>
+                                    <td>@(r.ExpirationDate?.ToString("MMM dd, yyyy") ?? "Never")</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteRule(r.Id)" @onclick:stopPropagation="true">✕</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p style="color: var(--text-muted); text-align: center; padding: 12px;">No pricing rules. Standard pricing applies.</p>
+                }
+            </div>
+
+            <!-- Contracts -->
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 class="card-title" style="margin: 0;">Contracts</h3>
+                    <button class="btn btn-sm btn-primary" @onclick="ShowAddContract">+ Add Contract</button>
+                </div>
+
+                @if (_contracts.Any())
+                {
+                    <table class="data-table" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Contract</th>
+                                <th>Type</th>
+                                <th>Discount</th>
+                                <th>Period</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ct in _contracts)
+                            {
+                                <tr>
+                                    <td><strong>@ct.ContractNumber</strong></td>
+                                    <td>@ct.Type</td>
+                                    <td>@(ct.BlanketDiscountPct > 0 ? $"{ct.BlanketDiscountPct}%" : "—")</td>
+                                    <td style="font-size: 0.8rem;">@ct.StartDate.ToString("MMM yyyy") – @ct.EndDate.ToString("MMM yyyy")</td>
+                                    <td>
+                                        <span class="badge @(ct.Status == ContractStatus.Active ? "badge-active" : ct.Status == ContractStatus.Expired ? "badge-cancelled" : "badge-secondary")">
+                                            @ct.Status
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p style="color: var(--text-muted); text-align: center; padding: 12px;">No contracts.</p>
+                }
+            </div>
+        </div>
+    }
+}
+
+<!-- Customer Edit Modal -->
+<AppModal Visible="_showCustomerModal" VisibleChanged="v => _showCustomerModal = v" Title="@(_editCustomer.Id == 0 ? "New Customer" : "Edit Customer")" Size="md">
+    <ChildContent>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+                <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                <input class="form-control" @bind="_editCustomer.Name" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Code</label>
+                <input class="form-control" @bind="_editCustomer.Code" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input class="form-control" @bind="_editCustomer.Email" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input class="form-control" @bind="_editCustomer.Phone" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Company</label>
+                <input class="form-control" @bind="_editCustomer.Company" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Tier</label>
+                <select class="form-control" @bind="_editCustomer.Tier">
+                    @foreach (var t in Enum.GetValues<CustomerTier>())
+                    {
+                        <option value="@t">@t</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Default Discount %</label>
+                <input class="form-control" type="number" step="0.5" @bind="_editCustomer.DefaultDiscountPct" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Default Margin %</label>
+                <input class="form-control" type="number" step="0.5" @bind="_editCustomer.DefaultMarginPct" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Payment Terms (days)</label>
+                <input class="form-control" type="number" @bind="_editCustomer.PaymentTermDays" />
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 8px; padding-top: 24px;">
+                <input type="checkbox" @bind="_editCustomer.IsDefenseCustomer" /> Defense Customer
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Address</label>
+            <textarea class="form-control" @bind="_editCustomer.Address" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" @bind="_editCustomer.Notes" rows="2"></textarea>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showCustomerModal = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="SaveCustomer">Save</button>
+    </Footer>
+</AppModal>
+
+<!-- Add Pricing Rule Modal -->
+<AppModal Visible="_showRuleModal" VisibleChanged="v => _showRuleModal = v" Title="Add Pricing Rule" Size="md">
+    <ChildContent>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+                <label class="form-label">Part <span style="color:var(--danger)">*</span></label>
+                <select class="form-control" @bind="_editRule.PartId">
+                    <option value="0">Select a part...</option>
+                    @foreach (var p in _parts)
+                    {
+                        <option value="@p.Id">@p.PartNumber — @p.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Negotiated Price/Unit</label>
+                <input class="form-control" type="number" step="0.01" @bind="_editRule.NegotiatedPricePerUnit" placeholder="Leave blank for discount-only" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Discount %</label>
+                <input class="form-control" type="number" step="0.5" @bind="_editRule.DiscountPct" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Priority (lower = higher)</label>
+                <input class="form-control" type="number" @bind="_editRule.Priority" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Min Quantity</label>
+                <input class="form-control" type="number" @bind="_editRule.MinQuantity" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Max Quantity</label>
+                <input class="form-control" type="number" @bind="_editRule.MaxQuantity" placeholder="Unlimited" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Expiration Date</label>
+                <input class="form-control" type="date" @bind="_editRule.ExpirationDate" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" @bind="_editRule.Notes" rows="2"></textarea>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showRuleModal = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="SaveRule">Save Rule</button>
+    </Footer>
+</AppModal>
+
+<!-- Add Contract Modal -->
+<AppModal Visible="_showContractModal" VisibleChanged="v => _showContractModal = v" Title="Add Contract" Size="md">
+    <ChildContent>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+                <label class="form-label">Contract Number <span style="color:var(--danger)">*</span></label>
+                <input class="form-control" @bind="_editContract.ContractNumber" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Type</label>
+                <select class="form-control" @bind="_editContract.Type">
+                    @foreach (var t in Enum.GetValues<ContractType>())
+                    {
+                        <option value="@t">@t</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Start Date</label>
+                <input class="form-control" type="date" @bind="_editContract.StartDate" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">End Date</label>
+                <input class="form-control" type="date" @bind="_editContract.EndDate" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Blanket Discount %</label>
+                <input class="form-control" type="number" step="0.5" @bind="_editContract.BlanketDiscountPct" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Min Annual Commitment ($)</label>
+                <input class="form-control" type="number" step="100" @bind="_editContract.MinAnnualCommitment" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-control" @bind="_editContract.Status">
+                    @foreach (var s in Enum.GetValues<ContractStatus>())
+                    {
+                        <option value="@s">@s</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea class="form-control" @bind="_editContract.Description" rows="2"></textarea>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showContractModal = false">Cancel</button>
+        <button class="btn btn-primary" @onclick="SaveContract">Save Contract</button>
+    </Footer>
+</AppModal>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private bool _loading = true;
+    private bool _showInactive;
+    private List<Customer> _customers = new();
+    private List<Part> _parts = new();
+    private ConfirmDialog _confirm = null!;
+
+    // Selection
+    private int _selectedCustomerId;
+    private Customer? _selectedCustomer;
+    private List<CustomerPricingRule> _rules = new();
+    private List<PricingContract> _contracts = new();
+
+    // Modals
+    private bool _showCustomerModal;
+    private Customer _editCustomer = new();
+    private bool _showRuleModal;
+    private CustomerPricingRule _editRule = new();
+    private bool _showContractModal;
+    private PricingContract _editContract = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _parts = await PartService.GetAllPartsAsync();
+        await LoadCustomers();
+        _loading = false;
+    }
+
+    private async Task LoadCustomers()
+    {
+        _customers = await CustomerPricing.GetAllCustomersAsync(_showInactive);
+        // Reload detail if needed
+        foreach (var c in _customers)
+        {
+            var full = await CustomerPricing.GetCustomerByIdAsync(c.Id);
+            if (full != null)
+            {
+                c.PricingRules = full.PricingRules;
+                c.Contracts = full.Contracts;
+            }
+        }
+    }
+
+    private async Task SelectCustomer(int id)
+    {
+        _selectedCustomerId = id;
+        _selectedCustomer = await CustomerPricing.GetCustomerByIdAsync(id);
+        if (_selectedCustomer != null)
+        {
+            _rules = await CustomerPricing.GetRulesForCustomerAsync(id);
+            _contracts = await CustomerPricing.GetContractsForCustomerAsync(id);
+        }
+    }
+
+    private void ShowNewCustomer()
+    {
+        _editCustomer = new Customer();
+        _showCustomerModal = true;
+    }
+
+    private void EditCustomer(Customer c)
+    {
+        _editCustomer = new Customer
+        {
+            Id = c.Id, Name = c.Name, Code = c.Code, Email = c.Email, Phone = c.Phone,
+            Company = c.Company, Address = c.Address, Tier = c.Tier,
+            DefaultDiscountPct = c.DefaultDiscountPct, DefaultMarginPct = c.DefaultMarginPct,
+            PaymentTermDays = c.PaymentTermDays, IsDefenseCustomer = c.IsDefenseCustomer,
+            Currency = c.Currency, Notes = c.Notes, IsActive = c.IsActive,
+            CreatedDate = c.CreatedDate
+        };
+        _showCustomerModal = true;
+    }
+
+    private async Task SaveCustomer()
+    {
+        if (string.IsNullOrWhiteSpace(_editCustomer.Name))
+        {
+            Toast.ShowError("Customer name is required.");
+            return;
+        }
+        try
+        {
+            await CustomerPricing.SaveCustomerAsync(_editCustomer);
+            await LoadCustomers();
+            _showCustomerModal = false;
+            Toast.ShowSuccess("Customer saved");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private void ShowAddRule()
+    {
+        if (_selectedCustomer == null) return;
+        _editRule = new CustomerPricingRule { CustomerId = _selectedCustomer.Id, MinQuantity = 1, Priority = 100 };
+        _showRuleModal = true;
+    }
+
+    private async Task SaveRule()
+    {
+        if (_editRule.PartId == 0)
+        {
+            Toast.ShowError("Select a part.");
+            return;
+        }
+        try
+        {
+            await CustomerPricing.SaveRuleAsync(_editRule);
+            _rules = await CustomerPricing.GetRulesForCustomerAsync(_selectedCustomer!.Id);
+            _showRuleModal = false;
+            Toast.ShowSuccess("Pricing rule saved");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private async Task DeleteRule(int ruleId)
+    {
+        if (!await _confirm.ShowAsync("Delete this pricing rule?")) return;
+        try
+        {
+            await CustomerPricing.DeleteRuleAsync(ruleId);
+            _rules = await CustomerPricing.GetRulesForCustomerAsync(_selectedCustomer!.Id);
+            Toast.ShowSuccess("Rule deleted");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+
+    private void ShowAddContract()
+    {
+        if (_selectedCustomer == null) return;
+        _editContract = new PricingContract
+        {
+            CustomerId = _selectedCustomer.Id,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddYears(1)
+        };
+        _showContractModal = true;
+    }
+
+    private async Task SaveContract()
+    {
+        if (string.IsNullOrWhiteSpace(_editContract.ContractNumber))
+        {
+            Toast.ShowError("Contract number is required.");
+            return;
+        }
+        try
+        {
+            await CustomerPricing.SaveContractAsync(_editContract);
+            _contracts = await CustomerPricing.GetContractsForCustomerAsync(_selectedCustomer!.Id);
+            _showContractModal = false;
+            Toast.ShowSuccess("Contract saved");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+    }
+}

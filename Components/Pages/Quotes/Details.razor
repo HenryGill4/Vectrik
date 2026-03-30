@@ -132,6 +132,33 @@ else
                     <p style="margin: 0;">✅ Converted to <a href="/workorders/@_quote.ConvertedWorkOrderId" style="color: var(--accent); font-weight: 600;">Work Order</a></p>
                 </div>
             }
+
+            @if (_quote.Status == QuoteStatus.Rejected && _quote.LossReason != QuoteLossReason.None)
+            {
+                <div class="card" style="grid-column: span 2; background: rgba(239, 68, 68, 0.06); border-color: var(--danger);">
+                    <h3 class="card-title" style="color: var(--danger);">Loss Analysis</h3>
+                    <div class="detail-grid">
+                        <div class="detail-label">Reason</div><div class="detail-value">@FormatLossReason(_quote.LossReason)</div>
+                        @if (_quote.CompetitorPrice.HasValue)
+                        {
+                            <div class="detail-label">Competitor Price</div><div class="detail-value">@_quote.CompetitorPrice.Value.ToString("C")</div>
+                            @if (_quote.QuotedPrice > 0)
+                            {
+                                var gap = (_quote.QuotedPrice.Value - _quote.CompetitorPrice.Value) / _quote.QuotedPrice.Value * 100;
+                                <div class="detail-label">Price Gap</div><div class="detail-value" style="color: var(--danger);">@gap.ToString("F1")% above competitor</div>
+                            }
+                        }
+                        @if (_quote.DecisionDays.HasValue)
+                        {
+                            <div class="detail-label">Time to Decision</div><div class="detail-value">@_quote.DecisionDays days</div>
+                        }
+                        @if (!string.IsNullOrEmpty(_quote.LossNotes))
+                        {
+                            <div class="detail-label">Notes</div><div class="detail-value">@_quote.LossNotes</div>
+                        }
+                    </div>
+                </div>
+            }
         </div>
     }
 
@@ -145,8 +172,9 @@ else
                         <th>Part</th>
                         <th>Qty</th>
                         <th>Labor (min)</th>
-                        <th>Setup (min)</th>
+                        <th>Setup $/ea</th>
                         <th>Material $/ea</th>
+                        <th>Overhead $/ea</th>
                         <th>Est. Cost/Part</th>
                         <th>Quoted $/Part</th>
                         <th>Line Total</th>
@@ -157,11 +185,18 @@ else
                     @foreach (var l in _quote.Lines)
                     {
                         <tr>
-                            <td><strong>@(l.Part?.PartNumber ?? "—")</strong> — @(l.Part?.Name ?? "")</td>
+                            <td>
+                                <strong>@(l.Part?.PartNumber ?? "—")</strong> — @(l.Part?.Name ?? "")
+                                @if (l.StackLevel.HasValue && l.StackLevel > 1)
+                                {
+                                    <span class="badge badge-info" style="margin-left: 4px; font-size: 0.7rem;">@(l.StackLevel)x Stack</span>
+                                }
+                            </td>
                             <td>@l.Quantity</td>
                             <td>@l.LaborMinutes.ToString("F0")</td>
-                            <td>@l.SetupMinutes.ToString("F0")</td>
+                            <td>@l.SetupCostEach.ToString("C")</td>
                             <td>@l.MaterialCostEach.ToString("C")</td>
+                            <td>@l.OverheadCostEach.ToString("C")</td>
                             <td>@l.EstimatedCostPerPart.ToString("C")</td>
                             <td>@l.QuotedPricePerPart.ToString("C")</td>
                             <td>@((l.QuotedPricePerPart * l.Quantity).ToString("C"))</td>
@@ -179,7 +214,7 @@ else
                     <tr style="font-weight: 600;">
                         <td>Totals</td>
                         <td>@_quote.Lines.Sum(l => l.Quantity)</td>
-                        <td colspan="3"></td>
+                        <td colspan="4"></td>
                         <td>@_quote.TotalEstimatedCost.ToString("C")</td>
                         <td></td>
                         <td>@(_quote.QuotedPrice?.ToString("C") ?? "—")</td>
@@ -231,6 +266,39 @@ else
     }
 }
 
+<!-- Rejection Modal with Loss Tracking -->
+<AppModal Visible="_showRejectModal" VisibleChanged="v => _showRejectModal = v" Title="Reject Quote" Size="md">
+    <ChildContent>
+        <div class="form-group">
+            <label class="form-label">Loss Reason</label>
+            <select class="form-control" @bind="_lossReason">
+                <option value="@QuoteLossReason.None">Select reason...</option>
+                <option value="@QuoteLossReason.Price">Price Too High</option>
+                <option value="@QuoteLossReason.LeadTime">Lead Time</option>
+                <option value="@QuoteLossReason.Capability">Capability Gap</option>
+                <option value="@QuoteLossReason.Relationship">Customer Relationship</option>
+                <option value="@QuoteLossReason.Specification">Spec Issue</option>
+                <option value="@QuoteLossReason.CompetitorWon">Competitor Won</option>
+                <option value="@QuoteLossReason.ProjectCancelled">Project Cancelled</option>
+                <option value="@QuoteLossReason.NoResponse">No Response</option>
+                <option value="@QuoteLossReason.Other">Other</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Competitor Price (if known)</label>
+            <input class="form-control" type="number" step="0.01" @bind="_competitorPrice" placeholder="Optional" />
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" @bind="_lossNotes" rows="2" placeholder="Why was this quote lost?"></textarea>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button class="btn btn-secondary" @onclick="() => _showRejectModal = false">Cancel</button>
+        <button class="btn btn-danger" @onclick="ConfirmReject">Reject Quote</button>
+    </Footer>
+</AppModal>
+
 <ConfirmDialog @ref="_confirm" />
 
 @code {
@@ -243,6 +311,12 @@ else
 
     // Workflow
     private WorkflowInstance? _pendingApproval;
+
+    // Rejection / Loss tracking
+    private bool _showRejectModal;
+    private QuoteLossReason _lossReason = QuoteLossReason.None;
+    private decimal? _competitorPrice;
+    private string _lossNotes = string.Empty;
 
     // Custom fields
     private List<CustomFieldDefinition> _customFieldDefs = new();
@@ -304,6 +378,8 @@ else
             }
 
             _quote.AcceptedAt = DateTime.UtcNow;
+            if (_quote.SentAt.HasValue)
+                _quote.DecisionDays = (int)(DateTime.UtcNow - _quote.SentAt.Value).TotalDays;
             await QuoteService.UpdateQuoteAsync(_quote);
             var wo = await QuoteService.ConvertToWorkOrderAsync(Id, _quote.LastModifiedBy ?? "System");
             Toast.ShowSuccess("Work Order created");
@@ -344,15 +420,34 @@ else
         return Task.CompletedTask;
     }
 
-    private async Task Reject()
+    private void Reject()
     {
         if (_quote == null) return;
-        if (!await _confirm.ShowAsync("Reject this quote?")) return;
+        _lossReason = QuoteLossReason.None;
+        _competitorPrice = null;
+        _lossNotes = string.Empty;
+        _showRejectModal = true;
+    }
+
+    private async Task ConfirmReject()
+    {
+        if (_quote == null) return;
         try
         {
+            // Save loss tracking data
+            _quote.LossReason = _lossReason;
+            _quote.CompetitorPrice = _competitorPrice;
+            _quote.LossNotes = string.IsNullOrWhiteSpace(_lossNotes) ? null : _lossNotes;
+
+            // Calculate decision days
+            if (_quote.SentAt.HasValue)
+                _quote.DecisionDays = (int)(DateTime.UtcNow - _quote.SentAt.Value).TotalDays;
+
+            await QuoteService.UpdateQuoteAsync(_quote);
             await QuoteService.UpdateStatusAsync(Id, QuoteStatus.Rejected);
             _quote = await QuoteService.GetQuoteDetailAsync(Id);
-            Toast.ShowSuccess("Quote rejected");
+            _showRejectModal = false;
+            Toast.ShowSuccess("Quote rejected with loss tracking data");
         }
         catch (Exception ex)
         {
@@ -401,6 +496,20 @@ else
 
     private void GoToEdit() => Nav.NavigateTo($"/quotes/{Id}/edit");
     private void GoBack() => Nav.NavigateTo("/quotes");
+
+    private static string FormatLossReason(QuoteLossReason reason) => reason switch
+    {
+        QuoteLossReason.Price => "Price Too High",
+        QuoteLossReason.LeadTime => "Lead Time",
+        QuoteLossReason.Capability => "Capability Gap",
+        QuoteLossReason.Relationship => "Customer Relationship",
+        QuoteLossReason.Specification => "Spec Issue",
+        QuoteLossReason.CompetitorWon => "Competitor Won",
+        QuoteLossReason.ProjectCancelled => "Project Cancelled",
+        QuoteLossReason.NoResponse => "No Response",
+        QuoteLossReason.Other => "Other",
+        _ => "Not Specified"
+    };
 
     private static string GetStatusBadge(QuoteStatus status) => status switch
     {
