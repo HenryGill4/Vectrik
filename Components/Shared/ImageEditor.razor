@@ -1,0 +1,312 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (Visible)
+{
+    <div class="img-editor-overlay" @onclick="HandleOverlayClick" @onclick:stopPropagation>
+        <div class="img-editor-modal" @onclick:stopPropagation>
+            @* ── Header ── *@
+            <div class="img-editor-header">
+                <h3 class="img-editor-title">Edit Image</h3>
+                <span class="img-editor-filename">@FileName</span>
+                <button class="img-editor-close" @onclick="Cancel" title="Close">&times;</button>
+            </div>
+
+            @* ── Toolbar ── *@
+            <div class="img-editor-toolbar">
+                <div class="img-editor-tool-group">
+                    <button class="img-editor-btn @(_cropMode ? "img-editor-btn--active" : "")"
+                            @onclick="ToggleCrop" title="Crop">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M6 2v14a2 2 0 002 2h14"/><path d="M18 22V8a2 2 0 00-2-2H2"/>
+                        </svg>
+                        <span>Crop</span>
+                    </button>
+                    <button class="img-editor-btn" @onclick="RotateLeft" title="Rotate Left">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M2.5 2v6h6"/><path d="M2.5 8a10 10 0 1 1 3 7"/>
+                        </svg>
+                        <span>Rotate Left</span>
+                    </button>
+                    <button class="img-editor-btn" @onclick="RotateRight" title="Rotate Right">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21.5 2v6h-6"/><path d="M21.5 8A10 10 0 1 0 18.5 15"/>
+                        </svg>
+                        <span>Rotate Right</span>
+                    </button>
+                </div>
+                <div class="img-editor-tool-group">
+                    <button class="img-editor-btn" @onclick="FlipH" title="Flip Horizontal">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3v18"/><path d="M16 7l4 5-4 5"/><path d="M8 7l-4 5 4 5"/>
+                        </svg>
+                        <span>Flip H</span>
+                    </button>
+                    <button class="img-editor-btn" @onclick="FlipV" title="Flip Vertical">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12h18"/><path d="M7 8L12 3l5 5"/><path d="M7 16l5 5 5-5"/>
+                        </svg>
+                        <span>Flip V</span>
+                    </button>
+                </div>
+                <div class="img-editor-tool-group">
+                    <button class="img-editor-btn" @onclick="ZoomIn" title="Zoom In">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                        <span>Zoom +</span>
+                    </button>
+                    <button class="img-editor-btn" @onclick="ZoomOut" title="Zoom Out">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                        <span>Zoom -</span>
+                    </button>
+                    <button class="img-editor-btn" @onclick="ZoomFit" title="Fit to View">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>
+                        </svg>
+                        <span>Fit</span>
+                    </button>
+                </div>
+                <div class="img-editor-tool-group" style="margin-left: auto;">
+                    <button class="img-editor-btn" @onclick="ResetAll" title="Reset All Edits">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                            <path d="M3 3v5h5"/>
+                        </svg>
+                        <span>Reset</span>
+                    </button>
+                </div>
+            </div>
+
+            @* ── Canvas Area ── *@
+            <div class="img-editor-canvas-wrap">
+                @if (_loading)
+                {
+                    <div class="img-editor-loading">
+                        <span class="spinner"></span>
+                        <span>Loading image...</span>
+                    </div>
+                }
+                <canvas id="@_canvasId" class="img-editor-canvas"></canvas>
+            </div>
+
+            @* ── Footer ── *@
+            <div class="img-editor-footer">
+                <button class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+                <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
+                    @if (_saving)
+                    {
+                        <span class="spinner" style="width: 14px; height: 14px; margin-right: 6px;"></span>
+                    }
+                    @(_saving ? "Processing..." : "Apply & Upload")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<ImageEditorResult> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public string? FileName { get; set; }
+
+    private string _canvasId = $"img-editor-{Guid.NewGuid():N}";
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<ImageEditor>? _dotNetRef;
+    private bool _loading;
+    private bool _saving;
+    private bool _cropMode;
+    private bool _initialized;
+    private string? _pendingImageData;
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"
+    };
+
+    public static bool IsImageFile(string fileName)
+    {
+        var ext = Path.GetExtension(fileName);
+        return ImageExtensions.Contains(ext);
+    }
+
+    public async Task LoadImageAsync(IBrowserFile file)
+    {
+        _loading = true;
+        _cropMode = false;
+        StateHasChanged();
+
+        var maxSize = 50 * 1024 * 1024L;
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(maxSize).CopyToAsync(ms);
+        var base64 = Convert.ToBase64String(ms.ToArray());
+        var dataUrl = $"data:{file.ContentType};base64,{base64}";
+
+        if (_module != null && _initialized)
+        {
+            await _module.InvokeAsync<bool>("loadImage", dataUrl);
+            _loading = false;
+        }
+        else
+        {
+            _pendingImageData = dataUrl;
+        }
+
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Visible && !_initialized)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/image-editor.js");
+            await _module.InvokeVoidAsync("init", _dotNetRef, _canvasId);
+            _initialized = true;
+
+            if (_pendingImageData != null)
+            {
+                await _module.InvokeAsync<bool>("loadImage", _pendingImageData);
+                _pendingImageData = null;
+                _loading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task ToggleCrop()
+    {
+        if (_module == null) return;
+        _cropMode = await _module.InvokeAsync<bool>("toggleCrop");
+    }
+
+    private async Task RotateLeft()
+    {
+        if (_module == null) return;
+        _cropMode = false;
+        await _module.InvokeVoidAsync("rotate", -90);
+    }
+
+    private async Task RotateRight()
+    {
+        if (_module == null) return;
+        _cropMode = false;
+        await _module.InvokeVoidAsync("rotate", 90);
+    }
+
+    private async Task FlipH()
+    {
+        if (_module == null) return;
+        await _module.InvokeVoidAsync("flipHorizontal");
+    }
+
+    private async Task FlipV()
+    {
+        if (_module == null) return;
+        await _module.InvokeVoidAsync("flipVertical");
+    }
+
+    private async Task ZoomIn()
+    {
+        if (_module == null) return;
+        await _module.InvokeVoidAsync("zoomIn");
+    }
+
+    private async Task ZoomOut()
+    {
+        if (_module == null) return;
+        await _module.InvokeVoidAsync("zoomOut");
+    }
+
+    private async Task ZoomFit()
+    {
+        if (_module == null) return;
+        await _module.InvokeVoidAsync("zoomFit");
+    }
+
+    private async Task ResetAll()
+    {
+        if (_module == null) return;
+        _cropMode = false;
+        await _module.InvokeVoidAsync("resetAll");
+    }
+
+    private async Task Save()
+    {
+        if (_module == null) return;
+        _saving = true;
+        StateHasChanged();
+
+        try
+        {
+            var ext = Path.GetExtension(FileName ?? "").ToLowerInvariant();
+            var format = ext == ".jpg" || ext == ".jpeg" ? "image/jpeg" : "image/png";
+            var quality = format == "image/jpeg" ? 0.92 : 1.0;
+
+            var dataUrl = await _module.InvokeAsync<string?>("exportImage", format, quality);
+            if (dataUrl == null) return;
+
+            // Parse data URL → bytes
+            var commaIdx = dataUrl.IndexOf(',');
+            var base64 = dataUrl[(commaIdx + 1)..];
+            var bytes = Convert.FromBase64String(base64);
+
+            var outputExt = format == "image/jpeg" ? ".jpg" : ".png";
+            var outputName = Path.GetFileNameWithoutExtension(FileName ?? "image") + outputExt;
+
+            await OnSave.InvokeAsync(new ImageEditorResult
+            {
+                ImageData = bytes,
+                FileName = outputName,
+                ContentType = format
+            });
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Cancel()
+    {
+        _cropMode = false;
+        await OnCancel.InvokeAsync();
+        await CleanupModule();
+    }
+
+    private void HandleOverlayClick()
+    {
+        // Don't close on overlay click — user might misclick while editing
+    }
+
+    private async Task CleanupModule()
+    {
+        if (_module != null)
+        {
+            try { await _module.InvokeVoidAsync("dispose"); } catch { }
+            await _module.DisposeAsync();
+            _module = null;
+        }
+        _initialized = false;
+        _pendingImageData = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await CleanupModule();
+        _dotNetRef?.Dispose();
+    }
+
+    public class ImageEditorResult
+    {
+        public byte[] ImageData { get; set; } = Array.Empty<byte>();
+        public string FileName { get; set; } = "";
+        public string ContentType { get; set; } = "image/png";
+    }
+}

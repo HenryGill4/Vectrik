@@ -1,4 +1,6 @@
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
 
 <div class="file-upload-zone @(_isDragging ? "drag-over" : "")"
      @ondragenter="OnDragEnter"
@@ -14,7 +16,7 @@
         }
         @if (MaxSizeMB > 0)
         {
-            <p class="file-upload-hint">Max size: @MaxSizeMB MB</p>
+            <p class="file-upload-hint">Max size: @MaxSizeMB MB — images can be cropped/rotated before upload</p>
         }
     </div>
 </div>
@@ -26,13 +28,29 @@
         {
             <div class="file-upload-item">
                 <span class="file-upload-item-icon">@GetFileIcon(file.Name)</span>
-                <span class="file-upload-item-name">@file.Name</span>
+                <span class="file-upload-item-name">
+                    @file.Name
+                    @if (_editedFiles.ContainsKey(file.Name))
+                    {
+                        <span style="color: var(--success); font-size: 0.75rem; margin-left: 4px;">(edited)</span>
+                    }
+                </span>
                 <span class="file-upload-item-size">@FormatSize(file.Size)</span>
+                @if (ImageEditor.IsImageFile(file.Name))
+                {
+                    <button class="img-editor-edit-btn" @onclick="() => OpenEditor(file)" title="Crop/rotate image">Edit</button>
+                }
                 <button class="btn btn-sm btn-danger" @onclick="() => RemoveFile(file)">✕</button>
             </div>
         }
     </div>
 }
+
+<ImageEditor @ref="_imageEditor"
+             Visible="_showEditor"
+             FileName="@_editorFileName"
+             OnSave="OnEditorSave"
+             OnCancel="OnEditorCancel" />
 
 @code {
     [Parameter] public bool Multiple { get; set; } = true;
@@ -42,6 +60,13 @@
 
     private bool _isDragging;
     private List<IBrowserFile> _selectedFiles = new();
+
+    // Image editor
+    private ImageEditor? _imageEditor;
+    private bool _showEditor;
+    private string? _editorFileName;
+    private IBrowserFile? _editingFile;
+    private Dictionary<string, byte[]> _editedFiles = new();
 
     private async Task OnFilesSelected(InputFileChangeEventArgs e)
     {
@@ -59,8 +84,48 @@
     private async Task RemoveFile(IBrowserFile file)
     {
         _selectedFiles.Remove(file);
+        _editedFiles.Remove(file.Name);
         await OnFilesChanged.InvokeAsync(_selectedFiles.AsReadOnly());
     }
+
+    private async Task OpenEditor(IBrowserFile file)
+    {
+        _editingFile = file;
+        _editorFileName = file.Name;
+        _showEditor = true;
+        StateHasChanged();
+
+        if (_imageEditor != null)
+            await _imageEditor.LoadImageAsync(file);
+    }
+
+    private async Task OnEditorSave(ImageEditor.ImageEditorResult result)
+    {
+        _showEditor = false;
+        if (_editingFile != null)
+        {
+            _editedFiles[_editingFile.Name] = result.ImageData;
+        }
+        _editingFile = null;
+        await Task.CompletedTask;
+    }
+
+    private void OnEditorCancel()
+    {
+        _showEditor = false;
+        _editingFile = null;
+    }
+
+    /// <summary>
+    /// Returns edited image bytes for a file, if it was edited. Used by parent components.
+    /// </summary>
+    public byte[]? GetEditedBytes(string fileName) =>
+        _editedFiles.TryGetValue(fileName, out var bytes) ? bytes : null;
+
+    /// <summary>
+    /// Returns all edited file data. Used by parent components during upload.
+    /// </summary>
+    public IReadOnlyDictionary<string, byte[]> GetAllEditedFiles() => _editedFiles;
 
     private void OnDragEnter() => _isDragging = true;
     private void OnDragLeave() => _isDragging = false;
@@ -80,7 +145,7 @@
             ".pdf" => "📄",
             ".dxf" or ".dwg" => "📐",
             ".step" or ".stp" => "🧊",
-            ".png" or ".jpg" or ".jpeg" => "🖼️",
+            ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" => "🖼️",
             _ => "📎"
         };
     }

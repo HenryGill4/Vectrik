@@ -21,6 +21,8 @@ public interface IWorkInstructionService
 
     // Media
     Task<string> UploadMediaAsync(int stepId, IBrowserFile file, string tenantCode);
+    Task<string> UploadMediaFromStreamAsync(int stepId, string fileName, string contentType, Stream dataStream, long fileSize, string tenantCode);
+    Task<string> UploadMediaFromBytesAsync(int stepId, string fileName, string contentType, byte[] data, string tenantCode);
     Task DeleteMediaAsync(int mediaId);
 
     // Feedback

@@ -5,7 +5,9 @@
 @inject ITenantContext TenantContext
 @inject IWebHostEnvironment Env
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Forms
 @using System.Text.RegularExpressions
+@using Vectrik.Components.Shared
 
 <PageTitle>Company Branding - Admin - Vectrik</PageTitle>
 
@@ -40,7 +42,7 @@ else
                     </div>
                 }
                 <div class="file-upload-zone" style="margin-top: 8px;">
-                    <InputFile OnChange="UploadLogo" accept=".jpg,.jpeg,.png,.gif,.webp,.svg" />
+                    <InputFile OnChange="OnLogoFileSelected" accept=".jpg,.jpeg,.png,.gif,.webp,.svg" />
                     <div class="file-upload-label">
                         @if (_uploadingLogo)
                         {
@@ -49,10 +51,16 @@ else
                         else
                         {
                             <span>Drop logo here or click to browse</span>
-                            <small style="display: block; color: var(--text-muted); margin-top: 4px;">JPG, PNG, GIF, WebP, or SVG (max 5MB)</small>
+                            <small style="display: block; color: var(--text-muted); margin-top: 4px;">JPG, PNG, GIF, WebP, or SVG (max 5MB) — images open editor for crop/rotate</small>
                         }
                     </div>
                 </div>
+
+                <ImageEditor @ref="_imageEditor"
+                             Visible="_showImageEditor"
+                             FileName="@_editorFileName"
+                             OnSave="OnEditorSave"
+                             OnCancel="OnEditorCancel" />
                 <details style="margin-top: 6px;">
                     <summary style="font-size: 0.8rem; color: var(--text-muted); cursor: pointer;">Or enter URL manually</summary>
                     <input class="form-control" style="margin-top: 4px;" @bind="_logoUrl" placeholder="/uploads/branding/logo.png" />
@@ -135,6 +143,12 @@ else
     private string _duns = "";
     private Dictionary<string, string> _validationErrors = new();
 
+    // Image editor
+    private ImageEditor? _imageEditor;
+    private bool _showImageEditor;
+    private string? _editorFileName;
+    private IBrowserFile? _pendingLogoFile;
+
     private static readonly HashSet<string> AllowedLogoExts = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
     private const long MaxLogoSizeBytes = 5 * 1024 * 1024; // 5MB
 
@@ -188,7 +202,7 @@ else
         finally { _saving = false; }
     }
 
-    private async Task UploadLogo(InputFileChangeEventArgs e)
+    private async Task OnLogoFileSelected(InputFileChangeEventArgs e)
     {
         var file = e.File;
         var ext = Path.GetExtension(file.Name).ToLowerInvariant();
@@ -204,9 +218,42 @@ else
             return;
         }
 
+        // SVGs can't be canvas-edited, upload directly
+        if (ext == ".svg")
+        {
+            await UploadLogoBytes(file.Name, file.OpenReadStream(MaxLogoSizeBytes));
+            return;
+        }
+
+        // Open image editor for raster images
+        _pendingLogoFile = file;
+        _editorFileName = file.Name;
+        _showImageEditor = true;
+        StateHasChanged();
+
+        if (_imageEditor != null)
+            await _imageEditor.LoadImageAsync(file);
+    }
+
+    private async Task OnEditorSave(ImageEditor.ImageEditorResult result)
+    {
+        _showImageEditor = false;
+        using var ms = new MemoryStream(result.ImageData);
+        await UploadLogoBytes(result.FileName, ms);
+    }
+
+    private void OnEditorCancel()
+    {
+        _showImageEditor = false;
+        _pendingLogoFile = null;
+    }
+
+    private async Task UploadLogoBytes(string fileName, Stream dataStream)
+    {
         _uploadingLogo = true;
         try
         {
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
             var tenantCode = TenantContext.TenantCode;
             var uploadDir = Path.Combine(Env.WebRootPath, "uploads", "branding", tenantCode);
             Directory.CreateDirectory(uploadDir);
@@ -216,9 +263,8 @@ else
             var relativeUrl = $"/uploads/branding/{tenantCode}/{safeFileName}";
 
             await using var stream = new FileStream(filePath, FileMode.Create);
-            await file.OpenReadStream(MaxLogoSizeBytes).CopyToAsync(stream);
+            await dataStream.CopyToAsync(stream);
 
-            // Delete old logo file if it was an uploaded file
             DeleteOldLogoFile();
 
             _logoUrl = relativeUrl;
@@ -231,6 +277,7 @@ else
         finally
         {
             _uploadingLogo = false;
+            _pendingLogoFile = null;
         }
     }
 

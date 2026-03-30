@@ -1,5 +1,7 @@
 @* Generic Stage - Fallback for custom stages, renders CustomFieldsConfig dynamically *@
 @using Vectrik.Models
+@using Microsoft.AspNetCore.Components.Forms
+@using Vectrik.Components.Shared
 
 <WorkInstructionBanner PartId="Execution?.Job?.Part?.Id" StageId="Stage?.Id" />
 
@@ -74,7 +76,7 @@
                                 break;
                             case "photo":
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <InputFile OnChange="e => HandleFileUpload(field.Name, e)" accept="image/*" capture="environment" />
+                                    <InputFile OnChange="e => OnPhotoSelected(field.Name, e)" accept="image/*" capture="environment" />
                                     @if (!string.IsNullOrWhiteSpace(GetFieldValue(field.Name)))
                                     {
                                         <span style="color: var(--success); font-size: 0.85rem;">Photo captured</span>
@@ -124,6 +126,12 @@
 
 <LogDelayPanel Execution="Execution" LoggedBy="@_operatorName" />
 
+<ImageEditor @ref="_imageEditor"
+             Visible="_showImageEditor"
+             FileName="@_editorFileName"
+             OnSave="OnPhotoEditorSave"
+             OnCancel="OnPhotoEditorCancel" />
+
 @code {
     [Parameter] public StageExecution? Execution { get; set; }
     [Parameter] public ProductionStage? Stage { get; set; }
@@ -133,6 +141,12 @@
     private List<CustomFieldDefinition>? _fields;
     private Dictionary<string, string> _fieldValues = new();
     private string _operatorName => Execution?.OperatorName ?? "Operator";
+
+    // Image editor
+    private ImageEditor? _imageEditor;
+    private bool _showImageEditor;
+    private string? _editorFileName;
+    private string? _editorFieldName;
 
     protected override void OnParametersSet()
     {
@@ -177,6 +191,35 @@
         _fieldValues[key] = value ?? "";
         await NotifyDataChanged();
     }
+
+    private async Task OnPhotoSelected(string key, InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 10 * 1024 * 1024) return; // 10MB max
+
+        if (ImageEditor.IsImageFile(file.Name))
+        {
+            _editorFieldName = key;
+            _editorFileName = file.Name;
+            _showImageEditor = true;
+            StateHasChanged();
+
+            if (_imageEditor != null)
+                await _imageEditor.LoadImageAsync(file);
+            return;
+        }
+
+        await HandleFileUpload(key, e);
+    }
+
+    private async Task OnPhotoEditorSave(ImageEditor.ImageEditorResult result)
+    {
+        _showImageEditor = false;
+        if (_editorFieldName != null)
+            await SetFieldValue(_editorFieldName, $"{result.FileName} ({result.ImageData.Length / 1024}KB) [edited]");
+    }
+
+    private void OnPhotoEditorCancel() => _showImageEditor = false;
 
     private async Task HandleFileUpload(string key, InputFileChangeEventArgs e)
     {

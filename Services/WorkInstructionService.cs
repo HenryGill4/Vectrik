@@ -228,6 +228,50 @@ public class WorkInstructionService : IWorkInstructionService
         return relativeUrl;
     }
 
+    public async Task<string> UploadMediaFromStreamAsync(int stepId, string fileName, string contentType, Stream dataStream, long fileSize, string tenantCode)
+    {
+        var step = await _db.WorkInstructionSteps.FindAsync(stepId)
+            ?? throw new InvalidOperationException($"Step {stepId} not found.");
+
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        var mediaType = GetMediaType(ext);
+
+        var uploadDir = Path.Combine(_env.WebRootPath, "uploads", "instructions", tenantCode);
+        Directory.CreateDirectory(uploadDir);
+
+        var safeFileName = $"{Guid.NewGuid()}{ext}";
+        var filePath = Path.Combine(uploadDir, safeFileName);
+        var relativeUrl = $"/uploads/instructions/{tenantCode}/{safeFileName}";
+
+        await using var stream = new FileStream(filePath, FileMode.Create);
+        await dataStream.CopyToAsync(stream);
+
+        var maxOrder = await _db.WorkInstructionMedia
+            .Where(m => m.WorkInstructionStepId == stepId)
+            .MaxAsync(m => (int?)m.DisplayOrder) ?? 0;
+
+        var media = new WorkInstructionMedia
+        {
+            WorkInstructionStepId = stepId,
+            MediaType = mediaType,
+            FileName = fileName,
+            FileUrl = relativeUrl,
+            DisplayOrder = maxOrder + 1,
+            FileSizeBytes = fileSize,
+            UploadedAt = DateTime.UtcNow
+        };
+
+        _db.WorkInstructionMedia.Add(media);
+        await _db.SaveChangesAsync();
+        return relativeUrl;
+    }
+
+    public async Task<string> UploadMediaFromBytesAsync(int stepId, string fileName, string contentType, byte[] data, string tenantCode)
+    {
+        using var ms = new MemoryStream(data);
+        return await UploadMediaFromStreamAsync(stepId, fileName, contentType, ms, data.Length, tenantCode);
+    }
+
     public async Task DeleteMediaAsync(int mediaId)
     {
         var media = await _db.WorkInstructionMedia.FindAsync(mediaId);
