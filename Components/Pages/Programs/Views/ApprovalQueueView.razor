@@ -1,0 +1,117 @@
+@* Approval Queue View — programs needing attention: unresolved feedback and drafts *@
+
+<div class="prg-queue">
+    @* ── Section 1: Unresolved Feedback ──────────────────── *@
+    <div class="prg-queue-section">
+        <div class="prg-queue-section-header" @onclick="() => _feedbackExpanded = !_feedbackExpanded" role="button">
+            <span class="prg-queue-toggle @(_feedbackExpanded ? "expanded" : "")">&#9654;</span>
+            <span>Unresolved Feedback</span>
+            <span class="prg-queue-count">@FeedbackPrograms.Count</span>
+        </div>
+
+        @if (_feedbackExpanded)
+        {
+            @if (FeedbackPrograms.Any())
+            {
+                @foreach (var item in FeedbackPrograms)
+                {
+                    <div class="prg-queue-item" @onclick="() => NavigateToProgram(item.Program)" role="button">
+                        <div class="prg-queue-item-info">
+                            <span class="prg-queue-item-title">@item.Program.ProgramNumber &mdash; @item.Program.Name</span>
+                            <span class="prg-queue-item-sub">@item.Program.MachineType</span>
+                        </div>
+                        <span class="prg-badge--warning">@item.Count feedback</span>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="prg-queue-empty text-muted">No items</div>
+            }
+        }
+    </div>
+
+    @* ── Section 2: Draft Programs ───────────────────────── *@
+    <div class="prg-queue-section">
+        <div class="prg-queue-section-header" @onclick="() => _draftsExpanded = !_draftsExpanded" role="button">
+            <span class="prg-queue-toggle @(_draftsExpanded ? "expanded" : "")">&#9654;</span>
+            <span>Draft Programs</span>
+            <span class="prg-queue-count">@DraftPrograms.Count</span>
+        </div>
+
+        @if (_draftsExpanded)
+        {
+            @if (DraftPrograms.Any())
+            {
+                @foreach (var prog in DraftPrograms)
+                {
+                    <div class="prg-queue-item" @onclick="() => NavigateToProgram(prog)" role="button">
+                        <div class="prg-queue-item-info">
+                            <span class="prg-queue-item-title">@prog.ProgramNumber &mdash; @prog.Name</span>
+                            <span class="prg-queue-item-sub">@prog.MachineType &middot; Created @prog.CreatedDate.ToString("MMM dd, yyyy")</span>
+                        </div>
+                        <span class="prg-badge--draft">Draft</span>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="prg-queue-empty text-muted">No items</div>
+            }
+        }
+    </div>
+
+    @* ── Section 3: Tooling Alerts (placeholder) ─────────── *@
+    @* Tooling alerts can be added here when per-program alert data is available
+       from the parent. The ToolingAlerts parameter is accepted but the section
+       is hidden until the data model supports MachineProgramId on alerts. *@
+</div>
+
+@code {
+    [Parameter] public List<MachineProgram>? Programs { get; set; }
+    [Parameter] public Dictionary<int, int> FeedbackCounts { get; set; } = new();
+    [Parameter] public List<ToolingReadinessAlert> ToolingAlerts { get; set; } = new();
+    [Parameter] public EventCallback<MachineProgram> OnNavigateToProgram { get; set; }
+
+    private bool _feedbackExpanded = true;
+    private bool _draftsExpanded = true;
+
+    // ── Computed Lists ─────────────────────────────────────────
+
+    private record FeedbackItem(MachineProgram Program, int Count);
+
+    private List<FeedbackItem> FeedbackPrograms
+    {
+        get
+        {
+            if (Programs == null || !FeedbackCounts.Any())
+                return new List<FeedbackItem>();
+
+            return Programs
+                .Where(p => FeedbackCounts.TryGetValue(p.Id, out var count) && count > 0)
+                .Select(p => new FeedbackItem(p, FeedbackCounts[p.Id]))
+                .OrderByDescending(f => f.Count)
+                .ToList();
+        }
+    }
+
+    private List<MachineProgram> DraftPrograms
+    {
+        get
+        {
+            if (Programs == null)
+                return new List<MachineProgram>();
+
+            return Programs
+                .Where(p => p.Status == ProgramStatus.Draft)
+                .OrderByDescending(p => p.CreatedDate)
+                .ToList();
+        }
+    }
+
+    private async Task NavigateToProgram(MachineProgram program)
+    {
+        if (OnNavigateToProgram.HasDelegate)
+            await OnNavigateToProgram.InvokeAsync(program);
+    }
+}

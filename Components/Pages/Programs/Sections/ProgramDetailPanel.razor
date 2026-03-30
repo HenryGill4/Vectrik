@@ -1,0 +1,131 @@
+<div class="prg-detail">
+    <nav class="prg-section-dots">
+        <a href="#prg-section-hero" title="Overview"><span class="prg-dot prg-dot--active"></span></a>
+        <a href="#prg-section-metrics" title="Metrics"><span class="prg-dot"></span></a>
+        <a href="#prg-section-files" title="Files"><span class="prg-dot"></span></a>
+        <a href="#prg-section-tooling" title="Tooling"><span class="prg-dot"></span></a>
+        <a href="#prg-section-machines" title="Machines"><span class="prg-dot"></span></a>
+        <a href="#prg-section-params" title="Parameters"><span class="prg-dot"></span></a>
+        <a href="#prg-section-feedback" title="Feedback"><span class="prg-dot"></span></a>
+        <a href="#prg-section-learning" title="Learning"><span class="prg-dot"></span></a>
+        @if (Program.IsBuildPlate)
+        {
+            <a href="#prg-section-buildplate" title="Build Plate"><span class="prg-dot"></span></a>
+        }
+    </nav>
+
+    <div id="prg-section-hero">
+        <DetailHero Program="Program"
+                    OnEdit="OnEdit"
+                    OnNewVersion="OnNewVersion"
+                    OnClone="OnClone"
+                    OnDelete="OnDelete" />
+    </div>
+
+    <div id="prg-section-metrics">
+        <DetailMetrics Program="Program" />
+    </div>
+
+    <div id="prg-section-files">
+        <DetailFilePackage Program="Program"
+                           UploadDescription="UploadDescription"
+                           Uploading="Uploading"
+                           OnFileUpload="OnFileUpload"
+                           OnDeleteFile="OnDeleteFile"
+                           OnSetPrimary="OnSetPrimary"
+                           OnUploadDescriptionChanged="OnUploadDescriptionChanged" />
+    </div>
+
+    <div id="prg-section-tooling">
+        <DetailToolingReadiness ToolingItems="ToolingItems"
+                                ToolingAlerts="ToolingAlerts"
+                                OnAddTooling="OnAddTooling"
+                                OnEditTooling="OnEditTooling"
+                                OnDeleteTooling="OnDeleteTooling" />
+    </div>
+
+    <div id="prg-section-machines">
+        <DetailMachineAssignments Program="Program"
+                                  OnAssignMachines="OnAssignMachines"
+                                  OnSetPreferred="OnSetPreferred"
+                                  OnUnassign="OnUnassign"
+                                  OnMigrateLegacy="OnMigrateLegacy" />
+    </div>
+
+    <div id="prg-section-params">
+        <DetailParameters Program="Program"
+                          OnCopyForAI="OnCopyForAI" />
+    </div>
+
+    <div id="prg-section-feedback">
+        <DetailFeedbackStream FeedbackList="FeedbackList"
+                              FeedbackFilter="FeedbackFilter"
+                              OnFeedbackFilterChanged="OnFeedbackFilterChanged"
+                              OnReviewFeedback="OnReviewFeedback"
+                              OnShowResolve="OnShowResolve" />
+    </div>
+
+    <div id="prg-section-learning">
+        <DetailLearning Program="Program"
+                        ExecutionHistory="ExecutionHistory" />
+    </div>
+
+    @if (Program.IsBuildPlate)
+    {
+        <div id="prg-section-buildplate">
+            <DetailBuildPlate Program="Program"
+                              AdditiveParts="AdditiveParts"
+                              Processing="Processing"
+                              OnShowSlicerEntry="OnShowSlicerEntry"
+                              OnActivate="OnActivate"
+                              OnArchive="OnArchive"
+                              OnSchedule="OnSchedule"
+                              OnBuildAddPart="OnBuildAddPart"
+                              OnBuildRemovePart="OnBuildRemovePart"
+                              OnBuildEditPart="OnBuildEditPart"
+                              OnNavigateToProgram="OnNavigateToProgram" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = null!;
+    [Parameter] public List<ProgramToolingItem> ToolingItems { get; set; } = new();
+    [Parameter] public List<ToolingReadinessAlert> ToolingAlerts { get; set; } = new();
+    [Parameter] public List<StageExecution> ExecutionHistory { get; set; } = new();
+    [Parameter] public List<ProgramFeedback> FeedbackList { get; set; } = new();
+    [Parameter] public string FeedbackFilter { get; set; } = "All";
+    [Parameter] public List<Part> AdditiveParts { get; set; } = new();
+    [Parameter] public bool Processing { get; set; }
+    [Parameter] public string? UploadDescription { get; set; }
+    [Parameter] public bool Uploading { get; set; }
+    [Parameter] public string CurrentUser { get; set; } = string.Empty;
+
+    [Parameter] public EventCallback OnEdit { get; set; }
+    [Parameter] public EventCallback OnNewVersion { get; set; }
+    [Parameter] public EventCallback OnClone { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+    [Parameter] public EventCallback OnAssignMachines { get; set; }
+    [Parameter] public EventCallback<MachineProgramAssignment> OnSetPreferred { get; set; }
+    [Parameter] public EventCallback<MachineProgramAssignment> OnUnassign { get; set; }
+    [Parameter] public EventCallback OnMigrateLegacy { get; set; }
+    [Parameter] public EventCallback OnAddTooling { get; set; }
+    [Parameter] public EventCallback<ProgramToolingItem> OnEditTooling { get; set; }
+    [Parameter] public EventCallback<ProgramToolingItem> OnDeleteTooling { get; set; }
+    [Parameter] public EventCallback<string> OnFeedbackFilterChanged { get; set; }
+    [Parameter] public EventCallback<(ProgramFeedback, ProgramFeedbackStatus)> OnReviewFeedback { get; set; }
+    [Parameter] public EventCallback<ProgramFeedback> OnShowResolve { get; set; }
+    [Parameter] public EventCallback OnCopyForAI { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnFileUpload { get; set; }
+    [Parameter] public EventCallback<MachineProgramFile> OnDeleteFile { get; set; }
+    [Parameter] public EventCallback<MachineProgramFile> OnSetPrimary { get; set; }
+    [Parameter] public EventCallback<string> OnUploadDescriptionChanged { get; set; }
+    [Parameter] public EventCallback OnShowSlicerEntry { get; set; }
+    [Parameter] public EventCallback OnActivate { get; set; }
+    [Parameter] public EventCallback OnArchive { get; set; }
+    [Parameter] public EventCallback OnSchedule { get; set; }
+    [Parameter] public EventCallback<(int PartId, int Quantity)> OnBuildAddPart { get; set; }
+    [Parameter] public EventCallback<ProgramPart> OnBuildRemovePart { get; set; }
+    [Parameter] public EventCallback<(ProgramPart Part, int NewQty, int NewStack, string? Notes)> OnBuildEditPart { get; set; }
+    [Parameter] public EventCallback<int> OnNavigateToProgram { get; set; }
+}

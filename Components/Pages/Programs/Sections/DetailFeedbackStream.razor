@@ -1,0 +1,132 @@
+<section class="prg-section">
+    <div class="prg-section-header">
+        <h3>Operator Feedback</h3>
+        <span class="prg-section-count">@(FilteredFeedback?.Count ?? 0) items</span>
+    </div>
+
+    <div class="prg-feedback-filters">
+        @foreach (var filter in _filters)
+        {
+            <button class="prg-pill @(FeedbackFilter == filter ? "prg-pill--active" : "")"
+                    @onclick="() => OnFeedbackFilterChanged.InvokeAsync(filter)">
+                @filter
+                @if (filter != "All")
+                {
+                    var count = GetFilterCount(filter);
+                    if (count > 0)
+                    {
+                        <span class="prg-pill-count">@count</span>
+                    }
+                }
+            </button>
+        }
+    </div>
+
+    @if (FilteredFeedback?.Any() == true)
+    {
+        <div class="prg-feedback-stream">
+            @foreach (var fb in FilteredFeedback.OrderByDescending(f => f.SubmittedAt))
+            {
+                var borderClass = fb.Severity switch
+                {
+                    ProgramFeedbackSeverity.Critical => "prg-feedback-card--critical",
+                    ProgramFeedbackSeverity.High => "prg-feedback-card--high",
+                    ProgramFeedbackSeverity.Medium => "prg-feedback-card--medium",
+                    _ => "prg-feedback-card--low"
+                };
+
+                <div class="prg-feedback-card @borderClass">
+                    <div class="prg-feedback-header">
+                        <div class="prg-feedback-badges">
+                            <span class="prg-badge prg-badge--@(fb.Category.ToString().ToLower())">@FormatCategory(fb.Category)</span>
+                            <span class="prg-badge prg-badge--severity-@(fb.Severity.ToString().ToLower())">@fb.Severity</span>
+                            <span class="prg-badge prg-badge--@(fb.Status.ToString().ToLower())">@fb.Status</span>
+                        </div>
+                        <div class="prg-feedback-meta">
+                            <strong>@fb.OperatorName</strong> &middot; @fb.SubmittedAt.ToString("MMM dd, yyyy HH:mm")
+                        </div>
+                    </div>
+
+                    <div class="prg-feedback-comment">@fb.Comment</div>
+
+                    @if (fb.Status == ProgramFeedbackStatus.Resolved || fb.Status == ProgramFeedbackStatus.WontFix)
+                    {
+                        <div class="prg-feedback-resolution">
+                            <div class="prg-feedback-resolution-label">
+                                @(fb.Status == ProgramFeedbackStatus.Resolved ? "Resolved" : "Won't Fix")
+                                by <strong>@(fb.ReviewedBy ?? "Unknown")</strong>
+                                @if (fb.ReviewedAt.HasValue)
+                                {
+                                    <span>on @fb.ReviewedAt.Value.ToString("MMM dd, yyyy")</span>
+                                }
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(fb.Resolution))
+                            {
+                                <div class="prg-feedback-resolution-text">@fb.Resolution</div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="prg-feedback-actions">
+                            @if (fb.Status == ProgramFeedbackStatus.New)
+                            {
+                                <button class="btn btn-xs btn-outline"
+                                        @onclick="() => OnReviewFeedback.InvokeAsync((fb, ProgramFeedbackStatus.Acknowledged))">
+                                    Acknowledge
+                                </button>
+                            }
+                            <button class="btn btn-xs btn-outline"
+                                    @onclick="() => OnShowResolve.InvokeAsync(fb)">
+                                Resolve
+                            </button>
+                            <button class="btn btn-xs btn-outline"
+                                    @onclick="() => OnReviewFeedback.InvokeAsync((fb, ProgramFeedbackStatus.WontFix))">
+                                Won't Fix
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="prg-empty">No feedback matching the current filter.</div>
+    }
+</section>
+
+@code {
+    [Parameter] public List<ProgramFeedback> FeedbackList { get; set; } = new();
+    [Parameter] public string FeedbackFilter { get; set; } = "All";
+    [Parameter] public EventCallback<string> OnFeedbackFilterChanged { get; set; }
+    [Parameter] public EventCallback<(ProgramFeedback, ProgramFeedbackStatus)> OnReviewFeedback { get; set; }
+    [Parameter] public EventCallback<ProgramFeedback> OnShowResolve { get; set; }
+
+    private static readonly string[] _filters = { "All", "New", "Acknowledged", "InReview", "Resolved" };
+
+    private List<ProgramFeedback>? FilteredFeedback => FeedbackFilter == "All"
+        ? FeedbackList
+        : FeedbackList?.Where(f => f.Status.ToString() == FeedbackFilter).ToList();
+
+    private int GetFilterCount(string filter)
+    {
+        if (FeedbackList == null) return 0;
+        return FeedbackList.Count(f => f.Status.ToString() == filter);
+    }
+
+    private string FormatCategory(ProgramFeedbackCategory cat)
+    {
+        return cat switch
+        {
+            ProgramFeedbackCategory.ToolingIssue => "Tooling",
+            ProgramFeedbackCategory.ParameterAdjustment => "Parameter",
+            ProgramFeedbackCategory.SafetyConcern => "Safety",
+            ProgramFeedbackCategory.SetupDifficulty => "Setup",
+            ProgramFeedbackCategory.QualityIssue => "Quality",
+            ProgramFeedbackCategory.CycleTimeDeviation => "Cycle Time",
+            ProgramFeedbackCategory.Suggestion => "Suggestion",
+            _ => cat.ToString()
+        };
+    }
+}

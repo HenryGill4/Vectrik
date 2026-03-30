@@ -1,0 +1,102 @@
+@using Microsoft.AspNetCore.Components.Forms
+
+<section class="prg-section">
+    <div class="prg-section-header">
+        <h3>File Package</h3>
+        <span class="prg-section-count">@(Program.Files?.Count ?? 0) files</span>
+    </div>
+
+    @if (Program.Files?.Any() == true)
+    {
+        <div class="prg-file-grid">
+            @foreach (var file in Program.Files.OrderByDescending(f => f.IsPrimary).ThenBy(f => f.FileName))
+            {
+                <div class="prg-file-card @(file.IsPrimary ? "prg-file-card--primary" : "")">
+                    <div class="prg-file-icon">@GetFileIcon(file.FileName)</div>
+                    <div class="prg-file-info">
+                        <div class="prg-file-name" title="@file.FileName">@file.FileName</div>
+                        <div class="prg-file-meta">
+                            @FormatFileSize(file.FileSizeBytes) &middot; @file.UploadedDate.ToString("MMM dd, yyyy")
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(file.Description))
+                        {
+                            <div class="prg-file-desc">@file.Description</div>
+                        }
+                    </div>
+                    <div class="prg-file-badges">
+                        @if (file.IsPrimary)
+                        {
+                            <span class="prg-badge prg-badge--active">Primary</span>
+                        }
+                    </div>
+                    <div class="prg-file-actions">
+                        @if (!file.IsPrimary)
+                        {
+                            <button class="btn btn-xs btn-outline" @onclick="() => OnSetPrimary.InvokeAsync(file)" title="Set as primary">
+                                Set Primary
+                            </button>
+                        }
+                        <button class="btn btn-xs btn-danger-outline" @onclick="() => OnDeleteFile.InvokeAsync(file)" title="Delete file">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="prg-empty">No files uploaded yet.</div>
+    }
+
+    <div class="prg-upload-zone">
+        <div class="prg-upload-row">
+            <input type="text"
+                   class="form-control form-control-sm"
+                   placeholder="File description (optional)"
+                   value="@UploadDescription"
+                   @oninput="e => OnUploadDescriptionChanged.InvokeAsync(e.Value?.ToString())" />
+            <label class="btn btn-sm btn-primary prg-upload-btn @(Uploading ? "disabled" : "")">
+                @if (Uploading)
+                {
+                    <span>Uploading...</span>
+                }
+                else
+                {
+                    <span>Upload File</span>
+                }
+                <InputFile OnChange="OnFileUpload" disabled="@Uploading" style="display:none" />
+            </label>
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = null!;
+    [Parameter] public string? UploadDescription { get; set; }
+    [Parameter] public bool Uploading { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnFileUpload { get; set; }
+    [Parameter] public EventCallback<MachineProgramFile> OnDeleteFile { get; set; }
+    [Parameter] public EventCallback<MachineProgramFile> OnSetPrimary { get; set; }
+    [Parameter] public EventCallback<string> OnUploadDescriptionChanged { get; set; }
+
+    private string GetFileIcon(string fileName)
+    {
+        var ext = Path.GetExtension(fileName)?.ToLowerInvariant();
+        return ext switch
+        {
+            ".nc" or ".tap" or ".gcode" or ".mpf" => "\u2699\ufe0f",
+            ".pdf" => "\ud83d\udcc4",
+            ".step" or ".stp" or ".stl" or ".3mf" => "\ud83d\udcce",
+            ".dxf" or ".dwg" => "\ud83d\udcd0",
+            _ => "\ud83d\udcc1"
+        };
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+}
