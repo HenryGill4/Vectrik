@@ -3,6 +3,28 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/js/service-worker.js').catch(() => { });
 }
 
+// Change password API — called from Blazor interactive ChangePassword page
+window.changePasswordApi = async function (currentPassword, newPassword) {
+    try {
+        var formData = new URLSearchParams();
+        formData.append('currentPassword', currentPassword);
+        formData.append('newPassword', newPassword);
+        var response = await fetch('/api/account/change-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData.toString(),
+            credentials: 'same-origin'
+        });
+        if (response.ok) {
+            return { success: true };
+        }
+        var data = await response.json().catch(function () { return {}; });
+        return { success: false, error: data.error || 'Failed to change password.' };
+    } catch (e) {
+        return { success: false, error: e.message || 'Network error.' };
+    }
+};
+
 // ── Theme management ──
 window.vectrik = window.vectrik || {};
 window.opcentrix = window.vectrik; // backwards compat

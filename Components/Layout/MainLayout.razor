@@ -111,8 +111,13 @@
             var mustChange = state.User.FindFirst("MustChangePassword")?.Value;
             if (mustChange == "True")
             {
-                Nav.NavigateTo("/account/change-password", forceLoad: true);
-                return;
+                // Don't redirect if already on the change-password page (prevents infinite loop)
+                var currentUri = new Uri(Nav.Uri);
+                if (!currentUri.AbsolutePath.Contains("change-password", StringComparison.OrdinalIgnoreCase))
+                {
+                    Nav.NavigateTo("/account/change-password", forceLoad: true);
+                    return;
+                }
             }
         }
 
