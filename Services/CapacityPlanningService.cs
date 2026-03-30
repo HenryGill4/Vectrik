@@ -62,6 +62,7 @@ public class CapacityPlanningService : ICapacityPlanningService
                 MachineId = machine.Id,
                 MachineName = machine.Name,
                 MachineType = machine.MachineType,
+                Department = machine.Department,
                 Status = machine.Status,
                 CurrentProgramName = machine.CurrentProgram?.Name,
                 UtilizationPct = cap?.UtilizationPct ?? 0,
@@ -70,7 +71,11 @@ public class CapacityPlanningService : ICapacityPlanningService
                 QueueCount = machineExecs.Count,
                 NextDuePart = nextDue?.Job?.Part?.PartNumber,
                 NextDueDate = nextDue?.Job?.WorkOrderLine?.WorkOrder?.DueDate,
-                IsAdditive = machine.IsAdditiveMachine
+                IsAdditive = machine.IsAdditiveMachine,
+                ToolSlotCount = machine.ToolSlotCount,
+                LoadedToolCount = machine.CurrentProgramId.HasValue
+                    ? _db.Set<ProgramToolingItem>().Count(t => t.MachineProgramId == machine.CurrentProgramId.Value && t.IsActive)
+                    : 0
             });
         }
 
@@ -155,14 +160,55 @@ public class CapacityPlanningService : ICapacityPlanningService
                     var setupMin = duration?.SetupMinutes ?? program.SetupTimeMinutes ?? 0;
                     var runMin = duration?.RunMinutes ?? ((program.RunTimeMinutes ?? 0) * partDemand.NetRemaining);
 
-                    // Score: changeover bonus if same program already loaded
-                    var changeoverScore = machine.CurrentProgramId == program.Id ? 100 : 30;
+                    // Score: tool-aware changeover analysis
+                    var toolChangeCount = 0;
+                    var changeoverScore = 30; // default: different program
+                    var reasons = new List<string>();
+
+                    if (machine.CurrentProgramId == program.Id)
+                    {
+                        changeoverScore = 100;
+                        reasons.Add("tools already loaded");
+                    }
+                    else if (machine.CurrentProgramId.HasValue)
+                    {
+                        // Compare tooling lists to find how many tools differ
+                        var currentTools = await _db.Set<ProgramToolingItem>()
+                            .Where(t => t.MachineProgramId == machine.CurrentProgramId.Value && t.IsActive)
+                            .ToListAsync();
+                        var targetTools = await _db.Set<ProgramToolingItem>()
+                            .Where(t => t.MachineProgramId == program.Id && t.IsActive)
+                            .ToListAsync();
+
+                        if (currentTools.Count > 0 && targetTools.Count > 0)
+                        {
+                            // Count tools at same position with different names (actual changes needed)
+                            var currentByPos = currentTools.ToDictionary(t => t.ToolPosition, t => t.Name);
+                            foreach (var target in targetTools)
+                            {
+                                if (!currentByPos.TryGetValue(target.ToolPosition, out var currentName)
+                                    || !currentName.Equals(target.Name, StringComparison.OrdinalIgnoreCase))
+                                    toolChangeCount++;
+                            }
+
+                            if (toolChangeCount == 0) { changeoverScore = 90; reasons.Add("all tools match"); }
+                            else if (toolChangeCount <= 2) { changeoverScore = 60; reasons.Add($"{toolChangeCount} tool change(s)"); }
+                            else { changeoverScore = 30; reasons.Add($"{toolChangeCount} tool changes"); }
+                        }
+                        else
+                        {
+                            reasons.Add("changeover required");
+                        }
+                    }
+                    else
+                    {
+                        reasons.Add("no program loaded");
+                    }
+
                     var isPreferred = assignments.Any(a => a.MachineId == machineId && a.IsPreferred);
+                    if (isPreferred) reasons.Add("preferred machine");
 
                     var score = (int)(changeoverScore * 0.35 + 50 * 0.45 + (isPreferred ? 80 : 40) * 0.20);
-                    var reasons = new List<string>();
-                    if (machine.CurrentProgramId == program.Id) reasons.Add("no changeover needed");
-                    if (isPreferred) reasons.Add("preferred machine");
 
                     suggestions.Add(new MachineAssignmentSuggestion
                     {
@@ -176,8 +222,9 @@ public class CapacityPlanningService : ICapacityPlanningService
                         EstimatedRunMinutes = runMin,
                         Quantity = partDemand.NetRemaining,
                         Score = score,
-                        ScoreReason = reasons.Count > 0 ? string.Join(", ", reasons) : "standard assignment",
-                        IsRecommended = false
+                        ScoreReason = string.Join(", ", reasons),
+                        IsRecommended = false,
+                        ToolChangeCount = toolChangeCount
                     });
                 }
             }

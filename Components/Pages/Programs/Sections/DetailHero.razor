@@ -1,0 +1,56 @@
+<section class="prg-hero">
+    <div class="prg-hero-top">
+        <div class="prg-hero-identity">
+            <h2>@Program.ProgramNumber &mdash; @Program.Name</h2>
+        </div>
+
+        <div class="prg-hero-actions">
+            <button class="btn btn-sm btn-outline" @onclick="OnEdit">Edit</button>
+            <button class="btn btn-sm btn-outline" @onclick="OnNewVersion">New Version</button>
+            <button class="btn btn-sm btn-outline" @onclick="OnClone">Clone</button>
+            <button class="btn btn-sm btn-danger-outline" @onclick="OnDelete">Delete</button>
+        </div>
+    </div>
+
+    <div class="prg-hero-badges">
+        <span class="prg-badge prg-badge--@(Program.Status.ToString().ToLower())">
+            @Program.StatusDisplay
+        </span>
+        <span class="prg-badge prg-badge--version">v@(Program.Version)</span>
+        @if (Program.IsBuildPlate)
+        {
+            <span class="prg-badge prg-badge--type prg-badge--buildplate">Build Plate</span>
+        }
+        else
+        {
+            <span class="prg-badge prg-badge--type">Standard</span>
+        }
+        @if (Program.TotalRunCount > 0 && Program.EstimateSource != null)
+        {
+            <span class="prg-badge prg-badge--learned">Auto-Learned</span>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Program.Description))
+    {
+        <div class="prg-hero-desc">
+            @Program.Description
+        </div>
+    }
+
+    <div class="prg-hero-audit">
+        <span>Created by <strong>@Program.CreatedBy</strong> on @Program.CreatedDate.ToString("MMM dd, yyyy")</span>
+        @if (!string.IsNullOrWhiteSpace(Program.LastModifiedBy))
+        {
+            <span>Modified by <strong>@Program.LastModifiedBy</strong> on @Program.LastModifiedDate.ToString("MMM dd, yyyy")</span>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = null!;
+    [Parameter] public EventCallback OnEdit { get; set; }
+    [Parameter] public EventCallback OnNewVersion { get; set; }
+    [Parameter] public EventCallback OnClone { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+}

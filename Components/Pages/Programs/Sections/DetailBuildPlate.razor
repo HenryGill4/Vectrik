@@ -1,0 +1,230 @@
+<section class="prg-section">
+    <div class="prg-section-header">
+        <h3>Build Plate</h3>
+        <div class="prg-section-header-actions">
+            <button class="btn btn-sm btn-outline" @onclick="OnShowSlicerEntry">
+                @(Program.HasSlicerData ? "Edit Slicer Data" : "Add Slicer Data")
+            </button>
+            @if (Program.ScheduleStatus == ProgramScheduleStatus.None || Program.ScheduleStatus == ProgramScheduleStatus.Ready)
+            {
+                @if (Program.Status == ProgramStatus.Draft)
+                {
+                    <button class="btn btn-sm btn-primary" @onclick="OnActivate">Activate</button>
+                }
+                @if (Program.Status == ProgramStatus.Active && Program.IsReadyToSchedule)
+                {
+                    <button class="btn btn-sm btn-primary" @onclick="OnSchedule">Schedule</button>
+                }
+            }
+            @if (Program.Status == ProgramStatus.Active
+                 && (Program.ScheduleStatus == ProgramScheduleStatus.None || Program.ScheduleStatus == ProgramScheduleStatus.Ready))
+            {
+                <button class="btn btn-sm btn-outline" @onclick="OnArchive">Archive</button>
+            }
+        </div>
+    </div>
+
+    @if (Program.ScheduleStatus != ProgramScheduleStatus.None)
+    {
+        <div class="prg-schedule-badge-row">
+            <span class="prg-badge prg-badge--@(Program.ScheduleStatus.ToString().ToLower())">
+                @Program.ScheduleStatusDisplay
+            </span>
+            @if (Program.ScheduledDate.HasValue)
+            {
+                <span class="text-muted">Scheduled: @Program.ScheduledDate.Value.ToString("MMM dd, yyyy HH:mm")</span>
+            }
+        </div>
+    }
+
+    @if (Program.HasSlicerData)
+    {
+        <div class="prg-metrics prg-buildplate-slicer">
+            <div class="prg-metric">
+                <span class="prg-metric-label">Layers</span>
+                <span class="prg-metric-value">@(Program.LayerCount?.ToString("N0") ?? "--")</span>
+            </div>
+            <div class="prg-metric">
+                <span class="prg-metric-label">Build Height</span>
+                <span class="prg-metric-value">@(Program.BuildHeightMm.HasValue ? $"{Program.BuildHeightMm.Value:F1} mm" : "--")</span>
+            </div>
+            <div class="prg-metric">
+                <span class="prg-metric-label">Print Hours</span>
+                <span class="prg-metric-value">@(Program.EstimatedPrintHours.HasValue ? $"{Program.EstimatedPrintHours.Value:F1}h" : "--")</span>
+            </div>
+            <div class="prg-metric">
+                <span class="prg-metric-label">Powder</span>
+                <span class="prg-metric-value">@(Program.EstimatedPowderKg.HasValue ? $"{Program.EstimatedPowderKg.Value:F1} kg" : "--")</span>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Program.SlicerSoftware))
+            {
+                <div class="prg-metric">
+                    <span class="prg-metric-label">Slicer</span>
+                    <span class="prg-metric-value">@Program.SlicerSoftware @Program.SlicerVersion</span>
+                </div>
+            }
+        </div>
+    }
+
+    <h4 class="prg-subsection-title">Parts on Plate (@Program.TotalPartCount total)</h4>
+
+    @if (Program.ProgramParts?.Any() == true)
+    {
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Part Number</th>
+                        <th>Name</th>
+                        <th>Qty</th>
+                        <th>Stack</th>
+                        <th>Notes</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var pp in Program.ProgramParts.OrderBy(p => p.Part?.PartNumber))
+                    {
+                        @if (_editingPartId == pp.Id)
+                        {
+                            <tr class="prg-editing-row">
+                                <td><strong>@(pp.Part?.PartNumber ?? "--")</strong></td>
+                                <td>@(pp.Part?.Name ?? "--")</td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm prg-inline-input"
+                                           min="1" @bind="_editQty" style="width: 70px;" />
+                                </td>
+                                <td>
+                                    <select class="form-control form-control-sm prg-inline-input" @bind="_editStack" style="width: 80px;">
+                                        <option value="1">1x</option>
+                                        <option value="2">2x</option>
+                                        <option value="3">3x</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm prg-inline-input"
+                                           @bind="_editNotes" placeholder="Position notes" />
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-xs btn-primary" @onclick="() => SavePartEdit(pp)">Save</button>
+                                    <button class="btn btn-xs btn-outline" @onclick="CancelPartEdit">Cancel</button>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            <tr>
+                                <td><strong>@(pp.Part?.PartNumber ?? "--")</strong></td>
+                                <td>@(pp.Part?.Name ?? "--")</td>
+                                <td>@pp.Quantity</td>
+                                <td>@(pp.StackLevel)x</td>
+                                <td class="text-muted">@(pp.PositionNotes ?? "--")</td>
+                                <td class="text-end">
+                                    @if (!Program.IsLocked)
+                                    {
+                                        <button class="btn btn-xs btn-outline" @onclick="() => StartPartEdit(pp)">Edit</button>
+                                        <button class="btn btn-xs btn-danger-outline" @onclick="() => OnBuildRemovePart.InvokeAsync(pp)">Remove</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="prg-empty">No parts added to this build plate yet.</div>
+    }
+
+    @if (!Program.IsLocked)
+    {
+        <div class="prg-add-part-form">
+            <select class="form-control form-control-sm" @bind="_selectedPartId" style="flex: 1;">
+                <option value="0">-- Select Part --</option>
+                @if (AdditiveParts != null)
+                {
+                    @foreach (var part in AdditiveParts.OrderBy(p => p.PartNumber))
+                    {
+                        <option value="@part.Id">@part.PartNumber - @part.Name</option>
+                    }
+                }
+            </select>
+            <input type="number" class="form-control form-control-sm" min="1"
+                   @bind="_addQty" placeholder="Qty" style="width: 80px;" />
+            <button class="btn btn-sm btn-primary" disabled="@(_selectedPartId == 0 || Processing)"
+                    @onclick="HandleAddPart">
+                @(Processing ? "Adding..." : "Add Part")
+            </button>
+        </div>
+    }
+
+    @if (Program.DepowderProgramId.HasValue || Program.EdmProgramId.HasValue)
+    {
+        <h4 class="prg-subsection-title" style="margin-top: 1.5rem;">Post-Processing Programs</h4>
+        <div class="prg-post-process-links">
+            @if (Program.DepowderProgramId.HasValue)
+            {
+                <button class="btn btn-sm btn-outline" @onclick="() => OnNavigateToProgram.InvokeAsync(Program.DepowderProgramId.Value)">
+                    Depowder Program #@Program.DepowderProgramId
+                </button>
+            }
+            @if (Program.EdmProgramId.HasValue)
+            {
+                <button class="btn btn-sm btn-outline" @onclick="() => OnNavigateToProgram.InvokeAsync(Program.EdmProgramId.Value)">
+                    EDM Program #@Program.EdmProgramId
+                </button>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = null!;
+    [Parameter] public List<Part> AdditiveParts { get; set; } = new();
+    [Parameter] public bool Processing { get; set; }
+    [Parameter] public EventCallback OnShowSlicerEntry { get; set; }
+    [Parameter] public EventCallback OnActivate { get; set; }
+    [Parameter] public EventCallback OnArchive { get; set; }
+    [Parameter] public EventCallback OnSchedule { get; set; }
+    [Parameter] public EventCallback<(int PartId, int Quantity)> OnBuildAddPart { get; set; }
+    [Parameter] public EventCallback<ProgramPart> OnBuildRemovePart { get; set; }
+    [Parameter] public EventCallback<(ProgramPart Part, int NewQty, int NewStack, string? Notes)> OnBuildEditPart { get; set; }
+    [Parameter] public EventCallback<int> OnNavigateToProgram { get; set; }
+
+    private int _selectedPartId;
+    private int _addQty = 1;
+
+    private int? _editingPartId;
+    private int _editQty;
+    private int _editStack;
+    private string? _editNotes;
+
+    private async Task HandleAddPart()
+    {
+        if (_selectedPartId == 0) return;
+        await OnBuildAddPart.InvokeAsync((_selectedPartId, _addQty));
+        _selectedPartId = 0;
+        _addQty = 1;
+    }
+
+    private void StartPartEdit(ProgramPart pp)
+    {
+        _editingPartId = pp.Id;
+        _editQty = pp.Quantity;
+        _editStack = pp.StackLevel;
+        _editNotes = pp.PositionNotes;
+    }
+
+    private void CancelPartEdit()
+    {
+        _editingPartId = null;
+    }
+
+    private async Task SavePartEdit(ProgramPart pp)
+    {
+        await OnBuildEditPart.InvokeAsync((pp, _editQty, _editStack, _editNotes));
+        _editingPartId = null;
+    }
+}

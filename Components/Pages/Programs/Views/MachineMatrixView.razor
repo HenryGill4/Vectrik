@@ -1,0 +1,163 @@
+@* Machine Matrix View — machine-centric view of program assignments grouped by machine type *@
+
+<div class="prg-matrix">
+    @* ── KPI Row ─────────────────────────────────────────── *@
+    <div class="prg-matrix-kpi">
+        <div class="prg-metric">
+            <span class="prg-metric-value">@ActiveMachineCount</span>
+            <span class="prg-metric-label">Active Machines</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-value">@MachinesWithPrograms</span>
+            <span class="prg-metric-label">With Programs</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-value">@MachinesWithoutPrograms</span>
+            <span class="prg-metric-label">Without Programs</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-value">@ActiveProgramCount</span>
+            <span class="prg-metric-label">Active Programs</span>
+        </div>
+    </div>
+
+    @* ── Machine Type Filter ─────────────────────────────── *@
+    @if (_machineTypes.Count > 1)
+    {
+        <div class="prg-matrix-filter">
+            <label>Machine Type:</label>
+            <select @bind="_selectedMachineType">
+                <option value="">All Types</option>
+                @foreach (var mt in _machineTypes)
+                {
+                    <option value="@mt">@mt</option>
+                }
+            </select>
+        </div>
+    }
+
+    @* ── Machine Groups ──────────────────────────────────── *@
+    @foreach (var group in FilteredGroups)
+    {
+        <div class="prg-matrix-group">
+            <h4 class="prg-matrix-group-header">
+                @group.Key
+                <span class="prg-queue-count">@group.Count()</span>
+            </h4>
+
+            <div class="prg-matrix-grid">
+                @foreach (var machine in group)
+                {
+                    var machinePrograms = GetProgramsForMachine(machine);
+
+                    <div class="prg-matrix-machine">
+                        <div class="prg-matrix-machine-header">
+                            <span class="prg-matrix-machine-name">@machine.Name</span>
+                            <span class="prg-badge--@machine.Status.ToString().ToLowerInvariant()">@machine.Status</span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(machine.Location))
+                        {
+                            <div class="prg-matrix-machine-location">@machine.Location</div>
+                        }
+
+                        <div class="prg-matrix-programs">
+                            @if (machinePrograms.Any())
+                            {
+                                @foreach (var prog in machinePrograms)
+                                {
+                                    var assignment = prog.MachineAssignments?.FirstOrDefault(a => a.MachineId == machine.Id);
+                                    bool isPreferred = assignment?.IsPreferred == true;
+
+                                    <span class="prg-matrix-program-badge prg-badge--@prog.Status.ToString().ToLowerInvariant()"
+                                          title="@prog.Name"
+                                          @onclick="() => NavigateToProgram(prog)"
+                                          role="button">
+                                        @if (isPreferred)
+                                        {
+                                            <span class="prg-matrix-star">&#9733;</span>
+                                        }
+                                        @prog.ProgramNumber
+                                    </span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">No programs assigned</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (!FilteredGroups.Any())
+    {
+        <div class="text-muted text-center" style="padding: 2rem;">No machines to display.</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<Machine> Machines { get; set; } = new();
+    [Parameter] public List<MachineProgram>? Programs { get; set; }
+    [Parameter] public EventCallback<MachineProgram> OnNavigateToProgram { get; set; }
+
+    private string _selectedMachineType = "";
+    private List<string> _machineTypes = new();
+
+    protected override void OnParametersSet()
+    {
+        _machineTypes = Machines
+            .Select(m => m.MachineType)
+            .Where(t => !string.IsNullOrEmpty(t))
+            .Distinct()
+            .OrderBy(t => t)
+            .ToList();
+    }
+
+    // ── KPI Computations ───────────────────────────────────────
+    private int ActiveMachineCount => Machines.Count(m => m.IsActive);
+
+    private int MachinesWithPrograms => Machines.Count(m => m.IsActive && GetProgramsForMachine(m).Any());
+
+    private int MachinesWithoutPrograms => ActiveMachineCount - MachinesWithPrograms;
+
+    private int ActiveProgramCount => Programs?.Count(p => p.Status == ProgramStatus.Active) ?? 0;
+
+    // ── Grouping ───────────────────────────────────────────────
+    private IEnumerable<IGrouping<string, Machine>> FilteredGroups
+    {
+        get
+        {
+            var machines = Machines.Where(m => m.IsActive);
+
+            if (!string.IsNullOrEmpty(_selectedMachineType))
+                machines = machines.Where(m => m.MachineType == _selectedMachineType);
+
+            return machines
+                .OrderBy(m => m.Name)
+                .GroupBy(m => m.MachineType ?? "Uncategorized")
+                .OrderBy(g => g.Key);
+        }
+    }
+
+    // ── Program-Machine Matching ───────────────────────────────
+    private List<MachineProgram> GetProgramsForMachine(Machine machine)
+    {
+        if (Programs == null || !Programs.Any())
+            return new List<MachineProgram>();
+
+        return Programs
+            .Where(p =>
+                (p.MachineAssignments != null && p.MachineAssignments.Any(a => a.MachineId == machine.Id))
+                || p.MachineId == machine.Id)
+            .OrderBy(p => p.ProgramNumber)
+            .ToList();
+    }
+
+    private async Task NavigateToProgram(MachineProgram program)
+    {
+        if (OnNavigateToProgram.HasDelegate)
+            await OnNavigateToProgram.InvokeAsync(program);
+    }
+}

@@ -20,6 +20,9 @@
 @using Vectrik.Models.Enums
 @using Vectrik.Models.Maintenance
 @using Vectrik.Components.Pages.Programs.Components
+@using Vectrik.Components.Pages.Programs.Sections
+@using Vectrik.Components.Pages.Programs.Modals
+@using Vectrik.Components.Pages.Programs.Views
 @using Vectrik.Components.Pages.Programs.Models
 
 <PageTitle>Machine Programs - Vectrik</PageTitle>
@@ -38,50 +41,42 @@
             <button class="btn btn-sm @(_pageView == "programs" ? "btn-primary" : "btn-secondary")" style="border-radius: 0;" @onclick='() => SwitchView("programs")'>📄 Programs</button>
             <button class="btn btn-sm @(_pageView == "machines" ? "btn-primary" : "btn-secondary")" style="border-radius: 0;" @onclick='() => SwitchView("machines")'>🖥️ Machine Setup</button>
         </div>
-        @if (_pageView == "programs")
+        @if (_activeView == "programs")
         {
-            <select class="form-control" style="width:140px;display:inline-block" @bind="_filterStatus" @bind:after="ApplyFilters">
-                <option value="">All Statuses</option>
-                @foreach (var s in Enum.GetValues<ProgramStatus>()) { <option value="@s">@s</option> }
-            </select>
-            <select class="form-control" style="width:140px;display:inline-block" @bind="_filterMachineType" @bind:after="ApplyFilters">
-                <option value="">All Types</option>
-                @if (_machineTypes != null) { @foreach (var t in _machineTypes) { <option value="@t">@t</option> } }
-            </select>
-            <input class="form-control" style="width:200px;display:inline-block" placeholder="Search programs…" @bind="_searchTerm" @bind:after="ApplyFilters" />
-            <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="ShowCreate">+ New Program</button>
+            <button class="btn btn-primary" @onclick="ShowCreate">+ New Program</button>
         }
     </div>
 </div>
 
+@* ═══ EDITOR (slide-over) ═══ *@
 @if (_showEditor)
 {
-    <ProgramForm Program="_editingProgram"
-                 IsNew="@(_editingProgram.Id == 0)"
-                 Saving="_saving"
-                 Machines="@(_machines ?? [])"
-                 MachineTypes="@(_machineTypes ?? [])"
-                 Materials="@(_materials ?? [])"
-                 Parts="@(_parts ?? [])"
-                 AdditiveParts="@(_additiveParts ?? [])"
-                 WorkInstructions="_workInstructions"
-                 DepowderCandidates="_depowderCandidates"
-                 EdmCandidates="_edmCandidates"
-                 SelectedMachineIds="_editSelectedMachineIds"
-                 PartsList="_createBuildPlateParts"
-                 CertifiedLayouts="_certifiedLayouts"
-                 PlateAssignments="_plateAssignments"
-                 OnPlateAssignmentsChanged="HandlePlateAssignmentsChanged"
-                 EditMaterialId="@_editMaterialId"
-                 EditWorkInstructionId="@_editWorkInstructionId"
-                 EditDepowderProgramId="@_editDepowderProgramId"
-                 EditEdmProgramId="@_editEdmProgramId"
-                 OnSave="SaveProgram"
-                 OnCancel="CloseEditor"
-                 OnMachineTypeChanged="HandleFormMachineTypeChanged"
-                 OnMachineIdsChanged="HandleFormMachineIdsChanged"
-                 OnLoadDefaultParameters="LoadDefaultParameters"
-                 OnCopyParameters="CopyParametersToClipboard" />
+    <ProgramFormModal Program="_editingProgram"
+                      IsNew="@(_editingProgram.Id == 0)"
+                      Saving="_saving"
+                      Machines="@(_machines ?? [])"
+                      MachineTypes="@(_machineTypes ?? [])"
+                      Materials="@(_materials ?? [])"
+                      Parts="@(_parts ?? [])"
+                      AdditiveParts="@(_additiveParts ?? [])"
+                      WorkInstructions="_workInstructions"
+                      DepowderCandidates="_depowderCandidates"
+                      EdmCandidates="_edmCandidates"
+                      SelectedMachineIds="_editSelectedMachineIds"
+                      PartsList="_createBuildPlateParts"
+                      CertifiedLayouts="_certifiedLayouts"
+                      PlateAssignments="_plateAssignments"
+                      OnPlateAssignmentsChanged="HandlePlateAssignmentsChanged"
+                      EditMaterialId="@_editMaterialId"
+                      EditWorkInstructionId="@_editWorkInstructionId"
+                      EditDepowderProgramId="@_editDepowderProgramId"
+                      EditEdmProgramId="@_editEdmProgramId"
+                      OnSave="SaveProgram"
+                      OnCancel="CloseEditor"
+                      OnMachineTypeChanged="HandleFormMachineTypeChanged"
+                      OnMachineIdsChanged="HandleFormMachineIdsChanged"
+                      OnLoadDefaultParameters="LoadDefaultParameters"
+                      OnCopyParameters="CopyParametersToClipboard" />
 }
 else if (_programs == null)
 {
@@ -96,93 +91,191 @@ else
                         OnToggle="() => _showPendingSetup = !_showPendingSetup"
                         OnCreateProgramForStage="CreateProgramForStage" />
 
-    @if (_pageView == "machines")
+    @if (_activeView == "matrix")
     {
-        <MachineSetupView Machines="@(_machines ?? [])"
-                          Programs="_programs"
-                          OnNavigateToProgram="NavigateToProgram" />
+        <MachineMatrixView Machines="@(_machines ?? [])"
+                           Programs="_programs"
+                           OnNavigateToProgram="NavigateToProgram" />
+    }
+    else if (_activeView == "queue")
+    {
+        <ApprovalQueueView Programs="_programs"
+                           FeedbackCounts="_feedbackCounts"
+                           OnNavigateToProgram="NavigateToProgram" />
     }
     else
     {
-        @if (!_filteredPrograms.Any())
-        {
-            @* KPI grid still shown above empty state *@
-            <ProgramList Programs="_filteredPrograms"
-                         AllPrograms="_programs"
-                         SelectedProgram="_selectedProgram"
-                         FeedbackCounts="_feedbackCounts"
-                         PendingSetupCount="@_pendingSetupStages.Count"
-                         TotalUnresolvedFeedback="_totalUnresolvedFeedback"
-                         MaintenanceAlertCount="@_maintenanceAlerts.Count"
-                         OnSelectProgram="SelectProgram"
-                         OnBatchDelete="BatchDeleteSelectedAsync"
-                         OnTogglePendingSetup="() => _showPendingSetup = !_showPendingSetup" />
-        }
-        else
-        {
-            @* ── Two-Panel Layout: Program List + Detail ── *@
-            <div class="prog-two-panel" style="@(_selectedProgram != null ? "" : "grid-template-columns: 1fr !important;")">
+        @* ═══ PROGRAMS VIEW ═══ *@
 
-                @* ── LEFT: Program List ── *@
-                <div>
-                    <ProgramList Programs="_filteredPrograms"
-                                 AllPrograms="_programs"
-                                 SelectedProgram="_selectedProgram"
-                                 FeedbackCounts="_feedbackCounts"
-                                 PendingSetupCount="@_pendingSetupStages.Count"
-                                 TotalUnresolvedFeedback="_totalUnresolvedFeedback"
-                                 MaintenanceAlertCount="@_maintenanceAlerts.Count"
-                                 OnSelectProgram="SelectProgram"
-                                 OnBatchDelete="BatchDeleteSelectedAsync"
-                                 OnTogglePendingSetup="() => _showPendingSetup = !_showPendingSetup" />
+        @* ── Pipeline Bar ── *@
+        <div class="prg-pipeline">
+            @foreach (var status in new[] { ProgramStatus.Draft, ProgramStatus.Active, ProgramStatus.Superseded, ProgramStatus.Archived })
+            {
+                var count = _statusCounts.GetValueOrDefault(status, 0);
+                var isSelected = _pipelineFilter == status;
+                <div class="prg-pipeline-stage prg-pipeline-stage--@(status.ToString().ToLowerInvariant()) @(isSelected ? "prg-pipeline-stage--selected" : "")"
+                     @onclick="() => TogglePipelineFilter(status)">
+                    <span class="prg-pipeline-count">@count</span>
+                    <span class="prg-pipeline-label">@status</span>
                 </div>
+            }
+        </div>
 
-                @* ── RIGHT: Detail Panel ── *@
-                @if (_selectedProgram != null)
+        @* ── Command Bar ── *@
+        <div class="prg-command-bar">
+            <div class="prg-search">
+                <span class="prg-search-icon">&#128269;</span>
+                <input type="text" placeholder="Search programs..."
+                       @bind="_searchTerm" @bind:after="ApplyFilters" />
+            </div>
+
+            <select class="prg-filter-select" @bind="_filterStatus" @bind:after="ApplyFilters">
+                <option value="">All Statuses</option>
+                @foreach (var s in Enum.GetValues<ProgramStatus>())
                 {
-                    <ProgramDetail Program="_selectedProgram"
-                                   ActiveTab="_activeTab"
-                                   OnTabChanged="(tab) => { _activeTab = tab; StateHasChanged(); }"
-                                   CurrentUser="_currentUser"
-                                   ToolingItems="_toolingItems"
-                                   ToolingAlerts="_toolingAlerts"
-                                   ExecutionHistory="_executionHistory"
-                                   FeedbackList="_feedbackList"
-                                   FeedbackFilter="_feedbackFilter"
-                                   AdditiveParts="_additiveParts"
-                                   Processing="_buildProcessing"
-                                   UploadDescription="_uploadDescription"
-                                   Uploading="_uploading"
-                                   OnEdit="() => ShowEdit(_selectedProgram)"
-                                   OnNewVersion="CreateNewVersion"
-                                   OnClone="CloneProgramFromDetail"
-                                   OnDelete="() => DeleteProgram(_selectedProgram)"
-                                   OnAssignMachines="ShowAssignMachines"
-                                   OnSetPreferred="SetPreferred"
-                                   OnUnassign="UnassignMachine"
-                                   OnMigrateLegacy="MigrateLegacyMachine"
-                                   OnAddTooling="AddToolingItem"
-                                   OnEditTooling="EditToolingItem"
-                                   OnDeleteTooling="DeleteToolingItem"
-                                   OnFeedbackFilterChanged="HandleFeedbackFilterChanged"
-                                   OnReviewFeedback="HandleReviewFeedback"
-                                   OnShowResolve="ShowResolveFeedback"
-                                   OnCopyForAI="CopyDetailParametersToClipboard"
-                                   OnFileUpload="HandleFileUpload"
-                                   OnDeleteFile="DeleteFile"
-                                   OnSetPrimary="SetPrimaryFile"
-                                   OnUploadDescriptionChanged="(val) => _uploadDescription = val"
-                                   OnShowSlicerEntry="() => ShowBuildSlicerEntry(_selectedProgram)"
-                                   OnActivate="() => ActivateBuildPlate(_selectedProgram)"
-                                   OnArchive="() => ArchiveBuildPlate(_selectedProgram)"
-                                   OnSchedule="() => ScheduleBuildPlate(_selectedProgram)"
-                                   OnBuildAddPart="HandleBuildAddPart"
-                                   OnBuildRemovePart="HandleBuildRemovePart"
-                                   OnBuildEditPart="HandleBuildEditPart"
-                                   OnNavigateToProgram="HandleNavigateToProgram" />
+                    <option value="@s">@s</option>
+                }
+            </select>
+
+            <select class="prg-filter-select" @bind="_filterMachineType" @bind:after="ApplyFilters">
+                <option value="">All Machine Types</option>
+                @if (_machineTypes != null)
+                {
+                    @foreach (var t in _machineTypes)
+                    {
+                        <option value="@t">@t</option>
+                    }
+                }
+            </select>
+
+            <select class="prg-filter-select" @bind="_filterProgramType" @bind:after="ApplyFilters">
+                <option value="">All Program Types</option>
+                <option value="Standard">Standard</option>
+                <option value="BuildPlate">Build Plate</option>
+            </select>
+
+            <select class="prg-filter-select" @bind="_sortBy" @bind:after="ApplyFilters">
+                <option value="number">Sort: Number</option>
+                <option value="name">Sort: Name</option>
+                <option value="status">Sort: Status</option>
+                <option value="modified">Sort: Modified</option>
+            </select>
+
+            <button class="btn btn-sm btn-secondary" @onclick="ToggleSortDirection"
+                    title="@(_sortDesc ? "Descending" : "Ascending")">
+                @(_sortDesc ? "\u2193" : "\u2191")
+            </button>
+        </div>
+
+        @* ── Two-Panel Layout ── *@
+        <div class="@(_selectedProgram != null ? "prg-layout" : "prg-layout prg-layout--no-detail")">
+
+            @* ── LEFT: Sidebar ── *@
+            <div class="prg-sidebar">
+                @if (!_filteredPrograms.Any())
+                {
+                    <div class="prg-sidebar-empty">
+                        <span style="font-size:2rem;">&#128196;</span>
+                        <p>No programs match your filters.</p>
+                        @if (!string.IsNullOrEmpty(_searchTerm) || !string.IsNullOrEmpty(_filterStatus) || !string.IsNullOrEmpty(_filterMachineType) || !string.IsNullOrEmpty(_filterProgramType) || _pipelineFilter.HasValue)
+                        {
+                            <button class="btn btn-sm btn-secondary" @onclick="ClearAllFilters">Clear Filters</button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <Virtualize Items="_filteredPrograms" Context="prog">
+                        @{
+                            var isSelected = _selectedProgram?.Id == prog.Id;
+                            var statusClass = prog.Status.ToString().ToLowerInvariant();
+                            var feedbackCount = _feedbackCounts.GetValueOrDefault(prog.Id, 0);
+                        }
+                        <div class="prg-sidebar-card prg-sidebar-card--@statusClass @(isSelected ? "prg-sidebar-card--selected" : "")"
+                             @onclick="() => SelectProgram(prog)">
+                            <div class="prg-card-row1">
+                                <span class="prg-card-number">@prog.ProgramNumber</span>
+                                <div class="prg-card-badges">
+                                    <span class="prg-badge prg-badge--@statusClass">@prog.Status</span>
+                                    @if (prog.Version > 1)
+                                    {
+                                        <span class="prg-badge prg-badge--version">v@(prog.Version)</span>
+                                    }
+                                    @if (prog.ProgramType == ProgramType.BuildPlate)
+                                    {
+                                        <span class="prg-badge prg-badge--buildplate">Build Plate</span>
+                                    }
+                                </div>
+                            </div>
+                            <div class="prg-card-name" title="@prog.Name">@prog.Name</div>
+                            <div class="prg-card-meta">
+                                @if (prog.RunTimeMinutes.HasValue)
+                                {
+                                    <span>@(prog.RunTimeMinutes < 60 ? $"{prog.RunTimeMinutes:F0}m" : $"{prog.RunTimeMinutes / 60:F1}h")</span>
+                                    <span class="prg-card-meta-sep">|</span>
+                                }
+                                @if (prog.Files?.Count > 0)
+                                {
+                                    <span>@prog.Files.Count file(s)</span>
+                                    <span class="prg-card-meta-sep">|</span>
+                                }
+                                @if (feedbackCount > 0)
+                                {
+                                    <span class="prg-badge prg-badge--feedback" style="font-size:0.7rem;">@feedbackCount feedback</span>
+                                }
+                                @if (!string.IsNullOrEmpty(prog.MachineType))
+                                {
+                                    <span>@prog.MachineType</span>
+                                }
+                            </div>
+                        </div>
+                    </Virtualize>
                 }
             </div>
-        }
+
+            @* ── RIGHT: Detail Panel ── *@
+            @if (_selectedProgram != null)
+            {
+                <ProgramDetailPanel Program="_selectedProgram"
+                                    CurrentUser="_currentUser"
+                                    ToolingItems="_toolingItems"
+                                    ToolingAlerts="_toolingAlerts"
+                                    ExecutionHistory="_executionHistory"
+                                    FeedbackList="_feedbackList"
+                                    FeedbackFilter="_feedbackFilter"
+                                    AdditiveParts="_additiveParts"
+                                    Processing="_buildProcessing"
+                                    UploadDescription="_uploadDescription"
+                                    Uploading="_uploading"
+                                    OnEdit="() => ShowEdit(_selectedProgram)"
+                                    OnNewVersion="CreateNewVersion"
+                                    OnClone="CloneProgramFromDetail"
+                                    OnDelete="() => DeleteProgram(_selectedProgram)"
+                                    OnAssignMachines="ShowAssignMachines"
+                                    OnSetPreferred="SetPreferred"
+                                    OnUnassign="UnassignMachine"
+                                    OnMigrateLegacy="MigrateLegacyMachine"
+                                    OnAddTooling="AddToolingItem"
+                                    OnEditTooling="EditToolingItem"
+                                    OnDeleteTooling="DeleteToolingItem"
+                                    OnFeedbackFilterChanged="HandleFeedbackFilterChanged"
+                                    OnReviewFeedback="HandleReviewFeedback"
+                                    OnShowResolve="ShowResolveFeedback"
+                                    OnCopyForAI="CopyDetailParametersToClipboard"
+                                    OnFileUpload="HandleFileUpload"
+                                    OnDeleteFile="DeleteFile"
+                                    OnSetPrimary="SetPrimaryFile"
+                                    OnUploadDescriptionChanged="(val) => _uploadDescription = val"
+                                    OnShowSlicerEntry="() => ShowBuildSlicerEntry(_selectedProgram)"
+                                    OnActivate="() => ActivateBuildPlate(_selectedProgram)"
+                                    OnArchive="() => ArchiveBuildPlate(_selectedProgram)"
+                                    OnSchedule="() => ScheduleBuildPlate(_selectedProgram)"
+                                    OnBuildAddPart="HandleBuildAddPart"
+                                    OnBuildRemovePart="HandleBuildRemovePart"
+                                    OnBuildEditPart="HandleBuildEditPart"
+                                    OnNavigateToProgram="HandleNavigateToProgram" />
+            }
+        </div>
     }
 }
 
@@ -232,7 +325,7 @@ else
 
 @code {
     private string _currentUser = "System";
-    private string _pageView = "programs";
+    private string _activeView = "programs";
 
     [SupplyParameterFromQuery(Name = "view")]
     public string? InitialView { get; set; }
@@ -255,7 +348,16 @@ else
     // Filters
     private string _filterStatus = "";
     private string _filterMachineType = "";
+    private string _filterProgramType = "";
     private string _searchTerm = "";
+    private string _sortBy = "number";
+    private bool _sortDesc = false;
+
+    // Pipeline filter
+    private ProgramStatus? _pipelineFilter;
+
+    // Status counts for pipeline
+    private Dictionary<ProgramStatus, int> _statusCounts = new();
 
     // Editor
     private bool _showEditor;
@@ -277,7 +379,6 @@ else
 
     // Detail panel
     private MachineProgram? _selectedProgram;
-    private string _activeTab = "machines";
 
     // Tooling
     private List<ProgramToolingItem> _toolingItems = new();
@@ -361,7 +462,16 @@ else
         try { _edmCandidates = await ProgramService.GetPostProcessingCandidatesAsync("EDM"); }
         catch { _edmCandidates = new(); }
 
+        ComputeStatusCounts();
         ApplyFilters();
+    }
+
+    private void ComputeStatusCounts()
+    {
+        _statusCounts = new();
+        if (_programs == null) return;
+        foreach (var s in Enum.GetValues<ProgramStatus>())
+            _statusCounts[s] = _programs.Count(p => p.Status == s);
     }
 
     private void ApplyFilters()
@@ -369,29 +479,79 @@ else
         if (_programs == null) { _filteredPrograms = new(); return; }
         var q = _programs.AsEnumerable();
 
+        // Pipeline filter
+        if (_pipelineFilter.HasValue)
+            q = q.Where(p => p.Status == _pipelineFilter.Value);
+
+        // Status dropdown filter
         if (!string.IsNullOrEmpty(_filterStatus) && Enum.TryParse<ProgramStatus>(_filterStatus, out var status))
             q = q.Where(p => p.Status == status);
+
+        // Machine type filter
         if (!string.IsNullOrEmpty(_filterMachineType))
             q = q.Where(p => string.Equals(p.MachineType, _filterMachineType, StringComparison.OrdinalIgnoreCase)
                             || string.Equals(p.Machine?.MachineType, _filterMachineType, StringComparison.OrdinalIgnoreCase)
                             || (p.MachineAssignments?.Any(a => string.Equals(a.Machine?.MachineType, _filterMachineType, StringComparison.OrdinalIgnoreCase)) == true));
+
+        // Program type filter
+        if (!string.IsNullOrEmpty(_filterProgramType))
+        {
+            if (_filterProgramType == "Standard")
+                q = q.Where(p => p.ProgramType == ProgramType.Standard);
+            else if (_filterProgramType == "BuildPlate")
+                q = q.Where(p => p.ProgramType == ProgramType.BuildPlate);
+        }
+
+        // Search
         if (!string.IsNullOrEmpty(_searchTerm))
             q = q.Where(p => (p.ProgramNumber?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
                             || (p.Name?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
                             || (p.Part?.PartNumber?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
                             || (p.Machine?.Name?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
 
+        // Sort
+        q = _sortBy switch
+        {
+            "name" => _sortDesc ? q.OrderByDescending(p => p.Name) : q.OrderBy(p => p.Name),
+            "status" => _sortDesc ? q.OrderByDescending(p => p.Status) : q.OrderBy(p => p.Status),
+            "modified" => _sortDesc ? q.OrderByDescending(p => p.LastModifiedDate) : q.OrderBy(p => p.LastModifiedDate),
+            _ => _sortDesc ? q.OrderByDescending(p => p.ProgramNumber) : q.OrderBy(p => p.ProgramNumber)
+        };
+
         _filteredPrograms = q.ToList();
     }
 
-    private void SwitchView(string view) => _pageView = view;
+    private void TogglePipelineFilter(ProgramStatus status)
+    {
+        _pipelineFilter = _pipelineFilter == status ? null : status;
+        ApplyFilters();
+    }
+
+    private void ToggleSortDirection()
+    {
+        _sortDesc = !_sortDesc;
+        ApplyFilters();
+    }
+
+    private void ClearAllFilters()
+    {
+        _searchTerm = "";
+        _filterStatus = "";
+        _filterMachineType = "";
+        _filterProgramType = "";
+        _pipelineFilter = null;
+        _sortBy = "number";
+        _sortDesc = false;
+        ApplyFilters();
+    }
+
+    private void SwitchView(string view) => _activeView = view;
 
     // ── Selection / Detail ───────────────────────────────────
 
     private async Task SelectProgram(MachineProgram program)
     {
         _selectedProgram = await ProgramService.GetByIdAsync(program.Id);
-        _activeTab = _selectedProgram?.IsBuildPlate == true ? "buildplate" : "machines";
         await LoadDetailData();
     }
 
@@ -673,7 +833,13 @@ else
 
     private async Task NavigateToProgram(MachineProgram prog)
     {
-        _pageView = "programs";
+        _activeView = "programs";
+        await SelectProgram(prog);
+    }
+
+    private async Task NavigateToQueueProgram(MachineProgram prog)
+    {
+        _activeView = "programs";
         await SelectProgram(prog);
     }
 

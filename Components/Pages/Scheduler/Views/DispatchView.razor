@@ -1,4 +1,4 @@
-@* ── Unified Dispatch View: build intelligence + operator dispatch board ── *@
+@* ── Dispatch View: Capacity-focused assignment tool + operator dispatch board ── *@
 @using Vectrik.Services
 @using Vectrik.Models
 @using Vectrik.Models.Enums
@@ -9,429 +9,506 @@
 
 <div class="dispatch-view">
     @* ══════════════════════════════════════════════════════════════
-       SECTION 1: Build Intelligence (data from parent)
+       SECTION 1: Machine Capacity Overview
        ══════════════════════════════════════════════════════════════ *@
-
-    @* ── Machine Availability Strip ── *@
-    <section class="dispatch-section">
-        <h2 class="dispatch-section-title">Machine Availability</h2>
-        <div class="dispatch-machine-strip">
-            @foreach (var machine in MachineAvailability)
-            {
-                <MachineSlotSummary Summary="machine" OnComposeBuild="HandleMachineComposeBuild" />
-            }
-            @if (!MachineAvailability.Any())
-            {
-                <div class="dispatch-empty">No SLS machines configured. <a href="/machines" style="color: var(--primary);">Add machines</a> to start scheduling builds.</div>
-            }
-        </div>
-    </section>
-
-    @* ── Drafts Awaiting Schedule ── *@
-    @if (DraftPrograms.Any())
-    {
-        <section class="dispatch-section">
-            <h2 class="dispatch-section-title">Awaiting Schedule — @DraftPrograms.Count plate@(DraftPrograms.Count != 1 ? "s" : "") composed</h2>
-            <div class="dispatch-drafts-grid">
-                @foreach (var prog in DraftPrograms)
-                {
-                    <div class="dispatch-draft-card">
-                        <div class="dispatch-draft-header">
-                            <strong>@(prog.Name ?? $"Program #{prog.Id}")</strong>
-                            <span class="handoff-badge handoff-badge--awaiting">Awaiting Schedule</span>
-                        </div>
-                        <div class="dispatch-draft-meta">
-                            <span>@prog.TotalPartCount parts</span>
-                            @if (prog.EstimatedPrintHours.HasValue)
-                            {
-                                <span>~@prog.EstimatedPrintHours.Value.ToString("F1")h</span>
-                            }
-                            <span>by @prog.CreatedBy</span>
-                            <span>@prog.CreatedDate.ToLocalTime().ToString("MMM d, HH:mm")</span>
-                        </div>
-                        @if (prog.ProgramParts?.Any() == true)
-                        {
-                            <div class="dispatch-draft-parts">
-                                @foreach (var pp in prog.ProgramParts)
-                                {
-                                    <span class="dispatch-recommendation-part">
-                                        @(pp.Part?.PartNumber ?? $"#{pp.PartId}") ×@(pp.Quantity * pp.StackLevel)
-                                        @if (pp.StackLevel > 1) { <span class="dispatch-stack-indicator">@(pp.StackLevel)x</span> }
-                                    </span>
-                                }
-                            </div>
-                        }
-                        <div class="dispatch-draft-actions">
-                            <button class="btn btn-sm btn-accent" @onclick="() => OnOpenAdvisorForMachine.InvokeAsync(prog.MachineId ?? 0)">
-                                Schedule
-                            </button>
-                        </div>
-                    </div>
-                }
-            </div>
-        </section>
-    }
-
-    @* ── Recommended Builds ── *@
-    @if (Recommendations.Any())
-    {
-        <section class="dispatch-section">
-            <h2 class="dispatch-section-title">Recommended Next Builds</h2>
-            <div class="dispatch-recommendations">
-                @foreach (var rec in Recommendations)
-                {
-                    <div class="dispatch-recommendation-card">
-                        <div class="dispatch-recommendation-header">
-                            <strong>@rec.MachineName</strong>
-                            <span class="dispatch-recommendation-time">
-                                Start @rec.Slot.PrintStart.ToLocalTime().ToString("MMM d, HH:mm")
-                            </span>
-                        </div>
-                        <div class="dispatch-recommendation-rationale">@rec.Rationale</div>
-                        @if (rec.Warnings.Any())
-                        {
-                            <div class="dispatch-recommendation-warnings">
-                                @foreach (var w in rec.Warnings)
-                                {
-                                    <span class="dispatch-recommendation-warning">⚠️ @w</span>
-                                }
-                            </div>
-                        }
-                        @if (rec.Plate.Parts.Any())
-                        {
-                            <div class="dispatch-recommendation-parts">
-                                @foreach (var p in rec.Plate.Parts)
-                                {
-                                    <span class="dispatch-recommendation-part">
-                                        @p.PartNumber ×@p.TotalParts
-                                        @if (p.StackLevel > 1) { <span class="dispatch-stack-indicator">@(p.StackLevel)x</span> }
-                                    </span>
-                                }
-                                <span class="dispatch-recommendation-duration">~@rec.Plate.EstimatedPrintHours.ToString("F1")h</span>
-                            </div>
-                        }
-                        <div class="dispatch-recommendation-actions">
-                            <button class="btn btn-sm btn-accent" @onclick="() => OnOpenAdvisorForMachine.InvokeAsync(rec.MachineId)">
-                                Schedule This Build
-                            </button>
-                        </div>
-                    </div>
-                }
-            </div>
-        </section>
-    }
-
-    @* ── Saved Plates (Template Library) ── *@
-    @if (Templates.Any())
-    {
-        <section class="dispatch-section">
-            <details class="dispatch-templates-details">
-                <summary class="dispatch-section-title dispatch-section-title--clickable">
-                    Saved Plates — @Templates.Count template@(Templates.Count != 1 ? "s" : "")
-                </summary>
-                <TemplateLibrary Templates="Templates"
-                                 OnInstantiate="OnInstantiateTemplate"
-                                 OnTemplateSelected="t => { }" />
-            </details>
-        </section>
-    }
-
-    @* ── Demand Cards ── *@
     <section class="dispatch-section">
         <div class="dispatch-section-header">
-            <h2 class="dispatch-section-title">Outstanding Demand — @DemandSummaries.Count(d => d.IsAdditive && d.NetRemaining > 0) SLS parts</h2>
+            <h2 class="dispatch-section-title">Machine Capacity</h2>
             <div class="dispatch-filter-group">
-                <button class="sched-filter-btn @(_showOnlyAdditive ? "sched-filter-btn--active" : "")" @onclick="() => _showOnlyAdditive = !_showOnlyAdditive">
-                    SLS Only
-                </button>
+                <label class="dispatch-date-label">
+                    <input type="date" class="form-control form-control-sm" value="@_from.ToString("yyyy-MM-dd")"
+                           @onchange="OnFromDateChanged" />
+                </label>
+                <span style="color: var(--text-muted);">to</span>
+                <label class="dispatch-date-label">
+                    <input type="date" class="form-control form-control-sm" value="@_to.ToString("yyyy-MM-dd")"
+                           @onchange="OnToDateChanged" />
+                </label>
+                <button class="btn btn-sm btn-secondary" @onclick="LoadCapacityDataAsync" disabled="@_capacityLoading">Refresh</button>
             </div>
         </div>
-        <div class="dispatch-demand-grid">
-            @foreach (var demand in FilteredDemand)
-            {
-                <DemandPartCard Demand="demand" OnComposeBuild="HandlePartComposeBuild" />
-            }
-            @if (!FilteredDemand.Any())
-            {
-                <div class="dispatch-empty">No outstanding demand</div>
-            }
-        </div>
-    </section>
 
-    @* ══════════════════════════════════════════════════════════════
-       SECTION 2: Operator Setup Dispatch Board (self-loading)
-       ══════════════════════════════════════════════════════════════ *@
-
-    <hr style="margin: 24px 0; border-color: var(--border);" />
-
-    <div class="dispatch-board">
-        <div class="dispatch-board-header">
-            <h2>Setup Dispatch Board</h2>
-            <div class="dispatch-board-stats">
-                <span class="dispatch-stat"><strong>@_boardData.TotalActive</strong> Active</span>
-                <span class="dispatch-stat dispatch-stat--queued"><strong>@_boardData.TotalQueued</strong> Queued</span>
-                <span class="dispatch-stat dispatch-stat--progress"><strong>@_boardData.TotalInProgress</strong> In Progress</span>
-                @if (_deferredCount > 0)
-                {
-                    <span class="dispatch-stat dispatch-stat--deferred"><strong>@_deferredCount</strong> Pending Approval</span>
-                }
-            </div>
-            <button class="btn btn-sm btn-accent" @onclick="OpenCreateModal">+ New Dispatch</button>
-        </div>
-
-        @if (_boardLoading)
+        @if (_capacityLoading)
         {
-            <div class="loading"><span class="spinner"></span> Loading dispatches...</div>
+            <div class="loading"><span class="spinner"></span> Loading capacity data...</div>
         }
         else
         {
-            @* ── Maintenance Alerts Banner ── *@
-            @if (_maintenanceAlerts.Any())
+            @foreach (var group in _machineCards.GroupBy(c => c.Department ?? "Unassigned").OrderBy(g => g.Key))
             {
-                <div class="dispatch-maintenance-banner">
-                    <h3>Maintenance Alerts (@_maintenanceAlerts.Count)</h3>
-                    @foreach (var alert in _maintenanceAlerts)
-                    {
-                        <div class="dispatch-maintenance-alert dispatch-maintenance-alert--@alert.Severity.ToString().ToLower()">
-                            <span class="dispatch-maintenance-severity">@alert.Severity</span>
-                            <span>@alert.MachineName — @alert.ComponentName: @alert.RuleName</span>
-                            <span class="dispatch-maintenance-pct">@($"{alert.PercentUsed:F0}")%</span>
-                            @if (alert.IsOverdue)
-                            {
-                                <span class="dispatch-maintenance-overdue">OVERDUE</span>
-                            }
-                        </div>
-                    }
-                </div>
-            }
-
-            @* ── Machine Swim Lanes ── *@
-            <div class="dispatch-board-lanes">
-                @foreach (var lane in _boardData.MachineLanes)
-                {
-                    <div class="dispatch-lane">
-                        <div class="dispatch-lane-header">
-                            <div class="dispatch-lane-machine">
-                                <span class="dispatch-lane-name">@lane.Machine.Name</span>
-                                <span class="dispatch-lane-status dispatch-lane-status--@lane.Machine.SetupState.ToString().ToLower()">
-                                    @lane.Machine.SetupState
-                                </span>
-                            </div>
-                            @if (lane.Machine.CurrentProgramId.HasValue)
-                            {
-                                <span class="dispatch-lane-program" title="Current program loaded">
-                                    @(lane.Machine.CurrentProgram?.Name ?? $"Program #{lane.Machine.CurrentProgramId}")
-                                </span>
-                            }
-                        </div>
-
-                        @* Current dispatch (in progress) *@
-                        @if (lane.CurrentDispatch != null)
+                <div class="dispatch-dept-group">
+                    <h3 class="dispatch-dept-title">@group.Key</h3>
+                    <div class="dispatch-capacity-grid">
+                        @foreach (var card in group.OrderByDescending(c => c.UtilizationPct))
                         {
-                            <div class="dispatch-card dispatch-card--active">
-                                <div class="dispatch-card-header">
-                                    <span class="dispatch-card-number">@lane.CurrentDispatch.DispatchNumber</span>
-                                    <span class="dispatch-card-badge dispatch-card-badge--@lane.CurrentDispatch.Status.ToString().ToLower()">
-                                        @lane.CurrentDispatch.StatusDisplay
-                                    </span>
+                            <div class="capacity-card @(card.UtilizationPct > 100 ? "capacity-card--overload" : "")">
+                                <div class="capacity-card-header">
+                                    <strong>@card.MachineName</strong>
+                                    <span class="capacity-card-type">@card.MachineType</span>
                                 </div>
-                                <div class="dispatch-card-body">
-                                    <div class="dispatch-card-type">@lane.CurrentDispatch.TypeDisplay</div>
-                                    @if (lane.CurrentDispatch.MachineProgram != null)
+                                <div class="capacity-util-bar">
+                                    <div class="capacity-util-fill" style="width: @(Math.Min(card.UtilizationPct, 100))%; background: @GetUtilColor(card.UtilizationPct);"></div>
+                                </div>
+                                <div class="capacity-card-stats">
+                                    <span style="color: @GetUtilColor(card.UtilizationPct); font-weight: 600;">@card.UtilizationPct.ToString("F0")%</span>
+                                    <span class="capacity-card-hours">@card.LoadedHours.ToString("F1")h / @card.AvailableHours.ToString("F0")h</span>
+                                    @if (card.QueueCount > 0)
                                     {
-                                        <div class="dispatch-card-program">@lane.CurrentDispatch.MachineProgram.Name</div>
-                                    }
-                                    @if (lane.CurrentDispatch.Part != null)
-                                    {
-                                        <div class="dispatch-card-part">@lane.CurrentDispatch.Part.PartNumber — @lane.CurrentDispatch.Part.Name</div>
-                                    }
-                                    @if (lane.CurrentDispatch.AssignedOperator != null)
-                                    {
-                                        <div class="dispatch-card-operator">@lane.CurrentDispatch.AssignedOperator.FullName</div>
-                                    }
-                                    @if (lane.CurrentDispatch.StartedAt.HasValue)
-                                    {
-                                        var elapsed = (DateTime.UtcNow - lane.CurrentDispatch.StartedAt.Value).TotalMinutes;
-                                        <div class="dispatch-card-timer">
-                                            @($"{elapsed:F0}") min elapsed
-                                            @if (lane.CurrentDispatch.EstimatedSetupMinutes.HasValue)
-                                            {
-                                                <span> / @($"{lane.CurrentDispatch.EstimatedSetupMinutes:F0}") min est.</span>
-                                            }
-                                        </div>
+                                        <span class="capacity-card-queue">@card.QueueCount queued</span>
                                     }
                                 </div>
-                                <div class="dispatch-card-actions">
-                                    @if (lane.CurrentDispatch.Status == DispatchStatus.InProgress)
-                                    {
-                                        <button class="btn btn-xs btn-accent" @onclick="() => CompleteDispatch(lane.CurrentDispatch.Id)">Complete</button>
-                                        <button class="btn btn-xs btn-secondary" @onclick="() => RequestVerification(lane.CurrentDispatch.Id)">Verify</button>
-                                    }
-                                    else if (lane.CurrentDispatch.Status == DispatchStatus.PendingVerification)
-                                    {
-                                        <button class="btn btn-xs btn-accent" @onclick="() => VerifyAndComplete(lane.CurrentDispatch.Id)">Verify & Complete</button>
-                                    }
-                                </div>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="dispatch-card dispatch-card--empty">
-                                <span>No active setup</span>
-                            </div>
-                        }
-
-                        @* Queued dispatches *@
-                        @foreach (var dispatch in lane.QueuedDispatches)
-                        {
-                            <div class="dispatch-card dispatch-card--queued @(dispatch.DispatchType == DispatchType.Changeover && dispatch.Priority >= 85 ? "dispatch-card--urgent" : "")">
-                                <div class="dispatch-card-header">
-                                    <span class="dispatch-card-number">@dispatch.DispatchNumber</span>
-                                    <span class="dispatch-card-priority" title="@(dispatch.PriorityReason ?? $"Priority {dispatch.Priority}")">
-                                        P@(dispatch.Priority)
-                                        @if (!string.IsNullOrEmpty(dispatch.ScoreBreakdownJson))
-                                        {
-                                            <span class="dispatch-score-icon" title="@FormatScoreBreakdown(dispatch.ScoreBreakdownJson)">📊</span>
-                                        }
-                                    </span>
-                                    <span class="dispatch-card-badge dispatch-card-badge--@dispatch.Status.ToString().ToLower()">
-                                        @dispatch.StatusDisplay
-                                    </span>
-                                    @if (dispatch.IsAutoGenerated)
-                                    {
-                                        <span class="dispatch-card-badge dispatch-card-badge--auto" title="Auto-generated">Auto</span>
-                                    }
-                                </div>
-                                <div class="dispatch-card-body">
-                                    <div class="dispatch-card-type">@dispatch.TypeDisplay</div>
-                                    @if (dispatch.MachineProgram != null)
-                                    {
-                                        <div class="dispatch-card-program">@dispatch.MachineProgram.Name</div>
-                                    }
-                                    @if (dispatch.Part != null)
-                                    {
-                                        <div class="dispatch-card-part">@dispatch.Part.PartNumber</div>
-                                    }
-                                    @if (dispatch.EstimatedSetupMinutes.HasValue)
-                                    {
-                                        <div class="dispatch-card-est">~@($"{dispatch.EstimatedSetupMinutes:F0}") min</div>
-                                    }
-
-                                    @* Changeover countdown timer *@
-                                    @if (dispatch.DispatchType == DispatchType.Changeover && dispatch.ScheduledStartAt.HasValue)
-                                    {
-                                        var minutesUntil = (dispatch.ScheduledStartAt.Value - DateTime.UtcNow).TotalMinutes;
-                                        var timerClass = minutesUntil switch
-                                        {
-                                            < 0 => "dispatch-timer--critical",
-                                            < 30 => "dispatch-timer--urgent",
-                                            < 60 => "dispatch-timer--warning",
-                                            _ => "dispatch-timer--normal"
-                                        };
-                                        <div class="dispatch-changeover-timer @timerClass">
-                                            @if (minutesUntil < 0)
-                                            {
-                                                <span>⚠ OVERDUE by @($"{Math.Abs(minutesUntil):F0}") min</span>
-                                            }
-                                            else
-                                            {
-                                                <span>Changeover in @($"{minutesUntil:F0}") min</span>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                                <div class="dispatch-card-actions">
-                                    @if (dispatch.Status == DispatchStatus.Deferred && dispatch.IsAutoGenerated)
-                                    {
-                                        <button class="btn btn-xs btn-accent" @onclick="() => ApproveDispatch(dispatch.Id)">Approve</button>
-                                        <button class="btn btn-xs btn-danger" @onclick="() => RejectDispatch(dispatch.Id)">Reject</button>
-                                    }
-                                    else if (dispatch.Status == DispatchStatus.Queued)
-                                    {
-                                        <button class="btn btn-xs btn-primary" @onclick="() => StartDispatch(dispatch.Id)">Start</button>
-                                        <button class="btn btn-xs btn-secondary" @onclick="() => DeferDispatch(dispatch.Id)">Defer</button>
-                                        <button class="btn btn-xs btn-danger" @onclick="() => CancelDispatch(dispatch.Id)">Cancel</button>
-                                    }
-                                    else if (dispatch.Status == DispatchStatus.Assigned)
-                                    {
-                                        <button class="btn btn-xs btn-primary" @onclick="() => StartDispatch(dispatch.Id)">Start</button>
-                                    }
-                                </div>
-                            </div>
-                        }
-
-                        @if (!lane.QueuedDispatches.Any() && lane.CurrentDispatch == null)
-                        {
-                            <div class="dispatch-lane-empty">Queue empty</div>
-                        }
-                    </div>
-                }
-            </div>
-
-            @* ── Engineer Plate Layout Dispatches ── *@
-            @if (_plateLayoutDispatches.Any())
-            {
-                <div class="dispatch-plate-layouts">
-                    <h3>Plate Layout Requests (@_plateLayoutDispatches.Count)</h3>
-                    <div class="dispatch-plate-layouts-list">
-                        @foreach (var dispatch in _plateLayoutDispatches)
-                        {
-                            <div class="dispatch-card dispatch-card--platelayout">
-                                <div class="dispatch-card-header">
-                                    <span class="dispatch-card-number">@dispatch.DispatchNumber</span>
-                                    <span class="dispatch-card-badge dispatch-card-badge--platelayout">Plate Layout</span>
-                                    <span class="dispatch-card-priority">P@(dispatch.Priority)</span>
-                                </div>
-                                <div class="dispatch-card-body">
-                                    @if (dispatch.Part != null)
-                                    {
-                                        <div class="dispatch-card-part">@dispatch.Part.PartNumber — @dispatch.Part.Name</div>
-                                    }
-                                    @if (!string.IsNullOrEmpty(dispatch.DemandSummaryJson))
-                                    {
-                                        <div class="dispatch-demand-summary" title="@dispatch.DemandSummaryJson">
-                                            Demand details available
-                                        </div>
-                                    }
-                                    @if (!string.IsNullOrEmpty(dispatch.Notes))
-                                    {
-                                        <div class="dispatch-card-notes">@dispatch.Notes</div>
-                                    }
-                                </div>
-                                <div class="dispatch-card-actions">
-                                    <button class="btn btn-xs btn-primary" @onclick="() => StartDispatch(dispatch.Id)">Begin Layout</button>
-                                    <button class="btn btn-xs btn-danger" @onclick="() => CancelDispatch(dispatch.Id)">Dismiss</button>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                </div>
-            }
-
-            @* ── Unassigned Pool ── *@
-            @if (_boardData.UnassignedDispatches.Any())
-            {
-                <div class="dispatch-unassigned">
-                    <h3>Unassigned Dispatches (@_boardData.UnassignedDispatches.Count)</h3>
-                    <div class="dispatch-unassigned-list">
-                        @foreach (var dispatch in _boardData.UnassignedDispatches)
-                        {
-                            <div class="dispatch-card dispatch-card--unassigned">
-                                <span class="dispatch-card-number">@dispatch.DispatchNumber</span>
-                                <span>@dispatch.Machine?.Name</span>
-                                <span>@dispatch.TypeDisplay</span>
-                                @if (dispatch.MachineProgram != null)
+                                @if (!string.IsNullOrEmpty(card.CurrentProgramName))
                                 {
-                                    <span>@dispatch.MachineProgram.Name</span>
+                                    <div class="capacity-card-program" title="Current program loaded">
+                                        @card.CurrentProgramName
+                                        @if (card.ToolSlotCount > 0)
+                                        {
+                                            <span class="capacity-card-tools">@card.LoadedToolCount/@card.ToolSlotCount tools</span>
+                                        }
+                                    </div>
                                 }
-                                <span class="dispatch-card-priority">P@(dispatch.Priority)</span>
+                                @if (!string.IsNullOrEmpty(card.NextDuePart))
+                                {
+                                    <div class="capacity-card-due">
+                                        Next: <strong>@card.NextDuePart</strong>
+                                        @if (card.NextDueDate.HasValue)
+                                        {
+                                            <span class="@(card.NextDueDate.Value < DateTime.UtcNow ? "text-danger" : "")">
+                                                @card.NextDueDate.Value.ToString("MMM d")
+                                            </span>
+                                        }
+                                    </div>
+                                }
                             </div>
                         }
                     </div>
                 </div>
             }
         }
-    </div>
+    </section>
+
+    @* ══════════════════════════════════════════════════════════════
+       SECTION 2: Bottleneck Alerts + Demand Gaps
+       ══════════════════════════════════════════════════════════════ *@
+    @if (!_capacityLoading)
+    {
+        @if (_bottlenecks?.Items.Any() == true)
+        {
+            <section class="dispatch-section">
+                <h2 class="dispatch-section-title">Bottleneck Alerts</h2>
+                <div class="dispatch-bottleneck-list">
+                    @foreach (var item in _bottlenecks.Items)
+                    {
+                        <div class="capacity-bottleneck capacity-bottleneck--@item.Severity">
+                            <span class="capacity-bottleneck-severity">@item.Severity.ToUpper()</span>
+                            <span class="capacity-bottleneck-dept">@item.Department</span>
+                            <span>@item.QueueHours.ToString("F0")h queued / @item.CapacityHours.ToString("F0")h capacity</span>
+                            <span class="capacity-bottleneck-pct">@item.UtilizationPct.ToString("F0")%</span>
+                        </div>
+                    }
+                </div>
+                @if (_bottlenecks.Recommendations.Any())
+                {
+                    <div class="dispatch-bottleneck-recs">
+                        @foreach (var rec in _bottlenecks.Recommendations)
+                        {
+                            <div class="dispatch-bottleneck-rec">@rec</div>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
+        @if (_demandGaps.Any())
+        {
+            <section class="dispatch-section">
+                <h2 class="dispatch-section-title">Unmet Demand — @_demandGaps.Count part@(_demandGaps.Count != 1 ? "s" : "") need scheduling</h2>
+                <div class="data-table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>PART</th>
+                                <th>DEMAND</th>
+                                <th>SCHEDULED</th>
+                                <th>GAP</th>
+                                <th>MACHINES</th>
+                                <th>DUE</th>
+                                <th>PRIORITY</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var gap in _demandGaps.OrderByDescending(g => g.IsOverdue).ThenBy(g => g.EarliestDueDate))
+                            {
+                                <tr class="@(gap.IsOverdue ? "data-row--overdue" : "")">
+                                    <td><strong>@gap.PartNumber</strong><br /><span class="text-muted text-sm">@gap.PartName</span></td>
+                                    <td>@gap.DemandQty</td>
+                                    <td>@gap.ScheduledQty</td>
+                                    <td><span class="text-danger font-semibold">@gap.GapQty</span></td>
+                                    <td>@gap.CapableMachineCount</td>
+                                    <td class="@(gap.IsOverdue ? "text-danger" : "")">
+                                        @gap.EarliestDueDate.ToString("MMM d")
+                                        @if (gap.IsOverdue) { <span class="badge badge-danger">OVERDUE</span> }
+                                    </td>
+                                    <td>
+                                        <span class="wo-priority wo-priority--@gap.HighestPriority.ToString().ToLower()">@gap.HighestPriority</span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-accent" @onclick="() => BeginInlineAssign(gap.PartId)" disabled="@(_assigningPartId == gap.PartId)">
+                                            @(_assigningPartId == gap.PartId ? "Loading..." : "Assign")
+                                        </button>
+                                    </td>
+                                </tr>
+
+                                @* Inline assignment panel *@
+                                @if (_assigningPartId == gap.PartId)
+                                {
+                                    <tr>
+                                        <td colspan="8">
+                                            <div class="dispatch-assign-panel">
+                                                @if (_suggestionsLoading)
+                                                {
+                                                    <div class="loading"><span class="spinner"></span> Finding best machine assignments...</div>
+                                                }
+                                                else if (_suggestions.Any())
+                                                {
+                                                    <div class="dispatch-assign-header">
+                                                        <strong>Assign @gap.PartNumber</strong> — @gap.GapQty parts needed
+                                                    </div>
+                                                    <div class="dispatch-assign-suggestions">
+                                                        @foreach (var sug in _suggestions.Where(s => s.PartId == gap.PartId).OrderByDescending(s => s.Score))
+                                                        {
+                                                            <div class="dispatch-assign-suggestion @(sug.IsRecommended ? "dispatch-assign-suggestion--recommended" : "")"
+                                                                 @onclick="() => SelectSuggestion(sug.PartId, sug.MachineId, sug.MachineProgramId)">
+                                                                <div class="dispatch-assign-suggestion-header">
+                                                                    <strong>@sug.MachineName</strong>
+                                                                    @if (sug.IsRecommended)
+                                                                    {
+                                                                        <span class="badge badge-success">RECOMMENDED</span>
+                                                                    }
+                                                                    <span class="dispatch-assign-score">Score: @sug.Score</span>
+                                                                </div>
+                                                                <div class="dispatch-assign-suggestion-details">
+                                                                    <span>Program: @sug.ProgramName</span>
+                                                                    <span>Setup: @sug.EstimatedSetupMinutes.ToString("F0") min</span>
+                                                                    <span>Run: @sug.EstimatedRunMinutes.ToString("F0") min</span>
+                                                                    <span>Qty: @sug.Quantity</span>
+                                                                    @if (sug.ToolChangeCount == 0)
+                                                                    {
+                                                                        <span style="color: var(--success);">Tools match</span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span style="color: var(--warning);">@sug.ToolChangeCount tool change@(sug.ToolChangeCount != 1 ? "s" : "")</span>
+                                                                    }
+                                                                </div>
+                                                                <div class="dispatch-assign-reason">@sug.ScoreReason</div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                    <div class="dispatch-assign-actions">
+                                                        <button class="btn btn-accent" @onclick="ExecuteInlineAssignment" disabled="@_executing">
+                                                            @(_executing ? "Scheduling..." : "Confirm Assignment")
+                                                        </button>
+                                                        <button class="btn btn-secondary" @onclick="CancelInlineAssign">Cancel</button>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="dispatch-empty">No machine assignments available for this part.</div>
+                                                    <button class="btn btn-sm btn-secondary" @onclick="CancelInlineAssign">Close</button>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="dispatch-section">
+                <div class="dispatch-empty" style="padding: 16px;">All demand is covered by scheduled builds.</div>
+            </section>
+        }
+    }
+
+    @* ══════════════════════════════════════════════════════════════
+       SECTION 3: Operator Setup Dispatch Board (collapsible)
+       ══════════════════════════════════════════════════════════════ *@
+    <section class="dispatch-section">
+        <details class="dispatch-operator-details" @ref="_boardDetails">
+            <summary class="dispatch-section-title dispatch-section-title--clickable" @onclick="EnsureBoardLoaded">
+                Operator Dispatch Board — <strong>@_boardData.TotalActive</strong> active, <strong>@_boardData.TotalQueued</strong> queued, <strong>@_boardData.TotalInProgress</strong> in progress
+                @if (_deferredCount > 0)
+                {
+                    <span class="dispatch-stat dispatch-stat--deferred">@_deferredCount pending approval</span>
+                }
+            </summary>
+
+            <div class="dispatch-board">
+                <div class="dispatch-board-header">
+                    <button class="btn btn-sm btn-accent" @onclick="OpenCreateModal">+ New Dispatch</button>
+                </div>
+
+                @if (_boardLoading)
+                {
+                    <div class="loading"><span class="spinner"></span> Loading dispatches...</div>
+                }
+                else
+                {
+                    @* ── Maintenance Alerts Banner ── *@
+                    @if (_maintenanceAlerts.Any())
+                    {
+                        <div class="dispatch-maintenance-banner">
+                            <h3>Maintenance Alerts (@_maintenanceAlerts.Count)</h3>
+                            @foreach (var alert in _maintenanceAlerts)
+                            {
+                                <div class="dispatch-maintenance-alert dispatch-maintenance-alert--@alert.Severity.ToString().ToLower()">
+                                    <span class="dispatch-maintenance-severity">@alert.Severity</span>
+                                    <span>@alert.MachineName — @alert.ComponentName: @alert.RuleName</span>
+                                    <span class="dispatch-maintenance-pct">@($"{alert.PercentUsed:F0}")%</span>
+                                    @if (alert.IsOverdue)
+                                    {
+                                        <span class="dispatch-maintenance-overdue">OVERDUE</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── Machine Swim Lanes ── *@
+                    <div class="dispatch-board-lanes">
+                        @foreach (var lane in _boardData.MachineLanes)
+                        {
+                            <div class="dispatch-lane">
+                                <div class="dispatch-lane-header">
+                                    <div class="dispatch-lane-machine">
+                                        <span class="dispatch-lane-name">@lane.Machine.Name</span>
+                                        <span class="dispatch-lane-status dispatch-lane-status--@lane.Machine.SetupState.ToString().ToLower()">
+                                            @lane.Machine.SetupState
+                                        </span>
+                                    </div>
+                                    @if (lane.Machine.CurrentProgramId.HasValue)
+                                    {
+                                        <span class="dispatch-lane-program" title="Current program loaded">
+                                            @(lane.Machine.CurrentProgram?.Name ?? $"Program #{lane.Machine.CurrentProgramId}")
+                                        </span>
+                                    }
+                                </div>
+
+                                @* Current dispatch (in progress) *@
+                                @if (lane.CurrentDispatch != null)
+                                {
+                                    <div class="dispatch-card dispatch-card--active">
+                                        <div class="dispatch-card-header">
+                                            <span class="dispatch-card-number">@lane.CurrentDispatch.DispatchNumber</span>
+                                            <span class="dispatch-card-badge dispatch-card-badge--@lane.CurrentDispatch.Status.ToString().ToLower()">
+                                                @lane.CurrentDispatch.StatusDisplay
+                                            </span>
+                                        </div>
+                                        <div class="dispatch-card-body">
+                                            <div class="dispatch-card-type">@lane.CurrentDispatch.TypeDisplay</div>
+                                            @if (lane.CurrentDispatch.MachineProgram != null)
+                                            {
+                                                <div class="dispatch-card-program">@lane.CurrentDispatch.MachineProgram.Name</div>
+                                            }
+                                            @if (lane.CurrentDispatch.Part != null)
+                                            {
+                                                <div class="dispatch-card-part">@lane.CurrentDispatch.Part.PartNumber — @lane.CurrentDispatch.Part.Name</div>
+                                            }
+                                            @if (lane.CurrentDispatch.AssignedOperator != null)
+                                            {
+                                                <div class="dispatch-card-operator">@lane.CurrentDispatch.AssignedOperator.FullName</div>
+                                            }
+                                            @if (lane.CurrentDispatch.StartedAt.HasValue)
+                                            {
+                                                var elapsed = (DateTime.UtcNow - lane.CurrentDispatch.StartedAt.Value).TotalMinutes;
+                                                <div class="dispatch-card-timer">
+                                                    @($"{elapsed:F0}") min elapsed
+                                                    @if (lane.CurrentDispatch.EstimatedSetupMinutes.HasValue)
+                                                    {
+                                                        <span> / @($"{lane.CurrentDispatch.EstimatedSetupMinutes:F0}") min est.</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="dispatch-card-actions">
+                                            @if (lane.CurrentDispatch.Status == DispatchStatus.InProgress)
+                                            {
+                                                <button class="btn btn-xs btn-accent" @onclick="() => CompleteDispatch(lane.CurrentDispatch.Id)">Complete</button>
+                                                <button class="btn btn-xs btn-secondary" @onclick="() => RequestVerification(lane.CurrentDispatch.Id)">Verify</button>
+                                            }
+                                            else if (lane.CurrentDispatch.Status == DispatchStatus.PendingVerification)
+                                            {
+                                                <button class="btn btn-xs btn-accent" @onclick="() => VerifyAndComplete(lane.CurrentDispatch.Id)">Verify & Complete</button>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="dispatch-card dispatch-card--empty">
+                                        <span>No active setup</span>
+                                    </div>
+                                }
+
+                                @* Queued dispatches *@
+                                @foreach (var dispatch in lane.QueuedDispatches)
+                                {
+                                    <div class="dispatch-card dispatch-card--queued @(dispatch.DispatchType == DispatchType.Changeover && dispatch.Priority >= 85 ? "dispatch-card--urgent" : "")">
+                                        <div class="dispatch-card-header">
+                                            <span class="dispatch-card-number">@dispatch.DispatchNumber</span>
+                                            <span class="dispatch-card-priority" title="@(dispatch.PriorityReason ?? $"Priority {dispatch.Priority}")">
+                                                P@(dispatch.Priority)
+                                                @if (!string.IsNullOrEmpty(dispatch.ScoreBreakdownJson))
+                                                {
+                                                    <span class="dispatch-score-icon" title="@FormatScoreBreakdown(dispatch.ScoreBreakdownJson)">📊</span>
+                                                }
+                                            </span>
+                                            <span class="dispatch-card-badge dispatch-card-badge--@dispatch.Status.ToString().ToLower()">
+                                                @dispatch.StatusDisplay
+                                            </span>
+                                            @if (dispatch.IsAutoGenerated)
+                                            {
+                                                <span class="dispatch-card-badge dispatch-card-badge--auto" title="Auto-generated">Auto</span>
+                                            }
+                                        </div>
+                                        <div class="dispatch-card-body">
+                                            <div class="dispatch-card-type">@dispatch.TypeDisplay</div>
+                                            @if (dispatch.MachineProgram != null)
+                                            {
+                                                <div class="dispatch-card-program">@dispatch.MachineProgram.Name</div>
+                                            }
+                                            @if (dispatch.Part != null)
+                                            {
+                                                <div class="dispatch-card-part">@dispatch.Part.PartNumber</div>
+                                            }
+                                            @if (dispatch.EstimatedSetupMinutes.HasValue)
+                                            {
+                                                <div class="dispatch-card-est">~@($"{dispatch.EstimatedSetupMinutes:F0}") min</div>
+                                            }
+
+                                            @* Changeover countdown timer *@
+                                            @if (dispatch.DispatchType == DispatchType.Changeover && dispatch.ScheduledStartAt.HasValue)
+                                            {
+                                                var minutesUntil = (dispatch.ScheduledStartAt.Value - DateTime.UtcNow).TotalMinutes;
+                                                var timerClass = minutesUntil switch
+                                                {
+                                                    < 0 => "dispatch-timer--critical",
+                                                    < 30 => "dispatch-timer--urgent",
+                                                    < 60 => "dispatch-timer--warning",
+                                                    _ => "dispatch-timer--normal"
+                                                };
+                                                <div class="dispatch-changeover-timer @timerClass">
+                                                    @if (minutesUntil < 0)
+                                                    {
+                                                        <span>OVERDUE by @($"{Math.Abs(minutesUntil):F0}") min</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>Changeover in @($"{minutesUntil:F0}") min</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="dispatch-card-actions">
+                                            @if (dispatch.Status == DispatchStatus.Deferred && dispatch.IsAutoGenerated)
+                                            {
+                                                <button class="btn btn-xs btn-accent" @onclick="() => ApproveDispatch(dispatch.Id)">Approve</button>
+                                                <button class="btn btn-xs btn-danger" @onclick="() => RejectDispatch(dispatch.Id)">Reject</button>
+                                            }
+                                            else if (dispatch.Status == DispatchStatus.Queued)
+                                            {
+                                                <button class="btn btn-xs btn-primary" @onclick="() => StartDispatch(dispatch.Id)">Start</button>
+                                                <button class="btn btn-xs btn-secondary" @onclick="() => DeferDispatch(dispatch.Id)">Defer</button>
+                                                <button class="btn btn-xs btn-danger" @onclick="() => CancelDispatch(dispatch.Id)">Cancel</button>
+                                            }
+                                            else if (dispatch.Status == DispatchStatus.Assigned)
+                                            {
+                                                <button class="btn btn-xs btn-primary" @onclick="() => StartDispatch(dispatch.Id)">Start</button>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (!lane.QueuedDispatches.Any() && lane.CurrentDispatch == null)
+                                {
+                                    <div class="dispatch-lane-empty">Queue empty</div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @* ── Engineer Plate Layout Dispatches ── *@
+                    @if (_plateLayoutDispatches.Any())
+                    {
+                        <div class="dispatch-plate-layouts">
+                            <h3>Plate Layout Requests (@_plateLayoutDispatches.Count)</h3>
+                            <div class="dispatch-plate-layouts-list">
+                                @foreach (var dispatch in _plateLayoutDispatches)
+                                {
+                                    <div class="dispatch-card dispatch-card--platelayout">
+                                        <div class="dispatch-card-header">
+                                            <span class="dispatch-card-number">@dispatch.DispatchNumber</span>
+                                            <span class="dispatch-card-badge dispatch-card-badge--platelayout">Plate Layout</span>
+                                            <span class="dispatch-card-priority">P@(dispatch.Priority)</span>
+                                        </div>
+                                        <div class="dispatch-card-body">
+                                            @if (dispatch.Part != null)
+                                            {
+                                                <div class="dispatch-card-part">@dispatch.Part.PartNumber — @dispatch.Part.Name</div>
+                                            }
+                                            @if (!string.IsNullOrEmpty(dispatch.DemandSummaryJson))
+                                            {
+                                                <div class="dispatch-demand-summary" title="@dispatch.DemandSummaryJson">
+                                                    Demand details available
+                                                </div>
+                                            }
+                                            @if (!string.IsNullOrEmpty(dispatch.Notes))
+                                            {
+                                                <div class="dispatch-card-notes">@dispatch.Notes</div>
+                                            }
+                                        </div>
+                                        <div class="dispatch-card-actions">
+                                            <button class="btn btn-xs btn-primary" @onclick="() => StartDispatch(dispatch.Id)">Begin Layout</button>
+                                            <button class="btn btn-xs btn-danger" @onclick="() => CancelDispatch(dispatch.Id)">Dismiss</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @* ── Unassigned Pool ── *@
+                    @if (_boardData.UnassignedDispatches.Any())
+                    {
+                        <div class="dispatch-unassigned">
+                            <h3>Unassigned Dispatches (@_boardData.UnassignedDispatches.Count)</h3>
+                            <div class="dispatch-unassigned-list">
+                                @foreach (var dispatch in _boardData.UnassignedDispatches)
+                                {
+                                    <div class="dispatch-card dispatch-card--unassigned">
+                                        <span class="dispatch-card-number">@dispatch.DispatchNumber</span>
+                                        <span>@dispatch.Machine?.Name</span>
+                                        <span>@dispatch.TypeDisplay</span>
+                                        @if (dispatch.MachineProgram != null)
+                                        {
+                                            <span>@dispatch.MachineProgram.Name</span>
+                                        }
+                                        <span class="dispatch-card-priority">P@(dispatch.Priority)</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </details>
+    </section>
 </div>
 
 @* ── Create Dispatch Modal ── *@
@@ -491,19 +568,15 @@
 }
 
 @code {
-    // ── Section 1: Build Intelligence Parameters (from parent) ──
-    [Parameter] public List<MachineAvailabilitySummary> MachineAvailability { get; set; } = [];
-    [Parameter] public List<BuildRecommendation> Recommendations { get; set; } = [];
-    [Parameter] public List<DemandSummary> DemandSummaries { get; set; } = [];
-    [Parameter] public List<BuildTemplate> Templates { get; set; } = [];
-    [Parameter] public List<MachineProgram> DraftPrograms { get; set; } = [];
-
+    // ── Parameters (EventCallbacks only — data is self-loaded) ──
     [Parameter] public EventCallback<int> OnOpenAdvisorForMachine { get; set; }
     [Parameter] public EventCallback<int> OnOpenAdvisorForPart { get; set; }
     [Parameter] public EventCallback<int> OnInstantiateTemplate { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
-    // ── Section 2: Dispatch Board (self-loading) ──
+    // ── Injected Services ──
+    [Inject] private ICapacityPlanningService CapacityService { get; set; } = null!;
+    [Inject] private IBuildAdvisorService BuildAdvisor { get; set; } = null!;
     [Inject] private ISetupDispatchService DispatchService { get; set; } = null!;
     [Inject] private IMachineProgramService ProgramService { get; set; } = null!;
     [Inject] private IPlateLayoutDispatchService PlateLayoutService { get; set; } = null!;
@@ -513,28 +586,38 @@
 
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
-    // ── State ──
-    private bool _showOnlyAdditive = true;
+    // ── Capacity state (Section 1 + 2) ──
+    private DateTime _from = DateTime.UtcNow.Date;
+    private DateTime _to = DateTime.UtcNow.Date.AddDays(7);
+    private List<MachineCapacityCard> _machineCards = new();
+    private List<DemandGapItem> _demandGaps = new();
+    private BottleneckReport? _bottlenecks;
+    private bool _capacityLoading = true;
+
+    // ── Inline assignment state ──
+    private int? _assigningPartId;
+    private List<MachineAssignmentSuggestion> _suggestions = new();
+    private bool _suggestionsLoading;
+    private bool _executing;
+
+    // ── Dispatch board state (Section 3) ──
     private DispatchDashboardData _boardData = new();
     private List<SetupDispatch> _plateLayoutDispatches = new();
     private List<MaintenanceAlert> _maintenanceAlerts = new();
     private int _deferredCount;
     private int _currentUserId;
     private bool _boardLoading = true;
-    private bool _showCreateModal;
+    private bool _boardLoadedOnce;
+    private ElementReference _boardDetails;
 
     // Create modal fields
+    private bool _showCreateModal;
     private int _createMachineId;
     private DispatchType _createType = DispatchType.Setup;
     private int? _createProgramId;
     private double? _createEstMinutes;
     private string? _createNotes;
     private List<MachineProgram> _availablePrograms = new();
-
-    // ── Computed ──
-    private IEnumerable<DemandSummary> FilteredDemand => DemandSummaries
-        .Where(d => d.NetRemaining > 0)
-        .Where(d => !_showOnlyAdditive || d.IsAdditive);
 
     // ── Lifecycle ──
     protected override async Task OnInitializedAsync()
@@ -546,62 +629,170 @@
             if (int.TryParse(userIdClaim, out var uid))
                 _currentUserId = uid;
         }
-        await LoadBoardDataAsync();
+
+        // Load capacity data and board summary counts in parallel
+        var capacityTask = LoadCapacityDataAsync();
+        var boardTask = LoadBoardDataAsync();
+        await Task.WhenAll(capacityTask, boardTask);
+    }
+
+    private async Task LoadCapacityDataAsync()
+    {
+        _capacityLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var cardTask = CapacityService.GetMachineCapacityCardsAsync(_from, _to);
+            var gapTask = CapacityService.GetDemandGapsAsync();
+            var bottleneckTask = BuildAdvisor.AnalyzeBottlenecksAsync(_from, _to);
+            await Task.WhenAll(cardTask, gapTask, bottleneckTask);
+
+            _machineCards = cardTask.Result;
+            _demandGaps = gapTask.Result;
+            _bottlenecks = bottleneckTask.Result;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load capacity data: {ex.Message}");
+        }
+
+        _capacityLoading = false;
+        StateHasChanged();
     }
 
     private async Task LoadBoardDataAsync()
     {
         _boardLoading = true;
-        StateHasChanged();
 
-        _boardData = await DispatchService.GetDashboardDataAsync();
-        _plateLayoutDispatches = await PlateLayoutService.GetEngineerDispatchesAsync();
-        _maintenanceAlerts = (await MaintenanceService.EvaluateMaintenanceRulesAsync())
-            .Where(a => a.Severity != MaintenanceSeverity.Info).ToList();
-        _deferredCount = (await DispatchService.GetActiveDispatchesAsync())
-            .Count(d => d.Status == DispatchStatus.Deferred && d.IsAutoGenerated);
+        try
+        {
+            _boardData = await DispatchService.GetDashboardDataAsync();
+            _plateLayoutDispatches = await PlateLayoutService.GetEngineerDispatchesAsync();
+            _maintenanceAlerts = (await MaintenanceService.EvaluateMaintenanceRulesAsync())
+                .Where(a => a.Severity != MaintenanceSeverity.Info).ToList();
+            _deferredCount = (await DispatchService.GetActiveDispatchesAsync())
+                .Count(d => d.Status == DispatchStatus.Deferred && d.IsAutoGenerated);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load dispatch board: {ex.Message}");
+        }
+
         _boardLoading = false;
+        _boardLoadedOnce = true;
         StateHasChanged();
     }
 
-    // ── Build Intelligence Actions ──
-    private Task HandleMachineComposeBuild(int machineId) =>
-        OnOpenAdvisorForMachine.InvokeAsync(machineId);
+    private async Task EnsureBoardLoaded()
+    {
+        if (!_boardLoadedOnce)
+            await LoadBoardDataAsync();
+    }
 
-    private Task HandlePartComposeBuild(int partId) =>
-        OnOpenAdvisorForPart.InvokeAsync(partId);
+    // ── Date range handlers ──
+    private async Task OnFromDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var d)) _from = d;
+        await LoadCapacityDataAsync();
+    }
+
+    private async Task OnToDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var d)) _to = d;
+        await LoadCapacityDataAsync();
+    }
+
+    // ── Utilization color helper ──
+    private static string GetUtilColor(double pct) => pct switch
+    {
+        > 100 => "#EF4444",
+        > 85 => "#F59E0B",
+        > 40 => "#3B82F6",
+        _ => "#10B981"
+    };
+
+    // ── Inline Assignment ──
+    private async Task BeginInlineAssign(int partId)
+    {
+        _assigningPartId = partId;
+        _suggestionsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            _suggestions = await CapacityService.SuggestAssignmentsAsync(new List<int> { partId });
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to get suggestions: {ex.Message}");
+            _suggestions = new();
+        }
+
+        _suggestionsLoading = false;
+        StateHasChanged();
+    }
+
+    private void CancelInlineAssign()
+    {
+        _assigningPartId = null;
+        _suggestions = new();
+    }
+
+    private void SelectSuggestion(int partId, int machineId, int programId)
+    {
+        foreach (var s in _suggestions.Where(s => s.PartId == partId))
+            s.IsRecommended = s.MachineId == machineId && s.MachineProgramId == programId;
+    }
+
+    private async Task ExecuteInlineAssignment()
+    {
+        _executing = true;
+        StateHasChanged();
+
+        try
+        {
+            var selected = _suggestions.Where(s => s.IsRecommended).ToList();
+            if (!selected.Any())
+            {
+                Toast.ShowError("Select a machine assignment first.");
+                return;
+            }
+
+            var result = await CapacityService.ExecuteAssignmentsAsync(selected, _currentUserId);
+            Toast.ShowSuccess($"Scheduled {result.Count} assignment(s) with setup dispatches.");
+
+            _assigningPartId = null;
+            _suggestions = new();
+            await Task.WhenAll(LoadCapacityDataAsync(), LoadBoardDataAsync());
+            await OnRefreshRequested.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+        finally
+        {
+            _executing = false;
+        }
+    }
 
     // ── Dispatch Board Actions ──
     private async Task StartDispatch(int dispatchId)
     {
-        try
-        {
-            await DispatchService.StartDispatchAsync(dispatchId);
-            Toast.ShowSuccess("Dispatch started.");
-            await LoadBoardDataAsync();
-        }
+        try { await DispatchService.StartDispatchAsync(dispatchId); Toast.ShowSuccess("Dispatch started."); await LoadBoardDataAsync(); }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task CompleteDispatch(int dispatchId)
     {
-        try
-        {
-            await DispatchService.CompleteDispatchAsync(dispatchId);
-            Toast.ShowSuccess("Setup completed.");
-            await LoadBoardDataAsync();
-        }
+        try { await DispatchService.CompleteDispatchAsync(dispatchId); Toast.ShowSuccess("Setup completed."); await LoadBoardDataAsync(); }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task RequestVerification(int dispatchId)
     {
-        try
-        {
-            await DispatchService.RequestVerificationAsync(dispatchId);
-            Toast.ShowSuccess("Verification requested.");
-            await LoadBoardDataAsync();
-        }
+        try { await DispatchService.RequestVerificationAsync(dispatchId); Toast.ShowSuccess("Verification requested."); await LoadBoardDataAsync(); }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
@@ -619,45 +810,25 @@
 
     private async Task CancelDispatch(int dispatchId)
     {
-        try
-        {
-            await DispatchService.CancelDispatchAsync(dispatchId, "Cancelled from dispatch board");
-            Toast.ShowSuccess("Dispatch cancelled.");
-            await LoadBoardDataAsync();
-        }
+        try { await DispatchService.CancelDispatchAsync(dispatchId, "Cancelled from dispatch board"); Toast.ShowSuccess("Dispatch cancelled."); await LoadBoardDataAsync(); }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task DeferDispatch(int dispatchId)
     {
-        try
-        {
-            await DispatchService.DeferDispatchAsync(dispatchId, "Deferred from dispatch board");
-            Toast.ShowSuccess("Dispatch deferred.");
-            await LoadBoardDataAsync();
-        }
+        try { await DispatchService.DeferDispatchAsync(dispatchId, "Deferred from dispatch board"); Toast.ShowSuccess("Dispatch deferred."); await LoadBoardDataAsync(); }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task ApproveDispatch(int dispatchId)
     {
-        try
-        {
-            await GenerationService.ApproveAutoDispatchAsync(dispatchId, _currentUserId);
-            Toast.ShowSuccess("Auto-dispatch approved.");
-            await LoadBoardDataAsync();
-        }
+        try { await GenerationService.ApproveAutoDispatchAsync(dispatchId, _currentUserId); Toast.ShowSuccess("Auto-dispatch approved."); await LoadBoardDataAsync(); }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
     private async Task RejectDispatch(int dispatchId)
     {
-        try
-        {
-            await GenerationService.RejectAutoDispatchAsync(dispatchId, _currentUserId, "Rejected from dispatch board");
-            Toast.ShowSuccess("Auto-dispatch rejected.");
-            await LoadBoardDataAsync();
-        }
+        try { await GenerationService.RejectAutoDispatchAsync(dispatchId, _currentUserId, "Rejected from dispatch board"); Toast.ShowSuccess("Auto-dispatch rejected."); await LoadBoardDataAsync(); }
         catch (Exception ex) { Toast.ShowError(ex.Message); }
     }
 
@@ -669,9 +840,7 @@
             var doc = JsonDocument.Parse(json);
             var parts = new List<string>();
             foreach (var prop in doc.RootElement.EnumerateObject())
-            {
                 parts.Add($"{prop.Name}: {prop.Value}");
-            }
             return string.Join("\n", parts);
         }
         catch { return "Score details unavailable"; }
@@ -694,16 +863,12 @@
     private async Task CreateDispatch()
     {
         if (_createMachineId == 0) return;
-
         try
         {
             await DispatchService.CreateManualDispatchAsync(
-                machineId: _createMachineId,
-                type: _createType,
-                machineProgramId: _createProgramId,
-                estimatedSetupMinutes: _createEstMinutes,
+                machineId: _createMachineId, type: _createType,
+                machineProgramId: _createProgramId, estimatedSetupMinutes: _createEstMinutes,
                 notes: _createNotes);
-
             Toast.ShowSuccess("Dispatch created.");
             _showCreateModal = false;
             await LoadBoardDataAsync();
