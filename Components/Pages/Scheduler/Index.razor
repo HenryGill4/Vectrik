@@ -280,9 +280,13 @@ else if (_viewMode == "data")
             _ganttView?.Viewport?.RequestReinit();
             _partPathView?.Viewport?.RequestReinit();
         }
+        catch (TaskCanceledException) { /* Circuit disconnected — safe to ignore during background refresh */ }
+        catch (OperationCanceledException) { /* Circuit disconnected */ }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { /* JS runtime torn down */ }
         catch (Exception ex)
         {
-            Toast.ShowError($"Failed to load schedule data: {ex.Message}");
+            try { Toast.ShowError($"Failed to load schedule data: {ex.Message}"); }
+            catch { /* Toast may fail if circuit is disconnected */ }
         }
         finally
         {

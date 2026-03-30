@@ -193,24 +193,22 @@ try
         platformDb.SaveChanges();
     }
 
-    // Seed demo tenant if none exists
+    // Always ensure demo tenant exists and is seeded
     var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
-    if (!platformDb.Tenants.Any())
+    if (!platformDb.Tenants.Any(t => t.Code == "demo"))
     {
         Task.Run(async () =>
             await tenantService.CreateTenantAsync("demo", "Polite Society Industries", "System",
                 logoUrl: "/uploads/logos/psi-shield.svg", primaryColor: "#a1a1aa")
         ).GetAwaiter().GetResult();
     }
-    else
+
+    // Ensure all active tenants have seeded data (handles deleted/recreated tenant DBs)
+    foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
     {
-        // Ensure existing tenants have seeded data (handles deleted/recreated tenant DBs)
-        foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
-        {
-            Task.Run(async () =>
-                await tenantService.SeedTenantDatabaseAsync(tenant.Code)
-            ).GetAwaiter().GetResult();
-        }
+        Task.Run(async () =>
+            await tenantService.SeedTenantDatabaseAsync(tenant.Code)
+        ).GetAwaiter().GetResult();
     }
 
     // Seed default feature flags for demo tenant

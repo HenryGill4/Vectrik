@@ -249,6 +249,7 @@
             try { await _jsModule.InvokeVoidAsync("applyZoom", newPph); }
             catch (JSDisconnectedException) { return; }
             catch (ObjectDisposedException) { return; }
+            catch (TaskCanceledException) { return; }
         }
 
         await OnPixelsPerHourChanged.InvokeAsync(newPph);
@@ -266,6 +267,7 @@
             try { await _jsModule.InvokeVoidAsync("applyZoom", newPph); }
             catch (JSDisconnectedException) { return; }
             catch (ObjectDisposedException) { return; }
+            catch (TaskCanceledException) { return; }
         }
 
         await OnPixelsPerHourChanged.InvokeAsync(newPph);
@@ -278,6 +280,7 @@
         try { await _jsModule.InvokeVoidAsync("scrollToTime", time.ToString("o")); }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+        catch (TaskCanceledException) { }
     }
 
     /// <summary>Pan the viewport by half its width in the given direction (-1 = back, 1 = forward).</summary>
@@ -291,6 +294,7 @@
         try { await _jsModule.InvokeVoidAsync("scrollToTime", targetTime.ToString("o")); }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+        catch (TaskCanceledException) { }
     }
 
     /// <summary>Save JS scroll/zoom state before a data refresh.</summary>
@@ -300,6 +304,9 @@
         try { await _jsModule.InvokeVoidAsync("saveState"); }
         catch (JSException) { }
         catch (ObjectDisposedException) { }
+        catch (TaskCanceledException) { }
+        catch (OperationCanceledException) { }
+        catch (JSDisconnectedException) { }
     }
 
     /// <summary>Request a JS reinit on the next render cycle (after data reload changes DOM).</summary>
@@ -319,6 +326,7 @@
         }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+        catch (TaskCanceledException) { }
     }
 
     // ── Position Helpers (for time header + inner width) ────────────────────
