@@ -1,8 +1,36 @@
 @page "/admin"
+@inject Vectrik.Data.TenantDbContext Db
+@inject SetupReadinessService ReadinessService
+@using Microsoft.EntityFrameworkCore
 
 <PageTitle>Admin - Vectrik</PageTitle>
 
 <div class="page-header"><h1 class="page-title">Admin Panel</h1></div>
+
+@if (_checks != null)
+{
+    <div class="card setup-readiness" style="margin-bottom: 20px; padding: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="font-weight: 600; font-size: 1rem;">Setup Readiness</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.25rem; font-weight: 700; color: @(_score >= 75 ? "var(--success)" : _score >= 50 ? "var(--warning)" : "var(--danger)");">@_score%</span>
+                <a href="/admin/setup" class="btn btn-sm btn-secondary">Setup Wizard</a>
+            </div>
+        </div>
+        <div class="progress-bar-container" style="margin-bottom: 12px;">
+            <div class="progress-bar-fill" style="width: @(_score)%; background: @(_score >= 75 ? "var(--success)" : _score >= 50 ? "var(--warning)" : "var(--danger)");"></div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;">
+            @foreach (var check in _checks)
+            {
+                <a href="@check.Link" class="setup-check @(check.Passed ? "setup-check--pass" : "setup-check--fail")" style="text-decoration: none; color: inherit;">
+                    <span class="setup-check-icon">@(check.Passed ? "\u2713" : "\u2717")</span>
+                    <span class="setup-check-label">@check.Label</span>
+                </a>
+            }
+        </div>
+    </div>
+}
 
 <p style="color: var(--text-muted); margin-bottom: 16px;">System-level configuration. Parts, Stages, Materials, and Machines are now in the main navigation.</p>
 
@@ -83,3 +111,18 @@
         <div style="font-size: 0.85rem; color: var(--text-secondary);">Track bugs, changes, styling — one at a time</div>
     </a>
 </div>
+
+@code {
+    private List<ReadinessCheck>? _checks;
+    private int _score;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _checks = await ReadinessService.GetChecksAsync(Db);
+            _score = ReadinessService.CalculateScore(_checks);
+        }
+        catch { /* Readiness section is non-critical */ }
+    }
+}

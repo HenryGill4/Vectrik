@@ -104,6 +104,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Force password change guard — redirect before anything else
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            var mustChange = state.User.FindFirst("MustChangePassword")?.Value;
+            if (mustChange == "True")
+            {
+                Nav.NavigateTo("/account/change-password", forceLoad: true);
+                return;
+            }
+        }
+
         TabManager.EnsureHomeTab();
         SyncTabFromCurrentUrl();
         Nav.LocationChanged += OnLocationChanged;

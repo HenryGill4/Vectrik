@@ -99,6 +99,7 @@ builder.Services.AddScoped<IExternalOperationService, ExternalOperationService>(
 builder.Services.AddScoped<IBuildTemplateService, BuildTemplateService>();
 builder.Services.AddScoped<ICertifiedLayoutService, CertifiedLayoutService>();
 builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
+builder.Services.AddScoped<SetupReadinessService>();
 builder.Services.AddScoped<IDevIssueService, DevIssueService>();
 builder.Services.AddScoped<IManufacturingProcessService, ManufacturingProcessService>();
 builder.Services.AddScoped<IBatchService, BatchService>();

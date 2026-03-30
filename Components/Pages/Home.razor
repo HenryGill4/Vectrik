@@ -1,6 +1,9 @@
 @page "/dashboard"
 @inject IAnalyticsService AnalyticsService
+@inject Vectrik.Data.TenantDbContext Db
 @inject NavigationManager Nav
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
 
 <PageTitle>Dashboard - Vectrik</PageTitle>
 
@@ -97,10 +100,29 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
     private DashboardKpis? _kpis;
 
     protected override async Task OnInitializedAsync()
     {
+        // Redirect admins to onboarding wizard if setup hasn't been completed
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            var role = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            if (role == "Admin")
+            {
+                var onboardingDone = await Db.SystemSettings
+                    .AnyAsync(s => s.Key == "OnboardingComplete" && s.Value == "true");
+                if (!onboardingDone)
+                {
+                    Nav.NavigateTo("/admin/setup");
+                    return;
+                }
+            }
+        }
+
         try { _kpis = await AnalyticsService.GetDashboardKpisAsync(); }
         catch { _kpis = new DashboardKpis(); }
     }

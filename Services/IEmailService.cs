@@ -4,6 +4,8 @@ public interface IEmailService
 {
     Task SendDemoRequestAsync(DemoRequestEmail request);
     Task SendEmailAsync(string to, string subject, string htmlBody);
+    Task SendInvitationAsync(string toEmail, string fullName, string username,
+        string temporaryPassword, string loginUrl, string companyName);
 }
 
 public class DemoRequestEmail
