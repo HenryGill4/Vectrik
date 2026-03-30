@@ -8,11 +8,14 @@ public interface ITenantService
     Task<List<Tenant>> GetAllTenantsAsync();
     Task<Tenant?> GetTenantByIdAsync(int id);
     Task<Tenant?> GetTenantByCodeAsync(string code);
-    Task<Tenant> CreateTenantAsync(string code, string companyName, string createdBy, string? logoUrl = null, string? primaryColor = null);
+    Task<Tenant> CreateTenantAsync(string code, string companyName, string createdBy,
+        string? logoUrl = null, string? primaryColor = null,
+        string? contactEmail = null, string? contactPhone = null,
+        string? subscriptionTier = null, string? notes = null);
     Task<Tenant> UpdateTenantAsync(Tenant tenant);
     Task DeactivateTenantAsync(int id);
     Task ActivateTenantAsync(int id);
-    Task SeedTenantDatabaseAsync(string tenantCode);
+    Task SeedTenantDatabaseAsync(string tenantCode, bool isDemoTenant = false);
 
     // Feature flags
     Task<Dictionary<string, bool>> GetTenantFeatureFlagsAsync(string tenantCode);

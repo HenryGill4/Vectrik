@@ -77,6 +77,55 @@ public class DataSeedingService : IDataSeedingService
         await SeedQualityDemoDataAsync(tenantDb);
     }
 
+    public async Task SeedCoreAsync(TenantDbContext tenantDb)
+    {
+        // Foundation data (no dependencies)
+        await SeedProductionStagesAsync(tenantDb);
+        await SeedOperatorRolesAsync(tenantDb);
+        await SeedMachinesAsync(tenantDb);
+
+        // Additive: add missing machines/stages/priorities
+        await EnsureSeedDataAsync(tenantDb);
+
+        // Link stages to machines
+        await EnsureStageWorkstationsAsync(tenantDb);
+
+        await SeedMaterialsAsync(tenantDb);
+        await SeedManufacturingApproachesAsync(tenantDb);
+        await SeedOperatingShiftsAsync(tenantDb);
+        await SeedSystemSettingsAsync(tenantDb);
+        await EnsureSystemSettingsAsync(tenantDb);
+        await SeedDocumentTemplatesAsync(tenantDb);
+
+        // Inventory (depends on materials)
+        await SeedStockLocationsAsync(tenantDb);
+        await SeedInventoryItemsAsync(tenantDb);
+
+        // Manufacturing processes (depends on parts + production stages)
+        await SeedManufacturingProcessesAsync(tenantDb);
+    }
+
+    public async Task SeedTenantAdminAsync(TenantDbContext tenantDb, string fullName, string email, string password)
+    {
+        if (await tenantDb.Users.AnyAsync(u => u.Role == "Admin")) return;
+
+        var admin = new User
+        {
+            Username = email.Split('@')[0].ToLowerInvariant(),
+            FullName = fullName,
+            Email = email,
+            PasswordHash = _authService.HashPassword(password),
+            Role = "Admin",
+            Department = "Operations",
+            MustChangePassword = true,
+            CreatedBy = "System",
+            LastModifiedBy = "System"
+        };
+
+        tenantDb.Users.Add(admin);
+        await tenantDb.SaveChangesAsync();
+    }
+
     private static async Task SeedProductionStagesAsync(TenantDbContext db)
     {
         if (await db.ProductionStages.AnyAsync()) return;

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Vectrik.Data;
@@ -33,9 +34,17 @@ public class TenantService : ITenantService
         return await _platformDb.Tenants.FirstOrDefaultAsync(t => t.Code == code);
     }
 
-    public async Task<Tenant> CreateTenantAsync(string code, string companyName, string createdBy, string? logoUrl = null, string? primaryColor = null)
+    private static readonly Regex TenantCodeRegex = new(@"^[a-z0-9][a-z0-9-]{0,48}[a-z0-9]$", RegexOptions.Compiled);
+
+    public async Task<Tenant> CreateTenantAsync(string code, string companyName, string createdBy,
+        string? logoUrl = null, string? primaryColor = null,
+        string? contactEmail = null, string? contactPhone = null,
+        string? subscriptionTier = null, string? notes = null)
     {
         var normalizedCode = code.ToLowerInvariant().Trim();
+
+        if (normalizedCode.Length < 2 || !TenantCodeRegex.IsMatch(normalizedCode))
+            throw new InvalidOperationException("Tenant code must be 2-50 characters, lowercase alphanumeric and hyphens only (e.g. 'acme-corp').");
 
         var existing = await _platformDb.Tenants.AnyAsync(t => t.Code == normalizedCode);
         if (existing)
@@ -48,6 +57,10 @@ public class TenantService : ITenantService
             CreatedBy = createdBy,
             LogoUrl = logoUrl,
             PrimaryColor = primaryColor,
+            ContactEmail = contactEmail,
+            ContactPhone = contactPhone,
+            SubscriptionTier = subscriptionTier,
+            Notes = notes,
             IsActive = true,
             CreatedDate = DateTime.UtcNow
         };
@@ -55,8 +68,17 @@ public class TenantService : ITenantService
         _platformDb.Tenants.Add(tenant);
         await _platformDb.SaveChangesAsync();
 
-        // Create and seed the tenant database
-        await SeedTenantDatabaseAsync(normalizedCode);
+        try
+        {
+            await SeedTenantDatabaseAsync(normalizedCode);
+        }
+        catch
+        {
+            // Rollback: remove tenant record if seeding fails
+            _platformDb.Tenants.Remove(tenant);
+            await _platformDb.SaveChangesAsync();
+            throw;
+        }
 
         return tenant;
     }
@@ -84,7 +106,7 @@ public class TenantService : ITenantService
         await _platformDb.SaveChangesAsync();
     }
 
-    public async Task SeedTenantDatabaseAsync(string tenantCode)
+    public async Task SeedTenantDatabaseAsync(string tenantCode, bool isDemoTenant = false)
     {
         var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
             ? Path.Combine(home, "data") : "data";
@@ -115,11 +137,19 @@ public class TenantService : ITenantService
         // Re-enable FK enforcement for seeding and normal operation
         await tenantDb.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
 
-        // Use DataSeedingService when available (B16), for now just ensure DB exists
         var seedingService = _serviceProvider.GetService<IDataSeedingService>();
         if (seedingService != null)
         {
-            await seedingService.SeedAsync(tenantDb);
+            if (isDemoTenant)
+            {
+                // Full demo data including test users, demo WOs, quotes, etc.
+                await seedingService.SeedAsync(tenantDb);
+            }
+            else
+            {
+                // Production: core infrastructure only (stages, machines, materials, shifts)
+                await seedingService.SeedCoreAsync(tenantDb);
+            }
         }
     }
 
@@ -215,13 +245,7 @@ public class TenantService : ITenantService
 
     private TenantDbContext CreateTenantDbContext(string tenantCode)
     {
-        var dataRoot = Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } home
-            ? Path.Combine(home, "data") : "data";
-        var dbPath = Path.Combine(dataRoot, "tenants", $"{tenantCode}.db");
-        var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
-            .Options;
-        return new TenantDbContext(options);
+        return TenantDbContextFactory.CreateDbContext(tenantCode);
     }
 
     public async Task<List<User>> GetTenantUsersAsync(string tenantCode)
