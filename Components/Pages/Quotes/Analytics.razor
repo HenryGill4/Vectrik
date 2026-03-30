@@ -1,0 +1,413 @@
+@page "/quotes/analytics"
+@inject IQuoteAnalyticsService AnalyticsSvc
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<PageTitle>Quote Analytics - Vectrik</PageTitle>
+
+<div class="page-header">
+    <div>
+        <button class="btn btn-sm btn-secondary" @onclick='() => Nav.NavigateTo("/quotes")' style="margin-bottom: 8px;">← Quotes</button>
+        <h1 class="page-title">Quote Analytics</h1>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        <select class="form-control" style="width: auto;" @bind="_dayRange" @bind:after="LoadData">
+            <option value="30">Last 30 Days</option>
+            <option value="60">Last 60 Days</option>
+            <option value="90">Last 90 Days</option>
+            <option value="180">Last 6 Months</option>
+            <option value="365">Last Year</option>
+        </select>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading analytics...</div>
+}
+else if (_pipeline != null)
+{
+    <!-- Pipeline KPIs -->
+    <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px;">
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Total Quotes</div>
+            <div style="font-size: 1.4rem; font-weight: 700;">@_pipeline.TotalQuotes</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Win Rate</div>
+            <div style="font-size: 1.4rem; font-weight: 700; color: @(_pipeline.WinRatePct >= 40 ? "var(--success)" : "var(--warning)")">@_pipeline.WinRatePct%</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Quoted Value</div>
+            <div style="font-size: 1.4rem; font-weight: 700;">@_pipeline.TotalQuotedValue.ToString("C0")</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Won Value</div>
+            <div style="font-size: 1.4rem; font-weight: 700; color: var(--success);">@_pipeline.TotalAcceptedValue.ToString("C0")</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Avg Margin (Won)</div>
+            <div style="font-size: 1.4rem; font-weight: 700; color: @(_pipeline.AvgAcceptedMarginPct >= 20 ? "var(--success)" : "var(--danger)")">@_pipeline.AvgAcceptedMarginPct%</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Accuracy Ratio</div>
+            <div style="font-size: 1.4rem; font-weight: 700; color: @(_pipeline.OverallAccuracyRatio is > 0.9 and < 1.1 ? "var(--success)" : "var(--warning)")">@_pipeline.OverallAccuracyRatio.ToString("F2")x</div>
+        </div>
+    </div>
+
+    <!-- Pipeline Funnel -->
+    <div class="card" style="margin-bottom: 16px;">
+        <h3 class="card-title">Quote Pipeline</h3>
+        <div style="display: flex; gap: 4px; height: 32px; border-radius: 6px; overflow: hidden;">
+            @if (_pipeline.TotalQuotes > 0)
+            {
+                var total = (decimal)_pipeline.TotalQuotes;
+                @if (_pipeline.DraftCount > 0) { <div style="background: var(--text-muted); flex: @(_pipeline.DraftCount / total); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 600;">Draft @_pipeline.DraftCount</div> }
+                @if (_pipeline.SentCount > 0) { <div style="background: #f59e0b; flex: @(_pipeline.SentCount / total); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 600;">Sent @_pipeline.SentCount</div> }
+                @if (_pipeline.AcceptedCount > 0) { <div style="background: var(--success); flex: @(_pipeline.AcceptedCount / total); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 600;">Won @_pipeline.AcceptedCount</div> }
+                @if (_pipeline.RejectedCount > 0) { <div style="background: var(--danger); flex: @(_pipeline.RejectedCount / total); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 600;">Lost @_pipeline.RejectedCount</div> }
+                @if (_pipeline.ExpiredCount > 0) { <div style="background: #6b7280; flex: @(_pipeline.ExpiredCount / total); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 600;">Expired @_pipeline.ExpiredCount</div> }
+            }
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="content-tab-bar" style="margin-bottom: 16px;">
+        <button class="tab @(_tab == "accuracy" ? "active" : "")" @onclick='() => _tab = "accuracy"'>Quote Accuracy</button>
+        <button class="tab @(_tab == "corrections" ? "active" : "")" @onclick='() => _tab = "corrections"'>Correction Factors</button>
+        <button class="tab @(_tab == "customers" ? "active" : "")" @onclick='() => _tab = "customers"'>By Customer</button>
+        <button class="tab @(_tab == "losses" ? "active" : "")" @onclick='() => _tab = "losses"'>Loss Analysis</button>
+        <button class="tab @(_tab == "sensitivity" ? "active" : "")" @onclick='() => _tab = "sensitivity"'>Price Sensitivity</button>
+        <button class="tab @(_tab == "trend" ? "active" : "")" @onclick='() => _tab = "trend"'>Trend</button>
+    </div>
+
+    <!-- Quote Accuracy Tab -->
+    @if (_tab == "accuracy")
+    {
+        <div class="card">
+            <h3 class="card-title">Quoted Estimate vs. Actual Cost</h3>
+            @if (_accuracy.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 20px;">No completed work orders from quotes yet. Accuracy data builds as jobs complete.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Quote #</th>
+                            <th>Customer</th>
+                            <th>Quoted Estimate</th>
+                            <th>Actual Cost</th>
+                            <th>Variance $</th>
+                            <th>Variance %</th>
+                            <th>Quoted Price</th>
+                            <th>Actual Margin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _accuracy)
+                        {
+                            <tr>
+                                <td><a href="/quotes/@row.QuoteId" style="color: var(--accent);">@row.QuoteNumber</a></td>
+                                <td>@row.CustomerName</td>
+                                <td>@row.QuotedEstimate.ToString("C")</td>
+                                <td>@row.ActualCost.ToString("C")</td>
+                                <td style="color: @(row.VarianceDollar <= 0 ? "var(--success)" : "var(--danger)")">@row.VarianceDollar.ToString("C")</td>
+                                <td style="color: @(Math.Abs(row.VariancePct) <= 10 ? "var(--success)" : "var(--danger)")">@row.VariancePct.ToString("F1")%</td>
+                                <td>@row.QuotedPrice.ToString("C")</td>
+                                <td style="color: @(row.ActualMarginPct >= 0 ? "var(--success)" : "var(--danger)")">@row.ActualMarginPct.ToString("F1")%</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Correction Factors Tab -->
+    @if (_tab == "corrections")
+    {
+        <div class="card">
+            <h3 class="card-title">Stage Correction Factors</h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px;">
+                Compares estimated vs. actual hours per production stage. A factor of 1.0 means estimates are perfect.
+                Above 1.0 means actuals exceed estimates (pad your quotes). Below 1.0 means estimates are conservative.
+            </p>
+            @if (_corrections.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 20px;">Need at least 3 completed stage executions per stage to calculate correction factors.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Stage</th>
+                            <th>Avg Estimated (hrs)</th>
+                            <th>Avg Actual (hrs)</th>
+                            <th>Factor</th>
+                            <th>Samples</th>
+                            <th>Recommendation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _corrections)
+                        {
+                            var factorColor = row.CorrectionFactor switch
+                            {
+                                > 1.1 => "var(--danger)",
+                                < 0.9 => "var(--warning)",
+                                _ => "var(--success)"
+                            };
+                            <tr>
+                                <td><strong>@row.StageName</strong></td>
+                                <td>@row.AvgEstimatedHours.ToString("F2")</td>
+                                <td>@row.AvgActualHours.ToString("F2")</td>
+                                <td style="font-weight: 600; color: @factorColor;">@row.CorrectionFactor.ToString("F3")x</td>
+                                <td>@row.SampleCount</td>
+                                <td style="font-size: 0.82rem;">@row.Recommendation</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- By Customer Tab -->
+    @if (_tab == "customers")
+    {
+        <div class="card">
+            <h3 class="card-title">Quote Performance by Customer</h3>
+            @if (_customers.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 20px;">No quote data for this period.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th>Quotes</th>
+                            <th>Won</th>
+                            <th>Lost</th>
+                            <th>Win Rate</th>
+                            <th>Total Quoted</th>
+                            <th>Total Won</th>
+                            <th>Avg Margin</th>
+                            <th>Avg Decision Days</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _customers)
+                        {
+                            <tr>
+                                <td><strong>@row.CustomerName</strong></td>
+                                <td>@row.TotalQuotes</td>
+                                <td style="color: var(--success);">@row.WonCount</td>
+                                <td style="color: var(--danger);">@row.LostCount</td>
+                                <td style="color: @(row.WinRatePct >= 50 ? "var(--success)" : "var(--warning)")">@row.WinRatePct%</td>
+                                <td>@row.TotalQuotedValue.ToString("C0")</td>
+                                <td>@row.TotalWonValue.ToString("C0")</td>
+                                <td>@row.AvgMarginPct%</td>
+                                <td>@row.AvgDecisionDays d</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Loss Analysis Tab -->
+    @if (_tab == "losses")
+    {
+        <div class="card">
+            <h3 class="card-title">Loss Reason Breakdown</h3>
+            @if (_lossReasons.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 20px;">No rejected quotes in this period.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Reason</th>
+                            <th>Count</th>
+                            <th>Total Value Lost</th>
+                            <th>Avg Price Gap</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _lossReasons)
+                        {
+                            <tr>
+                                <td><strong>@FormatReason(row.Reason)</strong></td>
+                                <td>@row.Count</td>
+                                <td>@row.TotalValue.ToString("C0")</td>
+                                <td>@(row.AvgPriceGapPct != 0 ? $"{row.AvgPriceGapPct}%" : "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Price Sensitivity Tab -->
+    @if (_tab == "sensitivity")
+    {
+        <div class="card">
+            <h3 class="card-title">Price Sensitivity — Lost Quotes</h3>
+            @if (_sensitivity.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 20px;">No rejected quotes with pricing data.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Quote #</th>
+                            <th>Customer</th>
+                            <th>Our Price</th>
+                            <th>Competitor Price</th>
+                            <th>Gap</th>
+                            <th>Loss Reason</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _sensitivity)
+                        {
+                            <tr>
+                                <td><a href="/quotes/@row.QuoteId" style="color: var(--accent);">@row.QuoteNumber</a></td>
+                                <td>@row.CustomerName</td>
+                                <td>@row.QuotedPrice.ToString("C")</td>
+                                <td>@(row.CompetitorPrice?.ToString("C") ?? "—")</td>
+                                <td style="color: @(row.PriceGapPct > 0 ? "var(--danger)" : "var(--success)")">@(row.PriceGapPct?.ToString("F1") ?? "—")%</td>
+                                <td>@FormatReason(row.LossReason)</td>
+                                <td style="font-size: 0.82rem;">@(row.LossNotes ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Trend Tab -->
+    @if (_tab == "trend")
+    {
+        <div class="card">
+            <h3 class="card-title">Quote Volume & Conversion Trend</h3>
+            @if (_trend.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 20px;">No trend data for this period.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Period</th>
+                            <th>Sent</th>
+                            <th>Won</th>
+                            <th>Lost</th>
+                            <th>Win Rate</th>
+                            <th>Total Quoted</th>
+                            <th>Won Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _trend)
+                        {
+                            <tr>
+                                <td><strong>@row.Period</strong></td>
+                                <td>@row.SentCount</td>
+                                <td style="color: var(--success);">@row.WonCount</td>
+                                <td style="color: var(--danger);">@row.LostCount</td>
+                                <td style="color: @(row.WinRatePct >= 50 ? "var(--success)" : "var(--warning)")">@row.WinRatePct%</td>
+                                <td>@row.TotalQuotedValue.ToString("C0")</td>
+                                <td>@row.TotalWonValue.ToString("C0")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private int _dayRange = 90;
+    private string _tab = "accuracy";
+
+    private QuotePipelineMetrics? _pipeline;
+    private List<QuoteAccuracyRow> _accuracy = new();
+    private List<StageCorrectionFactor> _corrections = new();
+    private List<CustomerQuotePerformance> _customers = new();
+    private List<LossReasonBreakdown> _lossReasons = new();
+    private List<PriceSensitivityRow> _sensitivity = new();
+    private List<QuoteTrendPoint> _trend = new();
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            var to = DateTime.UtcNow;
+            var from = to.AddDays(-_dayRange);
+
+            var pipelineTask = AnalyticsSvc.GetPipelineMetricsAsync(from, to);
+            var accuracyTask = AnalyticsSvc.GetQuoteAccuracyAsync(from, to);
+            var correctionsTask = AnalyticsSvc.GetCorrectionFactorsAsync();
+            var customersTask = AnalyticsSvc.GetPerformanceByCustomerAsync(from, to);
+            var lossTask = AnalyticsSvc.GetLossReasonsAsync(from, to);
+            var sensitivityTask = AnalyticsSvc.GetPriceSensitivityAsync(from, to);
+            var trendTask = AnalyticsSvc.GetQuoteTrendAsync(from, to);
+
+            await Task.WhenAll(pipelineTask, accuracyTask, correctionsTask,
+                customersTask, lossTask, sensitivityTask, trendTask);
+
+            _pipeline = pipelineTask.Result;
+            _accuracy = accuracyTask.Result;
+            _corrections = correctionsTask.Result;
+            _customers = customersTask.Result;
+            _lossReasons = lossTask.Result;
+            _sensitivity = sensitivityTask.Result;
+            _trend = trendTask.Result;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load analytics: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string FormatReason(QuoteLossReason reason) => reason switch
+    {
+        QuoteLossReason.None => "Not Specified",
+        QuoteLossReason.Price => "Price Too High",
+        QuoteLossReason.LeadTime => "Lead Time",
+        QuoteLossReason.Capability => "Capability Gap",
+        QuoteLossReason.Relationship => "Customer Relationship",
+        QuoteLossReason.Specification => "Spec Issue",
+        QuoteLossReason.CompetitorWon => "Competitor Won",
+        QuoteLossReason.ProjectCancelled => "Project Cancelled",
+        QuoteLossReason.NoResponse => "No Response",
+        QuoteLossReason.Other => "Other",
+        _ => reason.ToString()
+    };
+}

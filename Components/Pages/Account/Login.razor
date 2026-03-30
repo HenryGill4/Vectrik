@@ -74,7 +74,10 @@
                 new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12) });
         }
 
-        Navigation.NavigateTo(result.RedirectUrl ?? "/dashboard", forceLoad: true);
+        var redirect = result.MustChangePassword
+            ? "/account/change-password"
+            : (result.RedirectUrl ?? "/dashboard");
+        Navigation.NavigateTo(redirect, forceLoad: true);
     }
 
     private class LoginModel

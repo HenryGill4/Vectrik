@@ -16,7 +16,7 @@ public class StageServiceTests : IDisposable
     public StageServiceTests()
     {
         _db = TestDbContextFactory.Create();
-        _sut = new StageService(_db, new StubWorkOrderService(), new StubLearningService(), new StubInventoryService());
+        _sut = new StageService(_db, new StubWorkOrderService(), new StubLearningService(), new StubInventoryService(), new StubSmartPricingService());
     }
 
     public void Dispose() => _db.Dispose();

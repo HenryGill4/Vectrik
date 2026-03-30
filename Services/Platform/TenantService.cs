@@ -240,6 +240,7 @@ public class TenantService : ITenantService
     {
         var authService = _serviceProvider.GetRequiredService<IAuthService>();
         user.PasswordHash = authService.HashPassword(password);
+        user.MustChangePassword = true;
         user.CreatedDate = DateTime.UtcNow;
         user.LastModifiedDate = DateTime.UtcNow;
 
@@ -280,6 +281,7 @@ public class TenantService : ITenantService
         if (user == null) throw new InvalidOperationException("User not found.");
 
         user.PasswordHash = authService.HashPassword(newPassword);
+        user.MustChangePassword = true;
         user.LastModifiedDate = DateTime.UtcNow;
         await db.SaveChangesAsync();
     }

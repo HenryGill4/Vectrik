@@ -10,12 +10,21 @@ public class QuoteService : IQuoteService
     private readonly TenantDbContext _db;
     private readonly IWorkOrderService _workOrderService;
     private readonly INumberSequenceService _numberSeq;
+    private readonly IPricingEngineService _pricingEngine;
+    private readonly IPartPricingService _partPricing;
 
-    public QuoteService(TenantDbContext db, IWorkOrderService workOrderService, INumberSequenceService numberSeq)
+    public QuoteService(
+        TenantDbContext db,
+        IWorkOrderService workOrderService,
+        INumberSequenceService numberSeq,
+        IPricingEngineService pricingEngine,
+        IPartPricingService partPricing)
     {
         _db = db;
         _workOrderService = workOrderService;
         _numberSeq = numberSeq;
+        _pricingEngine = pricingEngine;
+        _partPricing = partPricing;
     }
 
     public async Task<List<Quote>> GetAllQuotesAsync(QuoteStatus? statusFilter = null)
@@ -73,34 +82,51 @@ public class QuoteService : IQuoteService
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(quantity, 1);
 
-        var estimatedCost = await CalculateEstimatedCostAsync(partId);
+        // Use the full pricing engine for cost breakdown
+        var breakdown = await _pricingEngine.CalculatePartCostAsync(partId, quantity);
+        var costPerPart = quantity > 0 ? breakdown.TotalCost / quantity : 0;
+
+        // If quoted price is 0, try to auto-populate from PartPricing sell price
+        if (quotedPricePerPart == 0)
+        {
+            var pricing = await _partPricing.GetByPartIdAsync(partId);
+            if (pricing != null && pricing.SellPricePerUnit > 0)
+                quotedPricePerPart = pricing.SellPricePerUnit;
+        }
+
+        // Check for stacking config on additive parts
+        int? stackLevel = null;
+        var buildConfig = await _db.PartAdditiveBuildConfigs
+            .FirstOrDefaultAsync(c => c.PartId == partId);
+        if (buildConfig?.HasStackingConfiguration == true)
+            stackLevel = buildConfig.GetRecommendedStackLevel(quantity);
 
         var line = new QuoteLine
         {
             QuoteId = quoteId,
             PartId = partId,
             Quantity = quantity,
-            EstimatedCostPerPart = estimatedCost,
-            QuotedPricePerPart = quotedPricePerPart
+            EstimatedCostPerPart = Math.Round(costPerPart, 2),
+            QuotedPricePerPart = quotedPricePerPart,
+            LaborMinutes = breakdown.TotalLaborMinutes,
+            SetupMinutes = breakdown.TotalSetupMinutes,
+            MaterialCostEach = quantity > 0
+                ? Math.Round(breakdown.EffectiveMaterialCost / quantity, 2) : 0,
+            OverheadCostEach = quantity > 0
+                ? Math.Round(breakdown.OverheadCost / quantity, 2) : 0,
+            SetupCostEach = quantity > 0
+                ? Math.Round(breakdown.SetupCost / quantity, 2) : 0,
+            OutsideProcessCost = quantity > 0
+                ? Math.Round(breakdown.OutsideProcessCost / quantity, 2) : 0,
+            StackLevel = stackLevel
         };
 
         _db.QuoteLines.Add(line);
-
-        // Update quote totals
-        var quote = await _db.Quotes
-            .Include(q => q.Lines)
-            .FirstOrDefaultAsync(q => q.Id == quoteId);
-
-        if (quote != null)
-        {
-            await _db.SaveChangesAsync();
-            // Recalculate after adding the line
-            quote.TotalEstimatedCost = quote.Lines.Sum(l => l.EstimatedCostPerPart * l.Quantity);
-            quote.QuotedPrice = quote.Lines.Sum(l => l.QuotedPricePerPart * l.Quantity);
-            quote.Markup = quote.QuotedPrice - quote.TotalEstimatedCost;
-        }
-
         await _db.SaveChangesAsync();
+
+        // Recalculate quote totals
+        await RecalculateTotalsAsync(quoteId);
+
         return line;
     }
 
@@ -219,6 +245,7 @@ public class QuoteService : IQuoteService
         quote.Markup = quote.QuotedPrice - quote.TotalEstimatedCost;
         quote.EstimatedLaborCost = quote.Lines.Sum(l => (decimal)l.LaborMinutes / 60m * l.Quantity);
         quote.EstimatedMaterialCost = quote.Lines.Sum(l => l.MaterialCostEach * l.Quantity);
+        quote.EstimatedOverheadCost = quote.Lines.Sum(l => l.OverheadCostEach * l.Quantity);
         quote.LastModifiedDate = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
@@ -241,7 +268,10 @@ public class QuoteService : IQuoteService
                 l.LaborMinutes,
                 l.SetupMinutes,
                 l.MaterialCostEach,
+                l.OverheadCostEach,
+                l.SetupCostEach,
                 l.OutsideProcessCost,
+                l.StackLevel,
                 l.Notes
             }).ToList());
 

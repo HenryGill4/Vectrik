@@ -1398,6 +1398,7 @@ public class DataSeedingService : IDataSeedingService
             PasswordHash = _authService.HashPassword("admin123"),
             Role = "Admin",
             Department = "Operations",
+            MustChangePassword = true,
             CreatedBy = "System",
             LastModifiedBy = "System"
         };
@@ -1492,6 +1493,7 @@ public class DataSeedingService : IDataSeedingService
             }
         };
 
+        foreach (var u in testUsers) u.MustChangePassword = true;
         db.Users.AddRange(testUsers);
         await db.SaveChangesAsync();
     }

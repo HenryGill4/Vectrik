@@ -99,6 +99,7 @@ builder.Services.AddScoped<IExternalOperationService, ExternalOperationService>(
 builder.Services.AddScoped<IBuildTemplateService, BuildTemplateService>();
 builder.Services.AddScoped<ICertifiedLayoutService, CertifiedLayoutService>();
 builder.Services.AddScoped<IDataSeedingService, DataSeedingService>();
+builder.Services.AddScoped<SetupReadinessService>();
 builder.Services.AddScoped<IDevIssueService, DevIssueService>();
 builder.Services.AddScoped<IManufacturingProcessService, ManufacturingProcessService>();
 builder.Services.AddScoped<IBatchService, BatchService>();
@@ -118,6 +119,9 @@ builder.Services.AddScoped<IPartFileService, PartFileService>();
 
 // Estimating & Quoting (Stage 2)
 builder.Services.AddScoped<IPricingEngineService, PricingEngineService>();
+builder.Services.AddScoped<ISmartPricingService, SmartPricingService>();
+builder.Services.AddScoped<IQuoteAnalyticsService, QuoteAnalyticsService>();
+builder.Services.AddScoped<ICustomerPricingService, CustomerPricingService>();
 
 // Shop Floor & Scheduling (Stage 4)
 builder.Services.AddScoped<IShiftManagementService, ShiftManagementService>();
