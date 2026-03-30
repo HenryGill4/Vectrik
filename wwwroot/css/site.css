@@ -7087,6 +7087,1077 @@ dialog#components-reconnect-modal button:hover {
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   Programs Page Redesign (prg-* prefix)
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Layout ── */
+.prg-layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 0;
+    height: calc(100vh - var(--topbar-height) - 180px);
+    min-height: 400px;
+}
+.prg-layout--no-detail {
+    grid-template-columns: 1fr;
+}
+.prg-layout--sidebar-collapsed {
+    grid-template-columns: 48px 1fr;
+}
+
+/* ── Page Header ── */
+.prg-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.prg-page-header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* ── View Switcher ── */
+.prg-view-switcher {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+.prg-view-switcher-btn {
+    padding: 6px 14px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+    position: relative;
+}
+.prg-view-switcher-btn:hover {
+    background: rgba(var(--accent-rgb), 0.08);
+    color: var(--text-primary);
+}
+.prg-view-switcher-btn--active {
+    background: var(--accent);
+    color: #fff;
+}
+.prg-view-switcher-btn--active:hover {
+    background: var(--accent-hover);
+    color: #fff;
+}
+.prg-view-switcher-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: 9px;
+    background: var(--danger);
+    color: #fff;
+    margin-left: 6px;
+}
+
+/* ── Pipeline Bar ── */
+.prg-pipeline {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+.prg-pipeline-stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 8px 8px;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    border-top: 3px solid transparent;
+    position: relative;
+}
+.prg-pipeline-stage:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 20%;
+    height: 60%;
+    width: 1px;
+    background: var(--border);
+}
+.prg-pipeline-stage:hover {
+    background: rgba(var(--accent-rgb), 0.06);
+}
+.prg-pipeline-stage--draft {
+    border-top-color: var(--text-muted);
+}
+.prg-pipeline-stage--active {
+    border-top-color: var(--success);
+}
+.prg-pipeline-stage--superseded {
+    border-top-color: var(--border);
+}
+.prg-pipeline-stage--archived {
+    border-top-color: var(--border);
+}
+.prg-pipeline-stage--selected {
+    background: rgba(var(--accent-rgb), 0.1);
+}
+.prg-pipeline-count {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary);
+}
+.prg-pipeline-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* ── Command Bar ── */
+.prg-command-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.prg-search {
+    position: relative;
+    flex: 1;
+    min-width: 180px;
+    max-width: 320px;
+}
+.prg-search input {
+    width: 100%;
+    padding: 7px 12px 7px 34px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+.prg-search input:focus {
+    border-color: var(--accent);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+}
+.prg-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    pointer-events: none;
+}
+.prg-filter-select {
+    padding: 7px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    min-width: 120px;
+}
+.prg-filter-select:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+/* ── Sidebar ── */
+.prg-sidebar {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    background: var(--bg-primary);
+    scrollbar-width: thin;
+}
+.prg-sidebar::-webkit-scrollbar { width: 4px; }
+.prg-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.prg-sidebar-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+/* ── Sidebar Card ── */
+.prg-sidebar-card {
+    display: block;
+    padding: 12px 16px;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.prg-sidebar-card:hover {
+    background: rgba(var(--accent-rgb), 0.04);
+}
+.prg-sidebar-card--selected {
+    background: rgba(var(--accent-rgb), 0.08);
+    border-left-color: var(--accent) !important;
+}
+.prg-sidebar-card--draft {
+    border-left-color: var(--text-muted);
+}
+.prg-sidebar-card--active {
+    border-left-color: var(--success);
+}
+.prg-sidebar-card--superseded {
+    border-left-color: var(--border);
+}
+.prg-sidebar-card--archived {
+    border-left-color: var(--border);
+}
+.prg-card-row1 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+}
+.prg-card-number {
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+.prg-card-badges {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.prg-card-name {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+.prg-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+.prg-card-meta-sep {
+    color: var(--border);
+}
+
+/* ── Status / Type Badges ── */
+.prg-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    border-radius: 10px;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+.prg-badge--draft {
+    background: var(--badge-draft-bg);
+    color: var(--badge-draft-text);
+}
+.prg-badge--active {
+    background: rgba(var(--success-rgb), 0.15);
+    color: var(--success);
+}
+.prg-badge--superseded {
+    background: var(--badge-draft-bg);
+    color: var(--badge-draft-text);
+    text-decoration: line-through;
+}
+.prg-badge--archived {
+    background: var(--badge-draft-bg);
+    color: var(--badge-draft-text);
+    opacity: 0.7;
+}
+.prg-badge--version {
+    background: rgba(var(--accent-rgb), 0.12);
+    color: var(--accent);
+}
+.prg-badge--type {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+.prg-badge--buildplate {
+    background: rgba(var(--badge-scheduled-rgb), 0.15);
+    color: var(--badge-scheduled);
+}
+.prg-badge--feedback {
+    background: rgba(var(--warning-rgb), 0.15);
+    color: var(--warning);
+}
+.prg-badge--learned {
+    background: rgba(var(--success-rgb), 0.12);
+    color: var(--success);
+}
+
+/* ── Detail Panel ── */
+.prg-detail {
+    overflow-y: auto;
+    padding: 20px 24px;
+    scrollbar-width: thin;
+    position: relative;
+}
+.prg-detail::-webkit-scrollbar { width: 4px; }
+.prg-detail::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.prg-detail-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+/* ── Section Nav Dots ── */
+.prg-section-nav {
+    position: fixed;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 10;
+}
+.prg-section-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+.prg-section-dot:hover {
+    background: var(--text-muted);
+    transform: scale(1.3);
+}
+.prg-section-dot--active {
+    background: var(--accent);
+    transform: scale(1.3);
+}
+.prg-section-dot-tooltip {
+    display: none;
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-size: 0.72rem;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    padding: 2px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+}
+.prg-section-dot:hover .prg-section-dot-tooltip {
+    display: block;
+}
+
+/* ── Sections ── */
+.prg-section {
+    margin-bottom: 28px;
+}
+.prg-section:last-child {
+    margin-bottom: 0;
+}
+.prg-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+    gap: 8px;
+}
+.prg-section-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+.prg-section-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.prg-section-body {
+    /* container for section content */
+}
+
+/* ── Hero Section ── */
+.prg-hero {
+    margin-bottom: 20px;
+}
+.prg-hero-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+.prg-hero-identity h2 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    color: var(--text-primary);
+}
+.prg-hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.prg-hero-desc {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+.prg-hero-audit {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.prg-hero-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* ── Metrics Row ── */
+.prg-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+    margin-bottom: 20px;
+}
+.prg-metric {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    text-align: center;
+}
+.prg-metric-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+.prg-metric-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.prg-metric-value--small {
+    font-size: 0.9rem;
+}
+
+/* ── File Package Grid ── */
+.prg-file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+}
+.prg-file-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    transition: border-color var(--transition-fast);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.prg-file-card:hover {
+    border-color: rgba(var(--accent-rgb), 0.4);
+}
+.prg-file-card--primary {
+    border-color: var(--success);
+}
+.prg-file-icon {
+    font-size: 1.5rem;
+    margin-bottom: 2px;
+}
+.prg-file-name {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+.prg-file-meta {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+.prg-file-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: auto;
+}
+.prg-file-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-top: 8px;
+}
+.prg-file-dropzone:hover {
+    border-color: var(--accent);
+    color: var(--text-secondary);
+    background: rgba(var(--accent-rgb), 0.04);
+}
+
+/* ── Tooling Wear Bars ── */
+.prg-tooling-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 10px;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+.prg-tooling-summary--ok {
+    background: rgba(var(--success-rgb), 0.1);
+    color: var(--success);
+}
+.prg-tooling-summary--warn {
+    background: rgba(var(--warning-rgb), 0.1);
+    color: var(--warning);
+}
+.prg-tooling-summary--danger {
+    background: rgba(var(--danger-rgb), 0.1);
+    color: var(--danger);
+}
+.prg-tooling-wear {
+    display: inline-block;
+    width: 60px;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+    vertical-align: middle;
+}
+.prg-tooling-wear-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width var(--transition-normal);
+}
+.prg-tooling-wear--ok .prg-tooling-wear-fill {
+    background: var(--success);
+}
+.prg-tooling-wear--warn .prg-tooling-wear-fill {
+    background: var(--warning);
+}
+.prg-tooling-wear--danger .prg-tooling-wear-fill {
+    background: var(--danger);
+    animation: prg-pulse 1.5s ease-in-out infinite;
+}
+@keyframes prg-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ── Machine Chips ── */
+.prg-machine-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+.prg-machine-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    transition: border-color var(--transition-fast);
+}
+.prg-machine-chip:hover {
+    border-color: rgba(var(--accent-rgb), 0.4);
+}
+.prg-machine-chip--preferred {
+    border-color: var(--success);
+}
+.prg-machine-star {
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: color var(--transition-fast);
+}
+.prg-machine-star:hover {
+    color: var(--warning);
+}
+.prg-machine-star--active {
+    color: var(--warning);
+}
+.prg-machine-remove {
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-left: 2px;
+}
+.prg-machine-remove:hover {
+    color: var(--danger);
+}
+
+/* ── Feedback Stream ── */
+.prg-feedback-filters {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+.prg-feedback-pill {
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+.prg-feedback-pill:hover {
+    background: rgba(var(--accent-rgb), 0.08);
+}
+.prg-feedback-pill--active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+.prg-feedback-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+}
+.prg-feedback-item--critical {
+    border-left-color: var(--danger);
+}
+.prg-feedback-item--high {
+    border-left-color: #F97316;
+}
+.prg-feedback-item--medium {
+    border-left-color: var(--warning);
+}
+.prg-feedback-item--low {
+    border-left-color: var(--text-muted);
+}
+.prg-feedback-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+.prg-feedback-comment {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin-bottom: 6px;
+}
+.prg-feedback-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.prg-feedback-resolution {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    margin-top: 8px;
+    font-size: 0.82rem;
+    border-left: 3px solid var(--success);
+}
+
+/* ── Parameters Section ── */
+.prg-params-block {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.prg-notes-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    margin-top: 10px;
+}
+
+/* ── Execution History / Learning ── */
+.prg-variance--good {
+    color: var(--success);
+}
+.prg-variance--warn {
+    color: var(--warning);
+}
+.prg-variance--bad {
+    color: var(--danger);
+}
+
+/* ── Slide-Over Form Panel ── */
+.prg-form-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--modal-overlay);
+    z-index: 1000;
+    display: flex;
+    justify-content: flex-end;
+}
+.prg-form-panel {
+    width: 680px;
+    max-width: 100vw;
+    background: var(--bg-primary);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-lg);
+    animation: prg-slide-in 0.25s ease;
+}
+@keyframes prg-slide-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+.prg-form-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.prg-form-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+}
+.prg-form-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+.prg-form-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.prg-form-section {
+    margin-bottom: 20px;
+}
+.prg-form-section-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.prg-form-section-title::before {
+    content: '\25BC';
+    font-size: 0.6rem;
+    transition: transform var(--transition-fast);
+}
+.prg-form-section--collapsed .prg-form-section-title::before {
+    transform: rotate(-90deg);
+}
+.prg-form-section--collapsed .prg-form-section-body {
+    display: none;
+}
+.prg-form-grid-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.prg-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.prg-form-field label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+.prg-form-field--full {
+    grid-column: 1 / -1;
+}
+
+/* ── Machine Matrix View ── */
+.prg-matrix-kpi {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.prg-matrix-group {
+    margin-bottom: 16px;
+}
+.prg-matrix-group-header {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+}
+.prg-matrix-machine {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    margin-bottom: 8px;
+}
+.prg-matrix-machine-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+}
+.prg-matrix-programs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.prg-matrix-program-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+}
+.prg-matrix-program-badge:hover {
+    border-color: var(--accent);
+}
+
+/* ── Approval Queue View ── */
+.prg-queue-section {
+    margin-bottom: 20px;
+}
+.prg-queue-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+.prg-queue-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 11px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+.prg-queue-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+}
+.prg-queue-item:hover {
+    border-color: rgba(var(--accent-rgb), 0.4);
+}
+.prg-queue-item-info {
+    flex: 1;
+    min-width: 0;
+}
+.prg-queue-item-title {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+.prg-queue-item-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* ── Build Plate Section ── */
+.prg-bp-slicer-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.prg-bp-schedule-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+.prg-bp-post-links {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+.prg-bp-post-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.prg-bp-post-link:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ── Pending Setup Banner ── */
+.prg-pending-banner {
+    background: rgba(var(--warning-rgb), 0.08);
+    border: 1px solid rgba(var(--warning-rgb), 0.25);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    color: var(--warning);
+}
+.prg-pending-banner-toggle {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+    .prg-layout {
+        grid-template-columns: 280px 1fr;
+    }
+}
+@media (max-width: 768px) {
+    .prg-layout {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    .prg-sidebar {
+        max-height: 300px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+    .prg-detail {
+        padding: 16px;
+    }
+    .prg-section-nav {
+        display: none;
+    }
+    .prg-hero-top {
+        flex-direction: column;
+    }
+    .prg-form-panel {
+        width: 100vw;
+    }
+    .prg-form-grid-2col {
+        grid-template-columns: 1fr;
+    }
+    .prg-metrics {
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    }
+}
+@media (max-width: 480px) {
+    .prg-pipeline-stage {
+        padding: 6px 4px;
+    }
+    .prg-pipeline-count {
+        font-size: 1rem;
+    }
+    .prg-pipeline-label {
+        font-size: 0.6rem;
+    }
+    .prg-command-bar {
+        gap: 6px;
+    }
+    .prg-file-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* ── Build-Level Stage Duration Cards ── */
 .build-stages-grid {
     display: grid;

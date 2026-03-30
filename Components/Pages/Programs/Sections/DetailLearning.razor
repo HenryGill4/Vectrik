@@ -1,0 +1,147 @@
+<section class="prg-section">
+    <div class="prg-section-header">
+        <h3>Learning &amp; Performance</h3>
+    </div>
+
+    <div class="prg-metrics" style="margin-bottom: 1rem;">
+        <div class="prg-metric">
+            <span class="prg-metric-label">Estimate Source</span>
+            <span class="prg-metric-value">@(Program.EstimateSource ?? "Manual")</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">EMA Duration</span>
+            <span class="prg-metric-value">@FormatMinutes(Program.ActualAverageDurationMinutes)</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Samples</span>
+            <span class="prg-metric-value">@(Program.ActualSampleCount?.ToString() ?? "--")</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Total Runs</span>
+            <span class="prg-metric-value">@Program.TotalRunCount</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Configured Cycle</span>
+            <span class="prg-metric-value">@FormatMinutes(Program.CycleTimeMinutes)</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Variance</span>
+            <span class="prg-metric-value">@FormatVariance()</span>
+        </div>
+    </div>
+
+    @if (ExecutionHistory?.Any() == true)
+    {
+        <h4 class="prg-subsection-title">Execution History</h4>
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Part</th>
+                        <th>Machine</th>
+                        <th>Duration</th>
+                        <th>Variance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var exec in ExecutionHistory.OrderByDescending(e => e.StartedAt ?? e.CreatedDate))
+                    {
+                        var variance = CalculateVariance(exec);
+                        var varianceClass = GetVarianceClass(variance);
+                        <tr>
+                            <td>@((exec.StartedAt ?? exec.CreatedDate).ToString("MMM dd HH:mm"))</td>
+                            <td>@(exec.Job?.Part?.PartNumber ?? "--")</td>
+                            <td>@(exec.Machine?.Name ?? "--")</td>
+                            <td>@FormatDuration(exec)</td>
+                            <td class="@varianceClass">
+                                @if (variance.HasValue)
+                                {
+                                    @($"{(variance.Value >= 0 ? "+" : "")}{variance.Value:F1}%")
+                                }
+                                else
+                                {
+                                    <span class="text-muted">--</span>
+                                }
+                            </td>
+                            <td>
+                                <span class="prg-badge prg-badge--@(exec.Status.ToString().ToLower())">@exec.Status</span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="prg-empty">No execution history available for this program.</div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = null!;
+    [Parameter] public List<StageExecution> ExecutionHistory { get; set; } = new();
+
+    private string FormatMinutes(double? minutes)
+    {
+        if (!minutes.HasValue) return "--";
+        var m = minutes.Value;
+        if (m >= 60)
+        {
+            var hours = (int)(m / 60);
+            var mins = (int)(m % 60);
+            return mins > 0 ? $"{hours}h {mins}m" : $"{hours}h";
+        }
+        return $"{m:F0}m";
+    }
+
+    private string FormatVariance()
+    {
+        if (!Program.ActualVarianceMinutes.HasValue || !Program.ActualAverageDurationMinutes.HasValue
+            || Program.ActualAverageDurationMinutes.Value == 0)
+            return "--";
+
+        var stdDev = Math.Sqrt(Program.ActualVarianceMinutes.Value);
+        var pct = (stdDev / Program.ActualAverageDurationMinutes.Value) * 100;
+        return $"{pct:F1}%";
+    }
+
+    private string FormatDuration(StageExecution exec)
+    {
+        if (exec.ActualHours.HasValue)
+            return FormatMinutes(exec.ActualHours.Value * 60);
+        if (exec.StartedAt.HasValue && exec.CompletedAt.HasValue)
+            return FormatMinutes((exec.CompletedAt.Value - exec.StartedAt.Value).TotalMinutes);
+        return "--";
+    }
+
+    private double? CalculateVariance(StageExecution exec)
+    {
+        var expected = Program.CycleTimeMinutes ?? Program.ActualAverageDurationMinutes;
+        if (!expected.HasValue || expected.Value == 0) return null;
+
+        double? actualMinutes = null;
+        if (exec.ActualHours.HasValue)
+            actualMinutes = exec.ActualHours.Value * 60;
+        else if (exec.StartedAt.HasValue && exec.CompletedAt.HasValue)
+            actualMinutes = (exec.CompletedAt.Value - exec.StartedAt.Value).TotalMinutes;
+
+        if (!actualMinutes.HasValue) return null;
+
+        return ((actualMinutes.Value - expected.Value) / expected.Value) * 100;
+    }
+
+    private string GetVarianceClass(double? variance)
+    {
+        if (!variance.HasValue) return "";
+        var abs = Math.Abs(variance.Value);
+        return abs switch
+        {
+            > 25 => "text-danger",
+            > 10 => "text-warning",
+            _ => "text-success"
+        };
+    }
+}

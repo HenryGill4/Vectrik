@@ -1,0 +1,107 @@
+<section class="prg-section">
+    <div class="prg-section-header">
+        <h3>Tooling Readiness</h3>
+        <button class="btn btn-sm btn-primary" @onclick="OnAddTooling">+ Add Tooling</button>
+    </div>
+
+    @if (ToolingAlerts?.Any() == true)
+    {
+        <div class="prg-tooling-summary prg-tooling-summary--alert">
+            <span class="prg-tooling-alert-icon">&#9888;</span>
+            <span>@ToolingAlerts.Count alert@(ToolingAlerts.Count != 1 ? "s" : "") &mdash;
+                @(ToolingAlerts.Any(a => a.IsBlocking) ? "Blocking" : "Warning")</span>
+        </div>
+    }
+    else if (ToolingItems?.Any() == true)
+    {
+        <div class="prg-tooling-summary prg-tooling-summary--ok">
+            <span class="prg-tooling-ok-icon">&#10003;</span>
+            <span>All Tooling Ready</span>
+        </div>
+    }
+
+    @if (ToolingItems?.Any() == true)
+    {
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Position</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Component</th>
+                        <th>Wear</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in ToolingItems.OrderBy(t => t.SortOrder))
+                    {
+                        var wear = item.WearPercent;
+                        var wearClass = GetWearClass(wear);
+                        var alert = ToolingAlerts?.FirstOrDefault(a => a.ToolingItemId == item.Id);
+                        <tr>
+                            <td><strong>@item.ToolPosition</strong></td>
+                            <td>@item.Name</td>
+                            <td>@(item.IsFixture ? "Fixture" : "Tool")</td>
+                            <td>@(item.MachineComponent?.Name ?? "--")</td>
+                            <td>
+                                @if (wear.HasValue)
+                                {
+                                    <div class="prg-tooling-wear prg-tooling-wear--@wearClass">
+                                        <div class="prg-tooling-wear-fill" style="width: @($"{Math.Min(wear.Value, 100):F0}")%"></div>
+                                    </div>
+                                    <span class="prg-tooling-wear-text">@($"{wear.Value:F0}%")</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">--</span>
+                                }
+                            </td>
+                            <td>
+                                @if (alert != null)
+                                {
+                                    <span class="prg-badge prg-badge--@(alert.IsBlocking ? "danger" : "warning")">
+                                        @(alert.IsBlocking ? "Blocked" : "Warning")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="prg-badge prg-badge--active">OK</span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-xs btn-outline" @onclick="() => OnEditTooling.InvokeAsync(item)">Edit</button>
+                                <button class="btn btn-xs btn-danger-outline" @onclick="() => OnDeleteTooling.InvokeAsync(item)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="prg-empty">No tooling items defined for this program.</div>
+    }
+</section>
+
+@code {
+    [Parameter] public List<ProgramToolingItem> ToolingItems { get; set; } = new();
+    [Parameter] public List<ToolingReadinessAlert> ToolingAlerts { get; set; } = new();
+    [Parameter] public EventCallback OnAddTooling { get; set; }
+    [Parameter] public EventCallback<ProgramToolingItem> OnEditTooling { get; set; }
+    [Parameter] public EventCallback<ProgramToolingItem> OnDeleteTooling { get; set; }
+
+    private string GetWearClass(double? wear)
+    {
+        if (!wear.HasValue) return "ok";
+        return wear.Value switch
+        {
+            >= 90 => "danger",
+            >= 70 => "warn",
+            _ => "ok"
+        };
+    }
+}

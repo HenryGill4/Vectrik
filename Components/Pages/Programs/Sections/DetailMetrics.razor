@@ -1,0 +1,84 @@
+<section class="prg-metrics">
+    @if (Program.IsBuildPlate)
+    {
+        <div class="prg-metric">
+            <span class="prg-metric-label">Parts on Plate</span>
+            <span class="prg-metric-value">@(Program.TotalPartCount > 0 ? Program.TotalPartCount.ToString() : "--")</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Est. Print Hours</span>
+            <span class="prg-metric-value">@(Program.EstimatedPrintHours.HasValue ? $"{Program.EstimatedPrintHours.Value:F1}h" : "--")</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Powder (kg)</span>
+            <span class="prg-metric-value">@(Program.EstimatedPowderKg.HasValue ? $"{Program.EstimatedPowderKg.Value:F1}" : "--")</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Layers</span>
+            <span class="prg-metric-value">@(Program.LayerCount.HasValue ? Program.LayerCount.Value.ToString("N0") : "--")</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Schedule Status</span>
+            <span class="prg-metric-value">@Program.ScheduleStatusDisplay</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Total Runs</span>
+            <span class="prg-metric-value">@Program.TotalRunCount</span>
+        </div>
+    }
+    else
+    {
+        <div class="prg-metric">
+            <span class="prg-metric-label">Setup Time</span>
+            <span class="prg-metric-value">@FormatMinutes(Program.SetupTimeMinutes)</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Run Time</span>
+            <span class="prg-metric-value">@FormatMinutes(Program.RunTimeMinutes)</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Cycle Time</span>
+            <span class="prg-metric-value">@FormatMinutes(Program.CycleTimeMinutes)</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Total Runs</span>
+            <span class="prg-metric-value">@Program.TotalRunCount</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">EMA Duration</span>
+            <span class="prg-metric-value">@FormatMinutes(Program.ActualAverageDurationMinutes)</span>
+        </div>
+        <div class="prg-metric">
+            <span class="prg-metric-label">Variance</span>
+            <span class="prg-metric-value">@FormatVariance()</span>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = null!;
+
+    private string FormatMinutes(double? minutes)
+    {
+        if (!minutes.HasValue) return "--";
+        var m = minutes.Value;
+        if (m >= 60)
+        {
+            var hours = (int)(m / 60);
+            var mins = (int)(m % 60);
+            return mins > 0 ? $"{hours}h {mins}m" : $"{hours}h";
+        }
+        return $"{m:F0}m";
+    }
+
+    private string FormatVariance()
+    {
+        if (!Program.ActualVarianceMinutes.HasValue || !Program.ActualAverageDurationMinutes.HasValue
+            || Program.ActualAverageDurationMinutes.Value == 0)
+            return "--";
+
+        var stdDev = Math.Sqrt(Program.ActualVarianceMinutes.Value);
+        var pct = (stdDev / Program.ActualAverageDurationMinutes.Value) * 100;
+        return $"{pct:F1}%";
+    }
+}

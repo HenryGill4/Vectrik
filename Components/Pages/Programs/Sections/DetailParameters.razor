@@ -1,0 +1,69 @@
+<section class="prg-section">
+    <div class="prg-section-header">
+        <h3>Parameters &amp; Notes</h3>
+        <button class="btn btn-sm btn-outline" @onclick="OnCopyForAI" title="Copy parameters for AI assistant">
+            Copy for AI
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Program.Parameters))
+    {
+        <div class="prg-params-block">
+            <div class="prg-params-label">Machine Parameters (JSON)</div>
+            <pre class="prg-params-json">@FormatJson(Program.Parameters)</pre>
+        </div>
+    }
+    else
+    {
+        <div class="prg-params-block">
+            <div class="prg-params-label">Machine Parameters</div>
+            <span class="text-muted">No parameters configured.</span>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Program.ToolingRequired) || !string.IsNullOrWhiteSpace(Program.FixtureRequired))
+    {
+        <div class="prg-notes-block">
+            @if (!string.IsNullOrWhiteSpace(Program.ToolingRequired))
+            {
+                <div class="prg-notes-item">
+                    <span class="prg-notes-label">Tooling Required:</span>
+                    <span>@Program.ToolingRequired</span>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Program.FixtureRequired))
+            {
+                <div class="prg-notes-item">
+                    <span class="prg-notes-label">Fixture Required:</span>
+                    <span>@Program.FixtureRequired</span>
+                </div>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Program.Notes))
+    {
+        <div class="prg-notes-block">
+            <div class="prg-notes-label">Operator Notes</div>
+            <div class="prg-notes-content">@Program.Notes</div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = null!;
+    [Parameter] public EventCallback OnCopyForAI { get; set; }
+
+    private string FormatJson(string json)
+    {
+        try
+        {
+            var parsed = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json);
+            return System.Text.Json.JsonSerializer.Serialize(parsed, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return json;
+        }
+    }
+}

@@ -1,0 +1,55 @@
+<section class="prg-section">
+    <div class="prg-section-header">
+        <h3>Machine Assignments</h3>
+        <button class="btn btn-sm btn-primary" @onclick="OnAssignMachines">+ Assign</button>
+    </div>
+
+    @if (Program.MachineId != null && !(Program.MachineAssignments?.Any() == true))
+    {
+        <div class="prg-legacy-notice">
+            <span class="prg-legacy-icon">&#9888;</span>
+            <span>This program uses a legacy single-machine assignment (Machine ID: @Program.MachineId).
+                Migrate to the new assignment system for multi-machine support.</span>
+            <button class="btn btn-sm btn-outline" @onclick="OnMigrateLegacy">Migrate</button>
+        </div>
+    }
+
+    @if (Program.MachineAssignments?.Any() == true)
+    {
+        <div class="prg-machine-chips">
+            @foreach (var assignment in Program.MachineAssignments.OrderByDescending(a => a.IsPreferred).ThenBy(a => a.Machine?.Name))
+            {
+                <div class="prg-machine-chip @(assignment.IsPreferred ? "prg-machine-chip--preferred" : "")">
+                    <span class="prg-machine-chip-name">
+                        @(assignment.Machine?.Name ?? $"Machine #{assignment.MachineId}")
+                    </span>
+                    @if (assignment.IsPreferred)
+                    {
+                        <span class="prg-machine-chip-star" title="Preferred machine">&#9733;</span>
+                    }
+                    else
+                    {
+                        <button class="prg-machine-chip-action" @onclick="() => OnSetPreferred.InvokeAsync(assignment)" title="Set as preferred">
+                            &#9734;
+                        </button>
+                    }
+                    <button class="prg-machine-chip-remove" @onclick="() => OnUnassign.InvokeAsync(assignment)" title="Unassign">
+                        &times;
+                    </button>
+                </div>
+            }
+        </div>
+    }
+    else if (Program.MachineId == null)
+    {
+        <div class="prg-empty">No machines assigned. Click "+ Assign" to add machine assignments.</div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public MachineProgram Program { get; set; } = null!;
+    [Parameter] public EventCallback OnAssignMachines { get; set; }
+    [Parameter] public EventCallback<MachineProgramAssignment> OnSetPreferred { get; set; }
+    [Parameter] public EventCallback<MachineProgramAssignment> OnUnassign { get; set; }
+    [Parameter] public EventCallback OnMigrateLegacy { get; set; }
+}
