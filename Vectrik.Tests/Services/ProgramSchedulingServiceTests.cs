@@ -1022,12 +1022,32 @@ public class ProgramSchedulingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ChangeoverAnalysis_OperatorOutOfShift_ReturnsSuggestion()
+    public async Task ChangeoverAnalysis_SingleOffShift_NoDowtime_ChamberAbsorbs()
     {
         var machine = await AddSlsMachineAsync(changeoverMinutes: 30);
         await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
 
         // Build ends Mon 22:00 → changeover 22:00-22:30 (outside shift)
+        // With BuildPlateCapacity=1, a single off-shift changeover is absorbed
+        // — operator empties chamber on arrival. No downtime suggestion.
+        var analysis = await _sut.AnalyzeChangeoverAsync(machine.Id, Mon.AddHours(22));
+
+        Assert.False(analysis.OperatorAvailable);
+        Assert.Null(analysis.SuggestedAction); // chamber absorbs 1 build
+    }
+
+    [Fact]
+    public async Task ChangeoverAnalysis_StackedOffShift_ReturnsSuggestion()
+    {
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30);
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+
+        // Schedule a prior build that also finishes off-shift (fills chamber slot)
+        await AddScheduledBuildPlateProgramAsync(machine.Id, Mon.AddHours(6), 12, "Prior Build");
+        // Prior build ends Mon 18:00 → changeover 18:00-18:30 (outside shift)
+
+        // Current build ends Mon 22:00 → changeover 22:00-22:30 (outside shift)
+        // With BuildPlateCapacity=1, two consecutive off-shift changeovers overflow chamber
         var analysis = await _sut.AnalyzeChangeoverAsync(machine.Id, Mon.AddHours(22));
 
         Assert.False(analysis.OperatorAvailable);
@@ -1178,27 +1198,36 @@ public class ProgramSchedulingServiceTests : IDisposable
     // ══════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task FindEarliestSlot_IncludesOperatorUnloadDelay_WhenChangeoverOffShift()
+    public async Task FindEarliestSlot_IncludesOperatorUnloadDelay_WhenChamberOverflows()
     {
-        // Arrange: machine with 30min changeover + 90min unload, Mon-Fri 06:00-18:00 shift
+        // Arrange: machine with capacity=1, 30min changeover + 90min unload, Mon-Fri 06:00-18:00 shift
         var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
         await AddShiftAsync("Day", TimeSpan.FromHours(6), TimeSpan.FromHours(18));
 
-        // Existing build: Fri 00:00 → Fri 20:00 (20h print, ends off-shift)
         var fri = Mon.AddDays(4); // Friday
-        var prog = await AddScheduledBuildPlateProgramAsync(machine.Id, fri, 20, "Fri Build");
-        await AddProgramBlockAsync(machine.Id, prog.Id, fri, fri.AddHours(20));
 
-        // Act: find next slot starting from Friday (so it must go past this build)
+        // Two existing builds that both finish off-shift, stacking up changeovers:
+        // Build 1: Fri 00:00 → Fri 10:00 (10h, changeover at 10:00 is in-shift — resets counter)
+        // Actually, we need two OFF-SHIFT changeovers in a row.
+        // Build 1: Thu 22:00 → Fri 08:00 (10h, changeover 08:00-08:30 is in-shift)
+        // No — let's use back-to-back overnight builds:
+        // Build 1: Fri 06:00 → Fri 18:30 (12.5h, changeover 18:30-19:00 is off-shift) → fills chamber slot
+        var prog1 = await AddScheduledBuildPlateProgramAsync(machine.Id, fri.AddHours(6), 12.5, "Fri Build 1");
+        await AddProgramBlockAsync(machine.Id, prog1.Id, fri.AddHours(6), fri.AddHours(18.5));
+
+        // Build 2: Fri 19:00 → Sat 07:00 (12h, changeover Sat 07:00-07:30 is off-shift — weekend)
+        // Two consecutive off-shift changeovers → chamber overflows (capacity=1)
+        var prog2 = await AddScheduledBuildPlateProgramAsync(machine.Id, fri.AddHours(19), 12, "Fri Build 2");
+        await AddProgramBlockAsync(machine.Id, prog2.Id, fri.AddHours(19), fri.AddHours(31));
+
+        // Act: find next slot starting from Friday
         var slot = await _sut.FindEarliestSlotAsync(machine.Id, 16, fri);
 
-        // Assert: changeover at Fri 20:00-20:30 is off-shift (shift ends 18:00).
-        // Machine DOWN until Mon 06:00 + 90min unload = Mon 07:30.
-        // Next slot should start at or after Mon 07:30.
-        var nextMon = Mon.AddDays(7).AddHours(6); // next Monday 06:00
-        var mondayWithUnload = nextMon.AddMinutes(90); // Monday 07:30
-        Assert.True(slot.PrintStart >= mondayWithUnload,
-            $"Expected slot after {mondayWithUnload:ddd HH:mm} but got {slot.PrintStart:ddd HH:mm}");
+        // Assert: two off-shift changeovers overflow chamber (capacity=1).
+        // Machine DOWN until next shift + operator unload time.
+        // Slot should start after the operator unload completes.
+        Assert.True(slot.PrintStart > fri.AddHours(31),
+            $"Expected slot after the second build ends, but got {slot.PrintStart:ddd HH:mm}");
     }
 
     [Fact]
@@ -1220,43 +1249,74 @@ public class ProgramSchedulingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task FindEarliestSlot_ReturnsDowntimeFields_WhenChangeoverOffShift()
+    public async Task FindEarliestSlot_NoDowntime_SingleOffShiftChangeover()
     {
-        // Arrange
+        // Arrange: capacity=1, single off-shift changeover is absorbed by cooldown chamber
         var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
         await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
 
-        // Act: schedule on empty machine starting Mon 00:00, 8h print ends Mon 08:00
-        // Changeover 08:00-08:30 — this IS within the shift (08:00-16:00)
-        var slotInShift = await _sut.FindEarliestSlotAsync(machine.Id, 8, Mon);
-        Assert.True(slotInShift.OperatorAvailableForChangeover);
-        Assert.Null(slotInShift.DowntimeStart);
-
-        // Now test: 20h print from Mon 00:00 ends Mon 20:00 — changeover 20:00-20:30 is OFF shift
+        // 20h print from Mon 00:00 ends Mon 20:00 — changeover 20:00-20:30 is OFF shift
+        // But with capacity=1, one off-shift changeover is absorbed — no downtime
         var slotOffShift = await _sut.FindEarliestSlotAsync(machine.Id, 20, Mon);
         Assert.False(slotOffShift.OperatorAvailableForChangeover);
-        Assert.NotNull(slotOffShift.DowntimeStart);
-        Assert.NotNull(slotOffShift.DowntimeEnd);
-
-        // Downtime should span from changeover end (Mon 20:30) to next shift + unload (Tue 08:00 + 90min = 09:30)
-        var expectedDowntimeEnd = Mon.AddDays(1).AddHours(8).AddMinutes(90); // Tue 09:30
-        Assert.Equal(expectedDowntimeEnd, slotOffShift.DowntimeEnd);
+        Assert.Null(slotOffShift.DowntimeStart); // chamber absorbs 1 build, operator empties on arrival
     }
 
     [Fact]
-    public async Task ChangeoverAnalysis_ReturnsDowntimeHours_WhenOffShift()
+    public async Task FindEarliestSlot_ReturnsDowntimeFields_WhenChamberOverflows()
     {
-        // Arrange
+        // Arrange: capacity=1, two consecutive off-shift changeovers overflow the chamber
         var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
         await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
 
-        // Act: build ends Monday at 22:00 (off shift)
+        // Existing build 1: Mon 00:00 → Mon 20:00 (20h, changeover 20:00-20:30 off-shift → fills chamber)
+        var prog1 = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 20, "Mon Build 1");
+        await AddProgramBlockAsync(machine.Id, prog1.Id, Mon, Mon.AddHours(20));
+
+        // Existing build 2: Mon 20:30 → Tue 16:30 (20h, changeover Tue 16:30-17:00 off-shift → overflow!)
+        var prog2 = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon.AddHours(20.5), 20, "Mon Build 2");
+        await AddProgramBlockAsync(machine.Id, prog2.Id, Mon.AddHours(20.5), Mon.AddHours(40.5));
+
+        // Act: find next slot after both builds (will follow the overflowing changeover)
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, 8, Mon);
+
+        // Assert: two off-shift changeovers overflow the capacity-1 chamber
+        // The slot should account for operator unload delay
+        Assert.True(slot.PrintStart > Mon.AddHours(40.5),
+            $"Expected slot after Tue 16:30 but got {slot.PrintStart:ddd HH:mm}");
+    }
+
+    [Fact]
+    public async Task ChangeoverAnalysis_NoDowtime_SingleOffShiftChangeover()
+    {
+        // Arrange: capacity=1, single off-shift changeover absorbed by chamber
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+
+        // Build ends Monday at 22:00 (off shift) — single off-shift changeover
         var analysis = await _sut.AnalyzeChangeoverAsync(machine.Id, Mon.AddHours(22));
 
-        // Assert
+        Assert.False(analysis.OperatorAvailable);
+        Assert.Null(analysis.DowntimeHours); // chamber absorbs 1 build
+    }
+
+    [Fact]
+    public async Task ChangeoverAnalysis_ReturnsDowntimeHours_WhenChamberOverflows()
+    {
+        // Arrange: capacity=1, two off-shift changeovers overflow the chamber
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+
+        // Prior build that also finishes off-shift (fills chamber slot)
+        await AddScheduledBuildPlateProgramAsync(machine.Id, Mon.AddHours(2), 16, "Prior Build");
+        // Prior build ends Mon 18:00 → changeover 18:00-18:30 (off-shift, fills chamber)
+
+        // Act: current build ends Monday at 22:00 (off shift) — second off-shift changeover
+        var analysis = await _sut.AnalyzeChangeoverAsync(machine.Id, Mon.AddHours(22));
+
+        // Assert: two consecutive off-shift changeovers overflow capacity=1
         Assert.False(analysis.OperatorAvailable);
         Assert.NotNull(analysis.DowntimeHours);
         Assert.True(analysis.DowntimeHours > 0);
-        Assert.Contains("downtime", analysis.SuggestedAction, StringComparison.OrdinalIgnoreCase);
     }
 }

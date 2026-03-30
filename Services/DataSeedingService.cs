@@ -75,6 +75,9 @@ public class DataSeedingService : IDataSeedingService
 
         // Quality records (depends on parts + jobs)
         await SeedQualityDemoDataAsync(tenantDb);
+
+        // Workflow definitions (no dependencies)
+        await SeedWorkflowsAsync(tenantDb);
     }
 
     public async Task SeedCoreAsync(TenantDbContext tenantDb)
@@ -4455,6 +4458,86 @@ public class DataSeedingService : IDataSeedingService
             db.SpcDataPoints.AddRange(spcPoints);
             await db.SaveChangesAsync();
         }
+    }
+
+    private static async Task SeedWorkflowsAsync(TenantDbContext db)
+    {
+        if (await db.WorkflowDefinitions.AnyAsync()) return;
+
+        var workflows = new List<WorkflowDefinition>
+        {
+            new()
+            {
+                Name = "Work Order Release",
+                EntityType = "WorkOrder",
+                TriggerEvent = "StatusChange",
+                IsActive = true,
+                CreatedDate = DateTime.UtcNow,
+                CreatedBy = "System",
+                Steps = new List<WorkflowStep>
+                {
+                    new() { StepOrder = 1, ActionType = "RequireApproval", AssignToRole = "Supervisor" },
+                    new() { StepOrder = 2, ActionType = "RequireApproval", AssignToRole = "Manager" }
+                }
+            },
+            new()
+            {
+                Name = "Quote Approval",
+                EntityType = "Quote",
+                TriggerEvent = "StatusChange",
+                IsActive = true,
+                CreatedDate = DateTime.UtcNow,
+                CreatedBy = "System",
+                Steps = new List<WorkflowStep>
+                {
+                    new() { StepOrder = 1, ActionType = "RequireApproval", AssignToRole = "Manager" }
+                }
+            },
+            new()
+            {
+                Name = "NCR Disposition",
+                EntityType = "NCR",
+                TriggerEvent = "StatusChange",
+                IsActive = true,
+                CreatedDate = DateTime.UtcNow,
+                CreatedBy = "System",
+                Steps = new List<WorkflowStep>
+                {
+                    new() { StepOrder = 1, ActionType = "RequireApproval", AssignToRole = "Quality" },
+                    new() { StepOrder = 2, ActionType = "RequireApproval", AssignToRole = "Engineering" }
+                }
+            },
+            new()
+            {
+                Name = "CAPA Closure",
+                EntityType = "CAPA",
+                TriggerEvent = "StatusChange",
+                IsActive = true,
+                CreatedDate = DateTime.UtcNow,
+                CreatedBy = "System",
+                Steps = new List<WorkflowStep>
+                {
+                    new() { StepOrder = 1, ActionType = "RequireApproval", AssignToRole = "Quality" },
+                    new() { StepOrder = 2, ActionType = "RequireApproval", AssignToRole = "Manager" }
+                }
+            },
+            new()
+            {
+                Name = "Program Release",
+                EntityType = "MachineProgram",
+                TriggerEvent = "StatusChange",
+                IsActive = true,
+                CreatedDate = DateTime.UtcNow,
+                CreatedBy = "System",
+                Steps = new List<WorkflowStep>
+                {
+                    new() { StepOrder = 1, ActionType = "RequireApproval", AssignToRole = "Engineering" }
+                }
+            }
+        };
+
+        db.WorkflowDefinitions.AddRange(workflows);
+        await db.SaveChangesAsync();
     }
 
     }

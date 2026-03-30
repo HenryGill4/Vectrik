@@ -1,0 +1,196 @@
+@page "/approvals"
+@inject IWorkflowEngine WorkflowEngine
+@inject ToastService Toast
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>My Approvals - Vectrik</PageTitle>
+
+<div class="page-header">
+    <h1>My Approvals</h1>
+    <div class="page-actions">
+        <button class="btn btn-sm" @onclick="LoadAsync" disabled="@_loading">
+            <VIcon Name="refresh" /> Refresh
+        </button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <PageLoading Message="Loading approvals..." />
+}
+else if (!_pending.Any())
+{
+    <div class="empty-state">
+        <VIcon Name="check-circle" />
+        <h3>No pending approvals</h3>
+        <p>You're all caught up. Approvals assigned to your role will appear here.</p>
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Workflow</th>
+                    <th>Entity</th>
+                    <th>Current Step</th>
+                    <th>Assigned To</th>
+                    <th>Started</th>
+                    <th style="width: 280px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var instance in _pending)
+                {
+                    var currentStep = instance.WorkflowDefinition?.Steps
+                        .FirstOrDefault(s => s.StepOrder == instance.CurrentStepOrder);
+                    var canAct = currentStep != null && (
+                        string.IsNullOrEmpty(currentStep.AssignToRole)
+                        || string.Equals(_currentRole, currentStep.AssignToRole, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(_currentRole, "Admin", StringComparison.OrdinalIgnoreCase));
+
+                    <tr>
+                        <td>@(instance.WorkflowDefinition?.Name ?? "—")</td>
+                        <td>
+                            <a href="@GetEntityLink(instance)">
+                                @instance.EntityType #@instance.EntityId
+                            </a>
+                        </td>
+                        <td>
+                            Step @instance.CurrentStepOrder
+                            @if (instance.WorkflowDefinition != null)
+                            {
+                                <span style="color: var(--text-muted);"> of @instance.WorkflowDefinition.Steps.Count</span>
+                            }
+                        </td>
+                        <td>
+                            @if (currentStep != null)
+                            {
+                                <span class="badge badge-info">@(currentStep.AssignToRole ?? "Any")</span>
+                            }
+                        </td>
+                        <td>@instance.StartedAt.ToString("MMM dd, HH:mm")</td>
+                        <td>
+                            @if (canAct)
+                            {
+                                <div style="display: flex; gap: 6px; align-items: center;">
+                                    <input type="text" class="form-control form-control-sm" style="flex: 1; min-width: 100px;"
+                                           placeholder="Comment" @bind="_comments[instance.Id]" />
+                                    <button class="btn btn-sm btn-success" @onclick="() => ApproveAsync(instance)"
+                                            disabled="@_processing">Approve</button>
+                                    <button class="btn btn-sm btn-danger" @onclick="() => RejectAsync(instance)"
+                                            disabled="@_processing">Reject</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <span style="color: var(--text-muted); font-style: italic;">Assigned to @(currentStep?.AssignToRole ?? "another role")</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<WorkflowInstance> _pending = new();
+    private Dictionary<int, string> _comments = new();
+    private string _currentUserId = "System";
+    private string _currentRole = "";
+    private bool _loading = true;
+    private bool _processing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _currentUserId = state.User.FindFirst("UserId")?.Value ?? state.User.Identity?.Name ?? "System";
+            _currentRole = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            // Get all pending approvals — admin sees all, others see role-matched
+            if (string.Equals(_currentRole, "Admin", StringComparison.OrdinalIgnoreCase))
+            {
+                // Admin sees everything pending
+                var allDefs = await WorkflowEngine.GetAllDefinitionsAsync();
+                _pending = new List<WorkflowInstance>();
+                foreach (var def in allDefs)
+                {
+                    var instances = await WorkflowEngine.GetPendingForRoleAsync(def.EntityType);
+                    _pending.AddRange(instances.Where(i => !_pending.Any(p => p.Id == i.Id)));
+                }
+            }
+            else if (!string.IsNullOrEmpty(_currentRole))
+            {
+                _pending = await WorkflowEngine.GetPendingForRoleAsync(_currentRole);
+            }
+
+            _comments = _pending.ToDictionary(p => p.Id, _ => "");
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _loading = false; }
+    }
+
+    private async Task ApproveAsync(WorkflowInstance instance)
+    {
+        if (_processing) return;
+        _processing = true;
+        try
+        {
+            var comment = _comments.GetValueOrDefault(instance.Id);
+            var result = await WorkflowEngine.ApproveAsync(instance.Id, _currentUserId, string.IsNullOrWhiteSpace(comment) ? null : comment);
+            if (result != null)
+            {
+                Toast.ShowSuccess($"Approved: {instance.WorkflowDefinition?.Name ?? "Workflow"}");
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _processing = false; }
+    }
+
+    private async Task RejectAsync(WorkflowInstance instance)
+    {
+        if (_processing) return;
+        _processing = true;
+        try
+        {
+            var comment = _comments.GetValueOrDefault(instance.Id);
+            var result = await WorkflowEngine.RejectAsync(instance.Id, _currentUserId, string.IsNullOrWhiteSpace(comment) ? null : comment);
+            if (result != null)
+            {
+                Toast.ShowError($"Rejected: {instance.WorkflowDefinition?.Name ?? "Workflow"}", "Workflow");
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex) { Toast.ShowError(ex.Message); }
+        finally { _processing = false; }
+    }
+
+    private string GetEntityLink(WorkflowInstance instance) => instance.EntityType switch
+    {
+        "WorkOrder" => $"/workorders/{instance.EntityId}",
+        "Quote" => $"/quotes/{instance.EntityId}",
+        "NCR" => "/quality/ncr",
+        "CAPA" => "/quality/capa",
+        "Part" => $"/parts/{instance.EntityId}",
+        "Shipment" => "/shopfloor/shipping",
+        "MachineProgram" => $"/programs",
+        "MaintenanceWorkOrder" => "/maintenance/workorders",
+        _ => "#"
+    };
+}

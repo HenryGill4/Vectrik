@@ -53,7 +53,7 @@
 <div>
 @if (_loading && !_refreshing)
 {
-    <div class="loading"><span class="spinner"></span> Loading schedule...</div>
+    <PageLoading Message="Loading schedule..." />
 }
 else if (_viewMode == "gantt")
 {
@@ -242,6 +242,8 @@ else if (_viewMode == "data")
             var state = await AuthState;
             _userName = state.User?.Identity?.Name ?? "System";
         }
+        // Yield to render the loading indicator before heavy data fetching
+        await Task.Yield();
         try
         {
             await LoadSchedulerSettingsAsync();
