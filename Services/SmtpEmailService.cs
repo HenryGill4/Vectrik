@@ -124,6 +124,52 @@ public class SmtpEmailService : IEmailService
         """;
     }
 
+    public async Task SendInvitationAsync(string toEmail, string fullName, string username,
+        string temporaryPassword, string loginUrl, string companyName)
+    {
+        var subject = $"Welcome to {companyName} on Vectrik";
+        var body = BuildInvitationHtml(fullName, username, temporaryPassword, loginUrl, companyName);
+        await SendEmailAsync(toEmail, subject, body);
+    }
+
+    private static string BuildInvitationHtml(string fullName, string username,
+        string temporaryPassword, string loginUrl, string companyName)
+    {
+        return $"""
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 32px;">
+            <div style="max-width: 600px; margin: 0 auto; background: #1e293b; border-radius: 12px; overflow: hidden;">
+                <div style="background: linear-gradient(135deg, #3B82F6, #06B6D4); padding: 24px 32px; text-align: center;">
+                    <h1 style="margin: 0; color: #fff; font-size: 22px;">Welcome, {fullName}!</h1>
+                    <p style="margin: 4px 0 0; color: rgba(255,255,255,0.8); font-size: 14px;">Your account on {companyName} is ready</p>
+                </div>
+                <div style="padding: 32px; line-height: 1.6;">
+                    <p style="margin: 0 0 16px;">An account has been created for you on the <strong>{companyName}</strong> Vectrik manufacturing platform.</p>
+                    <div style="background: #0f172a; border-radius: 8px; padding: 16px 20px; margin: 0 0 20px;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            {Row("Username", $"<strong>{username}</strong>")}
+                            {Row("Password", $"<code style=\"background: #334155; padding: 2px 8px; border-radius: 4px; font-family: monospace;\">{temporaryPassword}</code>")}
+                        </table>
+                    </div>
+                    <p style="margin: 0 0 24px; color: #94a3b8; font-size: 0.85rem;">You will be asked to set a new password when you first log in.</p>
+                    <div style="text-align: center; margin: 0 0 24px;">
+                        <a href="{loginUrl}" style="display: inline-block; background: linear-gradient(135deg, #3B82F6, #06B6D4); color: #fff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 1rem;">
+                            Sign In to Vectrik
+                        </a>
+                    </div>
+                    <p style="margin: 0; color: #64748b; font-size: 0.8rem; text-align: center;">If the button doesn't work, copy this link:<br/><a href="{loginUrl}" style="color: #3B82F6; word-break: break-all;">{loginUrl}</a></p>
+                </div>
+                <div style="padding: 16px 32px; border-top: 1px solid #334155; color: #64748b; font-size: 12px; text-align: center;">
+                    {companyName} — Powered by Vectrik
+                </div>
+            </div>
+        </body>
+        </html>
+        """;
+    }
+
     private static string Row(string label, string value) =>
         $"""<tr><td style="padding: 8px 0; color: #94a3b8; font-size: 13px; width: 100px; vertical-align: top;">{label}</td><td style="padding: 8px 0; color: #e2e8f0; font-size: 14px;">{value}</td></tr>""";
 }

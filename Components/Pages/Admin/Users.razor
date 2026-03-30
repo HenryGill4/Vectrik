@@ -3,6 +3,8 @@
 @inject Vectrik.Data.TenantDbContext Db
 @inject IAuthService AuthService
 @inject IStageService StageService
+@inject IEmailService EmailService
+@inject NavigationManager Navigation
 @inject ToastService Toast
 @using Microsoft.EntityFrameworkCore
 
@@ -85,11 +87,27 @@ else
             </div>
 
             <div class="card" style="padding: 12px; margin-top: 12px;">
-                <div class="form-group" style="margin-bottom: 8px;">
-                    <label class="form-label">@(_edit.Id == 0 ? "Password" : "Reset Password") <span style="color:var(--danger);">@(_edit.Id == 0 ? "*" : "")</span></label>
-                    <input class="form-control @(_validationErrors.ContainsKey("Password") ? "is-invalid" : "")" type="password" @bind="_newPassword" placeholder="@(_edit.Id == 0 ? "Required — min 8 characters" : "Leave blank to keep current")" />
-                    @if (_validationErrors.ContainsKey("Password")) { <small style="color:var(--danger);">@_validationErrors["Password"]</small> }
-                </div>
+                @if (_edit.Id == 0)
+                {
+                    <label class="form-label" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; cursor: pointer;">
+                        <input type="checkbox" @bind="_sendInvite" />
+                        <span>Send invitation email with login credentials</span>
+                    </label>
+                    @if (_sendInvite)
+                    {
+                        <div style="background: var(--bg-tertiary); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-secondary);">
+                            A temporary password will be auto-generated and emailed to the user. They will be required to change it on first login.
+                        </div>
+                    }
+                }
+                @if (!_sendInvite || _edit.Id > 0)
+                {
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <label class="form-label">@(_edit.Id == 0 ? "Password" : "Reset Password") <span style="color:var(--danger);">@(_edit.Id == 0 ? "*" : "")</span></label>
+                        <input class="form-control @(_validationErrors.ContainsKey("Password") ? "is-invalid" : "")" type="password" @bind="_newPassword" placeholder="@(_edit.Id == 0 ? "Required — min 8 characters" : "Leave blank to keep current")" />
+                        @if (_validationErrors.ContainsKey("Password")) { <small style="color:var(--danger);">@_validationErrors["Password"]</small> }
+                    </div>
+                }
                 @if (_edit.Id > 0 && !string.IsNullOrWhiteSpace(_newPassword))
                 {
                     <button class="btn btn-sm btn-secondary" @onclick="ResetPassword">Reset Password</button>
@@ -143,7 +161,7 @@ else
     private List<User>? _users;
     private List<ProductionStage>? _allStages;
     private User? _edit;
-    private bool _showForm, _saving;
+    private bool _showForm, _saving, _sendInvite;
     private string? _error, _newPassword;
     private HashSet<int> _assignedStageIds = new();
     private OperatorPermissions _permissions = new();
@@ -174,6 +192,7 @@ else
     {
         _edit = new User { Role = "Operator", CreatedBy = "System", LastModifiedBy = "System" };
         _newPassword = null;
+        _sendInvite = false;
         _error = null;
         _validationErrors.Clear();
         _assignedStageIds = new();
@@ -198,10 +217,12 @@ else
             _validationErrors["FullName"] = "Full name is required.";
         if (!string.IsNullOrWhiteSpace(_edit.Email) && !_edit.Email.Contains('@'))
             _validationErrors["Email"] = "Invalid email format.";
-        if (_edit.Id == 0 && string.IsNullOrWhiteSpace(_newPassword))
+        if (_edit.Id == 0 && !_sendInvite && string.IsNullOrWhiteSpace(_newPassword))
             _validationErrors["Password"] = "Password is required for new users.";
-        if (!string.IsNullOrWhiteSpace(_newPassword) && _newPassword.Length < 8)
+        if (!_sendInvite && !string.IsNullOrWhiteSpace(_newPassword) && _newPassword.Length < 8)
             _validationErrors["Password"] = "Password must be at least 8 characters.";
+        if (_sendInvite && _edit.Id == 0 && string.IsNullOrWhiteSpace(_edit.Email))
+            _validationErrors["Email"] = "Email is required to send an invitation.";
         return _validationErrors.Count == 0;
     }
 
@@ -259,17 +280,51 @@ else
             _edit!.AssignedStageIds = _assignedStageIds.Any() ? string.Join(",", _assignedStageIds.OrderBy(x => x)) : null;
             _edit.SetPermissions(_permissions);
 
+            string? tempPassword = null;
             if (_edit.Id == 0)
             {
-                _edit.PasswordHash = AuthService.HashPassword(_newPassword!);
+                if (_sendInvite)
+                {
+                    tempPassword = AuthService.GenerateTemporaryPassword();
+                    _edit.PasswordHash = AuthService.HashPassword(tempPassword);
+                }
+                else
+                {
+                    _edit.PasswordHash = AuthService.HashPassword(_newPassword!);
+                }
+                _edit.MustChangePassword = true;
                 _edit.CreatedDate = DateTime.UtcNow;
                 Db.Users.Add(_edit);
             }
             _edit.LastModifiedDate = DateTime.UtcNow;
             await Db.SaveChangesAsync();
+
+            // Send invitation email after successful save
+            if (tempPassword != null && _sendInvite && !string.IsNullOrWhiteSpace(_edit.Email))
+            {
+                try
+                {
+                    var loginUrl = Navigation.BaseUri.TrimEnd('/') + "/account/login";
+                    var companyName = await Db.SystemSettings
+                        .Where(s => s.Key == "company.name")
+                        .Select(s => s.Value)
+                        .FirstOrDefaultAsync() ?? "Your Company";
+                    await EmailService.SendInvitationAsync(_edit.Email, _edit.FullName, _edit.Username,
+                        tempPassword, loginUrl, companyName);
+                    Toast.ShowSuccess($"User '{_edit.Username}' created and invitation sent to {_edit.Email}.");
+                }
+                catch
+                {
+                    Toast.ShowWarning($"User '{_edit.Username}' created, but invitation email failed to send.");
+                }
+            }
+            else
+            {
+                Toast.ShowSuccess($"User '{_edit.Username}' saved.");
+            }
+
             _showForm = false;
             _users = await Db.Users.OrderBy(u => u.Username).ToListAsync();
-            Toast.ShowSuccess($"User '{_edit.Username}' saved.");
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _saving = false; }

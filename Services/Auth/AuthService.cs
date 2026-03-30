@@ -88,6 +88,7 @@ public class AuthService : IAuthService
                     Role = user.Role,
                     UserId = user.Id,
                     IsPlatformUser = false,
+                    MustChangePassword = user.MustChangePassword,
                     RedirectUrl = "/dashboard"
                 };
             }
@@ -116,6 +117,7 @@ public class AuthService : IAuthService
             claims.Add(new Claim("CompanyName", result.CompanyName ?? string.Empty));
             claims.Add(new Claim("UserId", result.UserId?.ToString() ?? string.Empty));
             claims.Add(new Claim("FullName", result.FullName ?? string.Empty));
+            claims.Add(new Claim("MustChangePassword", result.MustChangePassword.ToString()));
         }
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -130,6 +132,31 @@ public class AuthService : IAuthService
         Buffer.BlockCopy(salt, 0, combined, 0, 16);
         Buffer.BlockCopy(hash, 0, combined, 16, 32);
         return Convert.ToBase64String(combined);
+    }
+
+    public string GenerateTemporaryPassword(int length = 12)
+    {
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower = "abcdefghjkmnpqrstuvwxyz";
+        const string digits = "23456789";
+        const string special = "!@#$%";
+        var all = upper + lower + digits + special;
+        var password = new char[length];
+        var bytes = RandomNumberGenerator.GetBytes(length);
+        // Guarantee at least one of each category
+        password[0] = upper[bytes[0] % upper.Length];
+        password[1] = lower[bytes[1] % lower.Length];
+        password[2] = digits[bytes[2] % digits.Length];
+        password[3] = special[bytes[3] % special.Length];
+        for (int i = 4; i < length; i++)
+            password[i] = all[bytes[i] % all.Length];
+        // Shuffle
+        for (int i = length - 1; i > 0; i--)
+        {
+            int j = bytes[i] % (i + 1);
+            (password[i], password[j]) = (password[j], password[i]);
+        }
+        return new string(password);
     }
 
     public bool VerifyPassword(string password, string storedHash)

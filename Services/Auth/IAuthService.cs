@@ -8,6 +8,7 @@ public interface IAuthService
     ClaimsPrincipal? GetClaimsPrincipal(AuthResult result);
     string HashPassword(string password);
     bool VerifyPassword(string password, string hash);
+    string GenerateTemporaryPassword(int length = 12);
 }
 
 public class AuthResult
@@ -21,5 +22,6 @@ public class AuthResult
     public string? Role { get; set; }
     public int? UserId { get; set; }
     public bool IsPlatformUser { get; set; }
+    public bool MustChangePassword { get; set; }
     public string? RedirectUrl { get; set; }
 }

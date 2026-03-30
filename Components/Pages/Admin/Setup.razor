@@ -1,0 +1,252 @@
+@page "/admin/setup"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject Vectrik.Data.TenantDbContext Db
+@inject NavigationManager Nav
+@inject SetupReadinessService ReadinessService
+@inject ToastService Toast
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Setup - Vectrik</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Setup Your Shop</h1>
+</div>
+
+<div class="wizard-steps" style="margin-bottom: 24px;">
+    @for (int i = 0; i < _stepLabels.Length; i++)
+    {
+        var idx = i;
+        var css = idx < _step ? "wizard-step wizard-step--done"
+                 : idx == _step ? "wizard-step wizard-step--active"
+                 : "wizard-step";
+        <div class="@css" @onclick="() => GoToStep(idx)" style="cursor: pointer;">
+            <div class="wizard-step-num">@(idx < _step ? "\u2713" : (idx + 1).ToString())</div>
+            <div class="wizard-step-label">@_stepLabels[idx]</div>
+        </div>
+        @if (idx < _stepLabels.Length - 1)
+        {
+            <div class="wizard-step-connector @(idx < _step ? "wizard-step-connector--done" : "")"></div>
+        }
+    }
+</div>
+
+<div class="card" style="padding: 24px;">
+    @switch (_step)
+    {
+        case 0: // Welcome
+            <h2 style="margin-top: 0;">Welcome to Vectrik</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                Let's get your manufacturing environment set up. This wizard will walk you through the key configuration areas.
+                You can skip any step and come back to it later from the Admin panel.
+            </p>
+            <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                <div style="font-weight: 600; margin-bottom: 8px;">Company Branding</div>
+                @if (!string.IsNullOrWhiteSpace(_companyName) && _companyName != "Your Company")
+                {
+                    <p style="color: var(--success); margin: 0;">Company name: <strong>@_companyName</strong></p>
+                }
+                else
+                {
+                    <p style="color: var(--text-muted); margin: 0 0 8px;">Set your company name, logo, and brand colors.</p>
+                }
+                <a href="/admin/branding" class="btn btn-sm btn-secondary" style="margin-top: 8px;">Configure Branding</a>
+            </div>
+            break;
+
+        case 1: // Team
+            <h2 style="margin-top: 0;">Team Members</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                Add your operators, managers, and other team members. Each user gets a role that controls what they can access.
+            </p>
+            @if (_userCount > 0)
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <span style="font-size: 1.5rem; font-weight: 700;">@_userCount</span>
+                    <span style="color: var(--text-secondary); margin-left: 8px;">active user@(_userCount != 1 ? "s" : "")</span>
+                </div>
+            }
+            <a href="/admin/users" class="btn btn-primary">Manage Users</a>
+            break;
+
+        case 2: // Shifts
+            <h2 style="margin-top: 0;">Shift Schedules</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                Configure your operating shifts and assign machines and operators. The scheduler uses shifts to determine machine availability.
+            </p>
+            @if (_shiftCount > 0)
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <span style="font-size: 1.5rem; font-weight: 700;">@_shiftCount</span>
+                    <span style="color: var(--text-secondary); margin-left: 8px;">shift@(_shiftCount != 1 ? "s" : "") configured</span>
+                    @if (_hasShiftAssignments)
+                    {
+                        <span class="badge badge-active" style="margin-left: 12px;">Machines assigned</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-cancelled" style="margin-left: 12px;">No machine assignments</span>
+                    }
+                </div>
+            }
+            <a href="/admin/shifts" class="btn btn-primary">Manage Shifts</a>
+            break;
+
+        case 3: // Machines
+            <h2 style="margin-top: 0;">Machines</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                Review your machines. Default machines were pre-configured — edit names, hourly rates, and capabilities to match your shop.
+            </p>
+            @if (_machineCount > 0)
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <span style="font-size: 1.5rem; font-weight: 700;">@_machineCount</span>
+                    <span style="color: var(--text-secondary); margin-left: 8px;">active machine@(_machineCount != 1 ? "s" : "")</span>
+                </div>
+            }
+            <a href="/machines" class="btn btn-primary">Manage Machines</a>
+            break;
+
+        case 4: // Materials
+            <h2 style="margin-top: 0;">Materials</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                Define the materials you work with. These are used for cost calculation, part definitions, and inventory tracking.
+            </p>
+            @if (_materialCount > 0)
+            {
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <span style="font-size: 1.5rem; font-weight: 700;">@_materialCount</span>
+                    <span style="color: var(--text-secondary); margin-left: 8px;">material@(_materialCount != 1 ? "s" : "") defined</span>
+                </div>
+            }
+            <a href="/admin/materials" class="btn btn-primary">Manage Materials</a>
+            break;
+
+        case 5: // Numbering
+            <h2 style="margin-top: 0;">Number Sequences</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                Configure how work orders, quotes, parts, and shipments are numbered. Set prefixes and formats to match your existing system.
+            </p>
+            <a href="/admin/numbering" class="btn btn-primary">Configure Numbering</a>
+            break;
+
+        case 6: // Review
+            <h2 style="margin-top: 0;">Setup Review</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                Here's a summary of your configuration status. You can always return to any area from the Admin panel.
+            </p>
+            @if (_checks != null)
+            {
+                <div style="margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                        <div style="font-size: 2rem; font-weight: 700; color: @(_score >= 75 ? "var(--success)" : _score >= 50 ? "var(--warning)" : "var(--danger)");">@_score%</div>
+                        <div style="color: var(--text-secondary);">setup complete</div>
+                    </div>
+                    <div class="progress-bar-container" style="margin-bottom: 16px;">
+                        <div class="progress-bar-fill" style="width: @(_score)%; background: @(_score >= 75 ? "var(--success)" : _score >= 50 ? "var(--warning)" : "var(--danger)");"></div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
+                    @foreach (var check in _checks)
+                    {
+                        <div class="card" style="padding: 12px; border-left: 3px solid @(check.Passed ? "var(--success)" : "var(--danger)");">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                                        <span style="color: @(check.Passed ? "var(--success)" : "var(--danger)");">@(check.Passed ? "\u2713" : "\u2717")</span>
+                                        @check.Label
+                                    </div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">@check.Description</div>
+                                </div>
+                                @if (!check.Passed)
+                                {
+                                    <a href="@check.Link" class="btn btn-sm btn-secondary">Configure</a>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            break;
+    }
+</div>
+
+<div style="display: flex; justify-content: space-between; margin-top: 16px;">
+    <div>
+        @if (_step > 0)
+        {
+            <button class="btn btn-secondary" @onclick="PrevStep">Back</button>
+        }
+    </div>
+    <div style="display: flex; gap: 8px;">
+        @if (_step < _stepLabels.Length - 1)
+        {
+            <button class="btn btn-secondary" @onclick="NextStep">Skip</button>
+            <button class="btn btn-primary" @onclick="NextStep">Next</button>
+        }
+        else
+        {
+            <button class="btn btn-primary" @onclick="CompleteSetup">Complete Setup</button>
+        }
+    </div>
+</div>
+
+@code {
+    private int _step;
+    private readonly string[] _stepLabels = ["Welcome", "Team", "Shifts", "Machines", "Materials", "Numbering", "Review"];
+
+    // Data for steps
+    private string? _companyName;
+    private int _userCount, _shiftCount, _machineCount, _materialCount;
+    private bool _hasShiftAssignments;
+    private List<ReadinessCheck>? _checks;
+    private int _score;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _companyName = await Db.SystemSettings
+            .Where(s => s.Key == "company.name")
+            .Select(s => s.Value)
+            .FirstOrDefaultAsync();
+
+        _userCount = await Db.Users.CountAsync(u => u.IsActive);
+        _shiftCount = await Db.OperatingShifts.CountAsync(s => s.IsActive);
+        _hasShiftAssignments = await Db.MachineShiftAssignments.AnyAsync();
+        _machineCount = await Db.Machines.CountAsync(m => m.IsActive);
+        _materialCount = await Db.Materials.CountAsync();
+
+        _checks = await ReadinessService.GetChecksAsync(Db);
+        _score = ReadinessService.CalculateScore(_checks);
+    }
+
+    private void GoToStep(int step) => _step = step;
+    private void NextStep() => _step = Math.Min(_step + 1, _stepLabels.Length - 1);
+    private void PrevStep() => _step = Math.Max(_step - 1, 0);
+
+    private async Task CompleteSetup()
+    {
+        var setting = await Db.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OnboardingComplete");
+        if (setting == null)
+        {
+            Db.SystemSettings.Add(new Vectrik.Models.SystemSetting
+            {
+                Key = "OnboardingComplete",
+                Value = "true",
+                Category = "Onboarding",
+                Description = "Whether the initial setup wizard has been completed"
+            });
+        }
+        else
+        {
+            setting.Value = "true";
+        }
+        await Db.SaveChangesAsync();
+        Toast.ShowSuccess("Setup complete! You can always return to the Admin panel to make changes.");
+        Nav.NavigateTo("/dashboard");
+    }
+}

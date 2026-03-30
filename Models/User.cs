@@ -27,6 +27,8 @@ public class User
 
     public bool IsActive { get; set; } = true;
 
+    public bool MustChangePassword { get; set; }
+
     [MaxLength(500)]
     public string? AssignedStageIds { get; set; }
 
