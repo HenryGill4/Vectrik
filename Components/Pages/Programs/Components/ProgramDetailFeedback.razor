@@ -19,12 +19,12 @@
     {
         @foreach (var fb in FeedbackList)
         {
-            <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; margin-bottom: 8px; border-left: 3px solid @GetFeedbackSeverityColor(fb.Severity);">
+            <div style="border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px; border-left: 3px solid @GetFeedbackSeverityColor(fb.Severity);">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                     <div>
                         <div style="display: flex; gap: 6px; align-items: center;">
                             <span class="badge badge-secondary">@fb.Category</span>
-                            <span class="badge" style="background: @GetFeedbackSeverityColor(fb.Severity); color: white;">@fb.Severity</span>
+                            <span class="badge" style="background: @GetFeedbackSeverityColor(fb.Severity); color: #fff;">@fb.Severity</span>
                             <span class="badge badge-@fb.Status.ToString().ToLower()">@fb.Status</span>
                         </div>
                         <div style="margin-top: 6px;">@fb.Comment</div>
@@ -72,7 +72,7 @@
     private static string GetFeedbackSeverityColor(ProgramFeedbackSeverity severity) => severity switch
     {
         ProgramFeedbackSeverity.Critical => "var(--danger)",
-        ProgramFeedbackSeverity.High => "#e67700",
+        ProgramFeedbackSeverity.High => "var(--sched-priority-high)",
         ProgramFeedbackSeverity.Medium => "var(--warning)",
         _ => "var(--text-muted)"
     };
