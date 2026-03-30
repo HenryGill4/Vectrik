@@ -13302,3 +13302,214 @@ dialog#components-reconnect-modal button:hover {
         min-width: unset;
     }
 }
+
+/* ═══════════════════════════════════════════════════════
+   Image Editor (crop / rotate / zoom modal)
+   ═══════════════════════════════════════════════════════ */
+
+.img-editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    backdrop-filter: blur(4px);
+}
+
+.img-editor-modal {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 90vw;
+    max-width: 960px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+.img-editor-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    min-height: 52px;
+}
+
+.img-editor-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.img-editor-filename {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.img-editor-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    margin-left: auto;
+    transition: color 0.15s;
+}
+.img-editor-close:hover {
+    color: var(--danger);
+}
+
+/* Toolbar */
+.img-editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+    flex-wrap: wrap;
+    min-height: 48px;
+}
+
+.img-editor-tool-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 4px;
+}
+.img-editor-tool-group + .img-editor-tool-group {
+    border-left: 1px solid var(--border);
+    padding-left: 8px;
+}
+
+.img-editor-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.img-editor-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text);
+    border-color: var(--border);
+}
+.img-editor-btn--active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+.img-editor-btn--active:hover {
+    background: var(--primary-hover);
+    color: #fff;
+    border-color: var(--primary-hover);
+}
+.img-editor-btn svg {
+    flex-shrink: 0;
+}
+
+/* Canvas area */
+.img-editor-canvas-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 300px;
+    max-height: 60vh;
+    overflow: hidden;
+    background: #1a1a2e;
+}
+
+.img-editor-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+}
+.img-editor-canvas:active {
+    cursor: grabbing;
+}
+
+.img-editor-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9rem;
+    z-index: 2;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+/* Footer */
+.img-editor-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-secondary);
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .img-editor-modal {
+        width: 100vw;
+        max-width: 100vw;
+        max-height: 100vh;
+        border-radius: 0;
+    }
+    .img-editor-overlay {
+        padding: 0;
+    }
+    .img-editor-btn span {
+        display: none;
+    }
+    .img-editor-btn {
+        padding: 8px;
+    }
+    .img-editor-canvas-wrap {
+        min-height: 250px;
+    }
+}
+
+/* Edit button for file upload items */
+.img-editor-edit-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--primary);
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.img-editor-edit-btn:hover {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}

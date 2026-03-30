@@ -11,8 +11,10 @@
 @inject ToastService Toast
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @using System.Text.Json
 @using Vectrik.Models.Enums
+@using Vectrik.Components.Shared
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>@(_part?.Name ?? "Part Detail") - Vectrik</PageTitle>
@@ -1123,9 +1125,20 @@ else
                     </div>
                     @if (_uploadFiles.Count > 0)
                     {
-                        <button class="btn btn-primary" style="margin-top: 8px;" @onclick="UploadDrawings" disabled="@_uploading">
-                            @(_uploading ? "Uploading..." : $"Upload {_uploadFiles.Count} file(s)")
-                        </button>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+                            <button class="btn btn-primary" @onclick="UploadDrawings" disabled="@_uploading">
+                                @(_uploading ? "Uploading..." : $"Upload {_uploadFiles.Count} file(s)")
+                            </button>
+                            @foreach (var file in _uploadFiles)
+                            {
+                                @if (ImageEditor.IsImageFile(file.Name))
+                                {
+                                    <button class="img-editor-edit-btn" @onclick="() => OpenDrawingEditor(file)">
+                                        Edit @file.Name
+                                    </button>
+                                }
+                            }
+                        </div>
                     }
                 </div>
             }
@@ -1455,6 +1468,12 @@ else
 
 <ConfirmDialog @ref="_confirm" />
 
+<ImageEditor @ref="_drawingImageEditor"
+             Visible="_showDrawingImageEditor"
+             FileName="@_drawingEditorFileName"
+             OnSave="OnDrawingEditorSave"
+             OnCancel="OnDrawingEditorCancel" />
+
 @code {
     [Parameter] public int Id { get; set; }
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
@@ -1477,6 +1496,12 @@ else
     private IReadOnlyList<Microsoft.AspNetCore.Components.Forms.IBrowserFile> _uploadFiles = new List<Microsoft.AspNetCore.Components.Forms.IBrowserFile>();
     private string? _uploadDescription;
     private string? _uploadRevision;
+
+    // Drawing image editor
+    private ImageEditor? _drawingImageEditor;
+    private bool _showDrawingImageEditor;
+    private string? _drawingEditorFileName;
+    private Dictionary<string, byte[]> _editedImageFiles = new();
 
     // Revision bump
     private bool _showRevisionModal;
@@ -1579,6 +1604,26 @@ else
         _uploadFiles = files;
     }
 
+    private async Task OpenDrawingEditor(IBrowserFile file)
+    {
+        _drawingEditorFileName = file.Name;
+        _showDrawingImageEditor = true;
+        StateHasChanged();
+
+        if (_drawingImageEditor != null)
+            await _drawingImageEditor.LoadImageAsync(file);
+    }
+
+    private async Task OnDrawingEditorSave(ImageEditor.ImageEditorResult result)
+    {
+        _showDrawingImageEditor = false;
+        _editedImageFiles[result.FileName] = result.ImageData;
+        Toast.ShowSuccess($"Edits applied to {result.FileName} — click Upload to save.");
+        await Task.CompletedTask;
+    }
+
+    private void OnDrawingEditorCancel() => _showDrawingImageEditor = false;
+
     private async Task UploadDrawings()
     {
         if (_part == null || !_uploadFiles.Any()) return;
@@ -1589,14 +1634,27 @@ else
             var uploadCount = _uploadFiles.Count;
             foreach (var file in _uploadFiles)
             {
-                using var stream = file.OpenReadStream(50 * 1024 * 1024);
-                await FileService.UploadDrawingAsync(_part.Id, file.Name, stream, file.Size, _userName, _uploadDescription, _uploadRevision);
+                // Check if this file was edited in the image editor
+                if (_editedImageFiles.TryGetValue(file.Name, out var editedBytes)
+                    || _editedImageFiles.TryGetValue(Path.GetFileNameWithoutExtension(file.Name) + ".png", out editedBytes)
+                    || _editedImageFiles.TryGetValue(Path.GetFileNameWithoutExtension(file.Name) + ".jpg", out editedBytes))
+                {
+                    var editedName = _editedImageFiles.Keys.FirstOrDefault(k => k.StartsWith(Path.GetFileNameWithoutExtension(file.Name))) ?? file.Name;
+                    using var ms = new MemoryStream(editedBytes);
+                    await FileService.UploadDrawingAsync(_part.Id, editedName, ms, editedBytes.Length, _userName, _uploadDescription, _uploadRevision);
+                }
+                else
+                {
+                    using var stream = file.OpenReadStream(50 * 1024 * 1024);
+                    await FileService.UploadDrawingAsync(_part.Id, file.Name, stream, file.Size, _userName, _uploadDescription, _uploadRevision);
+                }
             }
             _drawings = await FileService.GetDrawingsAsync(_part.Id);
             _showUpload = false;
             _uploadFiles = new List<Microsoft.AspNetCore.Components.Forms.IBrowserFile>();
             _uploadDescription = null;
             _uploadRevision = null;
+            _editedImageFiles.Clear();
             Toast.ShowSuccess($"Uploaded {uploadCount} file(s)");
         }
         catch (Exception ex)

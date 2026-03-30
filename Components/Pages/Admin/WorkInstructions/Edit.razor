@@ -3,6 +3,10 @@
 @inject ToastService Toast
 @inject NavigationManager Nav
 @inject ITenantContext TenantContext
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@using Vectrik.Components.Shared
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
 
 <PageTitle>Edit Work Instruction - Vectrik</PageTitle>
@@ -143,7 +147,7 @@ else
                             </div>
                         }
                         <div class="file-upload-zone wi-upload-zone" style="margin-top: 8px;">
-                            <InputFile OnChange="(e) => UploadMedia(step.Id, e)" accept=".jpg,.jpeg,.png,.gif,.webp,.mp4,.webm,.pdf" />
+                            <InputFile OnChange="(e) => OnMediaFileSelected(step.Id, e)" accept=".jpg,.jpeg,.png,.gif,.webp,.mp4,.webm,.pdf" />
                             <div class="file-upload-label">
                                 @if (_uploadingStepId == step.Id)
                                 {
@@ -152,7 +156,7 @@ else
                                 else
                                 {
                                     <span>Drop photos, videos, or PDFs here</span>
-                                    <small style="display: block; color: var(--text-muted); margin-top: 2px;">Max 50MB per file</small>
+                                    <small style="display: block; color: var(--text-muted); margin-top: 2px;">Max 50MB per file — images open editor for crop/rotate</small>
                                 }
                             </div>
                         </div>
@@ -199,6 +203,12 @@ else
 }
 
 <ConfirmDialog @ref="_confirmDialog" />
+
+<ImageEditor @ref="_imageEditor"
+             Visible="_showImageEditor"
+             FileName="@_editorFileName"
+             OnSave="OnEditorSave"
+             OnCancel="OnEditorCancel" />
 
 @code {
     [Parameter] public int Id { get; set; }
@@ -311,6 +321,57 @@ else
     }
 
     private int? _uploadingStepId;
+
+    // Image editor state
+    private ImageEditor? _imageEditor;
+    private bool _showImageEditor;
+    private string? _editorFileName;
+    private int _editorStepId;
+
+    private async Task OnMediaFileSelected(int stepId, InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        // If it's an image, open the editor
+        if (ImageEditor.IsImageFile(file.Name))
+        {
+            _editorStepId = stepId;
+            _editorFileName = file.Name;
+            _showImageEditor = true;
+            StateHasChanged();
+
+            if (_imageEditor != null)
+                await _imageEditor.LoadImageAsync(file);
+            return;
+        }
+
+        // Non-image files upload directly
+        await UploadMedia(stepId, e);
+    }
+
+    private async Task OnEditorSave(ImageEditor.ImageEditorResult result)
+    {
+        _showImageEditor = false;
+        _uploadingStepId = _editorStepId;
+        StateHasChanged();
+
+        try
+        {
+            await InstructionService.UploadMediaFromBytesAsync(_editorStepId, result.FileName, result.ContentType, result.ImageData, TenantContext.TenantCode);
+            _instruction = await InstructionService.GetByIdAsync(Id);
+            Toast.ShowSuccess($"Uploaded {result.FileName}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Upload failed: {ex.Message}");
+        }
+        finally
+        {
+            _uploadingStepId = null;
+        }
+    }
+
+    private void OnEditorCancel() => _showImageEditor = false;
 
     private async Task UploadMedia(int stepId, InputFileChangeEventArgs e)
     {

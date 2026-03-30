@@ -4,6 +4,8 @@
 @inject NavigationManager Nav
 @inject ToastService Toast
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+@using Microsoft.AspNetCore.Components.Forms
+@using Vectrik.Components.Shared
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "SuperAdmin")]
 
 <PageTitle>@(_isNew ? "New Customer" : _tenant?.CompanyName ?? Code) - Vectrik Platform</PageTitle>
@@ -45,8 +47,13 @@ else if (_tenant != null)
                 }
                 <div class="tenant-logo-overlay">📷</div>
             </label>
-            <InputFile OnChange="OnLogoSelected" accept="image/*" @ref="_fileInput"
+            <InputFile OnChange="OnLogoFileSelected" accept="image/*" @ref="_fileInput"
                        style="display: none; position: absolute;" id="logo-file-input" />
+            <ImageEditor @ref="_imageEditor"
+                         Visible="_showImageEditor"
+                         FileName="@_editorFileName"
+                         OnSave="OnEditorSave"
+                         OnCancel="OnEditorCancel" />
             <div style="flex: 1; min-width: 200px;">
                 <div style="font-size: 1.5rem; font-weight: 600; color: var(--text);">@_tenant.CompanyName</div>
                 <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 2px;">@_tenant.Code</div>
@@ -211,6 +218,11 @@ else if (_tenant != null)
     private List<(string Key, string Category, string Label)> _featureKeys = new();
     private InputFile? _fileInput;
 
+    // Image editor
+    private ImageEditor? _imageEditor;
+    private bool _showImageEditor;
+    private string? _editorFileName;
+
     protected override async Task OnInitializedAsync()
     {
         _featureKeys = TenantService.GetAllFeatureKeys();
@@ -293,7 +305,7 @@ else if (_tenant != null)
         _tenant.IsActive = !_tenant.IsActive;
     }
 
-    private async Task OnLogoSelected(InputFileChangeEventArgs e)
+    private async Task OnLogoFileSelected(InputFileChangeEventArgs e)
     {
         _uploadError = null;
         var file = e.File;
@@ -302,23 +314,50 @@ else if (_tenant != null)
         var allowedTypes = new[] { "image/png", "image/jpeg", "image/svg+xml", "image/webp" };
         if (!allowedTypes.Contains(file.ContentType)) { _uploadError = "Invalid file type. Use PNG, JPG, SVG, or WebP."; return; }
 
+        // SVGs can't be canvas-edited
+        if (file.ContentType == "image/svg+xml")
+        {
+            await SaveLogoBytes(file.Name, file.OpenReadStream(2 * 1024 * 1024));
+            return;
+        }
+
+        // Open image editor for raster images
+        _editorFileName = file.Name;
+        _showImageEditor = true;
+        StateHasChanged();
+
+        if (_imageEditor != null)
+            await _imageEditor.LoadImageAsync(file);
+    }
+
+    private async Task OnEditorSave(ImageEditor.ImageEditorResult result)
+    {
+        _showImageEditor = false;
+        using var ms = new MemoryStream(result.ImageData);
+        await SaveLogoBytes(result.FileName, ms);
+    }
+
+    private void OnEditorCancel() => _showImageEditor = false;
+
+    private async Task SaveLogoBytes(string fileName, Stream dataStream)
+    {
         var tenantCode = _isNew ? (_tenant?.Code ?? "temp") : Code!;
         if (string.IsNullOrWhiteSpace(tenantCode) || tenantCode == "new") tenantCode = "temp";
 
         try
         {
-            var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
             if (string.IsNullOrEmpty(ext)) ext = ".png";
-            var fileName = $"{tenantCode}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{ext}";
+            var safeName = $"{tenantCode}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}{ext}";
 
             var uploadsDir = Path.Combine(Env.WebRootPath, "uploads", "logos");
             if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
 
-            var filePath = Path.Combine(uploadsDir, fileName);
+            var filePath = Path.Combine(uploadsDir, safeName);
             await using var stream = new FileStream(filePath, FileMode.Create);
-            await file.OpenReadStream(2 * 1024 * 1024).CopyToAsync(stream);
+            await dataStream.CopyToAsync(stream);
 
-            _tenant!.LogoUrl = $"/uploads/logos/{fileName}";
+            _tenant!.LogoUrl = $"/uploads/logos/{safeName}";
         }
         catch (Exception ex) { _uploadError = $"Upload error: {ex.Message}"; }
     }
