@@ -237,8 +237,10 @@ else if (_tenant != null)
                 CreatedBy = "SuperAdmin",
                 PrimaryColor = "#6366f1"
             };
-            // Default all features off
+            // Default to essentials preset
             foreach (var fk in _featureKeys) _featureFlags[fk.Key] = false;
+            var essentials = new[] { "module.workorders", "module.shopfloor", "module.quality", "module.inventory", "module.shipping", "sls" };
+            foreach (var k in essentials) _featureFlags[k] = true;
         }
         else
         {
@@ -271,14 +273,9 @@ else if (_tenant != null)
 
                 var created = await TenantService.CreateTenantAsync(
                     _tenant.Code, _tenant.CompanyName, "SuperAdmin",
-                    _tenant.LogoUrl, _tenant.PrimaryColor);
-
-                // Update extra fields
-                created.ContactEmail = _tenant.ContactEmail;
-                created.ContactPhone = _tenant.ContactPhone;
-                created.Notes = _tenant.Notes;
-                created.SubscriptionTier = _tenant.SubscriptionTier;
-                await TenantService.UpdateTenantAsync(created);
+                    _tenant.LogoUrl, _tenant.PrimaryColor,
+                    _tenant.ContactEmail, _tenant.ContactPhone,
+                    _tenant.SubscriptionTier, _tenant.Notes);
 
                 // Save feature flags
                 await TenantService.SetTenantFeatureFlagsAsync(created.Code, _featureFlags);
@@ -342,8 +339,8 @@ else if (_tenant != null)
 
     private async Task SaveLogoBytes(string fileName, Stream dataStream)
     {
-        var tenantCode = _isNew ? (_tenant?.Code ?? "temp") : Code!;
-        if (string.IsNullOrWhiteSpace(tenantCode) || tenantCode == "new") tenantCode = "temp";
+        var tenantCode = _isNew ? (_tenant?.Code?.ToLowerInvariant().Trim() ?? "temp") : Code!;
+        if (string.IsNullOrWhiteSpace(tenantCode) || tenantCode == "new") tenantCode = "new-tenant";
 
         try
         {

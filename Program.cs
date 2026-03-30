@@ -181,13 +181,16 @@ try
     platformDb.Database.Migrate();
 
     // Ensure platform admin exists
+    var adminPassword = Environment.GetEnvironmentVariable("VECTRIK_ADMIN_PASSWORD") ?? "Vectrik2026!";
+    if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("VECTRIK_ADMIN_PASSWORD")))
+        app.Logger.LogWarning("VECTRIK_ADMIN_PASSWORD not set — using default. Set this env var in production.");
     var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
     if (!platformDb.PlatformUsers.Any(u => u.Username == "henry"))
     {
         platformDb.PlatformUsers.Add(new Vectrik.Models.Platform.PlatformUser
         {
             Username = "henry",
-            PasswordHash = authService.HashPassword("Vectrik2026!"),
+            PasswordHash = authService.HashPassword(adminPassword),
             Role = "SuperAdmin"
         });
         platformDb.SaveChanges();
@@ -206,8 +209,9 @@ try
     // Ensure all active tenants have seeded data (handles deleted/recreated tenant DBs)
     foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
     {
+        var isDemo = tenant.Code == "demo";
         Task.Run(async () =>
-            await tenantService.SeedTenantDatabaseAsync(tenant.Code)
+            await tenantService.SeedTenantDatabaseAsync(tenant.Code, isDemoTenant: isDemo)
         ).GetAwaiter().GetResult();
     }
 

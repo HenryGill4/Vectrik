@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Vectrik.Models;
 using Vectrik.Models.Maintenance;
 
@@ -9,6 +10,12 @@ public class TenantDbContext : DbContext
     public TenantDbContext(DbContextOptions<TenantDbContext> options)
         : base(options)
     {
+    }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.ConfigureWarnings(w =>
+            w.Ignore(RelationalEventId.PendingModelChangesWarning));
     }
 
     // Core Manufacturing

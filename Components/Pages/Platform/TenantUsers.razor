@@ -1,6 +1,8 @@
 @page "/platform/tenants/{Code}/users"
 @inject ITenantService TenantService
 @inject NavigationManager Nav
+@inject ToastService Toast
+@inject IServiceProvider ServiceProvider
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "SuperAdmin")]
 
 <PageTitle>Users - @Code - Vectrik Platform</PageTitle>
@@ -21,6 +23,22 @@ else if (_notFound)
 {
     <div class="alert alert-danger">Tenant "@Code" not found.</div>
 }
+else if (_loadError != null)
+{
+    <div class="alert alert-danger">
+        <strong>Error loading users:</strong> @_loadError
+        <br /><button class="btn btn-sm btn-secondary" style="margin-top: 8px;" @onclick="RetryLoad">Retry</button>
+    </div>
+}
+else if (!_users.Any())
+{
+    <div class="card" style="padding: 32px; text-align: center;">
+        <div style="font-size: 2rem; margin-bottom: 8px;">👥</div>
+        <div style="font-weight: 600; color: var(--text); margin-bottom: 4px;">No users yet</div>
+        <div style="color: var(--text-muted); margin-bottom: 16px;">Create the first user to get started with this tenant.</div>
+        <button class="btn btn-primary" @onclick="NewUser">+ Create First User</button>
+    </div>
+}
 else
 {
     <div class="card" style="overflow-x: auto;">
@@ -34,11 +52,14 @@ else
                     <tr>
                         <td>@u.Username</td>
                         <td>@u.FullName</td>
-                        <td>@(u.Email ?? "—")</td>
+                        <td>@(string.IsNullOrWhiteSpace(u.Email) ? "—" : u.Email)</td>
                         <td><span class="badge">@FormatRole(u.Role)</span></td>
                         <td>@(u.Department ?? "—")</td>
                         <td><span class="badge @(u.IsActive ? "badge-active" : "badge-cancelled")">@(u.IsActive ? "Yes" : "No")</span></td>
-                        <td><button class="btn btn-sm btn-secondary" @onclick="() => EditUser(u)">Edit</button></td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditUser(u)">Edit</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ResetPasswordPrompt(u)" title="Reset password">🔑</button>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -46,6 +67,7 @@ else
     </div>
 }
 
+@* ─── CREATE / EDIT USER MODAL ─── *@
 @if (_showForm && _edit != null)
 {
     <div class="modal-overlay" @onclick="() => _showForm = false">
@@ -58,34 +80,130 @@ else
             @if (!string.IsNullOrEmpty(_success)) { <div class="alert" style="background: var(--success); color: white; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;">@_success</div> }
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div class="form-group"><label class="form-label">Username</label><input class="form-control" @bind="_edit.Username" disabled="@(!_isNew)" /></div>
-                <div class="form-group"><label class="form-label">Full Name</label><input class="form-control" @bind="_edit.FullName" /></div>
-                <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" @bind="_edit.Email" /></div>
-                <div class="form-group"><label class="form-label">Role</label>
+                <div class="form-group">
+                    <label class="form-label">Username <span style="color: var(--danger);">*</span></label>
+                    <input class="form-control @(HasError("Username") ? "is-invalid" : "")" @bind="_edit.Username" disabled="@(!_isNew)" placeholder="e.g. jsmith" />
+                    @if (HasError("Username")) { <small style="color: var(--danger);">@_validationErrors["Username"]</small> }
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Full Name <span style="color: var(--danger);">*</span></label>
+                    <input class="form-control @(HasError("FullName") ? "is-invalid" : "")" @bind="_edit.FullName" placeholder="e.g. John Smith" />
+                    @if (HasError("FullName")) { <small style="color: var(--danger);">@_validationErrors["FullName"]</small> }
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input class="form-control @(HasError("Email") ? "is-invalid" : "")" type="email" @bind="_edit.Email" placeholder="john@company.com" />
+                    @if (HasError("Email")) { <small style="color: var(--danger);">@_validationErrors["Email"]</small> }
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Role</label>
                     <select class="form-control" @bind="_edit.Role">
                         @foreach (var r in _roles) { <option value="@r">@FormatRole(r)</option> }
                     </select>
                 </div>
-                <div class="form-group"><label class="form-label">Department</label><input class="form-control" @bind="_edit.Department" /></div>
                 <div class="form-group">
-                    <label class="form-label"><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
+                    <label class="form-label">Department</label>
+                    <input class="form-control" @bind="_edit.Department" placeholder="e.g. Operations" />
+                </div>
+                <div class="form-group" style="display: flex; align-items: center; padding-top: 24px;">
+                    <label><input type="checkbox" @bind="_edit.IsActive" style="margin-right: 6px;" />Active</label>
                 </div>
             </div>
 
-            <div class="card" style="padding: 12px; margin-top: 12px;">
-                <div class="form-group" style="margin-bottom: 8px;">
-                    <label class="form-label">@(_isNew ? "Password" : "Reset Password")</label>
-                    <input class="form-control" type="password" @bind="_password" placeholder="@(_isNew ? "Required" : "Leave blank to keep current")" />
+            @if (_isNew)
+            {
+                <div class="card" style="padding: 12px; margin-top: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label class="form-label" style="margin-bottom: 0;">Password Setup</label>
+                        <label style="font-size: 0.85rem; cursor: pointer;">
+                            <input type="checkbox" @bind="_sendInvite" style="margin-right: 4px;" />
+                            Send invitation email
+                        </label>
+                    </div>
+                    @if (_sendInvite)
+                    {
+                        <div style="color: var(--text-muted); font-size: 0.85rem;">
+                            A temporary password will be auto-generated and emailed to the user.
+                            They will be required to change it on first login.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <input class="form-control @(HasError("Password") ? "is-invalid" : "")" type="password" @bind="_password" placeholder="Min 8 characters" />
+                            @if (HasError("Password")) { <small style="color: var(--danger);">@_validationErrors["Password"]</small> }
+                        </div>
+                    }
                 </div>
-                @if (!_isNew && !string.IsNullOrWhiteSpace(_password))
-                {
-                    <button class="btn btn-sm btn-secondary" @onclick="ResetPassword">Reset Password</button>
-                }
-            </div>
+            }
 
             <div style="display: flex; gap: 8px; margin-top: 16px;">
-                <button class="btn btn-primary" @onclick="Save">Save</button>
+                <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
+                    @(_saving ? "Saving..." : "Save")
+                </button>
                 <button class="btn btn-secondary" @onclick="() => _showForm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ─── RESET PASSWORD MODAL ─── *@
+@if (_showResetModal && _resetUser != null)
+{
+    <div class="modal-overlay" @onclick="() => _showResetModal = false">
+        <div class="modal-content" style="max-width: 450px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">Reset Password — @_resetUser.Username</span>
+                <button class="modal-close" @onclick="() => _showResetModal = false">&times;</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_resetError)) { <div class="alert alert-danger">@_resetError</div> }
+
+            <div class="form-group">
+                <label class="form-label">New Password</label>
+                <input class="form-control" type="password" @bind="_resetPassword" placeholder="Min 8 characters" />
+            </div>
+            <label style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px; display: block;">
+                <input type="checkbox" @bind="_resetMustChange" style="margin-right: 4px;" />
+                Require password change on next login
+            </label>
+
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-primary" @onclick="DoResetPassword" disabled="@_saving">Reset</button>
+                <button class="btn btn-secondary" @onclick="() => _showResetModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ─── TEMP PASSWORD DISPLAY MODAL ─── *@
+@if (_showTempPasswordModal)
+{
+    <div class="modal-overlay" @onclick="() => _showTempPasswordModal = false">
+        <div class="modal-content" style="max-width: 450px;" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">User Created</span>
+                <button class="modal-close" @onclick="() => _showTempPasswordModal = false">&times;</button>
+            </div>
+            <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px;">Username</div>
+                <div style="font-weight: 600; margin-bottom: 12px;">@_createdUsername</div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px;">Temporary Password</div>
+                <div style="font-family: monospace; font-size: 1.1rem; font-weight: 600; color: var(--primary); user-select: all;">@_tempPasswordDisplay</div>
+            </div>
+            @if (_emailSent)
+            {
+                <div style="color: var(--success); font-size: 0.85rem;">Invitation email sent to @_createdEmail</div>
+            }
+            else if (_emailFailed)
+            {
+                <div style="color: var(--warning); font-size: 0.85rem;">⚠ Email could not be sent. Please share these credentials manually.</div>
+            }
+            else
+            {
+                <div style="color: var(--text-muted); font-size: 0.85rem;">Share these credentials with the user. They will be required to change the password on first login.</div>
+            }
+            <div style="margin-top: 16px;">
+                <button class="btn btn-primary" @onclick="() => _showTempPasswordModal = false">Done</button>
             </div>
         </div>
     </div>
@@ -105,30 +223,59 @@ else
 
     private List<User> _users = new();
     private User? _edit;
-    private bool _loading = true, _notFound, _showForm, _isNew;
-    private string? _error, _success, _password;
+    private bool _loading = true, _notFound, _showForm, _isNew, _saving;
+    private bool _sendInvite;
+    private string? _error, _success, _password, _loadError;
     private readonly string[] _roles = ["Admin", "Manager", "Supervisor", "Scheduler", "Operator", "MaintenanceTech", "QCSpecialist", "Analyst"];
+    private Dictionary<string, string> _validationErrors = new();
+
+    // Reset password modal
+    private bool _showResetModal, _resetMustChange = true;
+    private User? _resetUser;
+    private string? _resetPassword, _resetError;
+
+    // Temp password display modal
+    private bool _showTempPasswordModal, _emailSent, _emailFailed;
+    private string? _tempPasswordDisplay, _createdUsername, _createdEmail;
 
     protected override async Task OnInitializedAsync()
     {
-        var tenant = await TenantService.GetTenantByCodeAsync(Code);
-        if (tenant == null)
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+        try
         {
-            _notFound = true;
-            _loading = false;
-            return;
+            var tenant = await TenantService.GetTenantByCodeAsync(Code);
+            if (tenant == null)
+            {
+                _notFound = true;
+                _loading = false;
+                return;
+            }
+            _users = await TenantService.GetTenantUsersAsync(Code);
         }
-        _users = await TenantService.GetTenantUsersAsync(Code);
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+        }
         _loading = false;
     }
+
+    private async Task RetryLoad() => await LoadAsync();
 
     private void NewUser()
     {
         _edit = new User { Role = "Operator", IsActive = true, CreatedBy = "SuperAdmin", LastModifiedBy = "SuperAdmin" };
         _isNew = true;
         _password = null;
+        _sendInvite = false;
         _error = null;
         _success = null;
+        _validationErrors.Clear();
         _showForm = true;
     }
 
@@ -150,41 +297,116 @@ else
         _password = null;
         _error = null;
         _success = null;
+        _validationErrors.Clear();
         _showForm = true;
     }
 
-    private async Task ResetPassword()
+    private bool HasError(string field) => _validationErrors.ContainsKey(field);
+
+    private bool Validate()
     {
-        if (string.IsNullOrWhiteSpace(_password) || _edit == null || _isNew) return;
-        _error = null;
-        try
+        _validationErrors.Clear();
+        if (string.IsNullOrWhiteSpace(_edit?.Username))
+            _validationErrors["Username"] = "Username is required.";
+        if (string.IsNullOrWhiteSpace(_edit?.FullName))
+            _validationErrors["FullName"] = "Full name is required.";
+        if (!string.IsNullOrWhiteSpace(_edit?.Email) && !_edit.Email.Contains('@'))
+            _validationErrors["Email"] = "Enter a valid email address.";
+        if (_isNew && !_sendInvite)
         {
-            await TenantService.ResetTenantUserPasswordAsync(Code, _edit.Id, _password);
-            _password = null;
-            _success = "Password reset successfully.";
+            if (string.IsNullOrWhiteSpace(_password))
+                _validationErrors["Password"] = "Password is required.";
+            else if (_password.Length < 8)
+                _validationErrors["Password"] = "Password must be at least 8 characters.";
         }
-        catch (Exception ex) { _error = ex.Message; }
+        if (_isNew && _sendInvite && string.IsNullOrWhiteSpace(_edit?.Email))
+            _validationErrors["Email"] = "Email is required to send an invitation.";
+        return _validationErrors.Count == 0;
     }
 
     private async Task Save()
     {
         _error = null;
         _success = null;
+        if (!Validate()) return;
+
+        _saving = true;
         try
         {
             if (_isNew)
             {
-                if (string.IsNullOrWhiteSpace(_edit!.Username)) { _error = "Username is required."; return; }
-                if (string.IsNullOrWhiteSpace(_password)) { _error = "Password is required for new users."; return; }
-                await TenantService.CreateTenantUserAsync(Code, _edit, _password);
+                var authService = ServiceProvider.GetRequiredService<Vectrik.Services.Auth.IAuthService>();
+                var actualPassword = _sendInvite ? authService.GenerateTemporaryPassword() : _password!;
+
+                await TenantService.CreateTenantUserAsync(Code, _edit!, actualPassword);
+
+                _createdUsername = _edit!.Username;
+                _createdEmail = _edit.Email;
+                _tempPasswordDisplay = actualPassword;
+                _emailSent = false;
+                _emailFailed = false;
+
+                // Try sending invite email
+                if (_sendInvite && !string.IsNullOrWhiteSpace(_edit.Email))
+                {
+                    try
+                    {
+                        var emailService = ServiceProvider.GetRequiredService<IEmailService>();
+                        var loginUrl = Nav.BaseUri.TrimEnd('/') + "/account/login";
+                        var tenant = await TenantService.GetTenantByCodeAsync(Code);
+                        await emailService.SendInvitationAsync(
+                            _edit.Email, _edit.FullName ?? _edit.Username, _edit.Username,
+                            actualPassword, loginUrl, tenant?.CompanyName ?? Code);
+                        _emailSent = true;
+                    }
+                    catch
+                    {
+                        _emailFailed = true;
+                    }
+                }
+
+                _showForm = false;
+                _showTempPasswordModal = true;
+                _users = await TenantService.GetTenantUsersAsync(Code);
+                Toast.ShowSuccess($"User '{_edit.Username}' created.");
             }
             else
             {
                 await TenantService.UpdateTenantUserAsync(Code, _edit!);
+                _showForm = false;
+                _users = await TenantService.GetTenantUsersAsync(Code);
+                Toast.ShowSuccess("User updated.");
             }
-            _showForm = false;
-            _users = await TenantService.GetTenantUsersAsync(Code);
         }
         catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private void ResetPasswordPrompt(User u)
+    {
+        _resetUser = u;
+        _resetPassword = null;
+        _resetError = null;
+        _resetMustChange = true;
+        _showResetModal = true;
+    }
+
+    private async Task DoResetPassword()
+    {
+        _resetError = null;
+        if (string.IsNullOrWhiteSpace(_resetPassword) || _resetPassword.Length < 8)
+        {
+            _resetError = "Password must be at least 8 characters.";
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await TenantService.ResetTenantUserPasswordAsync(Code, _resetUser!.Id, _resetPassword);
+            _showResetModal = false;
+            Toast.ShowSuccess($"Password reset for '{_resetUser.Username}'.");
+        }
+        catch (Exception ex) { _resetError = ex.Message; }
+        finally { _saving = false; }
     }
 }
