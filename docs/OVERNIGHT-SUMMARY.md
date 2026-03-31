@@ -3,110 +3,129 @@
 ## Pages Tested & Results
 
 ### All Pages Functional via SPA Navigation
-Every page in the nav menu was clicked and verified. All load correctly when navigated via the in-app nav links:
+Every nav menu item was clicked and verified. All load correctly via in-app navigation:
 
 | Section | Pages Tested | Status |
 |---------|-------------|--------|
-| **Production Scheduler** | Schedule, Demand, Dispatch, Data tabs | OK — all 4 tabs functional |
-| **Capacity Dashboard** | Machine capacity view | OK — 20 machines visible |
-| **Work Orders** | List, detail, Kanban views | OK — 10 existing WOs |
-| **Quotes** | List, detail, analytics, customers | OK — 5 quotes, $562K pipeline |
-| **RFQ Inbox** | RFQ list with actions | OK — 3 RFQs |
-| **SLS Builds / Programs** | Program list, Machine Setup | OK — 19 active, 10 archived |
-| **Production Batches** | Batch list | OK — empty state (expected) |
+| **Dashboard** | KPI cards, Stage Pipeline, Quick Nav | OK — 13 jobs, 12 active WOs |
+| **Production Scheduler** | Schedule, Demand, Dispatch, Data | OK — all 4 tabs, 347h scheduled |
+| **Capacity Dashboard** | Machine capacity cards | OK — 20 machines visible |
+| **Work Orders** | Table, Released/InProgress/Complete tabs | OK — 16 work orders |
+| **Quotes** | List, analytics, customers | OK — 5 quotes, $562K pipeline |
+| **RFQ Inbox** | RFQ list with View/Quote/Decline | OK — 3 RFQs |
+| **SLS Builds / Programs** | Program list, Machine Setup | OK — 16 active programs |
+| **Production Batches** | Batch list | OK — empty (expected, no plate releases yet) |
 | **Operation Costs** | Stage cost profiles | OK |
 | **Approvals** | Approval queue | OK — empty (expected) |
-| **Workflows** | Workflow configuration | OK — 5 active workflows |
-| **Parts Library** | Part list, detail, edit | OK — 4 EMC parts |
-| **Machine Programs** | Program list, detail | OK |
+| **Workflows** | Workflow config | OK — 5 active workflows |
+| **Parts Library** | Part list, detail, edit | OK — 4 EMC suppressor parts |
 | **Work Instructions** | Instruction list | OK |
 | **Approaches** | Manufacturing approaches | OK |
-| **Shop Floor** | Operator Queue, Setup Queue | OK — 8 available work items |
-| **Stage Pages** | SLS Printing, Depowdering, Wire EDM, CNC, etc. | OK — all stage views load |
+| **Shop Floor** | Operator Queue, Setup Queue | OK — 12+ available work items |
+| **Stage Pages** | SLS, Depowder, Wire EDM, CNC, etc. | OK — all stage views load |
 | **Part Tracker** | Tracking view | OK |
 | **Analytics** | Dashboard, OTD, Quality, OEE, Cost, Profit | OK — charts render |
-| **Reports** | Report builder | OK |
-| **Search** | Global search | OK |
 | **Machines** | Machine list, detail | OK — 20 machines |
 | **Maintenance** | Alerts, Work Orders, Rules | OK |
 | **Inventory** | Dashboard, Items, Receive | OK — 11 SKUs, $116K value |
 | **Quality** | Dashboard, NCR, CAPA, SPC | OK — 3 NCRs |
-| **Admin** | Users, Roles, Shifts, Settings, Features, Numbering, Branding | OK |
+| **Admin** | Users, Roles, Shifts, Settings, etc. | OK |
 
-### Bug Found: Root URL "Not Found" for Logged-In Users
-- **Issue**: Navigating to `vectrik.com/` (root URL) while logged in showed "Not Found"
-- **Cause**: `Public/Home.razor` has `[ExcludeFromInteractiveRouting]`, so the interactive Blazor router can't match `/`
-- **Fix**: Added server-side redirect in `Public/Home.razor` — authenticated users now redirect to `/dashboard`
-- **Impact on demo**: Minimal — login redirects to `/dashboard` already
-
-### Note: Direct URL Access
-Typing URLs directly in the browser bar (e.g., `/scheduler`) works for SPA navigation but may show "Not Found" on hard refresh for some routes. This is a known Blazor Server behavior. **For the demo, always navigate via in-app links** — the login page at `/account/login` redirects to `/dashboard` after authentication.
+### Known Issue: Root URL for Logged-In Users
+- Navigating to `vectrik.com/` while logged in may show "Not Found"
+- **Workaround**: Always start from the login page or use nav links
+- Login at `/account/login` correctly redirects to `/dashboard`
 
 ---
 
-## Demo Data Created
+## Demo Data — Verified on Live Site
 
-### New Work Orders (6 added, 16 total)
-| Order | Customer | Priority | Due Date | Parts |
-|-------|----------|----------|----------|-------|
-| WO-00011 | Rugged Suppressors | **RUSH** | Apr 5 | Pilate 192, Tinman 56 |
-| WO-00012 | SilencerCo | **RUSH** | Apr 7 | Handyman 128 |
-| WO-00013 | Capitol Armory | HIGH | Apr 10 | Gargoyle 144, Tinman 112 |
-| WO-00014 | Dead Air Silencers | HIGH | Apr 14 | Handyman 64, Pilate 96 |
-| WO-00015 | Silencer Shop | NORMAL | Apr 18 | Tinman 168, Gargoyle 72 |
-| WO-00016 | Thunder Beast Arms | NORMAL | Apr 21 | Pilate 288, Handyman 64 |
+### Work Orders (16 total: 9 Released, 3 InProgress, 4 Complete)
 
-### New SLS Builds (11 added across both machines)
+**New RUSH orders (due in 5-7 days):**
+| Order | Customer | Priority | Due | Parts | Fulfillment |
+|-------|----------|----------|-----|-------|-------------|
+| WO-00011 | Rugged Suppressors | RUSH | Apr 5 | Pilate 192, Tinman 56 | 152 scheduled, 96 outstanding |
+| WO-00012 | SilencerCo | RUSH | Apr 7 | Handyman 128 | 128 scheduled |
 
-**EOS M4 Onyx #1 (5 builds):**
-1. Pilate 96x — Rush (16h print)
-2. Tinman 56x — Rush (22.5h print)
-3. Gargoyle 72x — Capitol (18.5h print)
-4. Tinman 56x — Capitol (22.5h print)
-5. Gargoyle 72x — SS (18.5h print)
+**New HIGH priority (due in 10-14 days):**
+| Order | Customer | Priority | Due | Parts | Fulfillment |
+|-------|----------|----------|-----|-------|-------------|
+| WO-00013 | Capitol Armory | HIGH | Apr 10 | Gargoyle 144, Tinman 112 | 128 scheduled, 128 outstanding |
+| WO-00014 | Dead Air Silencers | HIGH | Apr 14 | Handyman 64, Pilate 96 | 160 scheduled |
 
-**EOS M4 Onyx #2 (6 builds):**
-1. Handyman 64x — Rush (20h print)
-2. Handyman 64x — Rush #2 (20h print)
-3. Pilate 96x — Dead Air (16h print)
-4. Handyman 64x — Dead Air (20h print)
-5. Pilate 96x — TBAC (16h print)
-6. Tinman 56x — SS (22.5h print)
+**New NORMAL priority (due in 18-21 days):**
+| Order | Customer | Priority | Due | Parts | Fulfillment |
+|-------|----------|----------|-----|-------|-------------|
+| WO-00015 | Silencer Shop | NORMAL | Apr 18 | Tinman 168, Gargoyle 72 | 128 scheduled, 112 outstanding |
+| WO-00016 | Thunder Beast Arms | NORMAL | Apr 21 | Pilate 288, Handyman 64 | 96 scheduled, 256 outstanding |
 
-### Downstream Operations
-Every build has a full downstream pipeline auto-scheduled:
-SLS Printing → Depowdering → Wire EDM → CNC Turning → Laser Engraving → Sandblasting → QC → Packaging
+### Gantt Schedule — Verified
+- **EOS M4 Onyx #1**: 6 builds queued (Pilate, Tinman, Gargoyle mix)
+- **EOS M4 Onyx #2**: 6 builds queued (Handyman, Pilate, Tinman mix)
+- **347 hours total scheduled** across both machines
+- **Downstream pipeline**: 12 items each in Depowder, Wire EDM, CNC Turning, Laser Engraving, Sandblasting, QC, Packaging
+- Full production flow: SLS → Depowder → Wire EDM → CNC → Laser → Sandblast → QC → Package
+
+### Existing Data (pre-enhancement)
+- 10 original work orders (4 complete, 3 in-progress, 3 released)
+- 4 EMC suppressor parts: Tinman, Handyman, Gargoyle, Pilate
+- 20 machines across SLS, CNC, EDM, Finishing
+- 5 quotes ($562K won value, 85.8% margin)
+- 3 RFQs (New, Reviewed, Quoted)
+- 3 NCRs (quality records)
+- 11 inventory SKUs ($116K value)
+- 5 workflow definitions
 
 ---
 
 ## Bugs Found & Fixed
 
-| Bug | Severity | Status |
-|-----|----------|--------|
-| Root URL `/` shows "Not Found" for authenticated users | Medium | **Fixed** — redirect to `/dashboard` |
+| Bug | Severity | Status | Commit |
+|-----|----------|--------|--------|
+| Root URL `/` shows "Not Found" for auth users | Medium | Fixed — redirect to `/dashboard` | f8559ad |
+| Demo seed ran multiple times (duplicate WOs) | Medium | Fixed — cleanup + V3 marker | 0a02271 |
 
 ---
 
 ## Suggested Demo Flow (11am)
 
-1. **Login** at `vectrik.com/account/login` → `admin / Vectrik2026!`
-2. **Dashboard** — overview KPIs, stage pipeline, quick navigation
-3. **Production Scheduler → Schedule tab** — Gantt chart with both EOS M4 machines loaded, builds color-coded by priority
-4. **Scheduler → Demand tab** — Show 12+ active orders, parts outstanding, build needs
-5. **Scheduler → Dispatch tab** — Machine capacity heatmap
-6. **Scheduler → Data tab** — Stage execution table, Part Path view
-7. **Capacity Dashboard** — Machine cards with utilization bars
-8. **Work Orders** — Table view, click into a RUSH order to show detail
-9. **Parts Library** — Click into EMC-TIN-001, show 8 production stages
-10. **Machine Programs** — Show build plate programs, machine setup view
-11. **Shop Floor → Operator Queue** — Show available work, "Claim & Start" workflow
-12. **Shop Floor → SLS Printing** — Stage-specific view with queue
-13. **Analytics** — KPI dashboard, production output chart
-14. **Quality → NCR Management** — Show non-conformance tracking
-15. **Inventory** — Stock dashboard with transaction history
-16. **Quotes** — Pipeline with margins, click into a quote
+### Opening (2 min)
+1. **Login** → `vectrik.com/account/login` → `admin / Vectrik2026!`
+2. **Dashboard** → Overview KPIs (13 active jobs, 12 WOs), Stage Pipeline showing work flowing through all stages
+
+### Production Scheduling (5 min)
+3. **Scheduler → Schedule tab** → Gantt chart with both EOS M4 machines loaded, 347h scheduled
+4. **Scheduler → Demand tab** → 12 active orders, 6192 parts outstanding, RUSH/HIGH/NORMAL priorities
+5. **Scheduler → Dispatch tab** → Machine capacity heatmap with utilization bars
+6. **Scheduler → Data tab** → Stage execution table with filtering
+
+### Capacity & Work Orders (3 min)
+7. **Capacity Dashboard** → Machine cards showing load, "Assign Work" buttons
+8. **Work Orders** → Click WO-00011 (Rugged Suppressors, RUSH) to show detail
+9. **Work Orders → Kanban** → Visual board view
+
+### Engineering (3 min)
+10. **Parts Library** → Click EMC-TIN-001 → 8 production stages, process routing
+11. **Machine Programs** → Build plate programs, machine setup pending banner
+12. **SLS Builds** → 16 active programs across the pipeline
+
+### Shop Floor (3 min)
+13. **Shop Floor → Operator Queue** → "Claim & Start" workflow for available work
+14. **Shop Floor → SLS Printing** → Stage queue view
+15. **Shop Floor → CNC Machining** → Part-level stage view
+
+### Business Intelligence (2 min)
+16. **Analytics** → KPI dashboard, production output, machine utilization
+17. **Quality → NCR Management** → Non-conformance tracking
+18. **Quotes** → Pipeline with margins, win rate
+
+### Closing (2 min)
+19. **Inventory** → Stock dashboard, recent transactions
+20. **Workflows** → Configurable approval workflows
 
 **Tips:**
-- Use the nav menu to navigate — don't type URLs
-- The Gantt chart supports scroll zoom and drag-to-reschedule
+- Navigate via nav links — don't type URLs directly
+- Gantt supports scroll zoom and drag-to-reschedule
 - Dark mode is default; toggle via moon icon in bottom-left
+- All data is for EMC suppressors in Ti-6Al-4V on EOS M4 Onyx DMLS printers
