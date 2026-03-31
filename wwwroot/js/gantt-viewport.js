@@ -106,17 +106,11 @@ function debouncedNotify() {
     _debounceId = setTimeout(notifyViewportChanged, DEBOUNCE_MS);
 }
 
-// Debounce zoom C# notifications — batches rapid Ctrl+wheel/pinch events
-// so only the final zoom level triggers a Blazor re-render (~60ms = ~1 frame at 16fps)
+// Notify C# of zoom level change — no debounce, immediate notification.
 let _zoomNotifyId = 0;
 function debouncedZoomNotify(anchorTimeHours, anchorViewportX) {
-    clearTimeout(_zoomNotifyId);
-    _zoomNotifyId = setTimeout(() => {
-        if (_disposed || !_dotNetRef) return;
-        // Send the actual accumulated _pixelsPerHour (not direction) so C# gets the
-        // correct value even after rapid wheel events during the debounce window.
-        _dotNetRef.invokeMethodAsync('OnZoomApplied', _pixelsPerHour, anchorTimeHours, anchorViewportX);
-    }, 60);
+    if (_disposed || !_dotNetRef) return;
+    _dotNetRef.invokeMethodAsync('OnZoomApplied', _pixelsPerHour, anchorTimeHours, anchorViewportX);
 }
 
 // ── Zoom anchor + MutationObserver ─────────────────────────────────────────
@@ -409,34 +403,23 @@ function onWheel(e) {
     }
 
     // Ctrl+wheel or Meta+wheel (Mac) = zoom
+    // Calls the same applyZoom() used by +/- buttons and pinch zoom.
     if (!e.ctrlKey && !e.metaKey) return;
 
     e.preventDefault();
     e.stopPropagation();
 
     const direction = e.deltaY < 0 ? 1 : -1;
-    const rect = _container.getBoundingClientRect();
-    const cursorViewportX = e.clientX - rect.left;
-    const cursorTimeHours = (_container.scrollLeft + cursorViewportX) / _pixelsPerHour;
-
-    // Apply zoom immediately in JS so scroll position persists through Blazor re-render.
-    // This is the same pattern as button zoom (applyZoom) — update JS FIRST, then notify C#.
     const newPph = clampZoom(direction > 0
         ? _pixelsPerHour * ZOOM_FACTOR
         : _pixelsPerHour / ZOOM_FACTOR);
     if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
 
-    _pixelsPerHour = newPph;
-    updateInnerWidth();
-    // Anchor zoom to cursor position — Ctrl+wheel fires in JS before Blazor
-    // re-renders, so we must correct scrollLeft immediately here
-    _container.scrollLeft = cursorTimeHours * _pixelsPerHour - cursorViewportX;
-
-    // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
-    setZoomAnchor(cursorTimeHours, cursorViewportX);
+    // applyZoom handles: update pph, inner width, scrollLeft, zoom anchor
+    const anchor = applyZoom(newPph);
 
     // Debounce C# notification — rapid wheel events batch into one re-render
-    debouncedZoomNotify(cursorTimeHours, cursorViewportX);
+    debouncedZoomNotify(anchor.anchorTimeHours, anchor.anchorViewportX);
 }
 
 let _pinchDist = 0;
@@ -488,7 +471,8 @@ function onTouchStart(e) {
 function onTouchMove(e) {
     if (_disposed || !isAlive() || !_inner) return;
 
-    // Two-finger pinch zoom — routes through the same C# path as the zoom buttons
+    // Two-finger pinch zoom — calls the same applyZoom() used by the +/- buttons
+    // so all zoom methods share identical anchor + scroll logic.
     if (e.touches.length === 2) {
         const cur = touchDist(e.touches);
         const delta = cur - _pinchDist;
@@ -498,13 +482,16 @@ function onTouchMove(e) {
         _pinchDist = cur;
 
         const direction = delta > 0 ? 1 : -1;
+        const newPph = clampZoom(direction > 0
+            ? _pixelsPerHour * ZOOM_FACTOR
+            : _pixelsPerHour / ZOOM_FACTOR);
+        if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
 
-        // Debounce rapid pinch events into discrete zoom steps via C#
-        clearTimeout(_pinchDebounceId);
-        _pinchDebounceId = setTimeout(() => {
-            if (_disposed || !_dotNetRef) return;
-            _dotNetRef.invokeMethodAsync('OnPinchZoomStep', direction);
-        }, 60);
+        // applyZoom handles: update pph, inner width, scrollLeft, zoom anchor
+        const anchor = applyZoom(newPph);
+
+        // Debounce C# notification — rapid pinch events batch into one re-render
+        debouncedZoomNotify(anchor.anchorTimeHours, anchor.anchorViewportX);
         return;
     }
 
@@ -646,26 +633,16 @@ function onKeyDown(e) {
     }
 }
 
-/** Zoom in/out anchored to viewport center. direction: 1 = in, -1 = out */
+/** Zoom in/out anchored to viewport center. direction: 1 = in, -1 = out.
+ *  Calls applyZoom() — same function used by buttons, Ctrl+wheel, and pinch. */
 function zoomAtCenter(direction) {
-    const anchorViewportX = _container.clientWidth / 2;
-    const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
-
     const newPph = clampZoom(direction > 0
         ? _pixelsPerHour * ZOOM_FACTOR
         : _pixelsPerHour / ZOOM_FACTOR);
     if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
 
-    _pixelsPerHour = newPph;
-    updateInnerWidth();
-    // Keyboard zoom fires in JS — correct scrollLeft immediately (same as Ctrl+wheel)
-    _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
-
-    // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
-    setZoomAnchor(anchorTimeHours, anchorViewportX);
-
-
-    debouncedZoomNotify(anchorTimeHours, anchorViewportX);
+    const anchor = applyZoom(newPph);
+    debouncedZoomNotify(anchor.anchorTimeHours, anchor.anchorViewportX);
 }
 
 // ── Bar Drag-to-Reschedule ──────────────────────────────────────────────────
