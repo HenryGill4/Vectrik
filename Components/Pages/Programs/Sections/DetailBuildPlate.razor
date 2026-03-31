@@ -70,16 +70,16 @@
 
     @if (Program.ProgramParts?.Any() == true)
     {
-        <div class="table-responsive">
-            <table class="table table-sm">
+        <div class="prg-parts-table-wrap">
+            <table class="prg-parts-table">
                 <thead>
                     <tr>
-                        <th>Part Number</th>
-                        <th>Name</th>
-                        <th>Qty</th>
-                        <th>Stack</th>
-                        <th>Notes</th>
-                        <th></th>
+                        <th class="prg-parts-col-pn">Part Number</th>
+                        <th class="prg-parts-col-name">Name</th>
+                        <th class="prg-parts-col-qty">Qty</th>
+                        <th class="prg-parts-col-stack">Stack</th>
+                        <th class="prg-parts-col-notes">Notes</th>
+                        <th class="prg-parts-col-actions"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -87,25 +87,25 @@
                     {
                         @if (_editingPartId == pp.Id)
                         {
-                            <tr class="prg-editing-row">
-                                <td><strong>@(pp.Part?.PartNumber ?? "--")</strong></td>
-                                <td>@(pp.Part?.Name ?? "--")</td>
+                            <tr class="prg-parts-row--editing">
+                                <td><span class="prg-parts-pn">@(pp.Part?.PartNumber ?? "--")</span></td>
+                                <td class="prg-parts-name">@(pp.Part?.Name ?? "--")</td>
                                 <td>
-                                    <input type="number" class="form-control form-control-sm prg-inline-input"
-                                           min="1" @bind="_editQty" style="width: 70px;" />
+                                    <input type="number" class="prg-inline-input prg-parts-input-qty"
+                                           min="1" @bind="_editQty" />
                                 </td>
                                 <td>
-                                    <select class="form-control form-control-sm prg-inline-input" @bind="_editStack" style="width: 80px;">
+                                    <select class="prg-inline-input prg-parts-input-stack" @bind="_editStack">
                                         <option value="1">1x</option>
                                         <option value="2">2x</option>
                                         <option value="3">3x</option>
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="text" class="form-control form-control-sm prg-inline-input"
+                                    <input type="text" class="prg-inline-input prg-parts-input-notes"
                                            @bind="_editNotes" placeholder="Position notes" />
                                 </td>
-                                <td class="text-end">
+                                <td class="prg-parts-actions">
                                     <button class="btn btn-xs btn-primary" @onclick="() => SavePartEdit(pp)">Save</button>
                                     <button class="btn btn-xs btn-outline" @onclick="CancelPartEdit">Cancel</button>
                                 </td>
@@ -114,12 +114,16 @@
                         else
                         {
                             <tr>
-                                <td><strong>@(pp.Part?.PartNumber ?? "--")</strong></td>
-                                <td>@(pp.Part?.Name ?? "--")</td>
-                                <td>@pp.Quantity</td>
-                                <td>@(pp.StackLevel)x</td>
-                                <td class="text-muted">@(pp.PositionNotes ?? "--")</td>
-                                <td class="text-end">
+                                <td><span class="prg-parts-pn">@(pp.Part?.PartNumber ?? "--")</span></td>
+                                <td class="prg-parts-name">@(pp.Part?.Name ?? "--")</td>
+                                <td class="prg-parts-qty">
+                                    <span class="prg-parts-qty-badge">@pp.Quantity</span>
+                                </td>
+                                <td class="prg-parts-stack">
+                                    <span class="prg-parts-stack-badge prg-parts-stack-badge--@(pp.StackLevel)x">@(pp.StackLevel)x</span>
+                                </td>
+                                <td class="prg-parts-notes">@(pp.PositionNotes ?? "--")</td>
+                                <td class="prg-parts-actions">
                                     @if (!Program.IsLocked)
                                     {
                                         <button class="btn btn-xs btn-outline" @onclick="() => StartPartEdit(pp)">Edit</button>
@@ -141,7 +145,7 @@
     @if (!Program.IsLocked)
     {
         <div class="prg-add-part-form">
-            <select class="form-control form-control-sm" @bind="_selectedPartId" style="flex: 1;">
+            <select class="form-control form-control-sm prg-add-part-select" @bind="_selectedPartId">
                 <option value="0">-- Select Part --</option>
                 @if (AdditiveParts != null)
                 {
@@ -151,8 +155,8 @@
                     }
                 }
             </select>
-            <input type="number" class="form-control form-control-sm" min="1"
-                   @bind="_addQty" placeholder="Qty" style="width: 80px;" />
+            <input type="number" class="form-control form-control-sm prg-add-part-qty" min="1"
+                   @bind="_addQty" placeholder="Qty" />
             <button class="btn btn-sm btn-primary" disabled="@(_selectedPartId == 0 || Processing)"
                     @onclick="HandleAddPart">
                 @(Processing ? "Adding..." : "Add Part")
