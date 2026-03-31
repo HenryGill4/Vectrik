@@ -66,6 +66,9 @@
     private double _pendingAnchorTimeHours;
     private double _pendingAnchorViewportX;
 
+    // Button zoom sync state (for +/- button zoom flow)
+    private bool _needsButtonZoomSync;
+
     // Reinit state (for post-refresh JS rebind)
     private bool _needsReinit;
 
@@ -99,14 +102,34 @@
 
         // After Ctrl+wheel zoom: C# re-rendered with new PixelsPerHour.
         // Tell JS to sync its zoom and restore scroll to the cursor anchor.
+        // The JS MutationObserver usually handles this first (same-frame),
+        // but this SignalR call is a belt-and-suspenders fallback.
         if (_needsZoomSync && _jsModule != null && !_disposed)
         {
             _needsZoomSync = false;
-            _needsReinit = false;
+            _needsButtonZoomSync = false;
+            _needsReinit = false; // Zoom sync supersedes reinit — don't fight over scroll position
             try
             {
                 await _jsModule.InvokeVoidAsync("syncScrollToAnchor",
                     _pendingAnchorTimeHours, _pendingAnchorViewportX);
+            }
+            catch (JSException) { }
+            catch (ObjectDisposedException) { }
+            catch (TaskCanceledException) { }
+            return;
+        }
+
+        // After button zoom: C# re-rendered with new PixelsPerHour.
+        // JS applyZoom set a zoom anchor; the MutationObserver restores scroll.
+        // This fallback calls restoreState as a safety net.
+        if (_needsButtonZoomSync && _jsModule != null && !_disposed)
+        {
+            _needsButtonZoomSync = false;
+            _needsReinit = false;
+            try
+            {
+                await _jsModule.InvokeVoidAsync("restoreState");
             }
             catch (JSException) { }
             catch (ObjectDisposedException) { }
@@ -270,6 +293,9 @@
             catch (ObjectDisposedException) { return; }
             catch (TaskCanceledException) { return; }
         }
+
+        // Signal that syncScrollToAnchor should run after re-render as a fallback
+        _needsButtonZoomSync = true;
 
         await OnPixelsPerHourChanged.InvokeAsync(newPph);
     }
