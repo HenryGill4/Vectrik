@@ -105,7 +105,9 @@
                     Start="start" End="end"
                     IsConflict="isConflict"
                     IsSelected="SelectedExecIds.Contains(exec.Id)"
-                    OnClick="OnBarClick" />
+                    OnClick="OnBarClick"
+                    MachineShifts="MachineShifts"
+                    PixelsPerHour="PixelsPerHour" />
             }
             else
             {
@@ -119,7 +121,9 @@
                             Start="seg.Start" End="seg.End"
                             IsConflict="isConflict"
                             IsSelected="SelectedExecIds.Contains(exec.Id)"
-                            OnClick="OnBarClick" />
+                            OnClick="OnBarClick"
+                            MachineShifts="MachineShifts"
+                            PixelsPerHour="PixelsPerHour" />
                     }
                     else
                     {
@@ -156,6 +160,7 @@
     [Parameter] public HashSet<int> SelectedExecIds { get; set; } = [];
     [Parameter] public HashSet<int> SelectedBuildIds { get; set; } = [];
     [Parameter] public EventCallback<int> OnNextBuildRequested { get; set; }
+    [Parameter] public List<OperatingShift> MachineShifts { get; set; } = new();
 
     private static string FormatPx(double value) =>
         value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);

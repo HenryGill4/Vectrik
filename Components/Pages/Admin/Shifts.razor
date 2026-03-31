@@ -1,5 +1,7 @@
 @page "/admin/shifts"
 @inject IShiftManagementService ShiftService
+@inject ISchedulingService SchedulingService
+@inject IProgramSchedulingService ProgramSchedulingService
 @inject IMachineService MachineService
 @inject Vectrik.Data.TenantDbContext Db
 @inject ToastService Toast
@@ -325,6 +327,9 @@ else
 
             _shifts = await ShiftService.GetAllShiftsAsync();
             _editing = false;
+
+            // Rebase schedule with updated shift definitions
+            await RescheduleAfterShiftChangeAsync();
         }
         catch (Exception ex)
         {
@@ -344,10 +349,29 @@ else
             Toast.ShowSuccess($"Shift '{_editShift.Name}' deleted.");
             _shifts = await ShiftService.GetAllShiftsAsync();
             _editing = false;
+
+            // Rebase schedule with updated shift definitions
+            await RescheduleAfterShiftChangeAsync();
         }
         catch (Exception ex)
         {
             Toast.ShowError($"Failed to delete: {ex.Message}");
+        }
+    }
+
+    private async Task RescheduleAfterShiftChangeAsync()
+    {
+        try
+        {
+            var jobCount = await SchedulingService.RescheduleAllPendingAsync();
+            var buildResult = await ProgramSchedulingService.SmartRescheduleBuildsAsync("System");
+            var total = jobCount + buildResult.BuildsMoved;
+            if (total > 0)
+                Toast.ShowSuccess($"Rescheduled {total} item(s) with updated shifts.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Schedule rebase failed: {ex.Message}");
         }
     }
 }

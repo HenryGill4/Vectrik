@@ -77,6 +77,7 @@ else if (_viewMode == "gantt")
                BuildPrograms="_programs"
                MachineTimelines="_programTimelines"
                Shifts="_shifts"
+               MachineShiftMap="_machineShiftMap"
                WorkOrders="_workOrders"
                UserName="@_userName"
                DataRangeStart="_dataRangeStart"
@@ -203,6 +204,7 @@ else if (_viewMode == "data")
     private List<WorkOrder> _workOrders = new();
     private List<MachineProgram> _programs = new();
     private List<OperatingShift> _shifts = new();
+    private Dictionary<int, List<OperatingShift>> _machineShiftMap = new();
     private BottleneckReport? _bottleneckReport;
 
     // (Dispatch view is now self-loading — no parent data needed)
@@ -273,6 +275,7 @@ else if (_viewMode == "data")
             _machines = await MachineService.GetAllMachinesAsync(activeOnly: true);
             _stages = await StageService.GetAllStagesAsync(activeOnly: true);
             _shifts = await ShiftService.GetAllShiftsAsync();
+            _machineShiftMap = await ShiftService.GetMachineShiftMapAsync(_machines.Select(m => m.Id));
             await LoadData();
             StartAutoRefreshTimer();
         }
