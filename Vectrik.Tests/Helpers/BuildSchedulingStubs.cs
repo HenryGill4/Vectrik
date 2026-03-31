@@ -233,6 +233,7 @@ internal sealed class StubMachineProgramService : IMachineProgramService
     public Task<ProgramFeedback> SubmitFeedbackAsync(ProgramFeedback feedback) => Task.FromResult(feedback);
     public Task<ProgramFeedback> ReviewFeedbackAsync(int feedbackId, ProgramFeedbackStatus newStatus, string reviewedBy, string? resolution = null) => Task.FromResult(new ProgramFeedback());
     public Task<List<StageExecution>> GetExecutionHistoryAsync(int programId, int maxResults = 20) => Task.FromResult(new List<StageExecution>());
+    public Task<List<StageExecution>> GetProgramRunsAsync(int programId) => Task.FromResult(new List<StageExecution>());
     public Task<Dictionary<int, int>> GetUnresolvedFeedbackCountsAsync(List<int> programIds) => Task.FromResult(new Dictionary<int, int>());
     public Task<List<MachineProgram>> GetBuildPlateProgramsAsync(ProgramStatus? statusFilter = null) => Task.FromResult(new List<MachineProgram>());
     public Task<List<ProgramPart>> GetProgramPartsAsync(int programId) => Task.FromResult(new List<ProgramPart>());

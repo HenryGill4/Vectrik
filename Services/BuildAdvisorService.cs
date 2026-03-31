@@ -175,24 +175,26 @@ public class BuildAdvisorService : IBuildAdvisorService
         maxPrintHours = primaryDuration;
 
         // Fill remaining plate capacity with other parts (up to maxPartTypes total)
-        var remainingPositions = primaryPositions - actualPositions;
-        if (remainingPositions > 0 && candidates.Count > 1)
+        // Use fraction-based capacity: each part's fraction = positions / its full-plate max
+        var usedFraction = primaryConfig.GetPlateFraction(actualPositions, bestLevel);
+        if (usedFraction < 1.0 && candidates.Count > 1)
         {
             foreach (var fill in candidates.Skip(1).Take(maxPartTypes - 1))
             {
-                if (remainingPositions <= 0) break;
+                if (usedFraction >= 1.0) break;
 
                 var fillConfig = fill.BuildConfig;
                 if (fillConfig == null) continue;
 
                 var fillLevel = bestLevel; // Use same stack level for consistency
-                var fillPerBuild = fillConfig.GetPositionsPerBuild(fillLevel);
-                if (fillPerBuild <= 0) continue;
+                var fillFullMax = fillConfig.GetPositionsPerBuild(fillLevel);
+                if (fillFullMax <= 0) continue;
 
-                // Scale positions proportionally
-                var fillPositions = Math.Min(remainingPositions, fillPerBuild);
+                // Scale fill positions by remaining plate fraction
+                var remainingFraction = 1.0 - usedFraction;
+                var capacityLimit = Math.Max(1, (int)Math.Floor(remainingFraction * fillFullMax));
                 var fillNeeded = (int)Math.Ceiling((double)fill.NetRemaining / fillLevel);
-                fillPositions = Math.Min(fillPositions, Math.Max(1, fillNeeded));
+                var fillPositions = Math.Min(capacityLimit, Math.Max(1, fillNeeded));
 
                 var fillDuration = fillConfig.GetStackDuration(fillLevel) ?? fillConfig.SingleStackDurationHours ?? 24;
                 maxPrintHours = Math.Max(maxPrintHours, fillDuration);
@@ -208,7 +210,7 @@ public class BuildAdvisorService : IBuildAdvisorService
                     fill.SourceLines.FirstOrDefault()?.WorkOrderLineId,
                     fill.EarliestDueDate));
 
-                remainingPositions -= fillPositions;
+                usedFraction += fillConfig.GetPlateFraction(fillPositions, fillLevel);
             }
         }
 
