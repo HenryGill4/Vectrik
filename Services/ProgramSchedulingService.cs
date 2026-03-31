@@ -1854,7 +1854,9 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var createdJobIds = new List<int>();
 
         var machineLookupById = await _db.Machines.Where(m => m.IsActive).ToDictionaryAsync(m => m.Id, m => m);
-        var machineIdLookup = await _db.Machines.Where(m => m.IsActive).ToDictionaryAsync(m => m.MachineId, m => m);
+        var machineIdLookup = await _db.Machines
+            .Where(m => m.IsActive && m.MachineId != null)
+            .ToDictionaryAsync(m => m.MachineId!, m => m);
 
         var partGroups = program.ProgramParts
             .GroupBy(pp => new { pp.PartId, pp.WorkOrderLineId })
