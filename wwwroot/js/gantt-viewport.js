@@ -509,8 +509,8 @@ function onTouchMove(e) {
 
         _pixelsPerHour = newPph;
         updateInnerWidth();
-        // Pinch zoom goes through Blazor re-render via debouncedZoomNotify —
-        // syncScrollToAnchor handles scroll correction after DOM diff.
+        // Correct scrollLeft immediately so there's no visible jank before Blazor re-renders
+        _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
 
         // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
         setZoomAnchor(anchorTimeHours, anchorViewportX);
@@ -668,6 +668,9 @@ function zoomAtCenter(direction) {
     updateInnerWidth();
     // Keyboard zoom fires in JS — correct scrollLeft immediately (same as Ctrl+wheel)
     _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
+
+    // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
+    setZoomAnchor(anchorTimeHours, anchorViewportX);
 
     debouncedZoomNotify(anchorTimeHours, anchorViewportX);
 }
