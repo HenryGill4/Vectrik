@@ -159,17 +159,35 @@
                         }
                 </GanttViewport>
 
-                @* Legend (collapsible, open by default) *@
+                @* Part Key + Status Indicators *@
                 <details open class="gantt-legend-details">
-                    <summary class="gantt-legend-toggle">Legend</summary>
-                    <div class="gantt-legend">
-                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-emergency"></span> Emergency</span>
-                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-rush"></span> Rush</span>
-                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-high"></span> High</span>
-                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-normal"></span> Normal</span>
-                        <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-low"></span> Low</span>
+                    <summary class="gantt-legend-toggle">Part Key</summary>
+                    <div class="gantt-legend gantt-part-key">
+                        @{
+                            var partEntries = GetPartKeyEntries();
+                        }
+                        @foreach (var entry in partEntries)
+                        {
+                            var isSelected = SelectedPartIds.Contains(entry.PartId);
+                            var anySelected = SelectedPartIds.Count > 0;
+                            <button class="gantt-part-swatch @(isSelected ? "gantt-part-swatch--active" : "") @(anySelected && !isSelected ? "gantt-part-swatch--dimmed" : "")"
+                                    style="--part-hue: @entry.Hue;"
+                                    @onclick="() => TogglePartFilter(entry.PartId)"
+                                    title="@entry.PartNumber — @entry.Count execution(s). Click to filter.">
+                                <span class="gantt-part-color"></span>
+                                <span class="gantt-part-label">@entry.PartNumber</span>
+                                <span class="gantt-part-count">@entry.Count</span>
+                            </button>
+                        }
+                        @if (SelectedPartIds.Count > 0)
+                        {
+                            <button class="gantt-part-swatch gantt-part-clear" @onclick="ClearPartFilter" title="Clear part filter">
+                                Clear
+                            </button>
+                        }
+                        @* Status indicators *@
+                        <span class="gantt-legend-sep"></span>
                         <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-build-scheduled"></span> Build</span>
-                        <span class="gantt-legend-item"><span class="gantt-legend-swatch" style="border-bottom: 3px solid var(--warning);"></span> Batch</span>
                         <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-conflict"></span> Conflict</span>
                         <span class="gantt-legend-item"><span class="gantt-legend-swatch gantt-bar-unassigned"></span> Unassigned</span>
                     </div>
@@ -202,6 +220,11 @@
     [Parameter] public double PixelsPerHour { get; set; }
     [Parameter] public bool ShowConflictsOnly { get; set; }
     [Parameter] public ProgramScheduleStatus? ProgramStatusFilter { get; set; }
+    [Parameter] public HashSet<int> SelectedPartIds { get; set; } = new();
+    [Parameter] public EventCallback<HashSet<int>> OnSelectedPartIdsChanged { get; set; }
+    [Parameter] public string StatusFilter { get; set; } = "active";
+    [Parameter] public HashSet<string> PriorityFilter { get; set; } = new();
+    [Parameter] public string SortBy { get; set; } = "schedule";
     [Parameter] public EventCallback<StageExecution> OnShowReschedule { get; set; }
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
     [Parameter] public EventCallback<List<int>> OnBatchDeleteBuilds { get; set; }
@@ -218,6 +241,34 @@
 
     private List<Machine> GetOrderedMachines()
     {
+        var available = Machines.Where(m => m.IsAvailableForScheduling).ToList();
+
+        if (SortBy == "priority")
+        {
+            // Machines with highest-priority jobs float to top
+            return available
+                .OrderBy(m => GetTopPriorityForMachine(m.Id))
+                .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        if (SortBy == "part")
+        {
+            // Machines sorted by earliest part name
+            return available
+                .OrderBy(m => GetFirstPartNameForMachine(m.Id))
+                .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        if (SortBy == "duedate")
+        {
+            // Machines with earliest due dates first
+            return available
+                .OrderBy(m => GetEarliestDueDateForMachine(m.Id))
+                .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        // Default: schedule date — use stage-based ordering
         var machineStageOrder = new Dictionary<int, int>();
         foreach (var stage in Stages.OrderBy(s => s.DisplayOrder))
         {
@@ -244,19 +295,74 @@
             }
         }
 
-        return Machines
-            .Where(m => m.IsAvailableForScheduling)
+        return available
             .OrderBy(m => machineStageOrder.GetValueOrDefault(m.Id, int.MaxValue))
             .ThenBy(m => m.Priority)
             .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
+    private int GetTopPriorityForMachine(int machineId)
+    {
+        var execs = Executions.Where(e => e.MachineId == machineId && e.Job != null);
+        if (!execs.Any()) return int.MaxValue;
+        // Lower enum value = higher priority (Emergency=0, Rush=1, ...)
+        return execs.Min(e => (int)(e.Job!.Priority));
+    }
+
+    private string GetFirstPartNameForMachine(int machineId)
+    {
+        var part = Executions
+            .Where(e => e.MachineId == machineId && e.Job?.Part != null)
+            .Select(e => e.Job!.Part!.PartNumber)
+            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+        return part ?? "\uffff"; // Sort empty to end
+    }
+
+    private DateTime GetEarliestDueDateForMachine(int machineId)
+    {
+        var earliest = Executions
+            .Where(e => e.MachineId == machineId && e.ScheduledStartAt != null)
+            .Min(e => e.ScheduledStartAt);
+        return earliest ?? DateTime.MaxValue;
+    }
+
     private List<StageExecution> GetExecutionsForMachine(Machine machine)
     {
         var execs = Executions.Where(e => e.MachineId == machine.Id).ToList();
-        if (!ShowConflictsOnly) return execs;
-        return execs.Where(e => HasOverlap(e, execs)).ToList();
+
+        // Apply status filter
+        execs = StatusFilter switch
+        {
+            "active" => execs.Where(e => e.Status is not (StageExecutionStatus.Completed or StageExecutionStatus.Skipped) && e.Job?.Status is not (JobStatus.Completed or JobStatus.Cancelled)).ToList(),
+            "scheduled" => execs.Where(e => e.Status == StageExecutionStatus.NotStarted).ToList(),
+            "inprogress" => execs.Where(e => e.Status == StageExecutionStatus.InProgress).ToList(),
+            "completed" => execs.Where(e => e.Status == StageExecutionStatus.Completed).ToList(),
+            "paused" => execs.Where(e => e.Status == StageExecutionStatus.Paused).ToList(),
+            "cancelled" => execs.Where(e => e.Job?.Status == JobStatus.Cancelled).ToList(),
+            _ => execs // "all"
+        };
+
+        // Apply priority filter
+        if (PriorityFilter.Count > 0)
+        {
+            execs = execs.Where(e => e.Job != null && PriorityFilter.Contains(e.Job.Priority.ToString())).ToList();
+        }
+
+        // Apply part filter
+        if (SelectedPartIds.Count > 0)
+        {
+            execs = execs.Where(e => e.Job != null && SelectedPartIds.Contains(e.Job.PartId)).ToList();
+        }
+
+        // Apply conflicts filter
+        if (ShowConflictsOnly)
+        {
+            execs = execs.Where(e => HasOverlap(e, execs)).ToList();
+        }
+
+        return execs;
     }
 
     private bool HasOverlap(StageExecution exec, List<StageExecution> allExecs)
@@ -294,6 +400,41 @@
     {
         // Forward to parent for reschedule dialog
         await OnShowReschedule.InvokeAsync(exec);
+    }
+
+    // ── Part Key ──
+    private record PartKeyEntry(int PartId, string PartNumber, int Hue, int Count);
+
+    private List<PartKeyEntry> GetPartKeyEntries()
+    {
+        return Executions
+            .Where(e => e.Job != null && e.Job.Part != null && e.Job.PartId > 0)
+            .GroupBy(e => e.Job!.PartId)
+            .Select(g =>
+            {
+                var first = g.First();
+                var hue = (int)((first.Job!.PartId * 137.508) % 360);
+                return new PartKeyEntry(
+                    first.Job.PartId,
+                    first.Job.Part!.PartNumber,
+                    hue,
+                    g.Count());
+            })
+            .OrderByDescending(e => e.Count) // Most frequent first
+            .ToList();
+    }
+
+    private async Task TogglePartFilter(int partId)
+    {
+        var updated = new HashSet<int>(SelectedPartIds);
+        if (!updated.Remove(partId))
+            updated.Add(partId);
+        await OnSelectedPartIdsChanged.InvokeAsync(updated);
+    }
+
+    private async Task ClearPartFilter()
+    {
+        await OnSelectedPartIdsChanged.InvokeAsync(new HashSet<int>());
     }
 
     private async Task HandleBuildBarClick((MachineProgram Build, string Action) args)

@@ -2180,6 +2180,10 @@ dialog#components-reconnect-modal button:hover {
 .gantt-container.gantt-viewport:active {
     cursor: grabbing;
 }
+.gantt-container.gantt-viewport:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
 
 .gantt-inner {
     position: relative;
@@ -3290,7 +3294,7 @@ dialog#components-reconnect-modal button:hover {
     border: 1px solid var(--border);
     border-radius: 0 0 var(--radius-md) var(--radius-md);
     margin-bottom: 12px;
-    overflow: hidden;
+    overflow: visible;
 }
 .sched-tabs {
     display: flex;
@@ -3380,6 +3384,170 @@ dialog#components-reconnect-modal button:hover {
     background: rgba(var(--danger-rgb), 0.12);
     border-color: var(--danger);
     color: var(--danger);
+}
+
+/* ── Filter Dropdowns ── */
+.sched-filter-dropdown {
+    position: relative;
+    display: inline-flex;
+}
+.sched-dropdown-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.sched-dropdown-caret {
+    font-size: 0.65rem;
+    opacity: 0.6;
+}
+/* ── Filter Selects (native dropdowns) ── */
+.sched-filter-select {
+    padding: 4px 28px 4px 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    min-height: 32px;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%239CA3AF' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+.sched-filter-select:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+.sched-filter-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+}
+.sched-filter-select option {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+
+.sched-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    min-width: 160px;
+    margin-top: 4px;
+    padding: 4px 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.sched-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.sched-dropdown-item:hover {
+    background: rgba(var(--accent-rgb), 0.08);
+    color: var(--text-primary);
+}
+.sched-dropdown-item--active {
+    color: var(--accent);
+    font-weight: 600;
+}
+.sched-dropdown-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.sched-dropdown-check:hover {
+    background: rgba(var(--accent-rgb), 0.08);
+}
+.sched-dropdown-check input[type="checkbox"] {
+    accent-color: var(--accent);
+}
+.sched-dropdown-clear {
+    border-top: 1px solid var(--border);
+    margin-top: 4px;
+    padding-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+/* ── Part Key Swatches ── */
+.gantt-part-key {
+    gap: 6px;
+    align-items: center;
+}
+.gantt-part-swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 14px;
+    border: 1px solid hsl(var(--part-hue, 200), 50%, 40%);
+    background: hsla(var(--part-hue, 200), 50%, 40%, 0.15);
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+.gantt-part-swatch:hover {
+    background: hsla(var(--part-hue, 200), 50%, 40%, 0.3);
+    border-color: hsl(var(--part-hue, 200), 60%, 55%);
+}
+.gantt-part-swatch--active {
+    background: hsla(var(--part-hue, 200), 60%, 45%, 0.35);
+    border-color: hsl(var(--part-hue, 200), 70%, 60%);
+    font-weight: 600;
+    box-shadow: 0 0 0 1px hsl(var(--part-hue, 200), 60%, 55%);
+}
+.gantt-part-swatch--dimmed {
+    opacity: 0.4;
+}
+.gantt-part-color {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: hsl(var(--part-hue, 200), 60%, 55%);
+}
+.gantt-part-label {
+    font-weight: 500;
+}
+.gantt-part-count {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+.gantt-part-clear {
+    border-color: var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+}
+.gantt-part-clear:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.08);
+}
+.gantt-legend-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 4px;
 }
 
 /* ── KPI muted variant ── */

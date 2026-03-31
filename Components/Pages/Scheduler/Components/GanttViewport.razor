@@ -4,7 +4,7 @@
 
 @if (DataRangeStart != default && DataRangeEnd != default)
 {
-    <div class="gantt-container gantt-viewport" @ref="_containerRef">
+    <div class="gantt-container gantt-viewport" @ref="_containerRef" tabindex="0">
         <div class="gantt-inner" data-data-end="@DataRangeEnd.ToString("o")"
              style="width: @(FormatPx(GetTotalInnerWidthPx()))px; position: relative;">
             @* ── Time Header ── *@
@@ -102,19 +102,16 @@
         if (_needsZoomSync && _jsModule != null && !_disposed)
         {
             _needsZoomSync = false;
-            _needsReinit = false; // Zoom sync supersedes reinit — don't fight over scroll position
+            _needsReinit = false;
             try
             {
                 await _jsModule.InvokeVoidAsync("syncScrollToAnchor",
                     _pendingAnchorTimeHours, _pendingAnchorViewportX);
             }
-            catch (JSException ex)
-            {
-                // JS interop recovery — self-heals on next render
-            }
+            catch (JSException) { }
             catch (ObjectDisposedException) { }
             catch (TaskCanceledException) { }
-            return; // Don't run reinit in the same render as zoom sync
+            return;
         }
 
         // After background refresh: Blazor may have recreated DOM content.
@@ -237,34 +234,38 @@
 
     // ── Public Methods (called by parent via @ref) ──────────────────────────
 
-    /// <summary>Zoom in from button click. Calls JS immediately, then notifies parent.</summary>
+    /// <summary>Zoom in from button click. Calls JS to get anchor, then re-renders with post-render scroll restore.</summary>
     public async Task ZoomInAsync()
     {
         if (_disposed) return;
         var newPph = Math.Clamp(PixelsPerHour * ZoomFactor, MinPxPerHour, MaxPxPerHour);
         if (Math.Abs(newPph - PixelsPerHour) < 0.001) return;
 
-        if (_jsModule != null)
-        {
-            try { await _jsModule.InvokeVoidAsync("applyZoom", newPph); }
-            catch (JSDisconnectedException) { return; }
-            catch (ObjectDisposedException) { return; }
-            catch (TaskCanceledException) { return; }
-        }
-
-        await OnPixelsPerHourChanged.InvokeAsync(newPph);
+        await ApplyZoomWithAnchor(newPph);
     }
 
-    /// <summary>Zoom out from button click. Calls JS immediately, then notifies parent.</summary>
+    /// <summary>Zoom out from button click. Calls JS to get anchor, then re-renders with post-render scroll restore.</summary>
     public async Task ZoomOutAsync()
     {
         if (_disposed) return;
         var newPph = Math.Clamp(PixelsPerHour / ZoomFactor, MinPxPerHour, MaxPxPerHour);
         if (Math.Abs(newPph - PixelsPerHour) < 0.001) return;
 
+        await ApplyZoomWithAnchor(newPph);
+    }
+
+    /// <summary>Applies zoom via JS and stores the anchor so syncScrollToAnchor runs after Blazor re-render.</summary>
+    private async Task ApplyZoomWithAnchor(double newPph)
+    {
         if (_jsModule != null)
         {
-            try { await _jsModule.InvokeVoidAsync("applyZoom", newPph); }
+            try
+            {
+                var anchor = await _jsModule.InvokeAsync<ZoomAnchor>("applyZoom", newPph);
+                _pendingAnchorTimeHours = anchor.AnchorTimeHours;
+                _pendingAnchorViewportX = anchor.AnchorViewportX;
+                _needsZoomSync = true;
+            }
             catch (JSDisconnectedException) { return; }
             catch (ObjectDisposedException) { return; }
             catch (TaskCanceledException) { return; }
@@ -272,6 +273,8 @@
 
         await OnPixelsPerHourChanged.InvokeAsync(newPph);
     }
+
+    private record struct ZoomAnchor(double AnchorTimeHours, double AnchorViewportX);
 
     /// <summary>Scroll the viewport to center on the given time.</summary>
     public async Task ScrollToTimeAsync(DateTime time)
