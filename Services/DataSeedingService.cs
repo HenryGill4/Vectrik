@@ -78,6 +78,9 @@ public class DataSeedingService : IDataSeedingService
 
         // Workflow definitions (no dependencies)
         await SeedWorkflowsAsync(tenantDb);
+
+        // Dense demo schedule for demo day (idempotent — uses SystemSetting marker)
+        await SeedDemoEnhancementAsync(tenantDb);
     }
 
     public async Task SeedCoreAsync(TenantDbContext tenantDb)
@@ -4537,6 +4540,324 @@ public class DataSeedingService : IDataSeedingService
         };
 
         db.WorkflowDefinitions.AddRange(workflows);
+        await db.SaveChangesAsync();
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // DEMO ENHANCEMENT — Dense 2-week schedule for demo day
+    // Idempotent: checks SystemSetting "DemoEnhancementV1" marker.
+    // Creates new work orders, builds, and downstream stage executions
+    // to give the Gantt chart a dense, realistic look.
+    // ════════════════════════════════════════════════════════════════════════
+    private static async Task SeedDemoEnhancementAsync(TenantDbContext db)
+    {
+        const string marker = "DemoEnhancementV2";
+        if (await db.SystemSettings.AnyAsync(s => s.Key == marker)) return;
+
+        var now = DateTime.UtcNow;
+        var stages = await db.ProductionStages.ToDictionaryAsync(s => s.StageSlug, s => s);
+        var machines = await db.Machines.Where(m => m.IsActive).ToDictionaryAsync(m => m.MachineId, m => m);
+        int? Mid(string id) => machines.TryGetValue(id, out var m) ? m.Id : null;
+
+        var tinman = await db.Parts.FirstOrDefaultAsync(p => p.PartNumber == "EMC-TIN-001");
+        var handyman = await db.Parts.FirstOrDefaultAsync(p => p.PartNumber == "EMC-HAN-001");
+        var gargoyle = await db.Parts.FirstOrDefaultAsync(p => p.PartNumber == "EMC-GAR-001");
+        var pilate = await db.Parts.FirstOrDefaultAsync(p => p.PartNumber == "EMC-PIL-001");
+        if (tinman == null || handyman == null || gargoyle == null || pilate == null) return;
+
+        var tiMat = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("Ti-6Al-4V"));
+
+        // Track machine availability (watermarks)
+        var watermark = new Dictionary<string, DateTime>();
+
+        // Initialize watermarks from existing scheduled/in-progress stage executions
+        var existingExecs = await db.StageExecutions
+            .Where(se => se.Status != StageExecutionStatus.Completed && se.ScheduledEndAt != null)
+            .ToListAsync();
+        foreach (var se in existingExecs)
+        {
+            var machineIdStr = se.MachineId != null
+                ? machines.Values.FirstOrDefault(m => m.Id == se.MachineId)?.MachineId
+                : null;
+            if (machineIdStr != null && se.ScheduledEndAt.HasValue)
+            {
+                if (!watermark.ContainsKey(machineIdStr) || se.ScheduledEndAt.Value > watermark[machineIdStr])
+                    watermark[machineIdStr] = se.ScheduledEndAt.Value;
+            }
+        }
+
+        // Also check existing jobs for SLS machines
+        var existingJobs = await db.Jobs
+            .Where(j => j.Status != JobStatus.Completed && j.Status != JobStatus.Cancelled && j.ScheduledEnd > DateTime.MinValue)
+            .ToListAsync();
+        foreach (var ej in existingJobs)
+        {
+            var machineIdStr = ej.MachineId != null
+                ? machines.Values.FirstOrDefault(m => m.Id == ej.MachineId)?.MachineId
+                : null;
+            if (machineIdStr != null && ej.ScheduledEnd > DateTime.MinValue)
+            {
+                if (!watermark.ContainsKey(machineIdStr) || ej.ScheduledEnd > watermark[machineIdStr])
+                    watermark[machineIdStr] = ej.ScheduledEnd;
+            }
+        }
+
+        // Default watermarks if no existing data — start scheduling from now
+        if (!watermark.ContainsKey("M4-1")) watermark["M4-1"] = now;
+        if (!watermark.ContainsKey("M4-2")) watermark["M4-2"] = now;
+
+        DateTime GetAvailable(string mid, DateTime earliest)
+        {
+            var t = earliest;
+            if (watermark.TryGetValue(mid, out var wm) && wm.AddHours(0.5) > t)
+                t = wm.AddHours(0.5); // 30min changeover
+            return t;
+        }
+        void SetWatermark(string mid, DateTime end) => watermark[mid] = end;
+
+        static DateTime SnapToShift(DateTime dt)
+        {
+            // SLS runs 24/7, post-process runs Mon-Fri 6am-6pm
+            if (dt.DayOfWeek == DayOfWeek.Saturday)
+                return dt.Date.AddDays(2).AddHours(6);
+            if (dt.DayOfWeek == DayOfWeek.Sunday)
+                return dt.Date.AddDays(1).AddHours(6);
+            if (dt.Hour < 6) return dt.Date.AddHours(6);
+            if (dt.Hour >= 18) {
+                var next = dt.Date.AddDays(1).AddHours(6);
+                if (next.DayOfWeek == DayOfWeek.Saturday) next = next.AddDays(2);
+                else if (next.DayOfWeek == DayOfWeek.Sunday) next = next.AddDays(1);
+                return next;
+            }
+            return dt;
+        }
+
+        int jobNum = await db.Jobs.CountAsync() + 1;
+        int bpNum = await db.MachinePrograms.CountAsync() + 1;
+        int woNum = await db.WorkOrders.CountAsync() + 1;
+
+        // ── Routing definitions per part ─────────────────────────────
+        var tinmanRouting = new (string slug, string mid, double hrs, decimal cost)[] {
+            ("sls-printing","M4-1",22.5,1913m), ("depowdering","INC1",1.0,55m),
+            ("wire-edm","EDM1",1.9,163m), ("cnc-turning","LATHE1",5.6,504m),
+            ("laser-engraving","ENGRAVE1",0.14,8m), ("sandblasting","BLAST1",0.1,4m),
+            ("qc","QC1",1.87,140m), ("packaging","PACK1",0.06,2m) };
+
+        var handymanRouting = new (string slug, string mid, double hrs, decimal cost)[] {
+            ("sls-printing","M4-2",20.0,1700m), ("depowdering","INC1",1.0,55m),
+            ("wire-edm","EDM1",1.9,163m), ("cnc-turning","LATHE1",4.8,432m),
+            ("laser-engraving","ENGRAVE1",0.14,8m), ("sandblasting","BLAST1",0.1,4m),
+            ("qc","QC1",1.6,120m), ("packaging","PACK1",0.06,2m) };
+
+        var gargoyleRouting = new (string slug, string mid, double hrs, decimal cost)[] {
+            ("sls-printing","M4-1",18.5,1573m), ("depowdering","INC1",1.0,55m),
+            ("wire-edm","EDM1",1.9,163m), ("cnc-turning","LATHE2",7.2,648m),
+            ("laser-engraving","ENGRAVE1",0.17,9m), ("sandblasting","BLAST1",0.1,4m),
+            ("qc","QC1",2.4,180m), ("packaging","PACK1",0.07,2m) };
+
+        var pilateRouting = new (string slug, string mid, double hrs, decimal cost)[] {
+            ("sls-printing","M4-2",16.0,1360m), ("depowdering","INC1",1.0,55m),
+            ("wire-edm","EDM1",1.9,163m), ("cnc-turning","LATHE1",3.8,342m),
+            ("laser-engraving","ENGRAVE1",0.10,6m), ("sandblasting","BLAST1",0.1,4m),
+            ("qc","QC1",1.5,113m), ("packaging","PACK1",0.05,2m) };
+
+        // ── Helper: Create a full build (program + job + all stages) ──────
+        async Task CreateBuild(Part part, string machineId, int qty, double printHrs,
+            string progName, WorkOrder wo, JobPriority priority,
+            (string slug, string mid, double hrs, decimal cost)[] routing)
+        {
+            var slotStart = GetAvailable(machineId, now);
+
+            // Create program
+            var prog = new MachineProgram
+            {
+                ProgramNumber = $"BP-{bpNum++:D5}",
+                Name = progName,
+                ProgramType = ProgramType.BuildPlate,
+                Status = ProgramStatus.Active,
+                ScheduleStatus = ProgramScheduleStatus.Scheduled,
+                MachineType = "SLS",
+                MaterialId = tiMat?.Id,
+                EstimatedPrintHours = printHrs,
+                LayerCount = (int)(printHrs * 136),
+                BuildHeightMm = printHrs * 8.2,
+                EstimatedPowderKg = printHrs * 0.72,
+                SlicerFileName = $"EMC_{part.PartNumber}_{qty}x.sli",
+                SlicerSoftware = "EOSPRINT 2",
+                SlicerVersion = "2.12.1",
+                IsLocked = false,
+                ScheduledDate = slotStart,
+                MachineId = Mid(machineId),
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.MachinePrograms.Add(prog);
+            await db.SaveChangesAsync();
+
+            // Link part to program
+            var woLine = await db.Set<WorkOrderLine>()
+                .FirstOrDefaultAsync(l => l.WorkOrderId == wo.Id && l.PartId == part.Id);
+            db.ProgramParts.Add(new ProgramPart
+            {
+                MachineProgramId = prog.Id,
+                PartId = part.Id,
+                Quantity = qty,
+                StackLevel = 1,
+                WorkOrderLineId = woLine?.Id
+            });
+            await db.SaveChangesAsync();
+
+            // Create job
+            var printEnd = slotStart.AddHours(printHrs);
+            var downstreamHrs = routing.Skip(1).Sum(r => r.hrs + 0.3);
+            var jobEnd = printEnd.AddHours(downstreamHrs + 2);
+            var job = new Job
+            {
+                JobNumber = $"JOB-{jobNum++:D5}",
+                PartId = part.Id,
+                MachineId = Mid(machineId),
+                Scope = JobScope.Build,
+                Status = JobStatus.Scheduled,
+                Priority = priority,
+                Quantity = qty,
+                ProducedQuantity = 0,
+                ScheduledStart = slotStart,
+                ScheduledEnd = jobEnd,
+                WorkOrderLineId = woLine?.Id,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.Jobs.Add(job);
+            await db.SaveChangesAsync();
+
+            // Create SLS printing stage
+            db.StageExecutions.Add(new StageExecution
+            {
+                JobId = job.Id,
+                ProductionStageId = stages.TryGetValue("sls-printing", out var slsStg) ? slsStg.Id : 0,
+                MachineId = Mid(machineId),
+                Status = StageExecutionStatus.NotStarted,
+                ScheduledStartAt = slotStart,
+                ScheduledEndAt = printEnd,
+                EstimatedHours = printHrs,
+                EstimatedCost = routing[0].cost,
+                MachineProgramId = prog.Id,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            });
+            SetWatermark(machineId, printEnd);
+
+            // Create downstream stages
+            var t = printEnd.AddHours(0.5);
+            foreach (var (slug, mid, hrs, cost) in routing.Skip(1))
+            {
+                if (!stages.TryGetValue(slug, out var stg)) continue;
+                t = SnapToShift(t);
+                var dsAvail = GetAvailable(mid, t);
+                if (dsAvail > t) t = dsAvail;
+
+                db.StageExecutions.Add(new StageExecution
+                {
+                    JobId = job.Id,
+                    ProductionStageId = stg.Id,
+                    MachineId = Mid(mid),
+                    Status = StageExecutionStatus.NotStarted,
+                    ScheduledStartAt = t,
+                    ScheduledEndAt = t.AddHours(hrs),
+                    EstimatedHours = hrs,
+                    EstimatedCost = cost,
+                    QualityCheckRequired = slug == "qc",
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+                SetWatermark(mid, t.AddHours(hrs));
+                t = t.AddHours(hrs + 0.15);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        // ── NEW WORK ORDERS ──────────────────────────────────────────
+        // Mix of RUSH/HIGH/NORMAL, staggered due dates across 3 weeks
+
+        async Task<WorkOrder> CreateWO(string customer, string po, int dueDays,
+            WorkOrderStatus status, JobPriority priority, (Part part, int qty)[] lines)
+        {
+            var wo = new WorkOrder
+            {
+                OrderNumber = $"WO-{woNum++:D5}",
+                CustomerName = customer,
+                CustomerPO = po,
+                OrderDate = now.AddDays(-3),
+                DueDate = now.AddDays(dueDays),
+                ShipByDate = now.AddDays(dueDays - 2),
+                Status = status,
+                Priority = priority,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+            db.WorkOrders.Add(wo);
+            await db.SaveChangesAsync();
+            foreach (var (part, qty) in lines)
+            {
+                db.Set<WorkOrderLine>().Add(new WorkOrderLine
+                {
+                    WorkOrderId = wo.Id,
+                    PartId = part.Id,
+                    Quantity = qty,
+                    Status = status
+                });
+            }
+            await db.SaveChangesAsync();
+            return wo;
+        }
+
+        // RUSH orders — due within 5-7 days
+        var woRush1 = await CreateWO("Rugged Suppressors", "RS-2026-0401", 5,
+            WorkOrderStatus.Released, JobPriority.Rush,
+            [(pilate, 192), (tinman, 56)]);
+
+        var woRush2 = await CreateWO("SilencerCo", "SC-2026-0402", 7,
+            WorkOrderStatus.Released, JobPriority.Rush,
+            [(handyman, 128)]);
+
+        // HIGH priority — due in 10-14 days
+        var woHigh1 = await CreateWO("Capitol Armory", "CA-2026-0405", 10,
+            WorkOrderStatus.Released, JobPriority.High,
+            [(gargoyle, 144), (tinman, 112)]);
+
+        var woHigh2 = await CreateWO("Dead Air Silencers", "DA-2026-0408", 14,
+            WorkOrderStatus.Released, JobPriority.High,
+            [(handyman, 64), (pilate, 96)]);
+
+        // NORMAL priority — due in 14-21 days
+        var woNorm1 = await CreateWO("Silencer Shop", "SS-2026-0410", 18,
+            WorkOrderStatus.Released, JobPriority.Normal,
+            [(tinman, 168), (gargoyle, 72)]);
+
+        var woNorm2 = await CreateWO("Thunder Beast Arms", "TB-2026-0412", 21,
+            WorkOrderStatus.Released, JobPriority.Normal,
+            [(pilate, 288), (handyman, 64)]);
+
+        // ── SCHEDULE BUILDS — Dense 2-week Gantt ─────────────────────
+        // Alternate between M4-1 and M4-2, mixing part types
+
+        // M4-1 builds (Tinman, Gargoyle)
+        await CreateBuild(pilate, "M4-1", 96, 16.0, $"Pilate 96x — Rush", woRush1, JobPriority.Rush, pilateRouting);
+        await CreateBuild(tinman, "M4-1", 56, 22.5, $"Tinman 56x — Rush", woRush1, JobPriority.Rush, tinmanRouting);
+        await CreateBuild(gargoyle, "M4-1", 72, 18.5, $"Gargoyle 72x — Capitol", woHigh1, JobPriority.High, gargoyleRouting);
+        await CreateBuild(tinman, "M4-1", 56, 22.5, $"Tinman 56x — Capitol", woHigh1, JobPriority.High, tinmanRouting);
+        await CreateBuild(gargoyle, "M4-1", 72, 18.5, $"Gargoyle 72x — SS", woNorm1, JobPriority.Normal, gargoyleRouting);
+
+        // M4-2 builds (Handyman, Pilate)
+        await CreateBuild(handyman, "M4-2", 64, 20.0, $"Handyman 64x — Rush", woRush2, JobPriority.Rush, handymanRouting);
+        await CreateBuild(handyman, "M4-2", 64, 20.0, $"Handyman 64x — Rush #2", woRush2, JobPriority.Rush, handymanRouting);
+        await CreateBuild(pilate, "M4-2", 96, 16.0, $"Pilate 96x — Dead Air", woHigh2, JobPriority.High, pilateRouting);
+        await CreateBuild(handyman, "M4-2", 64, 20.0, $"Handyman 64x — Dead Air", woHigh2, JobPriority.Normal, handymanRouting);
+        await CreateBuild(pilate, "M4-2", 96, 16.0, $"Pilate 96x — TBAC", woNorm2, JobPriority.Normal, pilateRouting);
+        await CreateBuild(tinman, "M4-2", 56, 22.5, $"Tinman 56x — SS", woNorm1, JobPriority.Normal, tinmanRouting);
+
+        // Mark as done
+        db.SystemSettings.Add(new SystemSetting { Key = marker, Value = "true", LastModifiedBy = "System" });
         await db.SaveChangesAsync();
     }
 
