@@ -93,12 +93,67 @@
                 <button class="sched-filter-btn @(ShowConflictsOnly ? "sched-filter-btn--active sched-filter-btn--danger" : "")"
                         @onclick="ToggleConflictsOnly"
                         title="Show only overlapping/conflicting executions">
-                    ⚠️ Conflicts
+                    Conflicts
                 </button>
             </div>
+
+            @* Status filter *@
+            <select class="sched-filter-select" @onchange="OnStatusSelectChanged">
+                @foreach (var (value, label) in _statusOptions)
+                {
+                    if (StatusFilter == value)
+                    {
+                        <option value="@value" selected>@label</option>
+                    }
+                    else
+                    {
+                        <option value="@value">@label</option>
+                    }
+                }
+            </select>
+
+            @* Priority filter *@
+            <select class="sched-filter-select" @onchange="OnPrioritySelectChanged">
+                @if (PriorityFilter.Count == 0)
+                {
+                    <option value="" selected>Priority: All</option>
+                }
+                else
+                {
+                    <option value="">Priority: All</option>
+                }
+                @foreach (var p in _priorityOptions)
+                {
+                    if (PriorityFilter.Contains(p))
+                    {
+                        <option value="@p" selected>@p</option>
+                    }
+                    else
+                    {
+                        <option value="@p">@p</option>
+                    }
+                }
+            </select>
+
+            @* Sort By *@
+            <select class="sched-filter-select" @onchange="OnSortSelectChanged">
+                @foreach (var (value, label) in _sortOptions)
+                {
+                    if (SortBy == value)
+                    {
+                        <option value="@value" selected>@label</option>
+                    }
+                    else
+                    {
+                        <option value="@value">@label</option>
+                    }
+                }
+            </select>
+
+            @* Build status filter *@
             <div class="sched-filter-group">
                 <button class="sched-filter-btn @(ProgramStatusFilter == null ? "sched-filter-btn--active" : "")"
-                        @onclick="() => SetProgramStatusFilter(null)">All</button>
+                        @onclick="() => SetProgramStatusFilter(null)">Builds: All</button>
                 <button class="sched-filter-btn @(ProgramStatusFilter == ProgramScheduleStatus.Ready ? "sched-filter-btn--active" : "")"
                         @onclick="() => SetProgramStatusFilter(ProgramScheduleStatus.Ready)">Ready</button>
                 <button class="sched-filter-btn @(ProgramStatusFilter == ProgramScheduleStatus.Scheduled ? "sched-filter-btn--active" : "")"
@@ -115,7 +170,7 @@
                 <button class="sched-filter-btn @(ShowOverdueOnly ? "sched-filter-btn--active sched-filter-btn--danger" : "")"
                         @onclick="ToggleOverdueOnly"
                         title="Show only overdue work orders">
-                    🔴 Overdue
+                    Overdue
                 </button>
             </div>
         }
@@ -159,6 +214,40 @@
     [Parameter] public EventCallback<ProgramScheduleStatus?> OnProgramStatusFilterChanged { get; set; }
     [Parameter] public EventCallback<bool> OnShowOverdueOnlyChanged { get; set; }
 
+    // Filter suite
+    [Parameter] public string StatusFilter { get; set; } = "active";
+    [Parameter] public EventCallback<string> OnStatusFilterChanged { get; set; }
+    [Parameter] public HashSet<string> PriorityFilter { get; set; } = new();
+    [Parameter] public EventCallback<HashSet<string>> OnPriorityFilterChanged { get; set; }
+    [Parameter] public string SortBy { get; set; } = "schedule";
+    [Parameter] public EventCallback<string> OnSortByChanged { get; set; }
+
+    private string _selectedPriority => PriorityFilter.Count == 1 ? PriorityFilter.First() : "";
+
+    private static readonly (string Value, string Label)[] _statusOptions =
+    [
+        ("active", "All Active"),
+        ("all", "Everything"),
+        ("scheduled", "Scheduled"),
+        ("inprogress", "In Progress"),
+        ("completed", "Completed"),
+        ("paused", "Paused"),
+        ("cancelled", "Cancelled"),
+    ];
+
+    private static readonly string[] _priorityOptions = ["Emergency", "Rush", "High", "Normal", "Low"];
+
+    private static readonly (string Value, string Label)[] _sortOptions =
+    [
+        ("schedule", "Schedule Date"),
+        ("priority", "Priority"),
+        ("part", "Part Name"),
+        ("duedate", "Due Date"),
+    ];
+
+    private string GetStatusLabel(string value) => _statusOptions.FirstOrDefault(o => o.Value == value).Label ?? "All Active";
+    private string GetSortLabel(string value) => _sortOptions.FirstOrDefault(o => o.Value == value).Label ?? "Schedule Date";
+
     private async Task HandleDropdownFocusOut()
     {
         _focusOutCts?.Cancel();
@@ -169,7 +258,26 @@
             await Task.Delay(150, token);
             _newDropdownOpen = false;
         }
-        catch (TaskCanceledException) { /* click arrived before delay — keep open */ }
+        catch (TaskCanceledException) { }
+    }
+
+    private async Task OnStatusSelectChanged(ChangeEventArgs e)
+    {
+        await OnStatusFilterChanged.InvokeAsync(e.Value?.ToString() ?? "active");
+    }
+
+    private async Task OnPrioritySelectChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        if (string.IsNullOrEmpty(value))
+            await OnPriorityFilterChanged.InvokeAsync(new HashSet<string>());
+        else
+            await OnPriorityFilterChanged.InvokeAsync(new HashSet<string> { value });
+    }
+
+    private async Task OnSortSelectChanged(ChangeEventArgs e)
+    {
+        await OnSortByChanged.InvokeAsync(e.Value?.ToString() ?? "schedule");
     }
 
     private async Task ToggleConflictsOnly()

@@ -29,8 +29,8 @@
                  Scheduling="_scheduling"
                  AutoRefreshEnabled="_autoRefreshEnabled"
                  LastRefresh="_lastRefresh"
-                 ShowAutoSchedule="@(_unscheduled.Any() || _programs.Any(p => p.ScheduleStatus == ProgramScheduleStatus.Ready))"
-                 AutoScheduleCount="@(_unscheduled.Count + _programs.Count(p => p.ScheduleStatus == ProgramScheduleStatus.Ready))"
+                 ShowAutoSchedule="_showAutoSchedule"
+                 AutoScheduleCount="_autoScheduleCount"
                  ShowConflictsOnly="_showConflictsOnly"
                  ProgramStatusFilter="_programStatusFilter"
                  ShowOverdueOnly="_showOverdueOnly"
@@ -42,13 +42,20 @@
                  OnManualRefresh="ManualRefreshAsync"
                  OnToggleAutoRefresh="ToggleAutoRefresh"
                  OnAutoScheduleAll="AutoScheduleAll"
-                 ShowSmartReschedule="@(_programs.Any(p => p.ScheduleStatus == ProgramScheduleStatus.Scheduled || p.ScheduleStatus == ProgramScheduleStatus.Ready))"
+                 ShowSmartReschedule="_showSmartReschedule"
                  OnSmartReschedule="SmartRescheduleAll"
                  OnNewBuild="OpenBuildAdvisor"
                  OnNewCncJob="OpenCncWizard"
                  OnShowConflictsOnlyChanged="v => _showConflictsOnly = v"
                  OnProgramStatusFilterChanged="v => _programStatusFilter = v"
-                 OnShowOverdueOnlyChanged="v => _showOverdueOnly = v" />
+                 OnShowOverdueOnlyChanged="v => _showOverdueOnly = v"
+                 StatusFilter="_statusFilter"
+                 OnStatusFilterChanged="v => _statusFilter = v"
+                 PriorityFilter="_priorityFilter"
+                 OnPriorityFilterChanged="v => _priorityFilter = v"
+                 SortBy="_sortBy"
+                 OnSortByChanged="v => _sortBy = v"
+                 />
 
 <div>
 @if (_loading && !_refreshing)
@@ -87,6 +94,11 @@ else if (_viewMode == "gantt")
                OnViewportBoundsChanged="HandleViewportBoundsChanged"
                OnDataRangeExtensionNeeded="ExtendDataRangeAsync"
                ProgramStatusFilter="_programStatusFilter"
+               SelectedPartIds="_selectedPartIds"
+               OnSelectedPartIdsChanged="v => _selectedPartIds = v"
+               StatusFilter="_statusFilter"
+               PriorityFilter="_priorityFilter"
+               SortBy="_sortBy"
                OnBarDragCompleted="HandleBarDragAsync" />
 }
 else if (_viewMode == "demand")
@@ -222,6 +234,16 @@ else if (_viewMode == "data")
     private ProgramScheduleStatus? _programStatusFilter;
     private bool _showOverdueOnly;
 
+    // Filter suite
+    private HashSet<int> _selectedPartIds = new();
+    private string _statusFilter = "active";
+    private HashSet<string> _priorityFilter = new();
+    private string _sortBy = "schedule";
+    private string _openDropdown = "";
+    private bool _showAutoSchedule;
+    private int _autoScheduleCount;
+    private bool _showSmartReschedule;
+
     protected override async Task OnInitializedAsync()
     {
         if (!string.IsNullOrEmpty(ViewParam))
@@ -295,7 +317,15 @@ else if (_viewMode == "data")
             _loading = false;
             _refreshing = false;
             _lastRefresh = DateTime.UtcNow;
+            UpdateToolbarCache();
         }
+    }
+
+    private void UpdateToolbarCache()
+    {
+        _showAutoSchedule = _unscheduled.Any() || _programs.Any(p => p.ScheduleStatus == ProgramScheduleStatus.Ready);
+        _autoScheduleCount = _unscheduled.Count + _programs.Count(p => p.ScheduleStatus == ProgramScheduleStatus.Ready);
+        _showSmartReschedule = _programs.Any(p => p.ScheduleStatus is ProgramScheduleStatus.Scheduled or ProgramScheduleStatus.Ready);
     }
 
     private void StartAutoRefreshTimer()
@@ -303,7 +333,8 @@ else if (_viewMode == "data")
         _autoRefreshTimer = new System.Threading.Timer(async _ =>
         {
             if (_disposed || !_autoRefreshEnabled || _loading || _refreshing || _scheduling
-                || _showBuildAdvisor || _showScheduleWizard || _showJobDetail) return;
+                || _showBuildAdvisor || _showScheduleWizard || _showJobDetail
+                || !string.IsNullOrEmpty(_openDropdown)) return;
             try
             {
                 await InvokeAsync(async () =>

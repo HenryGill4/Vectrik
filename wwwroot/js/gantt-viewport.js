@@ -63,6 +63,7 @@ function detachListeners() {
         _container.removeEventListener('mouseup', onMouseUp);
         _container.removeEventListener('mouseleave', onMouseUp);
         _container.removeEventListener('contextmenu', onContextMenu);
+        _container.removeEventListener('keydown', onKeyDown);
     } catch (e) {
         // Gracefully handle missing references during dispose
     }
@@ -81,6 +82,7 @@ function attachListeners() {
     _container.addEventListener('mouseup', onMouseUp, { passive: true });
     _container.addEventListener('mouseleave', onMouseUp, { passive: true });
     _container.addEventListener('contextmenu', onContextMenu, { passive: false });
+    _container.addEventListener('keydown', onKeyDown);
 }
 
 function clampZoom(v) {
@@ -301,28 +303,29 @@ export function scrollToTime(isoDateTimeString) {
 
 /**
  * Called by C# ZoomInAsync / ZoomOutAsync.
- * C# has already updated _pixelsPerHour; this syncs JS and keeps viewport centered.
- * Runs BEFORE Blazor auto-render so scroll position persists through the diff.
+ * Zooms around the viewport center and returns anchor info so C# can
+ * restore scroll after the Blazor DOM diff (which may displace scrollLeft).
  */
 export function applyZoom(pixelsPerHour) {
     if (!isAlive() || !_inner) {
         _pixelsPerHour = clampZoom(pixelsPerHour);
-        return;
+        return { anchorTimeHours: 0, anchorViewportX: 0 };
     }
 
     // Save center time using current JS _pixelsPerHour (DOM still at old positions)
-    const centerX = _container.scrollLeft + _container.clientWidth / 2;
-    const centerTimeHours = centerX / _pixelsPerHour;
-    const halfWidth = _container.clientWidth / 2;
+    const anchorViewportX = _container.clientWidth / 2;
+    const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
 
     _pixelsPerHour = clampZoom(pixelsPerHour);
     updateInnerWidth();
 
     // Restore center — scroll persists through Blazor re-render
-    _container.scrollLeft = centerTimeHours * _pixelsPerHour - halfWidth;
+    _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
 
     // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
-    setZoomAnchor(centerTimeHours, halfWidth);
+    setZoomAnchor(anchorTimeHours, anchorViewportX);
+
+    return { anchorTimeHours, anchorViewportX };
 }
 
 /**
@@ -424,6 +427,8 @@ function onWheel(e) {
 
     _pixelsPerHour = newPph;
     updateInnerWidth();
+    // Anchor zoom to cursor position — Ctrl+wheel fires in JS before Blazor
+    // re-renders, so we must correct scrollLeft immediately here
     _container.scrollLeft = cursorTimeHours * _pixelsPerHour - cursorViewportX;
 
     // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
@@ -504,7 +509,8 @@ function onTouchMove(e) {
 
         _pixelsPerHour = newPph;
         updateInnerWidth();
-        _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
+        // Pinch zoom goes through Blazor re-render via debouncedZoomNotify —
+        // syncScrollToAnchor handles scroll correction after DOM diff.
 
         // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
         setZoomAnchor(anchorTimeHours, anchorViewportX);
@@ -565,6 +571,105 @@ function onContextMenu(e) {
     if (_isDragging || _barDragActive || e.button === 2) {
         e.preventDefault();
     }
+}
+
+// ── Keyboard Controls ───────────────────────────────────────────────────────
+// Container needs tabindex="0" to receive focus. Set via Razor attribute.
+//
+// Keys:
+//   +/=          Zoom in (center-anchored)
+//   -            Zoom out (center-anchored)
+//   0            Reset zoom to default (6.0 px/hr)
+//   Left/Right   Pan one screen-width quarter (Shift = full screen-width)
+//   Home         Scroll to now
+//   [/]          Fine pan left/right (1 hour per press)
+
+const PAN_FRACTION = 0.25;           // Arrow keys pan 25% of viewport width
+const PAN_FRACTION_SHIFT = 1.0;      // Shift+arrow pans full viewport width
+const FINE_PAN_HOURS = 1;            // [/] keys pan 1 hour
+
+function onKeyDown(e) {
+    if (_disposed || !isAlive() || !_inner) return;
+
+    // Don't capture if user is in an input/textarea/select
+    const tag = e.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    switch (e.key) {
+        case '+':
+        case '=': {
+            e.preventDefault();
+            zoomAtCenter(1);
+            break;
+        }
+        case '-': {
+            e.preventDefault();
+            zoomAtCenter(-1);
+            break;
+        }
+        case '0': {
+            e.preventDefault();
+            // Reset to default zoom, keep center time stable
+            const centerTimeHours = (_container.scrollLeft + _container.clientWidth / 2) / _pixelsPerHour;
+            _pixelsPerHour = 6.0;
+            updateInnerWidth();
+            _container.scrollLeft = centerTimeHours * _pixelsPerHour - _container.clientWidth / 2;
+            debouncedZoomNotify(centerTimeHours, _container.clientWidth / 2);
+            break;
+        }
+        case 'ArrowLeft': {
+            e.preventDefault();
+            const fraction = e.shiftKey ? PAN_FRACTION_SHIFT : PAN_FRACTION;
+            _container.scrollLeft -= _container.clientWidth * fraction;
+            debouncedNotify();
+            break;
+        }
+        case 'ArrowRight': {
+            e.preventDefault();
+            const fraction = e.shiftKey ? PAN_FRACTION_SHIFT : PAN_FRACTION;
+            _container.scrollLeft += _container.clientWidth * fraction;
+            debouncedNotify();
+            break;
+        }
+        case '[': {
+            e.preventDefault();
+            _container.scrollLeft -= FINE_PAN_HOURS * _pixelsPerHour;
+            debouncedNotify();
+            break;
+        }
+        case ']': {
+            e.preventDefault();
+            _container.scrollLeft += FINE_PAN_HOURS * _pixelsPerHour;
+            debouncedNotify();
+            break;
+        }
+        case 'Home': {
+            e.preventDefault();
+            scrollToTime(new Date().toISOString());
+            debouncedNotify();
+            break;
+        }
+        default:
+            return; // Don't prevent default for unhandled keys
+    }
+}
+
+/** Zoom in/out anchored to viewport center. direction: 1 = in, -1 = out */
+function zoomAtCenter(direction) {
+    const anchorViewportX = _container.clientWidth / 2;
+    const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
+
+    const newPph = clampZoom(direction > 0
+        ? _pixelsPerHour * ZOOM_FACTOR
+        : _pixelsPerHour / ZOOM_FACTOR);
+    if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
+
+    _pixelsPerHour = newPph;
+    updateInnerWidth();
+    // Keyboard zoom fires in JS — correct scrollLeft immediately (same as Ctrl+wheel)
+    _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
+
+    debouncedZoomNotify(anchorTimeHours, anchorViewportX);
 }
 
 // ── Bar Drag-to-Reschedule ──────────────────────────────────────────────────
@@ -707,9 +812,9 @@ function onMouseDown(e) {
         }
     }
 
-    // Middle/right button = pan
-    if (e.button === 1 || e.button === 2) {
-        e.preventDefault();
+    // Left-click on empty space (no bar hit above) or middle/right button = pan
+    if (e.button === 0 || e.button === 1 || e.button === 2) {
+        if (e.button !== 0) e.preventDefault(); // Don't prevent default for left (allows text selection if needed)
         _isDragging = true;
         _dragStartX = e.clientX;
         _dragStartScrollLeft = _container.scrollLeft;
