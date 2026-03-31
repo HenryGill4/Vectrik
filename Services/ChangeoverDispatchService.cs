@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vectrik.Data;
 using Vectrik.Hubs;
 using Vectrik.Models;
@@ -15,6 +16,7 @@ public class ChangeoverDispatchService : IChangeoverDispatchService
     private readonly IShiftManagementService _shiftService;
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
+    private readonly ILogger<ChangeoverDispatchService> _logger;
 
     private const int BasePriority = 50;
     private const int UrgencyBonus = 50;
@@ -24,13 +26,15 @@ public class ChangeoverDispatchService : IChangeoverDispatchService
         ISetupDispatchService dispatchService,
         IShiftManagementService shiftService,
         IDispatchNotifier notifier,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ILogger<ChangeoverDispatchService> logger)
     {
         _db = db;
         _dispatchService = dispatchService;
         _shiftService = shiftService;
         _notifier = notifier;
         _tenantContext = tenantContext;
+        _logger = logger;
     }
 
     public async Task<SetupDispatch?> CreateOrUpdateChangeoverDispatchAsync(int machineId, DateTime buildEndTime)
@@ -268,7 +272,10 @@ public class ChangeoverDispatchService : IChangeoverDispatchService
         if (!string.IsNullOrEmpty(tenantCode))
         {
             try { await _notifier.SendUrgentDispatchAsync(tenantCode, machineId, message); }
-            catch { /* SignalR failures shouldn't break dispatch operations */ }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Urgent changeover notification failed for machine {MachineId}", machineId);
+            }
         }
     }
 }

@@ -16,6 +16,15 @@
         </div>
     </div>
 
+    @* ── Search ── *@
+    <div class="wo-panel-search">
+        <input class="wo-panel-search-input"
+               type="text"
+               placeholder="Search WO, customer, part..."
+               @bind-value="_searchText"
+               @bind-value:event="oninput" />
+    </div>
+
     @* ── Filter tabs ── *@
     <div class="wo-panel-filters">
         <button class="wo-panel-filter @(_filter == "active" ? "wo-panel-filter--active" : "")" @onclick='() => _filter = "active"'>Active</button>
@@ -116,6 +125,7 @@
     [Parameter] public EventCallback<int> OnAutoSchedule { get; set; }
 
     private string _filter = "active";
+    private string _searchText = "";
     private bool _showUnscheduled = true;
 
     private int OverdueCount
@@ -142,6 +152,15 @@
                 "week" => WorkOrders.Where(w => w.DueDate.Date >= today && w.DueDate.Date <= weekEnd),
                 _ => WorkOrders.Where(w => w.Lines.Any(l => l.Quantity > l.ProducedQuantity))
             };
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                var q = _searchText.Trim();
+                orders = orders.Where(w =>
+                    (w.OrderNumber?.Contains(q, StringComparison.OrdinalIgnoreCase) == true)
+                    || (w.CustomerName?.Contains(q, StringComparison.OrdinalIgnoreCase) == true)
+                    || w.Lines.Any(l => l.Part?.PartNumber?.Contains(q, StringComparison.OrdinalIgnoreCase) == true));
+            }
 
             return orders.OrderBy(w => w.DueDate).ToList();
         }

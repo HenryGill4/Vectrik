@@ -16,16 +16,67 @@
         _ => ""
     };
 }
-<div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "")"
+<div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "") gantt-bar-has-tooltip"
      style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @jobColorStyle @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
      data-exec-id="@Exec.Id"
      data-bar-type="exec"
      data-job-id="@Exec.JobId"
-     title="@ComputeTooltip()"
      @onclick="HandleClick"
      @onclick:stopPropagation="true">
     @if (IsSelected) { <span class="gantt-bar-check">✓</span> }
     <span class="gantt-bar-text">@scopeIcon@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
+    <div class="gantt-bar-tooltip">
+        @{
+            var ttPart = Exec.Job?.Part?.PartNumber ?? $"Job {Exec.JobId}";
+            var ttStage = Exec.ProductionStage?.Name ?? "Stage";
+            var ttWo = Exec.Job?.WorkOrderLine?.WorkOrder;
+            var ttScope = Exec.Job?.Scope switch { JobScope.Build => "Build", JobScope.Batch => "Batch", JobScope.Part => "Part", _ => "" };
+        }
+        <div class="gantt-bar-tooltip-title">
+            @if (IsUnassigned) { <span class="gantt-bar-tooltip-badge gantt-bar-tooltip-badge--warn">UNASSIGNED</span> }
+            @ttPart — @ttStage
+        </div>
+        <div class="gantt-bar-tooltip-row">
+            <span class="gantt-bar-tooltip-label">Time</span>
+            <span>@Start.ToLocalTime().ToString("ddd MMM d, h:mm tt") → @End.ToLocalTime().ToString("h:mm tt")</span>
+        </div>
+        <div class="gantt-bar-tooltip-row">
+            <span class="gantt-bar-tooltip-label">Est.</span>
+            <span>@(Exec.EstimatedHours?.ToString("F1") ?? "?")h</span>
+            <span class="gantt-bar-tooltip-label" style="margin-left: 8px;">Priority</span>
+            <span class="gantt-bar-tooltip-badge gantt-bar-tooltip-badge--@(Exec.Job?.Priority.ToString().ToLower() ?? "normal")">@Exec.Job?.Priority</span>
+        </div>
+        @if (!string.IsNullOrEmpty(ttScope))
+        {
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Scope</span>
+                <span>@ttScope</span>
+                <span class="gantt-bar-tooltip-label" style="margin-left: 8px;">Qty</span>
+                <span>@Exec.Job?.Quantity</span>
+            </div>
+        }
+        @if (Exec.Machine != null)
+        {
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Machine</span>
+                <span>@Exec.Machine.Name</span>
+            </div>
+        }
+        @if (ttWo != null)
+        {
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">WO</span>
+                <span>@ttWo.OrderNumber — @ttWo.CustomerName</span>
+            </div>
+        }
+        @if (Exec.MachineProgram != null)
+        {
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Program</span>
+                <span>@Exec.MachineProgram.Name</span>
+            </div>
+        }
+    </div>
 </div>
 
 @code {

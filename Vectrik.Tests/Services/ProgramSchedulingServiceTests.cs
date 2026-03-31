@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Vectrik.Data;
 using Vectrik.Models;
 using Vectrik.Models.Enums;
@@ -33,7 +34,8 @@ public class ProgramSchedulingServiceTests : IDisposable
             new StubStageCostService(),
             new StubMachineProgramService(),
             new StubSerialNumberService(),
-            new StubDownstreamProgramService());
+            new StubDownstreamProgramService(),
+            NullLogger<ProgramSchedulingService>.Instance);
     }
 
     public void Dispose() => _db.Dispose();
@@ -619,7 +621,8 @@ public class ProgramSchedulingServiceTests : IDisposable
             new StubStageCostService(),
             new StubMachineProgramService(),
             new StubSerialNumberService(),
-            failingDownstream);
+            failingDownstream,
+            NullLogger<ProgramSchedulingService>.Instance);
 
         var machine = await AddSlsMachineAsync("M4-DS", "Downstream Machine");
         var part = new Part

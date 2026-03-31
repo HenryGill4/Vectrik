@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Vectrik.Data;
 using Vectrik.Hubs;
 using Vectrik.Models;
@@ -111,7 +112,7 @@ internal static class DispatchTestFixtures
         var numService = new StubNumberSequenceService();
         var tenant = new StubTenantContext();
         var serviceProvider = new StubServiceProvider();
-        var svc = new SetupDispatchService(db, numService, notifier, tenant, serviceProvider);
+        var svc = new SetupDispatchService(db, numService, notifier, tenant, serviceProvider, NullLogger<SetupDispatchService>.Instance);
         return (db, svc, notifier);
     }
 
@@ -157,7 +158,7 @@ public class ChangeoverDispatchServiceTests
         var shiftService = new StubShiftManagementService();
         var tenant = new StubTenantContext();
 
-        var changeoverSvc = new ChangeoverDispatchService(db, svc, shiftService, notifier, tenant);
+        var changeoverSvc = new ChangeoverDispatchService(db, svc, shiftService, notifier, tenant, NullLogger<ChangeoverDispatchService>.Instance);
         var result = await changeoverSvc.CreateOrUpdateChangeoverDispatchAsync(machine.Id, DateTime.UtcNow.AddHours(2));
 
         Assert.NotNull(result);
@@ -176,7 +177,7 @@ public class ChangeoverDispatchServiceTests
         var shiftService = new StubShiftManagementService();
         var tenant = new StubTenantContext();
 
-        var changeoverSvc = new ChangeoverDispatchService(db, svc, shiftService, notifier, tenant);
+        var changeoverSvc = new ChangeoverDispatchService(db, svc, shiftService, notifier, tenant, NullLogger<ChangeoverDispatchService>.Instance);
         var result = await changeoverSvc.CreateOrUpdateChangeoverDispatchAsync(machine.Id, DateTime.UtcNow.AddHours(2));
 
         Assert.Null(result);
@@ -190,7 +191,7 @@ public class ChangeoverDispatchServiceTests
         var shiftService = new StubShiftManagementService();
         var tenant = new StubTenantContext();
 
-        var changeoverSvc = new ChangeoverDispatchService(db, svc, shiftService, notifier, tenant);
+        var changeoverSvc = new ChangeoverDispatchService(db, svc, shiftService, notifier, tenant, NullLogger<ChangeoverDispatchService>.Instance);
 
         await changeoverSvc.CreateOrUpdateChangeoverDispatchAsync(machine.Id, DateTime.UtcNow.AddHours(2));
         await changeoverSvc.CreateOrUpdateChangeoverDispatchAsync(machine.Id, DateTime.UtcNow.AddHours(1));
@@ -249,7 +250,7 @@ public class ChangeoverDispatchServiceTests
         // Seed a changeover dispatch manually
         var dispatch = await svc.CreateManualDispatchAsync(machine.Id, DispatchType.Changeover);
 
-        var changeoverSvc = new ChangeoverDispatchService(db, svc, shiftService, notifier, tenant);
+        var changeoverSvc = new ChangeoverDispatchService(db, svc, shiftService, notifier, tenant, NullLogger<ChangeoverDispatchService>.Instance);
         await changeoverSvc.EscalateChangeoverPrioritiesAsync();
 
         Assert.NotEmpty(notifier.UrgentMessages);
@@ -353,7 +354,7 @@ public class PrintCompletionServiceTests
         var program = DispatchTestFixtures.CreateProgram(db, machine.Id);
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant);
+        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         var dispatch = await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
 
         Assert.Equal(DispatchType.Teardown, dispatch.DispatchType);
@@ -372,7 +373,7 @@ public class PrintCompletionServiceTests
     {
         var (db, svc, notifier) = DispatchTestFixtures.CreateDispatchService();
         var tenant = new StubTenantContext();
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant);
+        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
 
         var checklist = completionSvc.GetDefaultSlsInspectionChecklist();
         Assert.Equal(6, checklist.Count);
@@ -387,7 +388,7 @@ public class PrintCompletionServiceTests
         var program = DispatchTestFixtures.CreateProgram(db, machine.Id);
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant);
+        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         var dispatch = await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
 
         // Start the dispatch first
@@ -418,7 +419,7 @@ public class PrintCompletionServiceTests
         var program = DispatchTestFixtures.CreateProgram(db, machine.Id);
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant);
+        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         var dispatch = await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
         await svc.StartDispatchAsync(dispatch.Id);
 
@@ -442,7 +443,7 @@ public class PrintCompletionServiceTests
         var program = DispatchTestFixtures.CreateProgram(db, machine.Id);
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant);
+        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         var dispatch = await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
         await svc.StartDispatchAsync(dispatch.Id);
 
@@ -464,7 +465,7 @@ public class PrintCompletionServiceTests
         await db.SaveChangesAsync();
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant);
+        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
 
         var updated = await db.MachinePrograms.FindAsync(program.Id);
@@ -611,7 +612,7 @@ public class DispatchGenerationServiceTests
         var tenant = new StubTenantContext();
         var scoringSvc = new DispatchScoringService(db);
 
-        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant);
+        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant, NullLogger<DispatchGenerationService>.Instance);
         var result = await genSvc.GenerateDispatchSuggestionsAsync();
 
         Assert.Empty(result);
@@ -632,7 +633,7 @@ public class DispatchGenerationServiceTests
         entity.Status = DispatchStatus.Deferred;
         await db.SaveChangesAsync();
 
-        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant);
+        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant, NullLogger<DispatchGenerationService>.Instance);
         var approved = await genSvc.ApproveAutoDispatchAsync(dispatch.Id, 1);
 
         Assert.Equal(DispatchStatus.Queued, approved.Status);
@@ -648,7 +649,7 @@ public class DispatchGenerationServiceTests
 
         var dispatch = await svc.CreateManualDispatchAsync(machine.Id, DispatchType.Setup);
 
-        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant);
+        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant, NullLogger<DispatchGenerationService>.Instance);
         var rejected = await genSvc.RejectAutoDispatchAsync(dispatch.Id, 1, "Not needed");
 
         Assert.Equal(DispatchStatus.Cancelled, rejected.Status);
@@ -672,7 +673,7 @@ public class DispatchGenerationServiceTests
 
         var tenant = new StubTenantContext();
         var scoringSvc = new DispatchScoringService(db);
-        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant);
+        var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant, NullLogger<DispatchGenerationService>.Instance);
 
         var result = await genSvc.GenerateDispatchSuggestionsAsync(machine.Id);
 
