@@ -21,6 +21,11 @@ public class SchedulingService : ISchedulingService
         _logger = logger;
     }
 
+    private async Task<List<OperatingShift>> GetActiveShiftsAsync()
+    {
+        return await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+    }
+
     public async Task AutoScheduleJobAsync(int jobId, DateTime? startAfter = null)
     {
         await AutoScheduleJobCoreAsync(jobId, startAfter, diagnostics: null);
@@ -68,7 +73,7 @@ public class SchedulingService : ISchedulingService
         // Load per-machine shift map (falls back to all active shifts for machines without assignments)
         var machineShiftMap = await _shiftService.GetMachineShiftMapAsync(allMachines.Select(m => m.Id));
         // Keep a global fallback for unassigned-machine scheduling
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
 
         // Load part stage requirements for machine preference resolution (legacy fallback)
         var routing = await _db.PartStageRequirements
@@ -276,7 +281,7 @@ public class SchedulingService : ISchedulingService
 
         var allMachines = await _db.Machines.Where(m => m.IsActive && m.IsAvailableForScheduling).ToListAsync();
         var machineShiftMap = await _shiftService.GetMachineShiftMapAsync(allMachines.Select(m => m.Id));
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
 
         var requirement = exec.Job != null
             ? await _db.PartStageRequirements.FirstOrDefaultAsync(r =>
