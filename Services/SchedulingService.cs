@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vectrik.Data;
 using Vectrik.Models;
 using Vectrik.Models.Enums;
@@ -10,12 +11,14 @@ public class SchedulingService : ISchedulingService
     private readonly TenantDbContext _db;
     private readonly IMachineProgramService _programService;
     private readonly IShiftManagementService _shiftService;
+    private readonly ILogger<SchedulingService> _logger;
 
-    public SchedulingService(TenantDbContext db, IMachineProgramService programService, IShiftManagementService shiftService)
+    public SchedulingService(TenantDbContext db, IMachineProgramService programService, IShiftManagementService shiftService, ILogger<SchedulingService> logger)
     {
         _db = db;
         _programService = programService;
         _shiftService = shiftService;
+        _logger = logger;
     }
 
     public async Task AutoScheduleJobAsync(int jobId, DateTime? startAfter = null)
@@ -414,9 +417,9 @@ public class SchedulingService : ISchedulingService
                 await AutoScheduleJobAsync(job.Id);
                 count++;
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip jobs that fail to schedule; continue with remaining
+                _logger.LogWarning(ex, "Job {JobId} could not be auto-scheduled; skipping", job.Id);
             }
         }
 

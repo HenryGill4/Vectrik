@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vectrik.Data;
 using Vectrik.Models;
 using Vectrik.Models.Enums;
@@ -20,6 +21,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
     private readonly IMachineProgramService _programService;
     private readonly ISerialNumberService _serialNumberService;
     private readonly IDownstreamProgramService _downstreamService;
+    private readonly ILogger<ProgramSchedulingService> _logger;
 
     public ProgramSchedulingService(
         TenantDbContext db,
@@ -30,7 +32,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         IStageCostService costService,
         IMachineProgramService programService,
         ISerialNumberService serialNumberService,
-        IDownstreamProgramService downstreamService)
+        IDownstreamProgramService downstreamService,
+        ILogger<ProgramSchedulingService> logger)
     {
         _db = db;
         _scheduling = scheduling;
@@ -41,6 +44,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         _programService = programService;
         _serialNumberService = serialNumberService;
         _downstreamService = downstreamService;
+        _logger = logger;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -319,9 +323,9 @@ public class ProgramSchedulingService : IProgramSchedulingService
             {
                 await _scheduling.AutoScheduleJobWithDiagnosticsAsync(jobId, lastBuildStageEnd);
             }
-            catch
+            catch (Exception ex)
             {
-                // Job could not be auto-scheduled — it will appear unscheduled
+                _logger.LogWarning(ex, "Per-part job {JobId} could not be auto-scheduled after build plate; it will appear unscheduled", jobId);
             }
         }
 
@@ -2041,7 +2045,10 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 if (build.IsLocked)
                     await UnlockProgramAsync(build.Id, userName, "Smart reschedule");
             }
-            catch { /* Already unlocked or can't unlock — skip */ }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not unlock build {BuildId} during smart reschedule; skipping", build.Id);
+            }
         }
 
         // Step 2: Re-schedule each build to the best available slot across all SLS machines.
@@ -2090,6 +2097,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
             }
             catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Smart reschedule failed for build {BuildId} ({BuildName})", build.Id, build.Name ?? build.ProgramNumber);
                 actions.Add(new SmartRescheduleAction(
                     build.Id, build.Name ?? build.ProgramNumber ?? $"Build #{build.Id}",
                     "Failed", "", "", DateTime.MinValue, DateTime.MinValue,

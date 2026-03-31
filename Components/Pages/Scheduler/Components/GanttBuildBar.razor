@@ -31,9 +31,8 @@
      data-program-id="@Build.Id"
      data-bar-type="build"
      data-machine-id="@Build.MachineId">
-    <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "")"
+    <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "") gantt-bar-has-tooltip"
          style="@hueStyle"
-         title="@ComputeTooltip()"
          @onclick="OpenDetail"
          @onclick:stopPropagation="true">
         @if (HasChangeoverConflict)
@@ -82,6 +81,61 @@
                 }
             </div>
         }
+        @* ── Rich hover tooltip ── *@
+        <div class="gantt-bar-tooltip gantt-bar-tooltip--build">
+            <div class="gantt-bar-tooltip-title">
+                @statusIcon @Build.Name
+                @if (HasChangeoverConflict) { <span class="gantt-bar-tooltip-badge gantt-bar-tooltip-badge--warn">⚠ Conflict</span> }
+            </div>
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Status</span>
+                <span>@Build.ScheduleStatus</span>
+            </div>
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Parts</span>
+                <span>@Build.TotalPartCount @(Build.TotalPartCount == 1 ? "part" : "parts") (@Build.UniquePartCount @(Build.UniquePartCount == 1 ? "type" : "types"))</span>
+            </div>
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Duration</span>
+                <span>@(Build.EstimatedPrintHours?.ToString("F1") ?? "?")h</span>
+            </div>
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Start</span>
+                <span>@Start.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+            </div>
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">End</span>
+                <span>@End.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+            </div>
+            @if (ChangeoverMinutes > 0)
+            {
+                <div class="gantt-bar-tooltip-row gantt-bar-tooltip-row--@(HasChangeoverConflict ? "warn" : "ok")">
+                    <span class="gantt-bar-tooltip-label">Changeover</span>
+                    <span>
+                        @((int)ChangeoverMinutes)m —
+                        @if (HasChangeoverConflict)
+                        {
+                            <span>⚠ No operator available — machine will stop</span>
+                        }
+                        else
+                        {
+                            <span>✓ Operator available</span>
+                        }
+                    </span>
+                </div>
+            }
+            @if (parts.Count > 0)
+            {
+                <div class="gantt-bar-tooltip-parts">
+                    @foreach (var pp in parts)
+                    {
+                        <span class="gantt-bar-tooltip-part-tag" style="--part-hue: @GetPartHue(pp.PartId);">
+                            @(pp.Part?.PartNumber ?? $"#{pp.PartId}") ×@(pp.Quantity * pp.StackLevel)
+                        </span>
+                    }
+                </div>
+            }
+        </div>
     </div>
 
     @* ── Changeover time segment (shown after build end) ── *@

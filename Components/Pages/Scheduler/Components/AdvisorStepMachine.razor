@@ -1,0 +1,167 @@
+@* ── Step 0: Machine Selection & Demand Overview ─────────────────────── *@
+@using Vectrik.Components.Pages.Scheduler.Models
+
+<div class="wizard-content">
+    @* ── Machine Selector with status ── *@
+    <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 12px;">
+        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label style="font-weight: 600; font-size: 0.82rem;">Machine</label>
+            <select class="form-control" value="@State.SelectedMachineId" @onchange="OnMachineSelectChanged">
+                @foreach (var m in State.SlsMachines)
+                {
+                    <option value="@m.Id">@m.Name</option>
+                }
+            </select>
+        </div>
+        @if (State.SelectedMachine != null)
+        {
+            <div style="padding: 6px 10px; border-radius: 6px; font-size: 0.78rem; background: var(--bg-secondary); white-space: nowrap;">
+                <span class="gantt-machine-status gantt-status-@State.SelectedMachine.Status.ToString().ToLower()" style="margin-right: 4px;"></span>
+                @State.SelectedMachine.Status
+                @if (State.CurrentBuild != null)
+                {
+                    <span style="color: var(--text-muted); margin-left: 6px;">Printing until @State.CurrentBuild.PrintEnd.ToLocalTime().ToString("ddd h:mm tt")</span>
+                }
+            </div>
+        }
+    </div>
+
+    @* ── Outstanding Demand Summary ── *@
+    @{
+        var activeDemand = State.Demand.Where(d => d.IsAdditive && d.NetRemaining > 0)
+            .OrderByDescending(d => d.HighestPriority).ThenBy(d => d.EarliestDueDate).ToList();
+        var totalRemaining = activeDemand.Sum(d => d.NetRemaining);
+        var overdueCount = activeDemand.Count(d => d.IsOverdue);
+        var totalBuildsNeeded = activeDemand.Sum(d =>
+            d.BuildConfig != null && d.BuildConfig.PlannedPartsPerBuildSingle > 0
+                ? (int)Math.Ceiling((double)d.NetRemaining / d.BuildConfig.PlannedPartsPerBuildSingle)
+                : 1);
+        var completion = State.EstimatedCompletion;
+    }
+    @if (activeDemand.Any())
+    {
+        <div style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
+                <div style="font-weight: 600; font-size: 0.85rem;">Outstanding Demand</div>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">@totalRemaining parts · @totalBuildsNeeded builds · @activeDemand.Count types</span>
+            </div>
+            @if (overdueCount > 0)
+            {
+                <div style="padding: 3px 8px; background: rgba(var(--danger-rgb), 0.1); border-radius: 4px; margin-bottom: 4px; font-size: 0.75rem; color: var(--danger); font-weight: 600;">
+                    ⚠ @overdueCount overdue
+                </div>
+            }
+            <div style="display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow-y: auto;">
+                @foreach (var d in activeDemand)
+                {
+                    var perBuild = d.BuildConfig?.PlannedPartsPerBuildSingle ?? 0;
+                    var buildsNeeded = perBuild > 0 ? (int)Math.Ceiling((double)d.NetRemaining / perBuild) : 0;
+                    var daysUntilDue = (d.EarliestDueDate - DateTime.UtcNow).Days;
+                    var dueDateColor = d.IsOverdue ? "var(--danger)" : daysUntilDue <= 7 ? "var(--warning)" : "var(--text-muted)";
+                    var woList = string.Join(", ", d.SourceLines.Select(s => s.WorkOrderNumber).Distinct().Take(3));
+
+                    // Completion vs due date comparison
+                    var completionVsDue = completion.HasValue
+                        ? (completion.Value > d.EarliestDueDate.ToLocalTime() ? "late" : "ontime")
+                        : null;
+
+                    <div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--bg-secondary); border-radius: 4px; font-size: 0.75rem; @(d.IsOverdue ? "border-left: 3px solid var(--danger);" : "")"
+                         title="@d.NetRemaining remaining · @buildsNeeded builds needed · @woList">
+                        <span style="font-weight: 700; min-width: 90px;">@d.PartNumber</span>
+                        <span class="badge badge-@d.HighestPriority.ToString().ToLower()" style="font-size: 0.6rem; padding: 1px 4px;">@d.HighestPriority</span>
+                        <span style="font-weight: 600;">@d.NetRemaining</span>
+                        @if (buildsNeeded > 0) { <span style="color: var(--text-muted);">(@buildsNeeded builds)</span> }
+                        <span style="color: @dueDateColor; margin-left: auto; font-size: 0.7rem; white-space: nowrap;" title="Due date">Due @d.EarliestDueDate.ToString("MMM d")</span>
+                        @if (completion.HasValue && completionVsDue != null)
+                        {
+                            @if (completionVsDue == "late")
+                            {
+                                <span class="badge badge-danger" style="font-size: 0.6rem; padding: 1px 4px;" title="Build ends @completion.Value.ToString("MMM d") — after due date">⚠ Late</span>
+                            }
+                            else
+                            {
+                                <span style="color: var(--success); font-size: 0.68rem;" title="Build ends @completion.Value.ToString("MMM d h:mm tt") — before due date">✓</span>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @* ── Recommendation card — prominent with reasoning ── *@
+    @if (State.Recommendation != null)
+    {
+        var rec = State.Recommendation;
+        var recAligned = State.SelectedMachine?.AutoChangeoverEnabled == true ? rec.Plate.OperatorAvailable : true;
+        var primaryDemand = activeDemand.FirstOrDefault(d => d.PartId == rec.Plate.Parts.FirstOrDefault()?.PartId);
+        var daysUntilPrimaryDue = primaryDemand != null ? (primaryDemand.EarliestDueDate - DateTime.UtcNow).Days : (int?)null;
+
+        <div class="advisor-recommendation-card @(recAligned ? "advisor-recommendation-card--safe" : "advisor-recommendation-card--risk")">
+            <div class="advisor-recommendation-header">
+                <span class="advisor-recommendation-icon">💡</span>
+                <span class="advisor-recommendation-label">Recommended Next Build</span>
+                @if (recAligned)
+                {
+                    <span class="badge badge-success advisor-recommendation-badge">✓ Safe Changeover</span>
+                }
+                else
+                {
+                    <span class="badge badge-danger advisor-recommendation-badge">⚠ Risky Changeover</span>
+                }
+            </div>
+            <div class="advisor-recommendation-body">
+                @rec.Rationale
+            </div>
+            <div class="advisor-recommendation-meta">
+                <span>@rec.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                <span style="color: var(--text-muted);">→</span>
+                <span>@rec.Slot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+                @if (primaryDemand != null && daysUntilPrimaryDue.HasValue)
+                {
+                    <span style="margin-left: auto; font-size: 0.72rem; color: @(daysUntilPrimaryDue <= 0 ? "var(--danger)" : daysUntilPrimaryDue <= 7 ? "var(--warning)" : "var(--text-muted)");">
+                        Due @primaryDemand.EarliestDueDate.ToString("MMM d")
+                        @if (daysUntilPrimaryDue <= 0) { <text>(overdue)</text> }
+                        else if (daysUntilPrimaryDue <= 7) { <text>(@daysUntilPrimaryDue d)</text> }
+                    </span>
+                }
+            </div>
+            @if (rec.Warnings.Any())
+            {
+                @foreach (var w in rec.Warnings)
+                {
+                    <div class="advisor-warning" style="margin-top: 4px; font-size: 0.75rem;">@w</div>
+                }
+            }
+            @* Reasoning breakdown for top demand item *@
+            @if (primaryDemand != null)
+            {
+                var reasons = new List<string>();
+                if (primaryDemand.IsOverdue) reasons.Add("overdue order");
+                else if (daysUntilPrimaryDue <= 7) reasons.Add($"due in {daysUntilPrimaryDue}d");
+                if (primaryDemand.HighestPriority == JobPriority.Rush) reasons.Add("RUSH priority");
+                else if (primaryDemand.HighestPriority == JobPriority.High) reasons.Add("High priority");
+                var perBuild = primaryDemand.BuildConfig?.PlannedPartsPerBuildSingle ?? 0;
+                var builds = perBuild > 0 ? (int)Math.Ceiling((double)primaryDemand.NetRemaining / perBuild) : 0;
+                if (builds > 0) reasons.Add($"{builds} build{(builds > 1 ? "s" : "")} needed");
+                if (reasons.Any())
+                {
+                    <div class="advisor-recommendation-reasoning">
+                        Recommended because: @string.Join(", ", reasons)
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AdvisorWizardState State { get; set; } = default!;
+    [Parameter] public EventCallback<int> OnMachineChanged { get; set; }
+
+    private async Task OnMachineSelectChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+            await OnMachineChanged.InvokeAsync(id);
+    }
+}

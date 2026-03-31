@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Vectrik.Data;
 using Vectrik.Hubs;
 using Vectrik.Models;
@@ -78,7 +79,7 @@ public class MaintenanceDispatchServiceTests
         var (db, svc, notifier) = DispatchTestFixtures.CreateDispatchService();
         var maintenanceSvc = new StubMaintenanceService();
         var tenant = new StubTenantContext();
-        var maintenanceDispatchSvc = new MaintenanceDispatchService(db, svc, maintenanceSvc, notifier, tenant);
+        var maintenanceDispatchSvc = new MaintenanceDispatchService(db, svc, maintenanceSvc, notifier, tenant, NullLogger<MaintenanceDispatchService>.Instance);
         return (db, svc, notifier, maintenanceSvc, maintenanceDispatchSvc);
     }
 
@@ -276,7 +277,7 @@ public class MaintenanceDispatchServiceTests
         var (_, svc2, notifier2) = DispatchTestFixtures.CreateDispatchService();
         var maintenanceSvc = new StubMaintenanceService();
         var tenant = new StubTenantContext();
-        var maintenanceDispatchSvc = new MaintenanceDispatchService(db, svc2, maintenanceSvc, notifier2, tenant);
+        var maintenanceDispatchSvc = new MaintenanceDispatchService(db, svc2, maintenanceSvc, notifier2, tenant, NullLogger<MaintenanceDispatchService>.Instance);
 
         var alerts = await maintenanceDispatchSvc.CheckToolingWearAsync(program.Id);
 
