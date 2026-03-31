@@ -256,12 +256,25 @@ public class ProgramPlanningService : IProgramPlanningService
             }
         }
 
-        // 4. Unlock and archive the program
+        // 4. Reset the program — archive scheduled copies, but preserve master programs
         program.IsLocked = false;
-        program.ScheduleStatus = ProgramScheduleStatus.Cancelled;
-        program.Status = ProgramStatus.Archived;
+        program.ScheduledJobId = null;
+        program.ScheduledDate = null;
+        program.PrintStartedAt = null;
         program.LastModifiedDate = DateTime.UtcNow;
         program.LastModifiedBy = deletedBy;
+
+        if (program.IsScheduledCopy)
+        {
+            // Scheduled copies can be safely archived — the master still exists
+            program.ScheduleStatus = ProgramScheduleStatus.Cancelled;
+            program.Status = ProgramStatus.Archived;
+        }
+        else
+        {
+            // Master/template programs should be returned to Ready so they can be reused
+            program.ScheduleStatus = ProgramScheduleStatus.Ready;
+        }
 
         await _db.SaveChangesAsync();
     }
