@@ -606,6 +606,14 @@ else if (_viewMode == "data")
             }
             else if (drag.BarType == "build")
             {
+                // Guard: don't allow rescheduling active builds
+                var draggedBuild = _programs.FirstOrDefault(p => p.Id == drag.EntityId);
+                if (draggedBuild?.ScheduleStatus is ProgramScheduleStatus.Printing
+                    or ProgramScheduleStatus.PostPrint or ProgramScheduleStatus.Completed)
+                {
+                    Toast.ShowError($"Cannot move '{draggedBuild.Name}' — it is {draggedBuild.ScheduleStatusDisplay.ToLower()}.");
+                    return;
+                }
                 int targetMachineId;
                 ProgramScheduleResult schedResult;
                 if (drag.TargetMachineId.HasValue && drag.TargetMachineId.Value > 0)
@@ -670,6 +678,12 @@ else if (_viewMode == "data")
                     break;
 
                 case "reschedule":
+                    if (build.ScheduleStatus is ProgramScheduleStatus.Printing
+                        or ProgramScheduleStatus.PostPrint or ProgramScheduleStatus.Completed)
+                    {
+                        Toast.ShowError($"Cannot reschedule '{build.Name}' — it is {build.ScheduleStatusDisplay.ToLower()}.");
+                        return;
+                    }
                     await ProgramScheduling.UnlockProgramAsync(build.Id, _userName, "Rescheduled from Gantt");
                     await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(build.Id);
                     Toast.ShowSuccess($"Build rescheduled: {build.Name}");
@@ -715,10 +729,19 @@ else if (_viewMode == "data")
     private async Task HandleBatchRescheduleAsync(List<int> buildIds)
     {
         var count = 0;
+        var skipped = 0;
         foreach (var id in buildIds)
         {
             try
             {
+                // Skip active builds — don't reschedule printing/post-print/completed
+                var prog = _programs.FirstOrDefault(p => p.Id == id);
+                if (prog?.ScheduleStatus is ProgramScheduleStatus.Printing
+                    or ProgramScheduleStatus.PostPrint or ProgramScheduleStatus.Completed)
+                {
+                    skipped++;
+                    continue;
+                }
                 await ProgramScheduling.UnlockProgramAsync(id, _userName, "Batch rescheduled");
                 await ProgramScheduling.ScheduleBuildPlateAutoMachineAsync(id);
                 count++;
@@ -729,7 +752,13 @@ else if (_viewMode == "data")
             }
         }
         if (count > 0)
-            Toast.ShowSuccess($"Rescheduled {count} build(s)");
+        {
+            var msg = $"Rescheduled {count} build(s)";
+            if (skipped > 0) msg += $" ({skipped} active build(s) skipped)";
+            Toast.ShowSuccess(msg);
+        }
+        else if (skipped > 0)
+            Toast.ShowInfo($"Skipped {skipped} active build(s) — cannot reschedule printing/post-print builds.");
         await LoadData(isBackgroundRefresh: true);
     }
 

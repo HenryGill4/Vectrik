@@ -26,11 +26,15 @@
     var hueStyle = primaryHue >= 0 && Build.ScheduleStatus == ProgramScheduleStatus.Scheduled
         ? $"--build-hue: {primaryHue};"
         : "";
+    var isActiveBuild = Build.ScheduleStatus == ProgramScheduleStatus.Printing
+        || Build.ScheduleStatus == ProgramScheduleStatus.PostPrint
+        || Build.ScheduleStatus == ProgramScheduleStatus.Completed;
 }
 <div class="gantt-build-bar-wrapper" style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
      data-program-id="@Build.Id"
      data-bar-type="build"
-     data-machine-id="@Build.MachineId">
+     data-machine-id="@Build.MachineId"
+     data-locked="@(isActiveBuild ? "true" : "false")"
     <div class="gantt-bar gantt-build-bar @statusClass @(HasChangeoverConflict ? "gantt-changeover-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "") gantt-bar-has-tooltip"
          style="@hueStyle"
          @onclick="OpenDetail"

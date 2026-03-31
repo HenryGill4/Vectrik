@@ -68,6 +68,14 @@ public class ProgramSchedulingService : IProgramSchedulingService
         if (!program.ProgramParts.Any())
             throw new InvalidOperationException("Add at least one part to the build plate before scheduling.");
 
+        // ── Guard: prevent rescheduling a build that is actively printing or in post-print ──
+        if (program.ScheduleStatus == ProgramScheduleStatus.Printing)
+            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is currently printing. End the print first.");
+        if (program.ScheduleStatus == ProgramScheduleStatus.PostPrint)
+            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is in post-print processing.");
+        if (program.ScheduleStatus == ProgramScheduleStatus.Completed)
+            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is already completed.");
+
         // ── Reschedule: clean up existing job if this program was already scheduled ──
         if (program.ScheduledJobId.HasValue)
         {
@@ -383,6 +391,14 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
         if (!program.EstimatedPrintHours.HasValue || program.EstimatedPrintHours <= 0)
             throw new InvalidOperationException("Enter slicer data (print duration) before scheduling.");
+
+        // Guard: prevent rescheduling active builds (same check as ScheduleBuildPlateAsync)
+        if (program.ScheduleStatus == ProgramScheduleStatus.Printing)
+            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is currently printing.");
+        if (program.ScheduleStatus == ProgramScheduleStatus.PostPrint)
+            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is in post-print processing.");
+        if (program.ScheduleStatus == ProgramScheduleStatus.Completed)
+            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is already completed.");
 
         var notBefore = startAfter ?? DateTime.UtcNow;
         var bestSlot = await FindBestSlotAsync(program.EstimatedPrintHours.Value, notBefore, machineType: "SLS");
