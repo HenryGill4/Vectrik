@@ -426,6 +426,26 @@ public class SchedulingService : ISchedulingService
         return count;
     }
 
+    public async Task<int> RescheduleAllPendingAsync()
+    {
+        // Clear schedules for all not-started executions so AutoScheduleAll picks them up
+        var pending = await _db.StageExecutions
+            .Where(e => e.Status == StageExecutionStatus.NotStarted
+                && e.ScheduledStartAt != null)
+            .ToListAsync();
+
+        foreach (var exec in pending)
+        {
+            exec.ScheduledStartAt = null;
+            exec.ScheduledEndAt = null;
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Re-schedule everything with current shift definitions
+        return await AutoScheduleAllAsync();
+    }
+
     // ── Private Helpers ─────────────────────────────────────────
 
     private async Task<ScheduleSlot> FindEarliestSlotOnMachine(

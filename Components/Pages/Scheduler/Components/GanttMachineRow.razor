@@ -78,7 +78,9 @@
                 Start="start" End="end"
                 IsConflict="isConflict"
                 IsSelected="SelectedExecIds.Contains(exec.Id)"
-                OnClick="OnBarClick" />
+                OnClick="OnBarClick"
+                MachineShifts="MachineShifts"
+                PixelsPerHour="PixelsPerHour" />
         }
         @* ── "+" zone for SLS machines ── *@
         @if (Machine.IsAdditiveMachine && OnNextBuildRequested.HasDelegate)
@@ -107,6 +109,7 @@
     [Parameter] public HashSet<int> SelectedExecIds { get; set; } = [];
     [Parameter] public HashSet<int> SelectedBuildIds { get; set; } = [];
     [Parameter] public EventCallback<int> OnNextBuildRequested { get; set; }
+    [Parameter] public List<OperatingShift> MachineShifts { get; set; } = new();
 
     private double GetBarLeftPx(DateTime start) =>
         (start - DataRangeStart).TotalHours * PixelsPerHour;

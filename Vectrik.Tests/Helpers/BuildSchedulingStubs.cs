@@ -162,6 +162,8 @@ internal sealed class StubSchedulingService : ISchedulingService
 
     public Task<int> AutoScheduleAllAsync() => Task.FromResult(0);
 
+    public Task<int> RescheduleAllPendingAsync() => Task.FromResult(0);
+
     public Task<ScheduleClearResult> ClearAllScheduleDataAsync() =>
         Task.FromResult(new ScheduleClearResult(0, 0, 0));
 

@@ -124,7 +124,8 @@
                                 BuildPrograms="BuildPrograms"
                                 BuildTimeline="GetTimelineForMachine(machine)"
                                 SelectedExecIds="_selectedExecIds"
-                                SelectedBuildIds="_selectedBuildIds" />
+                                SelectedBuildIds="_selectedBuildIds"
+                                MachineShifts="@(MachineShiftMap.TryGetValue(machine.Id, out var ms) ? ms : Shifts)" />
                         }
 
                         @* ── Unassigned row ── *@
@@ -213,6 +214,7 @@
     [Parameter] public List<MachineProgram> BuildPrograms { get; set; } = [];
     [Parameter] public Dictionary<int, List<ProgramTimelineEntry>> MachineTimelines { get; set; } = new();
     [Parameter] public List<OperatingShift> Shifts { get; set; } = [];
+    [Parameter] public Dictionary<int, List<OperatingShift>> MachineShiftMap { get; set; } = new();
     [Parameter] public List<WorkOrder> WorkOrders { get; set; } = [];
     [Parameter] public string UserName { get; set; } = "System";
     [Parameter] public DateTime DataRangeStart { get; set; }
