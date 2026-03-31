@@ -2,42 +2,43 @@
 @using Vectrik.Components.Pages.Programs.Models
 
 @{
-    var partsCardTitle = IsBuildPlateEditor ? "🔩 Parts on Plate" : "🔩 Program Parts";
+    var partsCardTitle = IsBuildPlateEditor ? "Parts on Plate" : "Program Parts";
     var partsCardHint = IsBuildPlateEditor
         ? "Search and add parts that will be nested on this build plate."
-        : "Add parts to this program. Click ★ to set the primary part.";
-    var partsSearchPlaceholder = "Search parts…";
+        : "Add parts to this program. Click the star to set the primary part.";
+    var partsSearchPlaceholder = "Search parts...";
     var hasPrimaryPart = Parts.Any(p => p.IsPrimary);
 }
 
-<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-            <h4 style="margin:0;">@partsCardTitle</h4>
+<div class="prg-parts-editor">
+    <div class="prg-parts-editor-header">
+        <div class="prg-parts-editor-title-row">
+            <h4 class="prg-parts-editor-title">@partsCardTitle</h4>
             @if (Parts.Any())
             {
-                <span class="badge badge-success" style="font-size:0.75em;">@Parts.Sum(p => p.Quantity) parts (@Parts.Count unique)</span>
+                <span class="prg-badge prg-badge--active">@Parts.Sum(p => p.Quantity) parts (@Parts.Count unique)</span>
             }
             @if (!IsBuildPlateEditor && hasPrimaryPart)
             {
                 var primary = Parts.First(p => p.IsPrimary);
-                <span class="badge badge-info" style="font-size:0.75em;">★ @primary.PartNumber</span>
+                <span class="prg-badge prg-badge--version">&#9733; @primary.PartNumber</span>
             }
         </div>
         @if (!IsBuildPlateEditor && !hasPrimaryPart && Parts.Any())
         {
-            <span style="font-size:0.75em;color:var(--warning);">⚠ No primary part selected</span>
+            <span class="prg-parts-editor-warn">&#9888; No primary part selected</span>
         }
     </div>
-    <div style="display:flex;gap:0.5rem;align-items:end;flex-wrap:wrap;">
-        <div style="flex:2;min-width:160px;">
-            <label class="form-label" style="font-size:0.75em;">Search</label>
-            <input class="form-control" placeholder="@partsSearchPlaceholder" value="@SearchTerm" @oninput="HandleSearchInput" />
+
+    <div class="prg-parts-editor-controls">
+        <div class="prg-parts-editor-field prg-parts-editor-field--search">
+            <label class="prg-parts-editor-label">Search</label>
+            <input class="form-control form-control-sm" placeholder="@partsSearchPlaceholder" value="@SearchTerm" @oninput="HandleSearchInput" />
         </div>
-        <div style="flex:3;min-width:180px;">
-            <label class="form-label" style="font-size:0.75em;">Part</label>
-            <select class="form-control" value="@SelectedPartId" @onchange="HandlePartSelection">
-                <option value="0">Select part…</option>
+        <div class="prg-parts-editor-field prg-parts-editor-field--select">
+            <label class="prg-parts-editor-label">Part</label>
+            <select class="form-control form-control-sm" value="@SelectedPartId" @onchange="HandlePartSelection">
+                <option value="0">Select part...</option>
                 @if (FilteredParts != null)
                 {
                     @foreach (var p in FilteredParts)
@@ -47,54 +48,61 @@
                 }
             </select>
         </div>
-        <div style="width:70px;">
-            <label class="form-label" style="font-size:0.75em;">Qty</label>
-            <input class="form-control" type="number" min="1" max="500" value="@Quantity" @onchange="HandleQuantityChange" />
+        <div class="prg-parts-editor-field prg-parts-editor-field--qty">
+            <label class="prg-parts-editor-label">Qty</label>
+            <input class="form-control form-control-sm" type="number" min="1" max="500" value="@Quantity" @onchange="HandleQuantityChange" />
         </div>
-        <button class="btn btn-primary" style="height:36px;white-space:nowrap;margin-bottom:0;" @onclick="HandleAddPart" disabled="@(SelectedPartId <= 0)">+ Add</button>
+        <button class="btn btn-sm btn-primary prg-parts-editor-add" @onclick="HandleAddPart" disabled="@(SelectedPartId <= 0)">+ Add</button>
     </div>
+
     @if (Parts.Any())
     {
-        <table class="data-table" style="font-size:0.88rem;margin-top:10px;">
-            <thead>
-                <tr>
-                    @if (!IsBuildPlateEditor)
-                    {
-                        <th style="width:50px;text-align:center" title="Primary Part">★</th>
-                    }
-                    <th>Part</th>
-                    <th style="width:70px;text-align:center">Qty</th>
-                    <th style="width:40px"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var cp in Parts)
-                {
+        <div class="prg-parts-table-wrap">
+            <table class="prg-parts-table">
+                <thead>
                     <tr>
                         @if (!IsBuildPlateEditor)
                         {
-                            <td style="text-align:center">
-                                <button class="btn btn-sm @(cp.IsPrimary ? "btn-warning" : "btn-outline-secondary")"
-                                        style="padding:2px 6px;font-size:0.85em;"
-                                        @onclick="() => OnSetPrimary.InvokeAsync(cp.PartId)"
-                                        title="@(cp.IsPrimary ? "Primary Part" : "Set as Primary")">
-                                    ★
-                                </button>
-                            </td>
+                            <th class="prg-parts-editor-col-star" title="Primary Part">&#9733;</th>
                         }
-                        <td><strong>@cp.PartNumber</strong> <span style="color:var(--text-secondary)">— @cp.PartName</span></td>
-                        <td style="text-align:center">@cp.Quantity</td>
-                        <td><button class="btn btn-sm btn-danger" @onclick="() => OnRemovePart.InvokeAsync(cp.PartId)" title="Remove">✕</button></td>
+                        <th>Part</th>
+                        <th class="prg-parts-editor-col-qty">Qty</th>
+                        <th class="prg-parts-editor-col-remove"></th>
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @foreach (var cp in Parts)
+                    {
+                        <tr>
+                            @if (!IsBuildPlateEditor)
+                            {
+                                <td class="prg-parts-editor-star-cell">
+                                    <button class="prg-parts-editor-star-btn @(cp.IsPrimary ? "prg-parts-editor-star-btn--active" : "")"
+                                            @onclick="() => OnSetPrimary.InvokeAsync(cp.PartId)"
+                                            title="@(cp.IsPrimary ? "Primary Part" : "Set as Primary")">
+                                        &#9733;
+                                    </button>
+                                </td>
+                            }
+                            <td>
+                                <span class="prg-parts-pn">@cp.PartNumber</span>
+                                <span class="prg-parts-name"> — @cp.PartName</span>
+                            </td>
+                            <td class="prg-parts-qty">
+                                <span class="prg-parts-qty-badge">@cp.Quantity</span>
+                            </td>
+                            <td class="prg-parts-actions">
+                                <button class="btn btn-xs btn-danger-outline" @onclick="() => OnRemovePart.InvokeAsync(cp.PartId)" title="Remove">&#10005;</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     }
     else
     {
-        <div style="color:var(--text-muted);font-size:0.85em;margin-top:10px;text-align:center;padding:16px 0;font-style:italic;">
-            @partsCardHint
-        </div>
+        <div class="prg-empty">@partsCardHint</div>
     }
 </div>
 
