@@ -44,7 +44,10 @@ public class DataSeedingService : IDataSeedingService
         // Manufacturing processes (depends on parts + production stages)
         await SeedManufacturingProcessesAsync(tenantDb);
 
-        // Build templates (depends on parts + machines + materials)
+        // Certified layouts (depends on parts + materials)
+        await SeedCertifiedLayoutsAsync(tenantDb);
+
+        // Build templates (depends on parts + machines + materials + certified layouts)
         await SeedBuildTemplatesAsync(tenantDb);
 
         // Work instructions & sign-off checklists (depends on parts + production stages)
@@ -2375,6 +2378,96 @@ public class DataSeedingService : IDataSeedingService
     }
 
     // ──────────────────────────────────────────────
+    //  Certified Layouts (quadrant/half plate building blocks)
+    // ──────────────────────────────────────────────
+    private static async Task SeedCertifiedLayoutsAsync(TenantDbContext db)
+    {
+        if (await db.CertifiedLayouts.AnyAsync()) return;
+
+        var tiMat = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("Ti-6Al-4V"));
+        var parts = await db.Parts.Where(p => p.IsActive).ToListAsync();
+        if (parts.Count == 0 || tiMat == null) return;
+
+        var tinman   = parts.FirstOrDefault(p => p.PartNumber == "EMC-TIN-001");
+        var handyman = parts.FirstOrDefault(p => p.PartNumber == "EMC-HAN-001");
+        var gargoyle = parts.FirstOrDefault(p => p.PartNumber == "EMC-GAR-001");
+        var pilate   = parts.FirstOrDefault(p => p.PartNumber == "EMC-PIL-001");
+
+        var now = DateTime.UtcNow;
+
+        // Each suppressor part gets a certified quadrant layout.
+        // Full-plate builds use 4 quadrants (one per slot: 0, 1, 2, 3).
+        // Parts-per-quadrant × 4 = parts-per-build from PartAdditiveBuildConfig.
+        //   Tinman:   14/quad × 4 = 56/build     (DS: 14 pos × 2 stack = 28/quad)
+        //   Handyman: 16/quad × 4 = 64/build
+        //   Gargoyle: 18/quad × 4 = 72/build
+        //   Pilate:   24/quad × 4 = 96/build     (DS: 24 pos × 2 stack = 48/quad)
+
+        async Task<CertifiedLayout> CreateLayout(Part? part, string name, string desc,
+            int positions, int stackLevel, string notes)
+        {
+            if (part == null) return null!;
+            var layout = new CertifiedLayout
+            {
+                Name = name,
+                Description = desc,
+                Size = LayoutSize.Quadrant,
+                PartId = part.Id,
+                Positions = positions,
+                StackLevel = stackLevel,
+                MaterialId = tiMat.Id,
+                Status = CertifiedLayoutStatus.Certified,
+                CertifiedBy = "System",
+                CertifiedDate = now.AddDays(-14),
+                PartVersionHash = part.LastModifiedDate.Ticks.ToString(),
+                NeedsRecertification = false,
+                Notes = notes,
+                UseCount = 0,
+                CreatedDate = now.AddDays(-21),
+                CreatedBy = "System",
+                LastModifiedDate = now.AddDays(-14),
+                LastModifiedBy = "System"
+            };
+            db.CertifiedLayouts.Add(layout);
+            await db.SaveChangesAsync();
+            return layout;
+        }
+
+        // Single-stack quadrant layouts
+        if (tinman != null)
+            await CreateLayout(tinman, "Tinman 7.62mm Quadrant",
+                "14-position quadrant for Tinman 7.62mm suppressors. 4 quadrants = 56 parts/build.",
+                14, 1, "Standard 7×2 nesting pattern per quadrant. Supports generated at 45° downskin angle.");
+
+        if (tinman != null)
+            await CreateLayout(tinman, "Tinman 7.62mm Quadrant DS",
+                "14-position double-stack quadrant for Tinman. 4 quadrants × 2 stack = 112 parts/build.",
+                14, 2, "Double-stack at 63mm vertical spacing. Top layer rotated 15° for interlock. 4 quads × 28 = 112 parts max.");
+
+        if (handyman != null)
+            await CreateLayout(handyman, "Handyman 9mm Quadrant",
+                "16-position quadrant for Handyman 9mm suppressors. 4 quadrants = 64 parts/build.",
+                16, 1, "Standard 8×2 nesting. Slightly smaller diameter allows tighter packing than Tinman.");
+
+        if (gargoyle != null)
+            await CreateLayout(gargoyle, "Gargoyle 5.56mm Quadrant",
+                "18-position quadrant for Gargoyle 5.56mm suppressors. 4 quadrants = 72 parts/build.",
+                18, 1, "Compact 6×3 nesting. Shortest suppressor, best packing density.");
+
+        if (pilate != null)
+            await CreateLayout(pilate, "Pilate .22LR Quadrant",
+                "24-position quadrant for Pilate .22LR suppressors. 4 quadrants = 96 parts/build.",
+                24, 1, "Dense 8×3 nesting. Smallest diameter (1.25\"), highest density layout.");
+
+        if (pilate != null)
+            await CreateLayout(pilate, "Pilate .22LR Quadrant DS",
+                "24-position double-stack quadrant for Pilate. 4 quadrants × 2 stack = 192 parts/build.",
+                24, 2, "Double-stack at 45mm spacing. 4 quads × 48 = 192 parts max. Used for high-volume .22LR runs.");
+
+        await db.SaveChangesAsync();
+    }
+
+    // ──────────────────────────────────────────────
     //  Build Templates (reusable build file library)
     // ──────────────────────────────────────────────
     private static async Task SeedBuildTemplatesAsync(TenantDbContext db)
@@ -2388,6 +2481,11 @@ public class DataSeedingService : IDataSeedingService
         var tiMaterial = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("Ti-6Al-4V"));
         var ssMaterial = await db.Materials.FirstOrDefaultAsync(m => m.Name.StartsWith("316L"));
         var m4Machine = await db.Machines.FirstOrDefaultAsync(m => m.MachineId == "M4-1");
+
+        // Look up certified layouts for plate composition references
+        var certifiedLayouts = await db.CertifiedLayouts
+            .Where(cl => cl.Status == CertifiedLayoutStatus.Certified)
+            .ToListAsync();
 
         // Group parts by material for realistic template assignments
         var tiParts = parts.Where(p => p.MaterialId == tiMaterial?.Id).Take(3).ToList();
@@ -2434,6 +2532,10 @@ public class DataSeedingService : IDataSeedingService
             db.BuildTemplates.Add(t1);
             await db.SaveChangesAsync();
 
+            // Link template parts and set plate composition from certified layouts
+            var t1Layout = certifiedLayouts.FirstOrDefault(cl =>
+                tiParts.Any(p => p.Id == cl.PartId) && cl.StackLevel == 1);
+
             var positions = new List<object>();
             var order = 0;
             foreach (var part in tiParts)
@@ -2450,6 +2552,11 @@ public class DataSeedingService : IDataSeedingService
                 order++;
             }
             t1.PartPositionsJson = System.Text.Json.JsonSerializer.Serialize(positions);
+            if (t1Layout != null)
+            {
+                t1.PlateCompositionJson = System.Text.Json.JsonSerializer.Serialize(
+                    Enumerable.Range(0, 4).Select(s => new { layoutId = t1Layout.Id, slots = new[] { s } }));
+            }
             await db.SaveChangesAsync();
 
             templates.Add(t1);
@@ -2547,6 +2654,15 @@ public class DataSeedingService : IDataSeedingService
                     PositionNotes = "Top layer"
                 });
             }
+
+            // Plate composition from certified double-stack layouts
+            var t3Layout = certifiedLayouts.FirstOrDefault(cl =>
+                tiParts.Any(p => p.Id == cl.PartId) && cl.StackLevel == 2);
+            if (t3Layout != null)
+            {
+                t3.PlateCompositionJson = System.Text.Json.JsonSerializer.Serialize(
+                    Enumerable.Range(0, 4).Select(s => new { layoutId = t3Layout.Id, slots = new[] { s } }));
+            }
             await db.SaveChangesAsync();
 
             templates.Add(t3);
@@ -2555,12 +2671,14 @@ public class DataSeedingService : IDataSeedingService
 
     /// <summary>
     /// Seeds demo data: 4 EMC Silencers suppressor variants (Tinman, Handyman, Gargoyle, Pilate),
-    /// 10 work orders across 3 distributors, 14 completed builds, 2 active builds, 3 ready builds.
+    /// 10 work orders across 3 distributors, master build plate programs with certified layouts,
+    /// and CNC turning programs. No jobs or builds are seeded — the scheduler starts empty for demos.
     /// Based on real EOS M4 ONYX DMLS production specs: Ti-6Al-4V at 60um, ~$88 cost/part.
     /// </summary>
     private static async Task SeedSchedulerDemoDataAsync(TenantDbContext db)
     {
-        if (await db.Jobs.AnyAsync()) return;
+        // Guard: only seed once (check parts since we no longer seed jobs)
+        if (await db.MachinePrograms.AnyAsync(p => p.ProgramType == ProgramType.BuildPlate)) return;
 
         var now = DateTime.UtcNow;
         var slsApproach = await db.ManufacturingApproaches.FirstOrDefaultAsync(a => a.Slug == "sls-based");
@@ -2727,8 +2845,6 @@ public class DataSeedingService : IDataSeedingService
                 OrderDate = now.AddDays(-daysAgo), DueDate = now.AddDays(dueDays),
                 ShipByDate = now.AddDays(dueDays - 2), Status = status, Priority = priority,
                 CreatedBy = "System", LastModifiedBy = "System" };
-            // Note: LastModifiedDate for completed WOs is fixed up at the end of SeedSchedulerDemoDataAsync
-            // to avoid EF change tracking resetting it during subsequent saves
             db.WorkOrders.Add(wo);
             await db.SaveChangesAsync();
             foreach (var (part, qty) in lines)
@@ -2741,37 +2857,34 @@ public class DataSeedingService : IDataSeedingService
             return wo;
         }
 
-        // ── Completed & shipped ──
-        var wo1 = await CreateWO("WO-00001", "Silencer Shop",     "SS-2026-1001", 60, -42,
-            WorkOrderStatus.Complete, JobPriority.Normal,
+        // ── All Released — no builds started, scheduler is empty for demo ──
+        var wo1 = await CreateWO("WO-00001", "Silencer Shop",     "SS-2026-1001", 60, 14,
+            WorkOrderStatus.Released, JobPriority.Normal,
             [(tinman, 112)]);                                      // 2× Tinman builds (56/build)
 
-        var wo2 = await CreateWO("WO-00002", "Capitol Armory",    "CA-2026-0341", 52, -35,
-            WorkOrderStatus.Complete, JobPriority.Normal,
+        var wo2 = await CreateWO("WO-00002", "Capitol Armory",    "CA-2026-0341", 52, 18,
+            WorkOrderStatus.Released, JobPriority.Normal,
             [(handyman, 192)]);                                    // 3× Handyman builds (64/build)
 
-        var wo3 = await CreateWO("WO-00003", "Silencer Central",  "SC-2026-0080", 45, -28,
-            WorkOrderStatus.Complete, JobPriority.High,
+        var wo3 = await CreateWO("WO-00003", "Silencer Central",  "SC-2026-0080", 45, 21,
+            WorkOrderStatus.Released, JobPriority.High,
             [(gargoyle, 144)]);                                    // 2× Gargoyle builds (72/build)
 
-        var wo4 = await CreateWO("WO-00004", "Silencer Shop",     "SS-2026-1102", 38, -2,
-            WorkOrderStatus.Complete, JobPriority.Normal,
+        var wo4 = await CreateWO("WO-00004", "Silencer Shop",     "SS-2026-1102", 38, 25,
+            WorkOrderStatus.Released, JobPriority.Normal,
             [(tinman, 168), (pilate, 96)]);                        // 3× Tinman + 1× Pilate
 
-        // ── In progress ──
         var wo5 = await CreateWO("WO-00005", "Capitol Armory",    "CA-2026-0512", 18, 8,
-            WorkOrderStatus.InProgress, JobPriority.High,
+            WorkOrderStatus.Released, JobPriority.High,
             [(tinman, 112), (handyman, 64)]);                      // 2× Tinman + 1× Handyman
 
         var wo6 = await CreateWO("WO-00006", "Silencer Central",  "SC-2026-1201", 10, 16,
-            WorkOrderStatus.InProgress, JobPriority.Normal,
-            [(gargoyle, 144)]);                                    // 2× Gargoyle, 1 done, 1 printing
+            WorkOrderStatus.Released, JobPriority.Normal,
+            [(gargoyle, 144)]);                                    // 2× Gargoyle builds (72/build)
 
         var wo7 = await CreateWO("WO-00007", "Silencer Shop",     "SS-2026-0120", 6, 22,
-            WorkOrderStatus.InProgress, JobPriority.Normal,
-            [(pilate, 144)]);                                      // 1× Pilate DS (144), in depowder
-
-        // ── Released — needs scheduling ──
+            WorkOrderStatus.Released, JobPriority.Normal,
+            [(pilate, 144)]);                                      // 1.5× Pilate builds (96/build)
         var wo8 = await CreateWO("WO-00008", "Capitol Armory",    "CA-2026-1301", 3, 28,
             WorkOrderStatus.Released, JobPriority.High,
             [(tinman, 224), (gargoyle, 72)]);                      // 4× Tinman + 1× Gargoyle
@@ -2810,47 +2923,71 @@ public class DataSeedingService : IDataSeedingService
             return prog;
         }
 
-        async Task LinkProgParts(MachineProgram prog, (Part part, int qty, int stack, WorkOrder wo)[] items)
+        // Load certified layouts for linking to program parts
+        var certLayouts = await db.CertifiedLayouts
+            .Where(cl => cl.Status == CertifiedLayoutStatus.Certified)
+            .ToListAsync();
+
+        async Task LinkProgPartsWithLayouts(MachineProgram prog,
+            Part part, int positionsPerQuadrant, int stackLevel, CertifiedLayout? layout)
         {
-            foreach (var (part, qty, stack, wo) in items)
+            // Create one ProgramPart per quadrant (4 slots for a full plate)
+            for (int slot = 0; slot < 4; slot++)
             {
-                var woLine = await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo.Id && l.PartId == part.Id);
-                db.ProgramParts.Add(new ProgramPart { MachineProgramId = prog.Id, PartId = part.Id,
-                    Quantity = qty, StackLevel = stack, WorkOrderLineId = woLine?.Id });
+                db.ProgramParts.Add(new ProgramPart
+                {
+                    MachineProgramId = prog.Id,
+                    PartId = part.Id,
+                    Quantity = positionsPerQuadrant * stackLevel,
+                    StackLevel = stackLevel,
+                    CertifiedLayoutId = layout?.Id,
+                    PlateSlots = slot.ToString(),
+                    PositionNotes = $"Quadrant {slot}"
+                });
             }
+            prog.UsesCertifiedLayouts = layout != null;
             await db.SaveChangesAsync();
         }
 
         // ── Masters (reusable templates, not scheduled) ──
-        var masterTinman = await CreateProgram("BP-00001", "Tinman 56x", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 22.5, 3067, 184.0, 16.2, "EMC_Tinman_56x_v1.sli",
-            false, null, null, null, null, null);
-        await LinkProgParts(masterTinman, [(tinman, 56, 1, wo8)]);
+        // Each master uses certified quadrant layouts. ProgramParts reference CertifiedLayoutId + PlateSlots.
 
-        var masterTinmanDs = await CreateProgram("BP-00002", "Tinman 80x Double", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 30.0, 4083, 245.0, 22.5, "EMC_Tinman_80x_DS_v1.sli",
+        var tinmanLayout = certLayouts.FirstOrDefault(cl => cl.PartId == tinman.Id && cl.StackLevel == 1);
+        var tinmanDsLayout = certLayouts.FirstOrDefault(cl => cl.PartId == tinman.Id && cl.StackLevel == 2);
+        var handymanLayout = certLayouts.FirstOrDefault(cl => cl.PartId == handyman.Id && cl.StackLevel == 1);
+        var gargoyleLayout = certLayouts.FirstOrDefault(cl => cl.PartId == gargoyle.Id && cl.StackLevel == 1);
+        var pilateLayout = certLayouts.FirstOrDefault(cl => cl.PartId == pilate.Id && cl.StackLevel == 1);
+        var pilateDsLayout = certLayouts.FirstOrDefault(cl => cl.PartId == pilate.Id && cl.StackLevel == 2);
+
+        var masterTinman = await CreateProgram("BP-00001", "Tinman 56x", ProgramType.BuildPlate,
+            ProgramScheduleStatus.None, tiMat?.Id, 22.5, 3067, 184.0, 16.2, "EMC_Tinman_56x_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterTinmanDs, [(tinman, 40, 1, wo8), (tinman, 40, 2, wo8)]);
+        await LinkProgPartsWithLayouts(masterTinman, tinman, 14, 1, tinmanLayout);
+
+        var masterTinmanDs = await CreateProgram("BP-00002", "Tinman 112x Double", ProgramType.BuildPlate,
+            ProgramScheduleStatus.None, tiMat?.Id, 30.0, 4083, 245.0, 22.5, "EMC_Tinman_112x_DS_v1.sli",
+            false, null, null, null, null, null);
+        await LinkProgPartsWithLayouts(masterTinmanDs, tinman, 14, 2, tinmanDsLayout);
 
         var masterHandyman = await CreateProgram("BP-00003", "Handyman 64x", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 20.0, 2856, 171.0, 14.0, "EMC_Handyman_64x_v1.sli",
+            ProgramScheduleStatus.None, tiMat?.Id, 20.0, 2856, 171.0, 14.0, "EMC_Handyman_64x_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterHandyman, [(handyman, 64, 1, wo9)]);
+        await LinkProgPartsWithLayouts(masterHandyman, handyman, 16, 1, handymanLayout);
 
         var masterGargoyle = await CreateProgram("BP-00004", "Gargoyle 72x", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 18.5, 2117, 127.0, 11.5, "EMC_Gargoyle_72x_v1.sli",
+            ProgramScheduleStatus.None, tiMat?.Id, 18.5, 2117, 127.0, 11.5, "EMC_Gargoyle_72x_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterGargoyle, [(gargoyle, 72, 1, wo8)]);
+        await LinkProgPartsWithLayouts(masterGargoyle, gargoyle, 18, 1, gargoyleLayout);
 
         var masterPilate = await CreateProgram("BP-00005", "Pilate 96x", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 16.0, 2333, 140.0, 9.8, "EMC_Pilate_96x_v1.sli",
+            ProgramScheduleStatus.None, tiMat?.Id, 16.0, 2333, 140.0, 9.8, "EMC_Pilate_96x_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterPilate, [(pilate, 96, 1, wo10)]);
+        await LinkProgPartsWithLayouts(masterPilate, pilate, 24, 1, pilateLayout);
 
-        var masterPilateDs = await CreateProgram("BP-00006", "Pilate 144x Double", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 22.0, 3217, 193.0, 14.5, "EMC_Pilate_144x_DS_v1.sli",
+        var masterPilateDs = await CreateProgram("BP-00006", "Pilate 192x Double", ProgramType.BuildPlate,
+            ProgramScheduleStatus.None, tiMat?.Id, 22.0, 3217, 193.0, 14.5, "EMC_Pilate_192x_DS_v1.sli",
             false, null, null, null, null, null);
-        await LinkProgParts(masterPilateDs, [(pilate, 72, 1, wo10), (pilate, 72, 2, wo10)]);
+        await LinkProgPartsWithLayouts(masterPilateDs, pilate, 24, 2, pilateDsLayout);
 
         // ── CNC Turning Programs — one per part with specific tool lists ──
         // Each suppressor caliber needs different bore bars and thread mills.
@@ -2957,551 +3094,10 @@ public class DataSeedingService : IDataSeedingService
             await db.SaveChangesAsync();
         }
 
-        // ════════════════════════════════════════════════════════════
-        // STAGE ROUTING TEMPLATES — per-build cost/time definitions
-        // Routing: SLS → Depowder → Wire EDM → CNC Turning → Laser Engraving → Sandblasting → QC → Packaging
-        // CNC Turning: 10min setup + 5min run = 15min/part @ $90/hr
-        // (stageSlug, defaultMachineId, estimatedHours, estimatedCost)
-        // ════════════════════════════════════════════════════════════
-
-        // Tinman 56x: 7.62mm — 56 parts × 6min/part CNC = 5.6h → LATHE1
-        var tinmanRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 22.5, 1913m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE1", 5.6, 504m),
-            ("laser-engraving", "ENGRAVE1", 0.14, 8m), ("sandblasting", "BLAST1", 0.0, 0m),
-            ("qc", "QC1", 1.87, 140m), ("packaging", "PACK1", 0.06, 2m) };
-
-        // Tinman 80x DS: double-stack — 80 parts × 6min = 8.0h → LATHE1
-        var tinmanDsRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 30.0, 2550m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE1", 8.0, 720m),
-            ("laser-engraving", "ENGRAVE1", 0.19, 10m), ("sandblasting", "BLAST1", 0.0, 0m),
-            ("qc", "QC1", 2.67, 200m), ("packaging", "PACK1", 0.08, 3m) };
-
-        // Handyman 64x: 9mm — 64 parts × 6min = 6.4h → LATHE1
-        var handymanRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 20.0, 1700m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE1", 6.4, 576m),
-            ("laser-engraving", "ENGRAVE1", 0.15, 8m), ("sandblasting", "BLAST1", 0.0, 0m),
-            ("qc", "QC1", 2.13, 160m), ("packaging", "PACK1", 0.06, 2m) };
-
-        // Gargoyle 72x: 5.56mm — 72 parts × 6min = 7.2h → LATHE2
-        var gargoyleRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 18.5, 1573m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE2", 7.2, 648m),
-            ("laser-engraving", "ENGRAVE1", 0.17, 9m), ("sandblasting", "BLAST1", 0.0, 0m),
-            ("qc", "QC1", 2.4, 180m), ("packaging", "PACK1", 0.07, 2m) };
-
-        // Pilate 96x: .22lr — 96 parts × 6min = 9.6h → LATHE2
-        var pilateRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 16.0, 1360m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE2", 9.6, 864m),
-            ("laser-engraving", "ENGRAVE1", 0.22, 12m), ("sandblasting", "BLAST1", 0.0, 0m),
-            ("qc", "QC1", 3.2, 240m), ("packaging", "PACK1", 0.1, 3m) };
-
-        // Pilate 144x DS: double-stack — 144 parts × 6min = 14.4h → LATHE2
-        var pilateDsRouting = new (string, string, double, decimal)[] {
-            ("sls-printing", "M4-1", 22.0, 1870m), ("depowdering", "INC1", 1.0, 55m),
-            ("wire-edm", "EDM1", 1.92, 163m), ("cnc-turning", "LATHE2", 14.4, 1296m),
-            ("laser-engraving", "ENGRAVE1", 0.33, 18m), ("sandblasting", "BLAST1", 0.0, 0m),
-            ("qc", "QC1", 4.8, 360m), ("packaging", "PACK1", 0.15, 5m) };
-
-        // ════════════════════════════════════════════════════════════
-        // JOBS + STAGE EXECUTIONS — helpers
-        // ════════════════════════════════════════════════════════════
-
-        // Shift-aware scheduling: operator stages only run Mon-Fri 06:00-18:00.
-        // SLS printing runs 24/7 unmanned; everything else needs operators.
-        static DateTime SkipWeekend(DateTime dt)
-        {
-            // If Saturday, advance to Monday 06:00
-            if (dt.DayOfWeek == DayOfWeek.Saturday)
-                return dt.Date.AddDays(2).AddHours(6);
-            // If Sunday, advance to Monday 06:00
-            if (dt.DayOfWeek == DayOfWeek.Sunday)
-                return dt.Date.AddDays(1).AddHours(6);
-            return dt;
-        }
-
-        // Advance a time past weekends and outside shift hours (before 6am → wait for 6am)
-        static DateTime NextShiftStart(DateTime dt)
-        {
-            dt = SkipWeekend(dt);
-            // If before 6am, wait until 6am same day
-            if (dt.Hour < 6)
-                dt = dt.Date.AddHours(6);
-            // If after 18:00, advance to next weekday 6am
-            if (dt.Hour >= 18)
-            {
-                dt = dt.Date.AddDays(1).AddHours(6);
-                dt = SkipWeekend(dt);
-            }
-            return dt;
-        }
-
-        int jobNum = 1;
-
-        async Task<Job> CreateJob(Part part, int? machineId, int qty, JobScope scope, JobStatus status,
-            DateTime schedStart, DateTime schedEnd, DateTime? actStart, DateTime? actEnd,
-            WorkOrder? wo, int produced = 0)
-        {
-            var woLine = wo != null
-                ? await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo.Id && l.PartId == part.Id)
-                : null;
-            var job = new Job { JobNumber = $"JOB-{jobNum++:D5}", PartId = part.Id, MachineId = machineId,
-                Scope = scope, Status = status, Priority = wo?.Priority ?? JobPriority.Normal,
-                Quantity = qty, ProducedQuantity = produced,
-                ScheduledStart = schedStart, ScheduledEnd = schedEnd,
-                ActualStart = actStart, ActualEnd = actEnd,
-                WorkOrderLineId = woLine?.Id, CreatedBy = "System", LastModifiedBy = "System" };
-            db.Jobs.Add(job);
-            await db.SaveChangesAsync();
-            return job;
-        }
-
-        async Task CreateStageExec(Job job, string stageSlug, string machineId, StageExecutionStatus status,
-            DateTime? schedStart, DateTime? schedEnd, DateTime? actStart, DateTime? actEnd,
-            double estHours, double? actHours, decimal estCost, decimal? actCost,
-            int? machineProgramId = null)
-        {
-            if (!stages.TryGetValue(stageSlug, out var stg)) return;
-            db.StageExecutions.Add(new StageExecution { JobId = job.Id, ProductionStageId = stg.Id,
-                MachineId = Mid(machineId), Status = status,
-                ScheduledStartAt = schedStart, ScheduledEndAt = schedEnd,
-                ActualStartAt = actStart, ActualEndAt = actEnd,
-                EstimatedHours = estHours, ActualHours = actHours,
-                EstimatedCost = estCost, ActualCost = actCost,
-                MachineProgramId = machineProgramId,
-                QualityCheckRequired = stageSlug == "qc",
-                QualityCheckPassed = status == StageExecutionStatus.Completed && stageSlug == "qc" ? true : null,
-                CreatedBy = "System", LastModifiedBy = "System" });
-        }
-
-        // Machine watermarks — tracks when each machine is next free (prevents overlaps)
-        var machineWatermark = new Dictionary<string, DateTime>();
-
-        // Get or update the next available time for a machine (no overlaps)
-        DateTime GetMachineAvailable(string machineId, DateTime earliest)
-        {
-            var shifted = NextShiftStart(earliest);
-            if (machineWatermark.TryGetValue(machineId, out var watermark))
-            {
-                var afterWatermark = NextShiftStart(watermark.AddHours(0.25)); // 15min gap between jobs
-                if (afterWatermark > shifted) shifted = afterWatermark;
-            }
-            return shifted;
-        }
-
-        void SetMachineWatermark(string machineId, DateTime endTime)
-        {
-            machineWatermark[machineId] = endTime;
-        }
-
-        // ── Helper: create a fully completed build with all stage executions ──
-        async Task<MachineProgram> CompletedBuild(int idx, string num, string name,
-            Part part, int qty, double printHrs, int layers, double height, double powder,
-            string slicer, int? sourceId, string machine, DateTime start, WorkOrder wo,
-            (string slug, string mid, double hrs, decimal cost)[] routing,
-            (Part p2, int qty2)? stack2 = null)
-        {
-            var end = start.AddHours(printHrs);
-            var prog = await CreateProgram(num, name, ProgramType.BuildPlate,
-                ProgramScheduleStatus.Completed, tiMat?.Id, printHrs, layers, height, powder, slicer,
-                true, start, start, end, end.AddHours(1.5), sourceId, machine);
-
-            if (stack2.HasValue)
-                await LinkProgParts(prog, [(part, qty, 1, wo), (stack2.Value.p2, stack2.Value.qty2, 2, wo)]);
-            else
-                await LinkProgParts(prog, [(part, qty, 1, wo)]);
-
-            var totalQty = qty + (stack2?.qty2 ?? 0);
-            var downHrs = routing.Skip(1).Sum(r => r.hrs + 0.3);
-            var jobEnd = end.AddHours(downHrs + 1);
-            var j = await CreateJob(part, Mid(machine), totalQty, JobScope.Build, JobStatus.Completed,
-                start, jobEnd, start, jobEnd.AddHours(-0.5), wo, totalQty);
-
-            var t = start;
-            var v = 1.0 + (idx % 5 - 2) * 0.01; // ±2% deterministic variation
-            foreach (var (slug, mid, hrs, cost) in routing)
-            {
-                var actualMachine = slug == "sls-printing" ? machine : mid;
-                // SLS runs 24/7; all other stages need operators and must not overlap
-                if (slug != "sls-printing")
-                    t = GetMachineAvailable(actualMachine, t);
-
-                var stageEnd = t.AddHours(hrs);
-                await CreateStageExec(j, slug, actualMachine, StageExecutionStatus.Completed,
-                    t, stageEnd, t.AddHours(0.15), t.AddHours(hrs * v + 0.15),
-                    hrs, hrs * v, cost, cost * (decimal)v,
-                    slug == "sls-printing" ? prog.Id : null);
-                if (slug != "sls-printing")
-                    SetMachineWatermark(actualMachine, stageEnd);
-                t = stageEnd.AddHours(0.15);
-            }
-            await db.SaveChangesAsync();
-            return prog;
-        }
-
-        // ════════════════════════════════════════════════════════════
-        // COMPLETED BUILDS — M4-1 (7 builds: Tinman, Gargoyle, Pilate)
-        // ════════════════════════════════════════════════════════════
-
-        int bpn = 10;
-
-        // B1: Tinman 56x → wo1 batch 1 (started 55 days ago)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #1",
-            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-55), wo1, tinmanRouting);
-
-        // B2: Tinman 56x → wo1 batch 2
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #2",
-            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-50), wo1, tinmanRouting);
-
-        // B3: Gargoyle 72x → wo3 batch 1
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Gargoyle 72x — Run #1",
-            gargoyle, 72, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli", masterGargoyle.Id,
-            "M4-1", now.AddDays(-44), wo3, gargoyleRouting);
-
-        // B4: Tinman 56x → wo4 batch 1
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #3",
-            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-38), wo4, tinmanRouting);
-
-        // B5: Tinman 56x → wo4 batch 2 (kept older for history)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #4",
-            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-6), wo4, tinmanRouting);
-
-        // B6: Tinman 56x → wo5 batch 1 (visible in Gantt lookback)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #5",
-            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-5), wo5, tinmanRouting);
-
-        // B7: Tinman 56x → wo5 batch 2 (visible in Gantt lookback, just before active)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #6",
-            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-1", now.AddDays(-3.5), wo5, tinmanRouting);
-
-        // ════════════════════════════════════════════════════════════
-        // COMPLETED BUILDS — M4-2 (7 builds: Handyman, Gargoyle, Pilate)
-        // ════════════════════════════════════════════════════════════
-
-        // B8: Handyman 64x → wo2 batch 1
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #1",
-            handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
-            "M4-2", now.AddDays(-53), wo2, handymanRouting);
-
-        // B9: Handyman 64x → wo2 batch 2
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #2",
-            handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
-            "M4-2", now.AddDays(-48), wo2, handymanRouting);
-
-        // B10: Handyman 64x → wo2 batch 3
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #3",
-            handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
-            "M4-2", now.AddDays(-42), wo2, handymanRouting);
-
-        // B11: Gargoyle 72x → wo3 batch 2
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Gargoyle 72x — Run #2",
-            gargoyle, 72, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli", masterGargoyle.Id,
-            "M4-2", now.AddDays(-35), wo3, gargoyleRouting);
-
-        // B12: Tinman 56x → wo4 batch 3 (visible in Gantt lookback)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Tinman 56x — Run #7",
-            tinman, 56, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli", masterTinman.Id,
-            "M4-2", now.AddDays(-6.5), wo4, tinmanRouting);
-
-        // B13: Pilate 96x → wo4 (visible in Gantt lookback)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Pilate 96x — Run #1",
-            pilate, 96, 16.0, 2333, 140, 9.8, "EMC_Pilate_96x_v1.sli", masterPilate.Id,
-            "M4-2", now.AddDays(-5), wo4, pilateRouting);
-
-        // B14: Handyman 64x → wo5 (visible in Gantt lookback, just before active)
-        await CompletedBuild(bpn, $"BP-{bpn++:D5}", "Handyman 64x — Run #4",
-            handyman, 64, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli", masterHandyman.Id,
-            "M4-2", now.AddDays(-3), wo5, handymanRouting);
-
-        // ════════════════════════════════════════════════════════════
-        // ACTIVE BUILDS — currently on the machines
-        // ════════════════════════════════════════════════════════════
-
-        // M4-1: Gargoyle 72x currently PRINTING (~60% done) → wo6
-        var activeM41Start = now.AddHours(-11);
-        var activeM41 = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #3", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Printing, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
-            true, activeM41Start, activeM41Start, null, null, masterGargoyle.Id, "M4-1");
-        await LinkProgParts(activeM41, [(gargoyle, 72, 1, wo6)]);
-        {
-            var j = await CreateJob(gargoyle, Mid("M4-1"), 72, JobScope.Build, JobStatus.InProgress,
-                activeM41Start, activeM41Start.AddHours(50), activeM41Start, null, wo6);
-            await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.InProgress,
-                activeM41Start, activeM41Start.AddHours(18.5), activeM41Start, null, 18.5, null, 1573m, null, activeM41.Id);
-            var m41DepowStart = GetMachineAvailable("INC1", activeM41Start.AddHours(19.0));
-            await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.NotStarted,
-                m41DepowStart, m41DepowStart.AddHours(0.8), null, null, 0.8, null, 44m, null);
-            SetMachineWatermark("INC1", m41DepowStart.AddHours(0.8));
-            var m41EdmStart = GetMachineAvailable("EDM1", m41DepowStart.AddHours(1.0));
-            await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.NotStarted,
-                m41EdmStart, m41EdmStart.AddHours(1.7), null, null, 1.7, null, 145m, null);
-            SetMachineWatermark("EDM1", m41EdmStart.AddHours(1.7));
-            await db.SaveChangesAsync();
-        }
-
-        // M4-2: Pilate 144x DS in POST-PRINT → wo7 (print done ~6h ago, in depowder)
-        var activeM42Start = now.AddHours(-28);
-        var activeM42End = activeM42Start.AddHours(22.0);
-        var activeM42 = await CreateProgram($"BP-{bpn++:D5}", "Pilate 144x DS — Run #1", ProgramType.BuildPlate,
-            ProgramScheduleStatus.PostPrint, tiMat?.Id, 22.0, 3217, 193, 14.5, "EMC_Pilate_144x_DS_v1.sli",
-            true, activeM42Start, activeM42Start, activeM42End, null, masterPilateDs.Id, "M4-2");
-        await LinkProgParts(activeM42, [(pilate, 72, 1, wo7), (pilate, 72, 2, wo7)]);
-        {
-            var j = await CreateJob(pilate, Mid("M4-2"), 144, JobScope.Build, JobStatus.InProgress,
-                activeM42Start, activeM42Start.AddHours(60), activeM42Start, null, wo7);
-            // print completed
-            await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.Completed,
-                activeM42Start, activeM42Start.AddHours(22.0), activeM42Start, activeM42End,
-                22.0, 22.0, 1870m, 1870m, activeM42.Id);
-            // depowder in progress (started 3 hours ago)
-            var m42DepowStart = GetMachineAvailable("INC1", activeM42End.AddHours(0.5));
-            await CreateStageExec(j, "depowdering", "INC1", StageExecutionStatus.InProgress,
-                m42DepowStart, m42DepowStart.AddHours(1.0), now.AddHours(-3), null,
-                1.0, null, 55m, null);
-            SetMachineWatermark("INC1", m42DepowStart.AddHours(1.0));
-            // wire-edm not started yet
-            var m42EdmStart = GetMachineAvailable("EDM1", m42DepowStart.AddHours(1.2));
-            await CreateStageExec(j, "wire-edm", "EDM1", StageExecutionStatus.NotStarted,
-                m42EdmStart, m42EdmStart.AddHours(1.92), null, null, 1.92, null, 163m, null);
-            SetMachineWatermark("EDM1", m42EdmStart.AddHours(1.92));
-            // cnc-turning not started (Pilate → LATHE2, 144 parts × 6min = 14.4h)
-            var m42CncStart = GetMachineAvailable("LATHE2", m42EdmStart.AddHours(2.1));
-            await CreateStageExec(j, "cnc-turning", "LATHE2", StageExecutionStatus.NotStarted,
-                m42CncStart, m42CncStart.AddHours(14.4), null, null, 14.4, null, 1296m, null);
-            SetMachineWatermark("LATHE2", m42CncStart.AddHours(14.4));
-            await db.SaveChangesAsync();
-        }
-
-        // ════════════════════════════════════════════════════════════
-        // SCHEDULED BUILDS — queued for the near future (visible on Gantt lookahead)
-        // These have ScheduledDate set so they render as bars on the Gantt.
-        // ════════════════════════════════════════════════════════════
-
-        // ── Helper: calculate next SLS build start after changeover ──
-        // Auto-changeover is 30min. If the previous build ends outside operator shift,
-        // the machine goes DOWN until an operator can clear the cooldown chamber.
-        static DateTime NextBuildStart(DateTime previousBuildEnd)
-        {
-            const double changeoverHours = 0.5; // 30 minutes
-
-            // Check if the changeover window (when operator must unload cooldown) falls in shift
-            bool duringShift = previousBuildEnd.DayOfWeek != DayOfWeek.Saturday
-                && previousBuildEnd.DayOfWeek != DayOfWeek.Sunday
-                && previousBuildEnd.Hour >= 6 && previousBuildEnd.Hour < 18;
-
-            if (duringShift)
-            {
-                // Operator available — safe changeover, next build starts after 30min
-                return previousBuildEnd.AddHours(changeoverHours);
-            }
-            else
-            {
-                // No operator — machine goes DOWN until next shift start, then 30min changeover
-                var nextShift = NextShiftStart(previousBuildEnd);
-                return nextShift.AddHours(changeoverHours);
-            }
-        }
-
-        // ── Helper: create all downstream stage executions for a scheduled build ──
-        async Task CreateScheduledDownstream(Job job, DateTime printEnd,
-            (string slug, string mid, double hrs, decimal cost)[] routing, int? progId = null)
-        {
-            // Skip sls-printing (index 0) — already created by caller
-            var t = printEnd.AddHours(0.5);
-            foreach (var (slug, mid, hrs, cost) in routing.Skip(1))
-            {
-                // Find earliest slot: after predecessor AND after this machine is free
-                t = GetMachineAvailable(mid, t);
-                var end = t.AddHours(hrs);
-                await CreateStageExec(job, slug, mid, StageExecutionStatus.NotStarted,
-                    t, end, null, null, hrs, null, cost, null);
-                SetMachineWatermark(mid, end);
-                t = end.AddHours(0.15); // small gap before next stage
-            }
-            await db.SaveChangesAsync();
-        }
-
-        // M4-1 next up: Tinman 56x → wo8 (starts after active Gargoyle finishes + changeover)
-        var m41PrevEnd = activeM41Start.AddHours(18.5); // Gargoyle finishes
-        var m41NextStart = NextBuildStart(m41PrevEnd);
-        var schedM41a = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #8", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Scheduled, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
-            false, m41NextStart, null, null, null, masterTinman.Id, "M4-1");
-        await LinkProgParts(schedM41a, [(tinman, 56, 1, wo8)]);
-        {
-            var j = await CreateJob(tinman, Mid("M4-1"), 56, JobScope.Build, JobStatus.Scheduled,
-                m41NextStart, m41NextStart.AddHours(50), null, null, wo8);
-            await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
-                m41NextStart, m41NextStart.AddHours(22.5), null, null, 22.5, null, 1913m, null, schedM41a.Id);
-            await CreateScheduledDownstream(j, m41NextStart.AddHours(22.5), tinmanRouting, schedM41a.Id);
-        }
-
-        // M4-1 after that: Gargoyle 72x → wo8 (starts after Tinman)
-        var m41Next2Start = NextBuildStart(m41NextStart.AddHours(22.5));
-        var schedM41b = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #4", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Scheduled, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
-            false, m41Next2Start, null, null, null, masterGargoyle.Id, "M4-1");
-        await LinkProgParts(schedM41b, [(gargoyle, 72, 1, wo8)]);
-        {
-            var j = await CreateJob(gargoyle, Mid("M4-1"), 72, JobScope.Build, JobStatus.Scheduled,
-                m41Next2Start, m41Next2Start.AddHours(50), null, null, wo8);
-            await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
-                m41Next2Start, m41Next2Start.AddHours(18.5), null, null, 18.5, null, 1573m, null, schedM41b.Id);
-            await CreateScheduledDownstream(j, m41Next2Start.AddHours(18.5), gargoyleRouting, schedM41b.Id);
-        }
-
-        // M4-1 third: Tinman 56x → wo8 (4th Tinman build for wo8's 224 total)
-        var m41Next3Start = NextBuildStart(m41Next2Start.AddHours(18.5));
-        var schedM41c = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #9", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Scheduled, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
-            false, m41Next3Start, null, null, null, masterTinman.Id, "M4-1");
-        await LinkProgParts(schedM41c, [(tinman, 56, 1, wo8)]);
-        {
-            var j = await CreateJob(tinman, Mid("M4-1"), 56, JobScope.Build, JobStatus.Scheduled,
-                m41Next3Start, m41Next3Start.AddHours(50), null, null, wo8);
-            await CreateStageExec(j, "sls-printing", "M4-1", StageExecutionStatus.NotStarted,
-                m41Next3Start, m41Next3Start.AddHours(22.5), null, null, 22.5, null, 1913m, null, schedM41c.Id);
-            await CreateScheduledDownstream(j, m41Next3Start.AddHours(22.5), tinmanRouting, schedM41c.Id);
-        }
-
-        // M4-2 next up: Handyman 64x → wo9 (starts after Pilate DS changeover)
-        // M4-2 print finished at activeM42End, use changeover logic
-        var m42NextStart = NextBuildStart(activeM42End);
-        var schedM42a = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #5", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
-            false, m42NextStart, null, null, null, masterHandyman.Id, "M4-2");
-        await LinkProgParts(schedM42a, [(handyman, 64, 1, wo9)]);
-        {
-            var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
-                m42NextStart, m42NextStart.AddHours(50), null, null, wo9);
-            await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
-                m42NextStart, m42NextStart.AddHours(20.0), null, null, 20.0, null, 1700m, null, schedM42a.Id);
-            await CreateScheduledDownstream(j, m42NextStart.AddHours(20.0), handymanRouting, schedM42a.Id);
-        }
-
-        // M4-2 after that: Handyman 64x → wo9 batch 2
-        var m42Next2Start = NextBuildStart(m42NextStart.AddHours(20.0));
-        var schedM42b = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #6", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
-            false, m42Next2Start, null, null, null, masterHandyman.Id, "M4-2");
-        await LinkProgParts(schedM42b, [(handyman, 64, 1, wo9)]);
-        {
-            var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
-                m42Next2Start, m42Next2Start.AddHours(50), null, null, wo9);
-            await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
-                m42Next2Start, m42Next2Start.AddHours(20.0), null, null, 20.0, null, 1700m, null, schedM42b.Id);
-            await CreateScheduledDownstream(j, m42Next2Start.AddHours(20.0), handymanRouting, schedM42b.Id);
-        }
-
-        // M4-2 third: Handyman 64x → wo9 batch 3 (last of 3 needed for 192 total)
-        var m42Next3Start = NextBuildStart(m42Next2Start.AddHours(20.0));
-        var schedM42c = await CreateProgram($"BP-{bpn++:D5}", "Handyman 64x — Run #7", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Scheduled, tiMat?.Id, 20.0, 2856, 171, 14.0, "EMC_Handyman_64x_v1.sli",
-            false, m42Next3Start, null, null, null, masterHandyman.Id, "M4-2");
-        await LinkProgParts(schedM42c, [(handyman, 64, 1, wo9)]);
-        {
-            var j = await CreateJob(handyman, Mid("M4-2"), 64, JobScope.Build, JobStatus.Scheduled,
-                m42Next3Start, m42Next3Start.AddHours(50), null, null, wo9);
-            await CreateStageExec(j, "sls-printing", "M4-2", StageExecutionStatus.NotStarted,
-                m42Next3Start, m42Next3Start.AddHours(20.0), null, null, 20.0, null, 1700m, null, schedM42c.Id);
-            await CreateScheduledDownstream(j, m42Next3Start.AddHours(20.0), handymanRouting, schedM42c.Id);
-        }
-
-        // ════════════════════════════════════════════════════════════
-        // READY BUILDS — prepared but not yet scheduled
-        // These have no ScheduledDate — available for the Next Build Advisor
-        // ════════════════════════════════════════════════════════════
-
-        // Tinman 56x ready (for remaining wo8 demand after scheduled builds)
-        var readyM41 = await CreateProgram($"BP-{bpn++:D5}", "Tinman 56x — Run #10", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 22.5, 3067, 184, 16.2, "EMC_Tinman_56x_v1.sli",
-            false, null, null, null, null, masterTinman.Id);
-        await LinkProgParts(readyM41, [(tinman, 56, 1, wo8)]);
-
-        // Gargoyle 72x ready (for wo10)
-        var readyM41b = await CreateProgram($"BP-{bpn++:D5}", "Gargoyle 72x — Run #5", ProgramType.BuildPlate,
-            ProgramScheduleStatus.Ready, tiMat?.Id, 18.5, 2117, 127, 11.5, "EMC_Gargoyle_72x_v1.sli",
-            false, null, null, null, null, masterGargoyle.Id);
-        await LinkProgParts(readyM41b, [(gargoyle, 72, 1, wo10)]);
-
-        // ════════════════════════════════════════════════════════════
-        // LINK CNC PROGRAMS TO STAGE EXECUTIONS — enables tool-based dispatch
-        // ════════════════════════════════════════════════════════════
-        if (cncTurningStageId > 0)
-        {
-            var cncExecs = await db.StageExecutions
-                .Include(se => se.Job)
-                .Where(se => se.ProductionStageId == cncTurningStageId && se.MachineProgramId == null)
-                .ToListAsync();
-            foreach (var se in cncExecs)
-            {
-                if (se.Job != null && partCncPrograms.TryGetValue(se.Job.PartId, out var prog))
-                    se.MachineProgramId = prog.Id;
-            }
-            if (cncExecs.Any()) await db.SaveChangesAsync();
-        }
-
-        // ════════════════════════════════════════════════════════════
-        // UPDATE WO LINE QUANTITIES — mark produced/shipped
-        // ════════════════════════════════════════════════════════════
-
-        async Task UpdateLine(WorkOrder wo, Part part, int produced, int? shipped = null)
-        {
-            var line = await db.Set<WorkOrderLine>().FirstOrDefaultAsync(l => l.WorkOrderId == wo.Id && l.PartId == part.Id);
-            if (line != null)
-            {
-                line.ProducedQuantity = produced;
-                if (shipped.HasValue) line.ShippedQuantity = shipped.Value;
-            }
-        }
-
-        // wo1: Complete — 112× Tinman (2 builds on M4-1, all shipped)
-        await UpdateLine(wo1, tinman, 112, 112);
-
-        // wo2: Complete — 192× Handyman (3 builds on M4-2, all shipped)
-        await UpdateLine(wo2, handyman, 192, 192);
-
-        // wo3: Complete — 144× Gargoyle (1 M4-1 + 1 M4-2, all shipped)
-        await UpdateLine(wo3, gargoyle, 144, 144);
-
-        // wo4: Complete — 168× Tinman (2 M4-1 + 1 M4-2) + 96× Pilate (1 M4-2), all shipped
-        await UpdateLine(wo4, tinman, 168, 168);
-        await UpdateLine(wo4, pilate, 96, 96);
-
-        // wo5: InProgress — 112× Tinman done (2 M4-1), 64× Handyman done (1 M4-2)
-        await UpdateLine(wo5, tinman, 112);
-        await UpdateLine(wo5, handyman, 64);
-
-        // wo6: InProgress — 72 Gargoyle produced (1 completed build on M4-2 via wo3 leftover),
-        //      72 more printing on M4-1
-        await UpdateLine(wo6, gargoyle, 72);
-
-        // wo7: InProgress — 144× Pilate in post-print (depowdering DS build on M4-2)
-        // (nothing "produced" yet — still on the plate)
-
-        // wo8-10: Released — nothing produced yet
-
-        // ── Fix up completed WO dates for On-Time Delivery ──
-        // Must happen AFTER all jobs/builds are created to avoid EF change tracking overwriting
-        var completedWOs = await db.WorkOrders
-            .Where(w => w.Status == WorkOrderStatus.Complete)
-            .ToListAsync();
-        foreach (var cwo in completedWOs)
-        {
-            cwo.LastModifiedDate = cwo.DueDate.AddDays(-2);
-            cwo.ActualShipDate = cwo.DueDate.AddDays(-3);
-        }
-
+        // No jobs or builds are seeded — the scheduler starts empty for demos.
+        // Master programs and CNC programs are available for scheduling from the Programs page.
         await db.SaveChangesAsync();
+
     }
 
     private static async Task SeedDispatchDemoDataAsync(TenantDbContext db)
@@ -3762,89 +3358,7 @@ public class DataSeedingService : IDataSeedingService
             });
         }
 
-        // ── Pending changeover dispatches — tool swaps needed for queued demand ──
-        // LATHE1 has Tinman loaded, but Handyman parts are queued → changeover needed
-        // LATHE2 has Gargoyle loaded, but Pilate parts are queued → changeover needed
-        var cncHandymanProg2 = await db.MachinePrograms.FirstOrDefaultAsync(p => p.ProgramNumber == "EMC-HAN-001-TURN-01");
-        var cncPilateProg2 = await db.MachinePrograms.FirstOrDefaultAsync(p => p.ProgramNumber == "EMC-PIL-001-TURN-01");
-
-        // Find a Handyman CNC execution on LATHE1 that needs changeover
-        var lathe1IntId = lathe1?.Id ?? 0;
-        var hanProgId = cncHandymanProg2?.Id ?? 0;
-        var handymanExec = lathe1IntId > 0 && hanProgId > 0 ? await db.StageExecutions
-            .Include(se => se.Job)
-            .Where(se => se.ProductionStageId == cncTurningStage.Id
-                && se.MachineId == lathe1IntId
-                && se.Status == StageExecutionStatus.NotStarted
-                && se.MachineProgramId == hanProgId
-                && se.SetupDispatchId == null)
-            .FirstOrDefaultAsync() : null;
-
-        if (handymanExec != null && lathe1 != null && cncHandymanProg2 != null)
-        {
-            var d = new SetupDispatch
-            {
-                DispatchNumber = "DSP-PEND-0001",
-                MachineId = lathe1.Id,
-                MachineProgramId = cncHandymanProg2.Id,
-                StageExecutionId = handymanExec.Id,
-                JobId = handymanExec.JobId,
-                PartId = handymanExec.Job?.PartId,
-                DispatchType = DispatchType.Changeover,
-                Status = DispatchStatus.Queued,
-                Priority = 70,
-                PriorityReason = "Tool changeover: Tinman → Handyman (2 tool changes: bore bar T2, thread tap T7)",
-                ChangeoverFromProgramId = cncTinmanProg?.Id,
-                ChangeoverToProgramId = cncHandymanProg2.Id,
-                ToolingRequired = "Swap T2: 7.62mm bore bar → 9mm bore bar; Add T7: M13.5x1 LH thread tap",
-                EstimatedSetupMinutes = 12,
-                IsAutoGenerated = true,
-                QueuedAt = now,
-                CreatedBy = "system"
-            };
-            db.SetupDispatches.Add(d);
-            await db.SaveChangesAsync();
-            handymanExec.SetupDispatchId = d.Id;
-        }
-
-        // Find a Pilate CNC execution on LATHE2 that needs changeover
-        var lathe2IntId = lathe2?.Id ?? 0;
-        var pilProgId = cncPilateProg2?.Id ?? 0;
-        var pilateExec = lathe2IntId > 0 && pilProgId > 0 ? await db.StageExecutions
-            .Include(se => se.Job)
-            .Where(se => se.ProductionStageId == cncTurningStage.Id
-                && se.MachineId == lathe2IntId
-                && se.Status == StageExecutionStatus.NotStarted
-                && se.MachineProgramId == pilProgId
-                && se.SetupDispatchId == null)
-            .FirstOrDefaultAsync() : null;
-
-        if (pilateExec != null && lathe2 != null && cncPilateProg2 != null)
-        {
-            var d = new SetupDispatch
-            {
-                DispatchNumber = "DSP-PEND-0002",
-                MachineId = lathe2.Id,
-                MachineProgramId = cncPilateProg2.Id,
-                StageExecutionId = pilateExec.Id,
-                JobId = pilateExec.JobId,
-                PartId = pilateExec.Job?.PartId,
-                DispatchType = DispatchType.Changeover,
-                Status = DispatchStatus.Queued,
-                Priority = 65,
-                PriorityReason = "Tool changeover: Gargoyle → Pilate (2 tool changes: bore bar T2, remove groove tool T4)",
-                ChangeoverFromProgramId = cncGargoyleProg?.Id,
-                ChangeoverToProgramId = cncPilateProg2.Id,
-                ToolingRequired = "Swap T2: 5.56mm bore bar → .22 bore bar; Remove T4: ID groove tool (Pilate uses T4 for chamfer)",
-                EstimatedSetupMinutes = 10,
-                IsAutoGenerated = true,
-                QueuedAt = now,
-                CreatedBy = "system"
-            };
-            db.SetupDispatches.Add(d);
-            await db.SaveChangesAsync();
-            pilateExec.SetupDispatchId = d.Id;
-        }
+        // No pending changeover dispatches — scheduler is empty for demo.
 
         await db.SaveChangesAsync();
     }
