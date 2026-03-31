@@ -19,6 +19,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
     private readonly INumberSequenceService _numberSeq;
     private readonly IStageCostService _costService;
     private readonly IMachineProgramService _programService;
+    private readonly IProgramPlanningService _planningService;
     private readonly ISerialNumberService _serialNumberService;
     private readonly IDownstreamProgramService _downstreamService;
     private readonly ILogger<ProgramSchedulingService> _logger;
@@ -31,6 +32,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         INumberSequenceService numberSeq,
         IStageCostService costService,
         IMachineProgramService programService,
+        IProgramPlanningService planningService,
         ISerialNumberService serialNumberService,
         IDownstreamProgramService downstreamService,
         ILogger<ProgramSchedulingService> logger)
@@ -42,6 +44,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         _numberSeq = numberSeq;
         _costService = costService;
         _programService = programService;
+        _planningService = planningService;
         _serialNumberService = serialNumberService;
         _downstreamService = downstreamService;
         _logger = logger;
@@ -473,9 +476,11 @@ public class ProgramSchedulingService : IProgramSchedulingService
         if (!source.HasSlicerData)
             throw new InvalidOperationException("Slicer data must be entered before scheduling a run.");
 
-        // Schedule directly on the source program — no copy needed.
-        // Each run creates its own Job + StageExecution chain.
-        return await ScheduleBuildPlateAsync(machineProgramId, machineId, startAfter);
+        // Create a scheduled copy so the source program stays available for future runs.
+        // Each copy is a separate print run tracked via SourceProgramId.
+        var copy = await _planningService.CreateScheduledCopyAsync(machineProgramId, "Scheduler");
+
+        return await ScheduleBuildPlateAsync(copy.Id, machineId, startAfter);
     }
 
     public async Task<ProgramScheduleResult> ScheduleBuildPlateRunAutoMachineAsync(
@@ -488,10 +493,13 @@ public class ProgramSchedulingService : IProgramSchedulingService
         if (!source.HasSlicerData)
             throw new InvalidOperationException("Slicer data must be entered before scheduling a run.");
 
-        var notBefore = startAfter ?? DateTime.UtcNow;
-        var bestSlot = await FindBestSlotAsync(source.EstimatedPrintHours!.Value, notBefore, machineType: "SLS");
+        // Create a scheduled copy first, then find the best slot and schedule it.
+        var copy = await _planningService.CreateScheduledCopyAsync(machineProgramId, "Scheduler");
 
-        return await ScheduleBuildPlateAsync(machineProgramId, bestSlot.MachineId, bestSlot.Slot.PrintStart);
+        var notBefore = startAfter ?? DateTime.UtcNow;
+        var bestSlot = await FindBestSlotAsync(copy.EstimatedPrintHours!.Value, notBefore, machineType: "SLS");
+
+        return await ScheduleBuildPlateAsync(copy.Id, bestSlot.MachineId, bestSlot.Slot.PrintStart);
     }
 
     // ══════════════════════════════════════════════════════════

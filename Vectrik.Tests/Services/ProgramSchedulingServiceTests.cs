@@ -33,6 +33,7 @@ public class ProgramSchedulingServiceTests : IDisposable
             new StubNumberSequenceService(),
             new StubStageCostService(),
             new StubMachineProgramService(),
+            new StubProgramPlanningService(),
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
             NullLogger<ProgramSchedulingService>.Instance);
@@ -620,6 +621,7 @@ public class ProgramSchedulingServiceTests : IDisposable
             new StubNumberSequenceService(),
             new StubStageCostService(),
             new StubMachineProgramService(),
+            new StubProgramPlanningService(),
             new StubSerialNumberService(),
             failingDownstream,
             NullLogger<ProgramSchedulingService>.Instance);
