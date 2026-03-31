@@ -8323,38 +8323,45 @@ dialog#components-reconnect-modal button:hover {
     font-weight: 500;
 }
 
-/* ── Section Dot Navigation (inline) ── */
-.prg-section-dots {
+/* ── Section Tab Navigation ── */
+.prg-section-tabs {
     position: sticky;
     top: 0;
     z-index: 10;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 0 14px;
-    background: linear-gradient(to bottom, var(--bg-primary) 60%, transparent);
+    gap: 2px;
+    padding: 0 0 12px;
+    margin: 0 -24px 12px;
+    padding-left: 24px;
+    padding-right: 24px;
+    background: linear-gradient(to bottom, var(--bg-primary) 80%, transparent);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
-.prg-section-dots a {
-    display: inline-block;
-    text-decoration: none;
-    line-height: 0;
-}
-.prg-dot {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--border);
+.prg-section-tabs::-webkit-scrollbar { display: none; }
+
+.prg-tab {
+    flex-shrink: 0;
+    padding: 5px 10px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
     transition: all var(--transition-fast);
+    white-space: nowrap;
 }
-.prg-dot:hover {
-    background: var(--text-muted);
-    transform: scale(1.4);
+.prg-tab:hover {
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
 }
-.prg-dot--active {
-    background: var(--accent);
-    transform: scale(1.3);
+.prg-tab--active {
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+    font-weight: 600;
 }
 
 /* ── Build Plate Slicer ── */
@@ -9035,18 +9042,50 @@ dialog#components-reconnect-modal button:hover {
         height: auto;
     }
     .prg-sidebar {
-        max-height: 300px;
+        max-height: 260px;
         border-right: none;
         border-bottom: 1px solid var(--border);
     }
     .prg-detail {
-        padding: 16px;
+        padding: 12px 14px;
+    }
+    .prg-section-tabs {
+        margin: 0 -14px 8px;
+        padding-left: 14px;
+        padding-right: 14px;
+        gap: 1px;
     }
     .prg-section-nav {
         display: none;
     }
     .prg-hero-top {
         flex-direction: column;
+        gap: 10px;
+    }
+    .prg-hero-identity h2 {
+        font-size: 1.05rem;
+    }
+    .prg-hero-actions {
+        flex-wrap: wrap;
+        width: 100%;
+        gap: 6px;
+    }
+    .prg-hero-actions .btn {
+        flex: 1 1 auto;
+        min-width: 0;
+        text-align: center;
+        padding: 6px 10px;
+        font-size: 0.78rem;
+    }
+    .prg-hero-badges {
+        flex-wrap: wrap;
+    }
+    .prg-hero-audit {
+        flex-direction: column;
+        gap: 2px;
+    }
+    .prg-hero-audit span + span::before {
+        display: none;
     }
     .prg-form-panel {
         width: 100vw;
@@ -9055,10 +9094,48 @@ dialog#components-reconnect-modal button:hover {
         grid-template-columns: 1fr;
     }
     .prg-metrics {
-        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+    }
+    .prg-metric {
+        padding: 8px 6px;
+    }
+    .prg-metric-value {
+        font-size: 0.95rem;
+    }
+    .prg-metric-label {
+        font-size: 0.6rem;
+    }
+    .prg-section-header {
+        flex-wrap: wrap;
+    }
+    .prg-section-header h3 {
+        font-size: 0.85rem;
     }
 }
 @media (max-width: 480px) {
+    .prg-detail {
+        padding: 10px 10px;
+    }
+    .prg-section-tabs {
+        margin: 0 -10px 6px;
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    .prg-tab {
+        padding: 4px 8px;
+        font-size: 0.68rem;
+    }
+    .prg-hero-identity h2 {
+        font-size: 0.95rem;
+    }
+    .prg-hero-actions .btn {
+        font-size: 0.72rem;
+        padding: 5px 8px;
+    }
+    .prg-metrics {
+        grid-template-columns: repeat(2, 1fr);
+    }
     .prg-pipeline-stage {
         padding: 6px 4px;
     }

@@ -1,16 +1,17 @@
-<div class="prg-detail">
-    <nav class="prg-section-dots">
-        <a href="#prg-section-hero" title="Overview"><span class="prg-dot prg-dot--active"></span></a>
-        <a href="#prg-section-metrics" title="Metrics"><span class="prg-dot"></span></a>
-        <a href="#prg-section-files" title="Files"><span class="prg-dot"></span></a>
-        <a href="#prg-section-tooling" title="Tooling"><span class="prg-dot"></span></a>
-        <a href="#prg-section-machines" title="Machines"><span class="prg-dot"></span></a>
-        <a href="#prg-section-params" title="Parameters"><span class="prg-dot"></span></a>
-        <a href="#prg-section-feedback" title="Feedback"><span class="prg-dot"></span></a>
-        <a href="#prg-section-learning" title="Learning"><span class="prg-dot"></span></a>
-        @if (Program.IsBuildPlate)
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="prg-detail" @ref="_detailRef">
+    <nav class="prg-section-tabs" @ref="_tabsRef">
+        @foreach (var sec in _sections)
         {
-            <a href="#prg-section-buildplate" title="Build Plate"><span class="prg-dot"></span></a>
+            if (sec.Id == "prg-section-buildplate" && !Program.IsBuildPlate) continue;
+            var capturedId = sec.Id;
+            var capturedLabel = sec.Label;
+            <button class="prg-tab @(capturedId == _activeSection ? "prg-tab--active" : "")"
+                    @onclick="() => ScrollToSection(capturedId)">
+                @capturedLabel
+            </button>
         }
     </nav>
 
@@ -128,4 +129,61 @@
     [Parameter] public EventCallback<ProgramPart> OnBuildRemovePart { get; set; }
     [Parameter] public EventCallback<(ProgramPart Part, int NewQty, int NewStack, string? Notes)> OnBuildEditPart { get; set; }
     [Parameter] public EventCallback<int> OnNavigateToProgram { get; set; }
+
+    private ElementReference _detailRef;
+    private ElementReference _tabsRef;
+    private IJSObjectReference? _module;
+    private string _activeSection = "prg-section-hero";
+
+    private record SectionDef(string Id, string Label);
+    private static readonly SectionDef[] _sections =
+    [
+        new("prg-section-hero", "Overview"),
+        new("prg-section-metrics", "Metrics"),
+        new("prg-section-files", "Files"),
+        new("prg-section-tooling", "Tooling"),
+        new("prg-section-machines", "Machines"),
+        new("prg-section-params", "Params"),
+        new("prg-section-feedback", "Feedback"),
+        new("prg-section-learning", "Learning"),
+        new("prg-section-buildplate", "Build Plate"),
+    ];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/program-detail-nav.js");
+            await _module.InvokeVoidAsync("init", _detailRef, DotNetObjectReference.Create(this));
+        }
+    }
+
+    [JSInvokable("OnSectionVisible")]
+    public void OnSectionVisible(string sectionId)
+    {
+        if (_activeSection != sectionId)
+        {
+            _activeSection = sectionId;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ScrollToSection(string sectionId)
+    {
+        _activeSection = sectionId;
+        if (_module != null)
+            await _module.InvokeVoidAsync("scrollTo", sectionId);
+
+        // Scroll the active tab into view in the tab strip
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module != null)
+        {
+            try { await _module.InvokeVoidAsync("dispose"); } catch { }
+            try { await _module.DisposeAsync(); } catch { }
+        }
+    }
 }
