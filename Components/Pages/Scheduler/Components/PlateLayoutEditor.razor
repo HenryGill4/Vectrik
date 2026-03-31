@@ -245,6 +245,19 @@
     {
         _pickerOpenSlot = -1;
 
+        // Validate half layouts have exactly 2 adjacent slots from the valid pairs
+        if (certLayout.Size == LayoutSize.Half)
+        {
+            if (slots.Length != 2) return; // invalid
+            var sorted = slots.OrderBy(s => s).ToArray();
+            if (!AdjacentPairs.Any(p => p.OrderBy(s => s).SequenceEqual(sorted)))
+                return; // not a valid adjacent pair
+        }
+
+        // Verify target slots are actually free
+        var occupancy = BuildSlotOccupancy();
+        if (slots.Any(s => occupancy.ContainsKey(s))) return;
+
         var newAssignment = new PlateSlotAssignment(certLayout.Id, slots);
         var updated = new List<PlateSlotAssignment>(Assignments) { newAssignment };
 
