@@ -54,14 +54,14 @@ public class AdvisorWizardState
         get
         {
             if (!PlateAllocations.Any()) return 0;
-            // Use the max positions across all allocations as a proxy
+            // Sum of allocated positions vs sum of per-part max capacities
             var totalPositions = PlateAllocations.Sum(a => a.Positions);
-            var maxPositions = PlateAllocations.Max(a =>
+            var totalCapacity = PlateAllocations.Sum(a =>
             {
                 var demandConfig = Demand.FirstOrDefault(d => d.PartId == a.PartId)?.BuildConfig;
-                return demandConfig?.GetPositionsPerBuild(a.StackLevel) ?? totalPositions;
+                return demandConfig?.GetPositionsPerBuild(a.StackLevel) ?? 1;
             });
-            return maxPositions > 0 ? Math.Min(1.0, (double)totalPositions / maxPositions) : 0;
+            return totalCapacity > 0 ? Math.Min(1.0, (double)totalPositions / totalCapacity) : 0;
         }
     }
 
