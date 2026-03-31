@@ -125,6 +125,12 @@ public interface IMachineProgramService
     Task<List<StageExecution>> GetExecutionHistoryAsync(int programId, int maxResults = 20);
 
     /// <summary>
+    /// Returns all scheduled runs (build-level StageExecutions) for this program,
+    /// including Job and Machine navigation, ordered by most recent first.
+    /// </summary>
+    Task<List<StageExecution>> GetProgramRunsAsync(int programId);
+
+    /// <summary>
     /// Returns the count of unresolved feedback items for display in program cards.
     /// </summary>
     Task<Dictionary<int, int>> GetUnresolvedFeedbackCountsAsync(List<int> programIds);

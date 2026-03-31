@@ -650,6 +650,19 @@ public class MachineProgramService : IMachineProgramService
             .ToListAsync();
     }
 
+    public async Task<List<StageExecution>> GetProgramRunsAsync(int programId)
+    {
+        return await _db.StageExecutions
+            .Include(e => e.Job)
+            .Include(e => e.Machine)
+            .Include(e => e.ProductionStage)
+            .Where(e => e.MachineProgramId == programId
+                && e.Job != null
+                && e.Job.Scope == JobScope.Build)
+            .OrderByDescending(e => e.ScheduledStartAt ?? e.CreatedDate)
+            .ToListAsync();
+    }
+
     public async Task<Dictionary<int, int>> GetUnresolvedFeedbackCountsAsync(List<int> programIds)
     {
         if (programIds.Count == 0) return new();
