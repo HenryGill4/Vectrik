@@ -12,7 +12,7 @@ Vectrik is a Manufacturing Execution System (MES) for SLS additive manufacturing
 
 ## Architecture
 
-### Project Structure
+### Project Structure 
 ```
 Components/
   Layout/           MainLayout, NavMenu, NavSection
