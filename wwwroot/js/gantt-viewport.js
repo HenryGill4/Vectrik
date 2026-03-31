@@ -675,6 +675,7 @@ function zoomAtCenter(direction) {
     // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
     setZoomAnchor(anchorTimeHours, anchorViewportX);
 
+
     debouncedZoomNotify(anchorTimeHours, anchorViewportX);
 }
 
