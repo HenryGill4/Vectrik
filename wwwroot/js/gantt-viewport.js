@@ -134,7 +134,7 @@ function setZoomAnchor(timeHours, viewportX) {
     // This prevents the observer from incorrectly restoring scroll on
     // unrelated DOM mutations (e.g. data refresh).
     clearTimeout(_zoomAnchorClearId);
-    _zoomAnchorClearId = setTimeout(() => { _zoomAnchor = null; }, 500);
+    _zoomAnchorClearId = setTimeout(() => { _zoomAnchor = null; }, 1000);
 }
 
 function setupInnerObserver() {
@@ -610,11 +610,14 @@ function onKeyDown(e) {
         case '0': {
             e.preventDefault();
             // Reset to default zoom, keep center time stable
-            const centerTimeHours = (_container.scrollLeft + _container.clientWidth / 2) / _pixelsPerHour;
+            const anchorVpX = _container.clientWidth / 2;
+            const centerTimeHours = (_container.scrollLeft + anchorVpX) / _pixelsPerHour;
             _pixelsPerHour = 6.0;
             updateInnerWidth();
-            _container.scrollLeft = centerTimeHours * _pixelsPerHour - _container.clientWidth / 2;
-            debouncedZoomNotify(centerTimeHours, _container.clientWidth / 2);
+            _container.scrollLeft = centerTimeHours * _pixelsPerHour - anchorVpX;
+            // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
+            setZoomAnchor(centerTimeHours, anchorVpX);
+            debouncedZoomNotify(centerTimeHours, anchorVpX);
             break;
         }
         case 'ArrowLeft': {
