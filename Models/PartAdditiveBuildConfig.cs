@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Vectrik.Models.Enums;
 
 namespace Vectrik.Models;
 
@@ -129,6 +130,32 @@ public class PartAdditiveBuildConfig
         }
 
         return errors;
+    }
+
+    /// <summary>
+    /// Returns the number of physical plate positions scaled for a layout size.
+    /// A Quadrant layout uses 1/4 of the plate, a Half layout uses 1/2.
+    /// </summary>
+    public int GetPositionsForLayoutSize(int level, LayoutSize layoutSize)
+    {
+        var fullPlatePositions = GetPositionsPerBuild(level);
+        return layoutSize switch
+        {
+            LayoutSize.Quadrant => (int)Math.Ceiling(fullPlatePositions / 4.0),
+            LayoutSize.Half => (int)Math.Ceiling(fullPlatePositions / 2.0),
+            _ => fullPlatePositions
+        };
+    }
+
+    /// <summary>
+    /// Returns what fraction of a full plate the given number of positions occupies
+    /// at a given stack level. Used to enforce total plate capacity across multiple parts.
+    /// </summary>
+    public double GetPlateFraction(int positions, int level)
+    {
+        var fullPlatePositions = GetPositionsPerBuild(level);
+        if (fullPlatePositions <= 0) return 1.0;
+        return Math.Min(1.0, (double)positions / fullPlatePositions);
     }
 
     public int GetRecommendedStackLevel(int quantity)
