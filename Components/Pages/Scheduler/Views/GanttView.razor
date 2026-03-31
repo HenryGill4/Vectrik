@@ -118,6 +118,7 @@
                                     Executions="GetExecutionsForMachine(machine)"
                                     DataRangeStart="DataRangeStart"
                                     PixelsPerHour="PixelsPerHour"
+                                    NonShiftPeriods="_nonShiftPeriods"
                                     OnBarClick="HandleBarClick"
                                 OnBuildAction="HandleBuildBarClick"
                                 OnNextBuildRequested="OnNextBuildRequested"
@@ -238,6 +239,73 @@
     [Parameter] public EventCallback<GanttViewport.BarDragResult> OnBarDragCompleted { get; set; }
 
     public GanttViewport? Viewport { get; private set; }
+
+    /// <summary>
+    /// Cached non-shift periods used to split Gantt bars at shift boundaries.
+    /// Computed from Shifts + DataRangeStart/End so bars show gaps during off-hours.
+    /// </summary>
+    private List<(DateTime Start, DateTime End)> _nonShiftPeriods = [];
+
+    protected override void OnParametersSet()
+    {
+        _nonShiftPeriods = ComputeNonShiftPeriods();
+    }
+
+    private List<(DateTime Start, DateTime End)> ComputeNonShiftPeriods()
+    {
+        if (!Shifts.Any()) return [];
+
+        var gaps = new List<(DateTime, DateTime)>();
+        var cursor = DataRangeStart;
+        var limit = DataRangeEnd;
+
+        var maxDays = (int)(DataRangeEnd - DataRangeStart).TotalDays + 2;
+        for (int dayOffset = 0; cursor < limit && dayOffset < maxDays; dayOffset++)
+        {
+            var checkDate = DataRangeStart.Date.AddDays(dayOffset);
+            if (checkDate > limit) break;
+
+            var dayName = checkDate.DayOfWeek.ToString()[..3];
+            var dayShifts = Shifts
+                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => s.StartTime)
+                .ToList();
+
+            if (!dayShifts.Any())
+            {
+                var dayStart = checkDate;
+                var dayEnd = checkDate.AddDays(1);
+                if (dayStart < cursor) dayStart = cursor;
+                if (dayEnd > limit) dayEnd = limit;
+                if (dayStart < dayEnd)
+                    gaps.Add((dayStart, dayEnd));
+                cursor = dayEnd;
+                continue;
+            }
+
+            foreach (var shift in dayShifts)
+            {
+                var shiftStart = checkDate + shift.StartTime;
+                var shiftEnd = checkDate + shift.EndTime;
+                if (shift.EndTime <= shift.StartTime)
+                    shiftEnd = shiftEnd.AddDays(1);
+
+                if (cursor < shiftStart)
+                {
+                    var gapStart = cursor < DataRangeStart ? DataRangeStart : cursor;
+                    var gapEnd = shiftStart > limit ? limit : shiftStart;
+                    if (gapStart < gapEnd)
+                        gaps.Add((gapStart, gapEnd));
+                }
+                cursor = shiftEnd > cursor ? shiftEnd : cursor;
+            }
+        }
+
+        if (cursor < limit)
+            gaps.Add((cursor, limit));
+
+        return gaps;
+    }
 
     private List<Machine> GetOrderedMachines()
     {
