@@ -1090,9 +1090,12 @@
                 var result = await ProgramScheduling.ScheduleBuildPlateRunAsync(programId, _selectedMachineId, scheduleStart);
 
                 // Link the COPY's ProgramParts to WO lines (not the source's)
+                // Use GroupBy to handle multiple allocations for the same PartId
+                // (e.g. same part at different positions or for different WO lines)
                 var woLinks = _plateAllocations
                     .Where(a => a.WorkOrderLineId.HasValue)
-                    .ToDictionary(a => a.PartId, a => a.WorkOrderLineId);
+                    .GroupBy(a => a.PartId)
+                    .ToDictionary(g => g.Key, g => g.First().WorkOrderLineId);
                 if (woLinks.Any())
                     await ProgramPlanning.LinkProgramPartsToWorkOrdersAsync(result.MachineProgramId, woLinks);
             }
