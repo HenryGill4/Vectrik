@@ -4551,8 +4551,43 @@ public class DataSeedingService : IDataSeedingService
     // ════════════════════════════════════════════════════════════════════════
     private static async Task SeedDemoEnhancementAsync(TenantDbContext db)
     {
-        const string marker = "DemoEnhancementV2";
+        const string marker = "DemoEnhancementV3";
         if (await db.SystemSettings.AnyAsync(s => s.Key == marker)) return;
+
+        // ── Cleanup duplicate runs from V2 ──────────────────────────
+        // Remove all enhancement data and re-create cleanly
+        var oldMarkers = await db.SystemSettings.Where(s => s.Key.StartsWith("DemoEnhancement")).ToListAsync();
+        if (oldMarkers.Count > 0) db.SystemSettings.RemoveRange(oldMarkers);
+
+        // Delete WOs created by prior enhancement runs (PO pattern matching)
+        var enhancementPOs = new[] { "RS-2026-0401", "SC-2026-0402", "CA-2026-0405", "DA-2026-0408", "SS-2026-0410", "TB-2026-0412" };
+        var dupeWOs = await db.WorkOrders.Where(w => enhancementPOs.Contains(w.CustomerPO)).ToListAsync();
+        if (dupeWOs.Count > 0)
+        {
+            var dupeWOIds = dupeWOs.Select(w => w.Id).ToList();
+            var dupeLines = await db.Set<WorkOrderLine>().Where(l => dupeWOIds.Contains(l.WorkOrderId)).ToListAsync();
+            var dupeLineIds = dupeLines.Select(l => l.Id).ToHashSet();
+
+            // Delete jobs linked to these WO lines
+            var dupeJobs = await db.Jobs.Where(j => j.WorkOrderLineId != null && dupeLineIds.Contains(j.WorkOrderLineId.Value)).ToListAsync();
+            var dupeJobIds = dupeJobs.Select(j => j.Id).ToHashSet();
+
+            // Delete stage executions for these jobs
+            var dupeExecs = await db.StageExecutions.Where(se => se.JobId != null && dupeJobIds.Contains(se.JobId.Value)).ToListAsync();
+            db.StageExecutions.RemoveRange(dupeExecs);
+
+            // Delete programs linked to these jobs
+            var dupeProgIds = dupeExecs.Where(se => se.MachineProgramId != null).Select(se => se.MachineProgramId!.Value).Distinct().ToList();
+            var dupeProgs = await db.MachinePrograms.Where(p => dupeProgIds.Contains(p.Id)).ToListAsync();
+            var dupeProgramParts = await db.ProgramParts.Where(pp => dupeProgIds.Contains(pp.MachineProgramId)).ToListAsync();
+            db.ProgramParts.RemoveRange(dupeProgramParts);
+            db.MachinePrograms.RemoveRange(dupeProgs);
+
+            db.Jobs.RemoveRange(dupeJobs);
+            db.Set<WorkOrderLine>().RemoveRange(dupeLines);
+            db.WorkOrders.RemoveRange(dupeWOs);
+            await db.SaveChangesAsync();
+        }
 
         var now = DateTime.UtcNow;
         var stages = await db.ProductionStages.ToDictionaryAsync(s => s.StageSlug, s => s);
