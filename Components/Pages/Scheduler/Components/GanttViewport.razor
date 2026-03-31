@@ -241,6 +241,21 @@
     }
 
     /// <summary>
+    /// Called by JS on two-finger pinch zoom. Routes through the same path as
+    /// the zoom buttons (applyZoom + syncScrollToAnchor) for consistent behavior.
+    /// direction: 1 = zoom in, -1 = zoom out.
+    /// </summary>
+    [JSInvokable("OnPinchZoomStep")]
+    public async Task HandlePinchZoomStep(int direction)
+    {
+        if (_disposed) return;
+        if (direction > 0)
+            await ZoomInAsync();
+        else
+            await ZoomOutAsync();
+    }
+
+    /// <summary>
     /// Called by JS when a bar is drag-dropped to a new position.
     /// </summary>
     [JSInvokable("OnBarDragCompleted")]

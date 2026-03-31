@@ -150,7 +150,8 @@ function setupInnerObserver() {
     _innerObserver.observe(_inner, {
         attributes: true,
         attributeFilter: ['style'],
-        childList: true
+        childList: true,
+        subtree: true
     });
 }
 
@@ -339,9 +340,9 @@ export function applyZoom(pixelsPerHour) {
 export function syncScrollToAnchor(anchorTimeHours, anchorViewportX) {
     if (!isAlive() || !_inner) return;
     _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
-    // Clear anchor — the observer's job is done for this zoom cycle
-    _zoomAnchor = null;
-    clearTimeout(_zoomAnchorClearId);
+    // Don't clear _zoomAnchor here — subsequent re-renders (e.g. from OnViewportChanged)
+    // may displace scrollLeft again and need the observer to correct it.
+    // The 1000ms timeout in setZoomAnchor handles cleanup.
 }
 
 export function getViewport() {
@@ -439,6 +440,7 @@ function onWheel(e) {
 }
 
 let _pinchDist = 0;
+let _pinchDebounceId = 0;       // debounce rapid pinch events into discrete zoom steps
 let _touchBarMode = false;      // true = single-finger touch on a bar (potential drag)
 let _touchBarLongPress = null;   // timeout ID for long-press detection
 
@@ -486,7 +488,7 @@ function onTouchStart(e) {
 function onTouchMove(e) {
     if (_disposed || !isAlive() || !_inner) return;
 
-    // Two-finger pinch zoom
+    // Two-finger pinch zoom — routes through the same C# path as the zoom buttons
     if (e.touches.length === 2) {
         const cur = touchDist(e.touches);
         const delta = cur - _pinchDist;
@@ -496,26 +498,13 @@ function onTouchMove(e) {
         _pinchDist = cur;
 
         const direction = delta > 0 ? 1 : -1;
-        const rect = _container.getBoundingClientRect();
-        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const anchorViewportX = midX - rect.left;
-        const anchorTimeHours = (_container.scrollLeft + anchorViewportX) / _pixelsPerHour;
 
-        // Apply zoom immediately in JS (same pattern as Ctrl+wheel)
-        const newPph = clampZoom(direction > 0
-            ? _pixelsPerHour * ZOOM_FACTOR
-            : _pixelsPerHour / ZOOM_FACTOR);
-        if (Math.abs(newPph - _pixelsPerHour) < 0.001) return;
-
-        _pixelsPerHour = newPph;
-        updateInnerWidth();
-        // Correct scrollLeft immediately so there's no visible jank before Blazor re-renders
-        _container.scrollLeft = anchorTimeHours * _pixelsPerHour - anchorViewportX;
-
-        // Store anchor — MutationObserver will restore scroll if Blazor's DOM patch displaces it
-        setZoomAnchor(anchorTimeHours, anchorViewportX);
-
-        debouncedZoomNotify(anchorTimeHours, anchorViewportX);
+        // Debounce rapid pinch events into discrete zoom steps via C#
+        clearTimeout(_pinchDebounceId);
+        _pinchDebounceId = setTimeout(() => {
+            if (_disposed || !_dotNetRef) return;
+            _dotNetRef.invokeMethodAsync('OnPinchZoomStep', direction);
+        }, 60);
         return;
     }
 
