@@ -652,11 +652,21 @@ public class MachineProgramService : IMachineProgramService
 
     public async Task<List<StageExecution>> GetProgramRunsAsync(int programId)
     {
+        // Include runs on this program AND runs on scheduled copies (SourceProgramId == programId)
+        var copyIds = await _db.MachinePrograms
+            .Where(p => p.SourceProgramId == programId)
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        var allProgramIds = new List<int> { programId };
+        allProgramIds.AddRange(copyIds);
+
         return await _db.StageExecutions
             .Include(e => e.Job)
             .Include(e => e.Machine)
             .Include(e => e.ProductionStage)
-            .Where(e => e.MachineProgramId == programId
+            .Where(e => e.MachineProgramId.HasValue
+                && allProgramIds.Contains(e.MachineProgramId.Value)
                 && e.Job != null
                 && e.Job.Scope == JobScope.Build)
             .OrderByDescending(e => e.ScheduledStartAt ?? e.CreatedDate)
