@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vectrik.Data;
 using Vectrik.Hubs;
 using Vectrik.Models;
@@ -14,17 +15,20 @@ public class PrintCompletionService : IPrintCompletionService
     private readonly ISetupDispatchService _dispatchService;
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
+    private readonly ILogger<PrintCompletionService> _logger;
 
     public PrintCompletionService(
         TenantDbContext db,
         ISetupDispatchService dispatchService,
         IDispatchNotifier notifier,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ILogger<PrintCompletionService> logger)
     {
         _db = db;
         _dispatchService = dispatchService;
         _notifier = notifier;
         _tenantContext = tenantContext;
+        _logger = logger;
     }
 
     public async Task<SetupDispatch> CreatePrintCompletionDispatchAsync(int machineId, int machineProgramId)
@@ -113,7 +117,10 @@ public class PrintCompletionService : IPrintCompletionService
                     await _notifier.SendUrgentDispatchAsync(tenantCode, dispatch.MachineId,
                         $"Inspection FAILED on {dispatch.Machine?.Name ?? "machine"}: {string.Join(", ", failed.Select(f => f.Title))}");
                 }
-                catch { /* SignalR failures shouldn't break operations */ }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Urgent inspection-failure notification failed for dispatch {DispatchId}", dispatchId);
+                }
             }
 
             return (await _dispatchService.GetByIdAsync(dispatchId))!;

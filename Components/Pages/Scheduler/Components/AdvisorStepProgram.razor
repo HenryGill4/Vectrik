@@ -1,0 +1,229 @@
+@* ── Step 1: Program Selection ────────────────────────────────────────── *@
+@using Vectrik.Components.Pages.Scheduler.Models
+
+<div class="wizard-content">
+    <div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
+            <div style="font-weight: 600; font-size: 0.85rem;">Choose a Program</div>
+            <span style="font-size: 0.78rem; color: var(--text-muted);">@FilteredPrograms.Count of @State.AvailablePrograms.Count</span>
+        </div>
+
+        @* ── Search + Filters ── *@
+        <div style="position: sticky; top: 0; z-index: 5; background: var(--bg-secondary); padding: 8px 0 8px; margin: 0 0 8px;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <input class="form-control form-control-sm" type="text" placeholder="Search..."
+                       style="flex: 1; min-width: 120px;" @bind="_programSearch" @bind:event="oninput" />
+                <select class="form-control form-control-sm" style="width: auto; min-width: 90px;"
+                        @bind="_filterStatus">
+                    <option value="all">All Status</option>
+                    <option value="ready">Ready</option>
+                    <option value="needs-slicer">Needs Slicer</option>
+                </select>
+                @if (AvailableMaterials.Count > 1)
+                {
+                    <select class="form-control form-control-sm" style="width: auto; min-width: 90px;"
+                            @bind="_filterMaterial">
+                        <option value="all">All Materials</option>
+                        @foreach (var mat in AvailableMaterials)
+                        {
+                            <option value="@mat">@mat</option>
+                        }
+                    </select>
+                }
+            </div>
+        </div>
+
+        @if (FilteredPrograms.Any())
+        {
+            <div id="advisor-program-list" style="display: flex; flex-direction: column; gap: 6px;">
+                @{
+                    var grouped = FilteredPrograms
+                        .GroupBy(p => p.ProgramParts.FirstOrDefault()?.Part?.PartNumber ?? "Unknown")
+                        .OrderBy(g => g.Key);
+                }
+                @foreach (var partGroup in grouped)
+                {
+                    @if (grouped.Count() > 1)
+                    {
+                        <div style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; padding: 2px 0; border-bottom: 1px solid var(--border);">
+                            @partGroup.Key — @partGroup.Count() @(partGroup.Count() == 1 ? "program" : "programs")
+                        </div>
+                    }
+                    @foreach (var prog in partGroup)
+                    {
+                        var isSelected = State.SelectedExistingProgram?.Id == prog.Id;
+                        var totalParts = prog.TotalPartCount;
+                        var stackLevel = prog.ProgramParts?.FirstOrDefault()?.StackLevel ?? 1;
+                        var printHours = prog.EstimatedPrintHours ?? 0;
+                        var hasSlicer = prog.HasSlicerData;
+                        var assignedMachines = prog.MachineAssignments?.Select(a => a.Machine?.Name).Where(n => n != null).ToList() ?? [];
+                        var isForThisMachine = prog.MachineId == State.SelectedMachineId
+                            || assignedMachines.Any(n => n == State.SelectedMachine?.Name);
+                        var materialName = prog.Material?.Name?.Split(' ').FirstOrDefault() ?? prog.MachineType ?? "";
+
+                        // Changeover alignment for this program's timing
+                        var changeoverAligned = State.SelectedOption?.ChangeoverAligned
+                            ?? State.Recommendation?.Plate.OperatorAvailable
+                            ?? true;
+
+                        <div class="advisor-option-card @(isSelected ? "advisor-option-card--selected" : "")"
+                             id="advisor-prog-@prog.Id"
+                             style="padding: 10px 12px;"
+                             @onclick="() => OnProgramSelected.InvokeAsync(prog)">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-weight: 600; font-size: 0.88rem;">@prog.Name</div>
+                                <div style="display: flex; gap: 4px; align-items: center;">
+                                    @if (isSelected)
+                                    {
+                                        @if (changeoverAligned)
+                                        {
+                                            <span class="badge badge-success" style="font-size: 0.65rem;" title="Changeover falls within an operator shift window">✓ Safe CO</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge badge-danger" style="font-size: 0.65rem;" title="Changeover falls outside operator hours — machine may stop">⚠ Risky CO</span>
+                                        }
+                                    }
+                                    @if (hasSlicer)
+                                    {
+                                        <span class="badge badge-success" style="font-size: 0.68rem;">Ready</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-warning" style="font-size: 0.68rem;">Needs Slicer</span>
+                                    }
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.78rem; margin-top: 4px; align-items: center;">
+                                <span style="font-weight: 500; color: var(--text-primary);">@totalParts @(totalParts == 1 ? "part" : "parts")</span>
+                                @if (stackLevel > 1) { <span class="badge badge-info" style="font-size: 0.65rem;">@(stackLevel)× stack</span> }
+                                @if (printHours > 0) { <span style="color: var(--text-muted);">@printHours.ToString("F1")h print</span> }
+                                @if (!string.IsNullOrEmpty(materialName)) { <span style="color: var(--text-muted);">@materialName</span> }
+                            </div>
+                            @if (prog.ProgramParts?.Any() == true)
+                            {
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+                                    @foreach (var pp in prog.ProgramParts)
+                                    {
+                                        var ppTotal = pp.Quantity * pp.StackLevel;
+                                        <span style="font-size: 0.72rem; padding: 1px 6px; background: var(--bg-tertiary); border-radius: 3px; color: var(--text-secondary);">
+                                            @(pp.Part?.PartNumber ?? $"#{pp.PartId}") ×@ppTotal
+                                        </span>
+                                    }
+                                </div>
+                            }
+                            <div style="display: flex; gap: 8px; font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;">
+                                <span>@prog.ProgramNumber</span>
+                                @if (prog.LayerCount.HasValue) { <span>@prog.LayerCount.Value.ToString("N0") layers</span> }
+                                @if (prog.BuildHeightMm.HasValue) { <span>@prog.BuildHeightMm.Value.ToString("F0")mm</span> }
+                                @if (assignedMachines.Any())
+                                {
+                                    <span style="@(isForThisMachine ? "color: var(--success);" : "")">@string.Join(", ", assignedMachines)</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        }
+        else
+        {
+            <div style="padding: 16px; font-size: 0.85rem; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px; text-align: center;">
+                @if (!string.IsNullOrEmpty(_programSearch))
+                {
+                    <text>No programs matching "@_programSearch"</text>
+                }
+                else
+                {
+                    <text>No existing programs available. Create a new one below.</text>
+                }
+            </div>
+        }
+
+        <div style="margin-top: 8px;">
+            @if (State.CreatingNewProgram)
+            {
+                <div class="advisor-option-card advisor-option-card--selected" style="padding: 10px 12px;">
+                    <div style="font-weight: 600; font-size: 0.88rem;">+ Create New Program</div>
+                    <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">
+                        Define a new plate composition and schedule it. The slicer file will need to be prepared separately.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <button class="btn btn-secondary" style="width: 100%; margin-top: 4px;" @onclick="async () => await OnCreateNewProgram.InvokeAsync()">
+                    + Create New Program
+                </button>
+            }
+        </div>
+    </div>
+
+    @* ── Compact timing + changeover preview after program selection ── *@
+    @if ((State.SelectedExistingProgram != null || State.CreatingNewProgram) && State.ActiveSlot != null)
+    {
+        <div style="margin-top: 12px; padding: 8px 10px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.78rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span style="font-weight: 600;">Start:</span>
+            <span>@State.ActiveSlot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+            <span style="color: var(--text-muted);">→</span>
+            <span>@State.ActiveSlot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt")</span>
+            @if (State.ActiveChangeoverAligned)
+            {
+                <span class="badge badge-success" style="margin-left: auto;">✓ Safe Changeover</span>
+            }
+            else
+            {
+                <span class="badge badge-danger" style="margin-left: auto;" title="Changeover falls outside operator shift hours">⚠ Risky Changeover</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AdvisorWizardState State { get; set; } = default!;
+    [Parameter] public EventCallback<MachineProgram> OnProgramSelected { get; set; }
+    [Parameter] public EventCallback OnCreateNewProgram { get; set; }
+    private ScheduleOption? SelectedOption => State.SelectedOption;
+
+    private string _programSearch = "";
+    private string _filterStatus = "all";
+    private string _filterMaterial = "all";
+
+    private List<MachineProgram> FilteredPrograms
+    {
+        get
+        {
+            IEnumerable<MachineProgram> result = State.AvailablePrograms;
+
+            if (_filterStatus == "ready")
+                result = result.Where(p => p.HasSlicerData);
+            else if (_filterStatus == "needs-slicer")
+                result = result.Where(p => !p.HasSlicerData);
+
+            if (_filterMaterial != "all")
+                result = result.Where(p => (p.Material?.Name ?? "").Equals(_filterMaterial, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(_programSearch))
+            {
+                var search = _programSearch.Trim();
+                result = result.Where(p =>
+                    (p.Name?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)
+                    || (p.ProgramNumber?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)
+                    || p.ProgramParts.Any(pp =>
+                        pp.Part?.PartNumber?.Contains(search, StringComparison.OrdinalIgnoreCase) == true));
+            }
+
+            return result.ToList();
+        }
+    }
+
+    private List<string> AvailableMaterials => State.AvailablePrograms
+        .Select(p => p.Material?.Name)
+        .Where(n => !string.IsNullOrEmpty(n))
+        .Distinct()
+        .OrderBy(n => n)
+        .ToList()!;
+
+    /// <summary>Scroll the list to show the selected program after navigation back to this step.</summary>
+    public void ScrollToSelected() { /* caller uses JS */ }
+}

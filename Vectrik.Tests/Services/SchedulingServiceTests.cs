@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Vectrik.Data;
 using Vectrik.Models;
 using Vectrik.Models.Enums;
@@ -16,7 +17,7 @@ public class SchedulingServiceTests : IDisposable
     public SchedulingServiceTests()
     {
         _db = TestDbContextFactory.Create();
-        _sut = new SchedulingService(_db, new StubMachineProgramService(), new ShiftManagementService(_db));
+        _sut = new SchedulingService(_db, new StubMachineProgramService(), new ShiftManagementService(_db), NullLogger<SchedulingService>.Instance);
     }
 
     public void Dispose() => _db.Dispose();

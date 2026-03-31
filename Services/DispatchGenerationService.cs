@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vectrik.Data;
 using Vectrik.Hubs;
 using Vectrik.Models;
@@ -15,6 +16,7 @@ public class DispatchGenerationService : IDispatchGenerationService
     private readonly IDispatchLearningService _learningService;
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
+    private readonly ILogger<DispatchGenerationService> _logger;
 
     public DispatchGenerationService(
         TenantDbContext db,
@@ -22,7 +24,8 @@ public class DispatchGenerationService : IDispatchGenerationService
         IDispatchScoringService scoringService,
         IDispatchLearningService learningService,
         IDispatchNotifier notifier,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ILogger<DispatchGenerationService> logger)
     {
         _db = db;
         _dispatchService = dispatchService;
@@ -30,6 +33,7 @@ public class DispatchGenerationService : IDispatchGenerationService
         _learningService = learningService;
         _notifier = notifier;
         _tenantContext = tenantContext;
+        _logger = logger;
     }
 
     public async Task<List<SetupDispatch>> GenerateDispatchSuggestionsAsync(int? machineId = null)
@@ -213,7 +217,10 @@ public class DispatchGenerationService : IDispatchGenerationService
                     if (bestOperator.HasValue)
                     {
                         try { await _dispatchService.AssignOperatorAsync(dispatch.Id, bestOperator.Value); }
-                        catch { /* Assignment failures shouldn't block generation */ }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Auto-assign operator failed for dispatch {DispatchId}; generation continues", dispatch.Id);
+                        }
                     }
                 }
 
@@ -245,7 +252,10 @@ public class DispatchGenerationService : IDispatchGenerationService
         if (!string.IsNullOrEmpty(tenantCode))
         {
             try { await _notifier.SendDispatchStatusChangedAsync(tenantCode, dispatch); }
-            catch { /* SignalR failures shouldn't break operations */ }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR notification failed after approving dispatch {DispatchId}", dispatchId);
+            }
         }
 
         return dispatch;

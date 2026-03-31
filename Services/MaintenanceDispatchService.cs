@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vectrik.Data;
 using Vectrik.Hubs;
 using Vectrik.Models;
@@ -15,19 +16,22 @@ public class MaintenanceDispatchService : IMaintenanceDispatchService
     private readonly IMaintenanceService _maintenanceService;
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
+    private readonly ILogger<MaintenanceDispatchService> _logger;
 
     public MaintenanceDispatchService(
         TenantDbContext db,
         ISetupDispatchService dispatchService,
         IMaintenanceService maintenanceService,
         IDispatchNotifier notifier,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ILogger<MaintenanceDispatchService> logger)
     {
         _db = db;
         _dispatchService = dispatchService;
         _maintenanceService = maintenanceService;
         _notifier = notifier;
         _tenantContext = tenantContext;
+        _logger = logger;
     }
 
     public async Task<List<SetupDispatch>> GenerateMaintenanceDispatchesAsync()
@@ -246,7 +250,10 @@ public class MaintenanceDispatchService : IMaintenanceDispatchService
         if (!string.IsNullOrEmpty(tenantCode))
         {
             try { await _notifier.SendUrgentDispatchAsync(tenantCode, machineId, message); }
-            catch { /* SignalR failures shouldn't break operations */ }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Urgent maintenance notification failed for machine {MachineId}", machineId);
+            }
         }
     }
 }

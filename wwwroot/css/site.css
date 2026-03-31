@@ -3491,6 +3491,8 @@ dialog#components-reconnect-modal button:hover {
 .gantt-part-key {
     gap: 6px;
     align-items: center;
+    max-height: 120px;
+    overflow-y: auto;
 }
 .gantt-part-swatch {
     display: inline-flex;
@@ -13703,4 +13705,237 @@ dialog#components-reconnect-modal button:hover {
     background: var(--primary);
     color: #fff;
     border-color: var(--primary);
+}
+
+/* ── Gantt Bar Rich Tooltips ─────────────────────────────────── */
+.gantt-bar-has-tooltip {
+    position: relative;
+}
+.gantt-bar-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 1200;
+    min-width: 220px;
+    max-width: 340px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+.gantt-bar-has-tooltip:hover .gantt-bar-tooltip {
+    display: block;
+}
+/* If tooltip would overflow right side, align it to the right of the bar */
+.gantt-bar-tooltip--build {
+    min-width: 260px;
+}
+.gantt-bar-tooltip-title {
+    font-weight: 600;
+    font-size: 0.82rem;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    white-space: normal;
+}
+.gantt-bar-tooltip-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 1px 0;
+}
+.gantt-bar-tooltip-row--warn { color: var(--danger); }
+.gantt-bar-tooltip-row--ok { color: var(--success); }
+.gantt-bar-tooltip-label {
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 58px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.gantt-bar-tooltip-badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.gantt-bar-tooltip-badge--warn { background: rgba(var(--danger-rgb), 0.15); color: var(--danger); }
+.gantt-bar-tooltip-badge--rush { background: rgba(var(--danger-rgb), 0.15); color: var(--danger); }
+.gantt-bar-tooltip-badge--high { background: rgba(var(--warning-rgb), 0.15); color: var(--warning); }
+.gantt-bar-tooltip-badge--normal { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
+.gantt-bar-tooltip-badge--low { background: var(--bg-surface); color: var(--text-muted); }
+.gantt-bar-tooltip-parts {
+    margin-top: 5px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.gantt-bar-tooltip-part-tag {
+    font-size: 0.68rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: hsl(var(--part-hue, 220), 50%, 20%);
+    color: hsl(var(--part-hue, 220), 70%, 80%);
+    border: 1px solid hsl(var(--part-hue, 220), 50%, 35%);
+}
+
+/* ── Work Order Panel Search ─────────────────────────────────── */
+.wo-panel-search {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+}
+.wo-panel-search-input {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text-primary);
+    padding: 5px 8px;
+    font-size: 0.78rem;
+    transition: border-color 0.15s;
+}
+.wo-panel-search-input::placeholder { color: var(--text-muted); }
+.wo-panel-search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ── Next Build Advisor Enhanced Components ─────────────────── */
+
+/* Recommendation card */
+.advisor-recommendation-card {
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-left: 3px solid var(--accent);
+    background: rgba(var(--accent-rgb), 0.06);
+}
+.advisor-recommendation-card--safe {
+    border-left-color: var(--success);
+    background: rgba(var(--success-rgb), 0.06);
+}
+.advisor-recommendation-card--risk {
+    border-left-color: var(--danger);
+    background: rgba(var(--danger-rgb), 0.06);
+}
+.advisor-recommendation-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 0.88rem;
+    margin-bottom: 4px;
+}
+.advisor-recommendation-icon { font-size: 1rem; }
+.advisor-recommendation-label { flex: 1; }
+.advisor-recommendation-badge { margin-left: auto; font-size: 0.65rem; }
+.advisor-recommendation-body {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+.advisor-recommendation-meta {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+}
+.advisor-recommendation-reasoning {
+    margin-top: 6px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Summary card (step 3 review) */
+.advisor-summary-card {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+.advisor-summary-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.advisor-summary-icon { font-size: 1.1rem; }
+.advisor-summary-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    margin: 0;
+}
+.advisor-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    font-size: 0.83rem;
+}
+.advisor-summary-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.advisor-summary-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.advisor-summary-value { font-weight: 600; }
+.advisor-summary-parts {
+    margin-top: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.advisor-summary-part-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    padding: 2px 0;
+}
+
+/* Plate utilization bar */
+.advisor-plate-utilization {
+    margin: 8px 0 4px;
+}
+.advisor-plate-util-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    margin-bottom: 4px;
+}
+.advisor-plate-util-bar {
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.advisor-plate-util-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
 }

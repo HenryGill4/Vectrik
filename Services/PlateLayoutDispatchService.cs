@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vectrik.Data;
 using Vectrik.Hubs;
 using Vectrik.Models;
@@ -15,19 +16,22 @@ public class PlateLayoutDispatchService : IPlateLayoutDispatchService
     private readonly IBuildAdvisorService _buildAdvisor;
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
+    private readonly ILogger<PlateLayoutDispatchService> _logger;
 
     public PlateLayoutDispatchService(
         TenantDbContext db,
         ISetupDispatchService dispatchService,
         IBuildAdvisorService buildAdvisor,
         IDispatchNotifier notifier,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ILogger<PlateLayoutDispatchService> logger)
     {
         _db = db;
         _dispatchService = dispatchService;
         _buildAdvisor = buildAdvisor;
         _notifier = notifier;
         _tenantContext = tenantContext;
+        _logger = logger;
     }
 
     public async Task<List<SetupDispatch>> DetectAndCreatePlateLayoutDispatchesAsync()
@@ -149,7 +153,10 @@ public class PlateLayoutDispatchService : IPlateLayoutDispatchService
                     await _dispatchService.CompleteDispatchAsync(started.Id);
                     anyCompleted = true;
                 }
-                catch { /* May already be in a terminal state */ }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Auto-completing layout dispatch {DispatchId} failed; may already be in terminal state", layout.Id);
+                }
             }
         }
 

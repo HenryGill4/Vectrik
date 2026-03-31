@@ -1,0 +1,457 @@
+@* ── Steps 2 & 3: Slicer/Plate config + Review & Schedule ───────────── *@
+@using Microsoft.AspNetCore.Components.Forms
+@using Vectrik.Components.Pages.Scheduler.Models
+
+@* ══════════ Step 2: Slicer Data for Existing Program ══════════ *@
+@if (InternalStep == 2 && ExistingNeedsSlicerData && State.SelectedExistingProgram != null)
+{
+    <div class="wizard-content">
+        <div style="padding: 12px 16px; background: rgba(var(--warning-rgb), 0.08); border: 1px solid rgba(var(--warning-rgb), 0.25); border-radius: 8px; margin-bottom: 16px;">
+            <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 4px;">⚠️ Slicer Data Required</div>
+            <div style="font-size: 0.82rem; color: var(--text-secondary);">
+                <strong>@State.SelectedExistingProgram.Name</strong> doesn't have slicer data yet.
+                Enter the print duration (at minimum) so the build can be scheduled.
+            </div>
+        </div>
+
+        <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Print Data</div>
+        <div class="advisor-slicer-grid">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Print Duration (hrs) <span style="color:var(--danger);">*</span></label>
+                <input class="form-control" type="number" step="0.1" min="0.1"
+                       value="@SlicerPrintHours" @oninput="e => SlicerPrintHoursChanged.InvokeAsync(ParseDouble(e.Value))"
+                       placeholder="From slicer output" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Layer Count</label>
+                <input class="form-control" type="number" min="0"
+                       value="@SlicerLayerCount" @oninput="e => SlicerLayerCountChanged.InvokeAsync(ParseInt(e.Value))" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Build Height (mm)</label>
+                <input class="form-control" type="number" step="0.1" min="0"
+                       value="@SlicerBuildHeightMm" @oninput="e => SlicerBuildHeightMmChanged.InvokeAsync(ParseDouble(e.Value))" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Est. Powder (kg)</label>
+                <input class="form-control" type="number" step="0.1" min="0"
+                       value="@SlicerPowderKg" @oninput="e => SlicerPowderKgChanged.InvokeAsync(ParseDouble(e.Value))" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Slicer Software</label>
+                <input class="form-control" value="@SlicerSoftware" @oninput="e => SlicerSoftwareChanged.InvokeAsync(e.Value?.ToString())"
+                       placeholder="e.g. Magics" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Slicer Version</label>
+                <input class="form-control" value="@SlicerVersion" @oninput="e => SlicerVersionChanged.InvokeAsync(e.Value?.ToString())" />
+            </div>
+        </div>
+        <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+            <label class="form-label">Slicer File Name</label>
+            <input class="form-control" value="@SlicerFileName" @oninput="e => SlicerFileNameChanged.InvokeAsync(e.Value?.ToString())"
+                   placeholder="e.g. build-plate-250325.slc" />
+        </div>
+
+        <div style="margin-top: 16px; padding: 10px; background: var(--bg-secondary); border-radius: 8px; font-size: 0.82rem;">
+            <strong>Program:</strong> @State.SelectedExistingProgram.Name
+            — @State.SelectedExistingProgram.TotalPartCount @(State.SelectedExistingProgram.TotalPartCount == 1 ? "part" : "parts")
+            <span style="color: var(--text-muted); margin-left: 4px;">(@State.SelectedExistingProgram.ProgramNumber)</span>
+        </div>
+    </div>
+}
+
+@* ══════════ Step 2: New Program (Full Form) ══════════ *@
+@if (InternalStep == 2 && !ExistingNeedsSlicerData)
+{
+    <div class="wizard-content">
+        <div class="form-group">
+            <label class="form-label" style="font-weight: 600;">Program Name</label>
+            <input class="form-control" value="@ProgramName" @oninput="e => ProgramNameChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)"
+                   placeholder="e.g. DM-SUP-FULL-0001-250325" />
+        </div>
+
+        @if (State.Recommendation != null)
+        {
+            <div class="advisor-rationale">
+                <strong>Suggested parts based on demand:</strong> @State.Recommendation.Rationale
+                @if (State.PlateEdited)
+                {
+                    <button class="btn btn-sm btn-ghost" style="margin-left: 8px;" @onclick="async () => await OnResetToRecommendation.InvokeAsync()" title="Restore the original recommendation">
+                        Reset
+                    </button>
+                }
+            </div>
+        }
+
+        @foreach (var warn in State.ActiveWarnings)
+        {
+            <div class="advisor-warning">@warn</div>
+        }
+
+        @* ── Plate Utilization indicator ── *@
+        @if (State.PlateAllocations.Any())
+        {
+            var utilPct = (int)(State.PlateUtilization * 100);
+            var utilColor = utilPct >= 90 ? "var(--success)" : utilPct >= 60 ? "var(--accent)" : "var(--warning)";
+            <div class="advisor-plate-utilization">
+                <div class="advisor-plate-util-label">
+                    <span>Plate Utilization</span>
+                    <span style="color: @utilColor; font-weight: 600;">@utilPct%</span>
+                </div>
+                <div class="advisor-plate-util-bar">
+                    <div class="advisor-plate-util-fill" style="width: @utilPct%; background: @utilColor;"></div>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);">
+                    @State.PlatePartCount total parts on plate
+                </div>
+            </div>
+        }
+
+        <PlateComposer Allocations="State.PlateAllocations"
+                       Demand="State.Demand"
+                       EstimatedDurationHours="@EstimatedPrintHours"
+                       UseCertifiedLayouts="UseCertifiedLayouts"
+                       CertifiedLayouts="CertifiedLayouts"
+                       PlateAssignments="PlateLayoutAssignments"
+                       OnPlateAssignmentsChanged="OnPlateAssignmentsChanged"
+                       OnModeChanged="OnComposerModeChanged"
+                       OnStackLevelChanged="OnStackLevelChanged"
+                       OnPositionsChanged="OnPositionsChanged"
+                       OnRemovePart="OnRemovePart"
+                       OnAddPart="OnAddPart"
+                       OnResetToRecommendation="OnResetToRecommendation" />
+
+        <div style="margin-top: 16px;">
+            <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Print Data</div>
+            <div class="advisor-slicer-grid">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Print Duration (hrs)</label>
+                    <input class="form-control" type="number" step="0.1" min="0"
+                           value="@SlicerPrintHours" @oninput="e => SlicerPrintHoursChanged.InvokeAsync(ParseDouble(e.Value))"
+                           placeholder="From slicer" />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Layer Count</label>
+                    <input class="form-control" type="number" min="0"
+                           value="@SlicerLayerCount" @oninput="e => SlicerLayerCountChanged.InvokeAsync(ParseInt(e.Value))" />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Build Height (mm)</label>
+                    <input class="form-control" type="number" step="0.1" min="0"
+                           value="@SlicerBuildHeightMm" @oninput="e => SlicerBuildHeightMmChanged.InvokeAsync(ParseDouble(e.Value))" />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Est. Powder (kg)</label>
+                    <input class="form-control" type="number" step="0.1" min="0"
+                           value="@SlicerPowderKg" @oninput="e => SlicerPowderKgChanged.InvokeAsync(ParseDouble(e.Value))" />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Slicer Software</label>
+                    <input class="form-control" value="@SlicerSoftware" @oninput="e => SlicerSoftwareChanged.InvokeAsync(e.Value?.ToString())"
+                           placeholder="e.g. Magics" />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Slicer Version</label>
+                    <input class="form-control" value="@SlicerVersion" @oninput="e => SlicerVersionChanged.InvokeAsync(e.Value?.ToString())" />
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+                <label class="form-label">Slicer File Name</label>
+                <input class="form-control" value="@SlicerFileName" @oninput="e => SlicerFileNameChanged.InvokeAsync(e.Value?.ToString())"
+                       placeholder="e.g. build-plate-250325.slc" />
+            </div>
+        </div>
+
+        <div style="margin-top: 16px;">
+            <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 8px;">Slice File Upload</div>
+            <InputFile OnChange="OnSliceFileUpload" accept=".3mf,.sls,.slice,.slc,.magics,.pdf,.step,.stp" style="display: block;" />
+            @if (Uploading)
+            {
+                <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 4px;">
+                    <span class="spinner" style="width:12px;height:12px;margin-right:4px;"></span> Uploading...
+                </div>
+            }
+            @if (UploadedFiles.Any())
+            {
+                <div class="advisor-file-list">
+                    @foreach (var f in UploadedFiles)
+                    {
+                        <div class="advisor-file-item">
+                            <span style="color: var(--success);">&#x2713;</span>
+                            <span>@f.FileName</span>
+                            <span style="color: var(--text-muted);">(@FormatFileSize(f.FileSizeBytes))</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (State.Demand.Any(d => d.IsAdditive && d.NetRemaining > 0))
+        {
+            <details style="margin-top: 12px;">
+                <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 500; color: var(--text-secondary);">
+                    All Outstanding Demand (@State.Demand.Count(d => d.IsAdditive && d.NetRemaining > 0) parts)
+                </summary>
+                <div style="margin-top: 8px; max-height: 200px; overflow-y: auto;">
+                    <table class="data-table" style="font-size: 0.78rem;">
+                        <thead><tr><th>Part</th><th>Remaining</th><th>Due</th><th>Priority</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var d in State.Demand.Where(d => d.IsAdditive && d.NetRemaining > 0))
+                            {
+                                var onPlate = State.PlateAllocations.Any(a => a.PartId == d.PartId);
+                                <tr style="@(onPlate ? "background: rgba(var(--accent-rgb), 0.06);" : "")">
+                                    <td style="font-weight: 600;">@d.PartNumber @(onPlate ? "✓" : "")</td>
+                                    <td>@d.NetRemaining</td>
+                                    <td>@d.EarliestDueDate.ToString("MMM d")</td>
+                                    <td><span class="badge badge-@d.HighestPriority.ToString().ToLower()">@d.HighestPriority</span></td>
+                                    <td>
+                                        @if (!onPlate && d.BuildConfig != null && State.PlateAllocations.Count < 4)
+                                        {
+                                            <button class="btn btn-sm btn-ghost" style="font-size: 0.72rem; padding: 2px 6px;"
+                                                    @onclick="() => OnAddPart.InvokeAsync(d.PartId)">+ Add</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        }
+    </div>
+}
+
+@* ══════════ Step 3: Review & Schedule ══════════ *@
+@if (InternalStep == 3)
+{
+    <div class="wizard-content">
+        @if (State.PlateAllocations.Any())
+        {
+            @* ── Enhanced confirmation summary card ── *@
+            <div class="advisor-summary-card">
+                <div class="advisor-summary-header">
+                    <span class="advisor-summary-icon">📋</span>
+                    <h4 class="advisor-summary-title">Schedule Summary</h4>
+                </div>
+
+                @* Machine + Program row *@
+                <div class="advisor-summary-grid">
+                    <div class="advisor-summary-item">
+                        <span class="advisor-summary-label">Machine</span>
+                        <span class="advisor-summary-value">@(State.SelectedMachine?.Name ?? "Machine")</span>
+                    </div>
+                    <div class="advisor-summary-item">
+                        <span class="advisor-summary-label">Program</span>
+                        <span class="advisor-summary-value">@(State.SelectedExistingProgram?.Name ?? ProgramName)</span>
+                    </div>
+                    <div class="advisor-summary-item">
+                        <span class="advisor-summary-label">Print Time</span>
+                        <span class="advisor-summary-value">@EffectivePrintHours.ToString("F1")h</span>
+                    </div>
+                    <div class="advisor-summary-item">
+                        <span class="advisor-summary-label">Total Parts</span>
+                        @{
+                            var totalParts = State.PlateAllocations.Sum(a => a.TotalParts);
+                        }
+                        <span class="advisor-summary-value">@totalParts @(totalParts == 1 ? "part" : "parts") (@State.PlateAllocations.Count @(State.PlateAllocations.Count == 1 ? "type" : "types"))</span>
+                    </div>
+                    <div class="advisor-summary-item">
+                        <span class="advisor-summary-label">Start</span>
+                        <span class="advisor-summary-value">@(State.ActiveSlot?.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt"))</span>
+                    </div>
+                    <div class="advisor-summary-item">
+                        <span class="advisor-summary-label">Est. End</span>
+                        <span class="advisor-summary-value">@(State.ActiveSlot?.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt"))</span>
+                    </div>
+                    <div class="advisor-summary-item">
+                        <span class="advisor-summary-label">Changeover</span>
+                        @if (State.ActiveChangeoverAligned)
+                        {
+                            <span class="advisor-summary-value" style="color: var(--success);">✓ Safe — operator available</span>
+                        }
+                        else
+                        {
+                            <span class="advisor-summary-value" style="color: var(--danger);">⚠ Risky — no operator in window</span>
+                        }
+                    </div>
+                    <div class="advisor-summary-item">
+                        <span class="advisor-summary-label">Est. Cost</span>
+                        <span class="advisor-summary-value" style="font-weight: 700;">@EstimatedBuildCost.ToString("C0")</span>
+                    </div>
+                    @if (UploadedFiles.Any())
+                    {
+                        <div class="advisor-summary-item">
+                            <span class="advisor-summary-label">Files</span>
+                            <span class="advisor-summary-value">@UploadedFiles.Count uploaded</span>
+                        </div>
+                    }
+                </div>
+
+                @* ── Plate utilization bar on summary ── *@
+                @{
+                    var utilPct2 = (int)(State.PlateUtilization * 100);
+                    var utilColor2 = utilPct2 >= 90 ? "var(--success)" : utilPct2 >= 60 ? "var(--accent)" : "var(--warning)";
+                }
+                <div class="advisor-plate-utilization" style="margin-top: 10px;">
+                    <div class="advisor-plate-util-label">
+                        <span>Plate Utilization</span>
+                        <span style="color: @utilColor2; font-weight: 600;">@utilPct2%</span>
+                    </div>
+                    <div class="advisor-plate-util-bar">
+                        <div class="advisor-plate-util-fill" style="width: @utilPct2%; background: @utilColor2;"></div>
+                    </div>
+                </div>
+
+                @* ── Parts on plate ── *@
+                <div class="advisor-summary-parts">
+                    @foreach (var alloc in State.PlateAllocations)
+                    {
+                        var demandItem = State.Demand.FirstOrDefault(d => d.PartId == alloc.PartId);
+                        var completionDate = State.EstimatedCompletion;
+                        var dueDate = alloc.WoDueDate ?? demandItem?.EarliestDueDate;
+                        var willMeetDeadline = !dueDate.HasValue || !completionDate.HasValue || completionDate.Value <= dueDate.Value;
+                        <div class="advisor-summary-part-row">
+                            <div>
+                                <span style="font-weight: 600;">@alloc.PartNumber</span>
+                                @if (!string.IsNullOrEmpty(alloc.WoNumbers))
+                                {
+                                    <span style="color: var(--text-muted); font-size: 0.78rem;"> (@alloc.WoNumbers)</span>
+                                }
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; font-size: 0.78rem;">
+                                <span style="color: var(--text-muted);">@alloc.TotalParts @(alloc.TotalParts == 1 ? "part" : "parts") (@alloc.Positions pos × @alloc.StackLevel stack)</span>
+                                @if (dueDate.HasValue)
+                                {
+                                    @if (willMeetDeadline)
+                                    {
+                                        <span style="color: var(--success); font-size: 0.7rem;" title="Completes by @(completionDate?.ToString("MMM d") ?? "?"), due @(dueDate.Value.ToString("MMM d"))">✓ Due @dueDate.Value.ToString("MMM d")</span>
+                                    }
+                                    else
+                                    {
+                                        <span style="color: var(--danger); font-size: 0.7rem;" title="Completes @(completionDate?.ToString("MMM d") ?? "?") but due @(dueDate.Value.ToString("MMM d"))">⚠ Due @dueDate.Value.ToString("MMM d")</span>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* ── Timing options ── *@
+            @if (State.ScheduleOptions.Count > 1 || !State.ActiveChangeoverAligned)
+            {
+                <details style="margin-top: 12px;" open="@(!State.ActiveChangeoverAligned)">
+                    <summary style="cursor: pointer; font-size: 0.82rem; font-weight: 600; color: @(State.ActiveChangeoverAligned ? "var(--text-secondary)" : "var(--danger)");">
+                        @if (!State.ActiveChangeoverAligned) { <text>⚠ Changeover conflict — choose a different time</text> }
+                        else { <text>Change timing (@State.ScheduleOptions.Count options)</text> }
+                    </summary>
+                    <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+                        @foreach (var opt in State.ScheduleOptions)
+                        {
+                            var isSelected = State.SelectedOption == opt;
+                            <div class="advisor-option-card @(isSelected ? "advisor-option-card--selected" : "")"
+                                 style="padding: 8px 10px;"
+                                 @onclick="() => OnOptionSelected.InvokeAsync(opt)">
+                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                    <span style="font-weight: 600;">@opt.Label @(opt.IsRecommended ? "★" : "")</span>
+                                    <span style="color: var(--text-muted);">@opt.DurationHours.ToString("F1")h</span>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                                    @(opt.Slot.PrintStart.ToLocalTime().ToString("ddd MMM d, h:mm tt")) → @(opt.Slot.PrintEnd.ToLocalTime().ToString("ddd MMM d, h:mm tt"))
+                                    @if (opt.ChangeoverAligned) { <span style="color: var(--success);">✓ Safe</span> }
+                                    else { <span style="color: var(--danger);">✗ No operator</span> }
+                                </div>
+                            </div>
+                        }
+                        <div class="form-group" style="margin-top: 4px; margin-bottom: 0;">
+                            <label style="font-size: 0.75rem; color: var(--text-muted);">Override start time</label>
+                            <input type="datetime-local" class="form-control form-control-sm" style="max-width: 220px;"
+                                   value="@(StartAfterOverride?.ToString("yyyy-MM-ddTHH:mm"))"
+                                   @onchange="OnStartAfterOverrideChanged" />
+                        </div>
+                    </div>
+                </details>
+            }
+
+            <div style="margin-top: 12px; padding: 10px; background: var(--bg-secondary); border-radius: 8px; font-size: 0.82rem;">
+                <strong>After this build:</strong> Depowder + Wire EDM stages will be auto-scheduled.
+                Per-part CNC jobs created after EDM for each part type.
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public AdvisorWizardState State { get; set; } = default!;
+    [Parameter] public int InternalStep { get; set; }
+    [Parameter] public bool ExistingNeedsSlicerData { get; set; }
+
+    // Slicer data parameters (two-way via callbacks)
+    [Parameter] public double? SlicerPrintHours { get; set; }
+    [Parameter] public EventCallback<double?> SlicerPrintHoursChanged { get; set; }
+    [Parameter] public int? SlicerLayerCount { get; set; }
+    [Parameter] public EventCallback<int?> SlicerLayerCountChanged { get; set; }
+    [Parameter] public double? SlicerBuildHeightMm { get; set; }
+    [Parameter] public EventCallback<double?> SlicerBuildHeightMmChanged { get; set; }
+    [Parameter] public double? SlicerPowderKg { get; set; }
+    [Parameter] public EventCallback<double?> SlicerPowderKgChanged { get; set; }
+    [Parameter] public string? SlicerSoftware { get; set; }
+    [Parameter] public EventCallback<string?> SlicerSoftwareChanged { get; set; }
+    [Parameter] public string? SlicerVersion { get; set; }
+    [Parameter] public EventCallback<string?> SlicerVersionChanged { get; set; }
+    [Parameter] public string? SlicerFileName { get; set; }
+    [Parameter] public EventCallback<string?> SlicerFileNameChanged { get; set; }
+
+    // New program parameters
+    [Parameter] public string ProgramName { get; set; } = "";
+    [Parameter] public EventCallback<string> ProgramNameChanged { get; set; }
+    [Parameter] public double EstimatedPrintHours { get; set; }
+    [Parameter] public double EffectivePrintHours { get; set; }
+    [Parameter] public decimal EstimatedBuildCost { get; set; }
+
+    // Plate parameters
+    [Parameter] public bool UseCertifiedLayouts { get; set; }
+    [Parameter] public List<CertifiedLayout> CertifiedLayouts { get; set; } = [];
+    [Parameter] public List<PlateSlotAssignment> PlateLayoutAssignments { get; set; } = [];
+    [Parameter] public EventCallback<List<PlateSlotAssignment>> OnPlateAssignmentsChanged { get; set; }
+    [Parameter] public EventCallback<bool> OnComposerModeChanged { get; set; }
+    [Parameter] public EventCallback<(int Index, int NewLevel)> OnStackLevelChanged { get; set; }
+    [Parameter] public EventCallback<(int Index, int NewPositions)> OnPositionsChanged { get; set; }
+    [Parameter] public EventCallback<int> OnRemovePart { get; set; }
+    [Parameter] public EventCallback<int> OnAddPart { get; set; }
+    [Parameter] public EventCallback OnResetToRecommendation { get; set; }
+
+    // Schedule parameters
+    [Parameter] public EventCallback<ScheduleOption> OnOptionSelected { get; set; }
+    [Parameter] public DateTime? StartAfterOverride { get; set; }
+    [Parameter] public EventCallback<DateTime?> StartAfterOverrideChanged { get; set; }
+    [Parameter] public EventCallback OnRefreshTimingOptions { get; set; }
+
+    private async Task OnStartAfterOverrideChanged(ChangeEventArgs e)
+    {
+        DateTime? val = null;
+        if (!string.IsNullOrEmpty(e.Value?.ToString()) && DateTime.TryParse(e.Value.ToString(), out var dt))
+            val = dt;
+        await StartAfterOverrideChanged.InvokeAsync(val);
+        await OnRefreshTimingOptions.InvokeAsync();
+    }
+
+    // File upload
+    [Parameter] public bool Uploading { get; set; }
+    [Parameter] public List<MachineProgramFile> UploadedFiles { get; set; } = [];
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnSliceFileUpload { get; set; }
+
+    private static double? ParseDouble(object? val) =>
+        double.TryParse(val?.ToString(), out var d) ? d : null;
+
+    private static int? ParseInt(object? val) =>
+        int.TryParse(val?.ToString(), out var i) ? i : null;
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
+    };
+}

@@ -1,8 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Vectrik.Data;
 using Vectrik.Hubs;
-using System.Text.Json;
-using Microsoft.Extensions.DependencyInjection;
 using Vectrik.Models;
 using Vectrik.Models.Enums;
 using Vectrik.Services.Platform;
@@ -16,19 +17,22 @@ public class SetupDispatchService : ISetupDispatchService
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<SetupDispatchService> _logger;
 
     public SetupDispatchService(
         TenantDbContext db,
         INumberSequenceService numberSequence,
         IDispatchNotifier notifier,
         ITenantContext tenantContext,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        ILogger<SetupDispatchService> logger)
     {
         _db = db;
         _numberSequence = numberSequence;
         _notifier = notifier;
         _tenantContext = tenantContext;
         _serviceProvider = serviceProvider;
+        _logger = logger;
     }
 
     // ── CRUD & Lifecycle ─────────────────────────────────────
@@ -230,7 +234,10 @@ public class SetupDispatchService : ISetupDispatchService
             if (learningService != null)
                 await learningService.ProcessCompletedDispatchAsync(dispatchId);
         }
-        catch { /* Learning failures shouldn't break dispatch completion */ }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "EMA learning failed for dispatch {DispatchId}; dispatch completion is unaffected", dispatchId);
+        }
 
         await NotifyAsync(d => _notifier.SendDispatchStatusChangedAsync(d, dispatch));
         return dispatch;
@@ -492,7 +499,10 @@ public class SetupDispatchService : ISetupDispatchService
         if (!string.IsNullOrEmpty(tenantCode))
         {
             try { await action(tenantCode); }
-            catch { /* SignalR failures shouldn't break dispatch operations */ }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SignalR notification failed for tenant {TenantCode}; dispatch operation is unaffected", tenantCode);
+            }
         }
     }
 }
