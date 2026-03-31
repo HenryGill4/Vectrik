@@ -443,8 +443,10 @@ function onTouchStart(e) {
         const touch = e.touches[0];
         const bar = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-bar-type]');
         if (bar) {
-            // Start potential bar drag — use a short delay to distinguish from scroll
+            // Don't allow drag on locked bars (Printing/PostPrint/Completed)
             const wrapper = bar.closest('.gantt-build-bar-wrapper') || bar;
+            if (wrapper.dataset.locked === 'true') return;
+            // Start potential bar drag — use a short delay to distinguish from scroll
             _barDragEl = wrapper;
             _barDragType = bar.dataset.barType;
             _barDragEntityId = bar.dataset.execId || bar.dataset.programId;
@@ -769,9 +771,14 @@ function onMouseDown(e) {
     if (e.button === 0) {
         const bar = e.target.closest('[data-bar-type]');
         if (bar) {
+            // Don't allow drag on locked bars (Printing/PostPrint/Completed)
+            const wrapper = bar.closest('.gantt-build-bar-wrapper') || bar;
+            if (wrapper.dataset.locked === 'true') {
+                // Allow click (for detail panel) but don't initiate drag
+                return;
+            }
             // Don't preventDefault here — let Blazor's @onclick fire if user just clicks.
             // We only block default once drag threshold is exceeded (in onMouseMove).
-            const wrapper = bar.closest('.gantt-build-bar-wrapper') || bar;
             _barDragEl = wrapper;
             _barDragType = bar.dataset.barType;
             _barDragEntityId = bar.dataset.execId || bar.dataset.programId;
