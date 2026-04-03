@@ -21,6 +21,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
     private readonly IMachineProgramService _programService;
     private readonly ISerialNumberService _serialNumberService;
     private readonly IDownstreamProgramService _downstreamService;
+    private readonly ISchedulingRuleService _ruleService;
     private readonly ILogger<ProgramSchedulingService> _logger;
 
     public ProgramSchedulingService(
@@ -33,6 +34,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         IMachineProgramService programService,
         ISerialNumberService serialNumberService,
         IDownstreamProgramService downstreamService,
+        ISchedulingRuleService ruleService,
         ILogger<ProgramSchedulingService> logger)
     {
         _db = db;
@@ -44,6 +46,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         _programService = programService;
         _serialNumberService = serialNumberService;
         _downstreamService = downstreamService;
+        _ruleService = ruleService;
         _logger = logger;
     }
 
@@ -1046,46 +1049,164 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
         }
 
-        var changeoverStart = candidateEnd;
-        var changeoverEnd = changeoverMinutes > 0
-            ? candidateEnd.AddMinutes(changeoverMinutes)
-            : candidateEnd;
+        // ── Scheduling Rule Enforcement Loop ─────────────────────
+        // After finding the physical slot, validate against all enabled
+        // machine scheduling rules. If any rule blocks, advance the slot
+        // and re-validate until we find a compliant slot or hit the search horizon.
+        var enabledRules = await _ruleService.GetEnabledRulesForMachineAsync(machineId);
+        var maxSearchHorizon = candidateStart.AddDays(14); // Safety limit
+        var blockedReasons = new List<string>();
 
-        var operatorAvailable = await IsOperatorAvailableDuringWindowAsync(changeoverStart, changeoverEnd);
-
-        // Compute downtime: only when chamber would be full on THIS build's changeover.
-        // If the previous changeover was during shift (operator emptied chamber),
-        // this overnight changeover is automatic — no downtime.
-        DateTime? downtimeStart = null, downtimeEnd = null;
-        if (!operatorAvailable && changeoverMinutes > 0)
+        while (candidateStart < maxSearchHorizon)
         {
-            // Check if the chamber would be full by counting how many consecutive
-            // off-shift changeovers precede this one (including this one)
-            var offShiftRun = 1; // this changeover is off-shift
+            var changeoverStart = candidateEnd;
+            var changeoverEnd = changeoverMinutes > 0
+                ? candidateEnd.AddMinutes(changeoverMinutes)
+                : candidateEnd;
+
+            var operatorAvailable = await IsOperatorAvailableDuringWindowAsync(changeoverStart, changeoverEnd);
+
+            // Count consecutive off-shift builds for MaxConsecutiveBuilds rule
+            var consecutiveCount = 0;
             for (var i = blocks.Count - 1; i >= 0; i--)
             {
                 var prevEnd = blocks[i].End;
                 var prevChangeoverEnd = prevEnd.AddMinutes(changeoverMinutes);
                 if (ShiftTimeHelper.IsWithinShiftWindow(prevEnd, prevChangeoverEnd, shifts))
-                    break; // previous was in-shift, chamber was emptied
-                offShiftRun++;
+                    break;
+                consecutiveCount++;
             }
 
-            if (offShiftRun > plateCapacity)
+            // Validate against all enabled rules
+            var ruleViolation = false;
+            foreach (var rule in enabledRules)
             {
-                // Chamber overflow — machine will go DOWN
-                downtimeStart = changeoverEnd;
-                var nextShift = ShiftTimeHelper.FindNextShiftStart(changeoverEnd, shifts);
-                downtimeEnd = (nextShift ?? changeoverEnd).AddMinutes(operatorUnloadMinutes);
+                switch (rule.RuleType)
+                {
+                    case SchedulingRuleType.RequireOperatorForChangeover:
+                        if (!operatorAvailable && changeoverMinutes > 0)
+                        {
+                            // HARD BLOCK: No operator for changeover — advance to next shift start
+                            var reason = $"Blocked by \"{rule.Name}\": changeover at {changeoverStart:MMM dd HH:mm} has no operator on shift";
+                            if (!blockedReasons.Contains(reason)) blockedReasons.Add(reason);
+                            _logger.LogInformation("Scheduling rule block: {Reason} on machine {MachineId}", reason, machineId);
+
+                            var nextShift = ShiftTimeHelper.FindNextShiftStart(changeoverStart, shifts);
+                            if (nextShift == null || nextShift >= maxSearchHorizon)
+                            {
+                                _logger.LogWarning("No valid operator shift found within 14-day horizon for machine {MachineId}", machineId);
+                                goto returnSlot; // Fall through — return best-effort slot with blocked reasons
+                            }
+
+                            // Recalculate: the build must END during a shift so the changeover has an operator.
+                            // Work backward from next shift start to find when the build should start.
+                            candidateEnd = nextShift.Value; // changeover starts at shift start
+                            candidateStart = isContinuous
+                                ? candidateEnd.AddHours(-durationHours)
+                                : candidateEnd.AddHours(-durationHours); // simplified for continuous machines
+                            candidateEnd = isContinuous
+                                ? candidateStart.AddHours(durationHours)
+                                : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
+
+                            ruleViolation = true;
+                        }
+                        break;
+
+                    case SchedulingRuleType.MaxConsecutiveBuilds:
+                        if (rule.MaxConsecutiveBuilds.HasValue &&
+                            consecutiveCount >= rule.MaxConsecutiveBuilds.Value)
+                        {
+                            var breakHours = rule.MinBreakHours ?? 2.0;
+                            var reason = $"Blocked by \"{rule.Name}\": {consecutiveCount} consecutive builds exceeds limit of {rule.MaxConsecutiveBuilds}";
+                            if (!blockedReasons.Contains(reason)) blockedReasons.Add(reason);
+                            _logger.LogInformation("Scheduling rule block: {Reason} on machine {MachineId}", reason, machineId);
+
+                            // Insert forced break
+                            candidateStart = candidateStart.AddHours(breakHours);
+                            candidateEnd = isContinuous
+                                ? candidateStart.AddHours(durationHours)
+                                : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
+
+                            ruleViolation = true;
+                        }
+                        break;
+
+                    case SchedulingRuleType.BlackoutPeriod:
+                        var machineBlackouts = await _ruleService.GetMachineBlackoutsAsync(machineId);
+                        foreach (var blackout in machineBlackouts.Where(b => b.IsActive))
+                        {
+                            if (DoesSlotOverlapBlackout(blackout, candidateStart, changeoverEnd))
+                            {
+                                var reason = $"Blocked by blackout \"{blackout.Name}\" ({blackout.StartDate:MMM dd} – {blackout.EndDate:MMM dd})";
+                                if (!blockedReasons.Contains(reason)) blockedReasons.Add(reason);
+                                _logger.LogInformation("Scheduling rule block: {Reason} on machine {MachineId}", reason, machineId);
+
+                                // Advance past the blackout
+                                var blackoutEnd = blackout.EndDate;
+                                candidateStart = isContinuous ? blackoutEnd : ShiftTimeHelper.SnapToNextShiftStart(blackoutEnd, shifts);
+                                candidateEnd = isContinuous
+                                    ? candidateStart.AddHours(durationHours)
+                                    : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
+
+                                ruleViolation = true;
+                                break; // Re-validate from the top with new candidate
+                            }
+                        }
+                        break;
+                }
+
+                if (ruleViolation) break; // Restart validation loop with adjusted slot
             }
-            // else: chamber has space, auto-changeover works overnight — no downtime
+
+            if (!ruleViolation)
+            {
+                // All rules passed — compute downtime info and return
+                DateTime? downtimeStart = null, downtimeEnd = null;
+                if (!operatorAvailable && changeoverMinutes > 0)
+                {
+                    var offShiftRun = 1;
+                    for (var i = blocks.Count - 1; i >= 0; i--)
+                    {
+                        var prevEnd = blocks[i].End;
+                        var prevChangeoverEnd = prevEnd.AddMinutes(changeoverMinutes);
+                        if (ShiftTimeHelper.IsWithinShiftWindow(prevEnd, prevChangeoverEnd, shifts))
+                            break;
+                        offShiftRun++;
+                    }
+
+                    if (offShiftRun > plateCapacity)
+                    {
+                        downtimeStart = changeoverEnd;
+                        var nextShift = ShiftTimeHelper.FindNextShiftStart(changeoverEnd, shifts);
+                        downtimeEnd = (nextShift ?? changeoverEnd).AddMinutes(operatorUnloadMinutes);
+                    }
+                }
+
+                return new ProgramScheduleSlot(
+                    candidateStart, candidateEnd,
+                    changeoverStart, changeoverEnd,
+                    machineId, operatorAvailable,
+                    downtimeStart, downtimeEnd,
+                    blockedReasons.Count > 0 ? blockedReasons : null);
+            }
         }
 
-        return new ProgramScheduleSlot(
-            candidateStart, candidateEnd,
-            changeoverStart, changeoverEnd,
-            machineId, operatorAvailable,
-            downtimeStart, downtimeEnd);
+        returnSlot:
+        // Fallback: return best-effort slot if we hit the horizon (shouldn't happen normally)
+        {
+            var changeoverStart = candidateEnd;
+            var changeoverEnd = changeoverMinutes > 0
+                ? candidateEnd.AddMinutes(changeoverMinutes)
+                : candidateEnd;
+            var operatorAvailable = await IsOperatorAvailableDuringWindowAsync(changeoverStart, changeoverEnd);
+
+            return new ProgramScheduleSlot(
+                candidateStart, candidateEnd,
+                changeoverStart, changeoverEnd,
+                machineId, operatorAvailable,
+                null, null,
+                blockedReasons.Count > 0 ? blockedReasons : null);
+        }
     }
 
     public async Task<BestProgramSlot> FindBestSlotAsync(
@@ -2024,6 +2145,33 @@ public class ProgramSchedulingService : IProgramSchedulingService
     {
         var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
         return ShiftTimeHelper.IsWithinShiftWindow(windowStart, windowEnd, shifts);
+    }
+
+    /// <summary>
+    /// Check if a build slot [start, end] overlaps a blackout period.
+    /// Handles recurring annual blackouts by comparing month+day.
+    /// </summary>
+    private static bool DoesSlotOverlapBlackout(BlackoutPeriod blackout, DateTime slotStart, DateTime slotEnd)
+    {
+        if (blackout.IsRecurringAnnually)
+        {
+            for (var year = slotStart.Year; year <= slotEnd.Year; year++)
+            {
+                try
+                {
+                    var recurStart = new DateTime(year, blackout.StartDate.Month, blackout.StartDate.Day,
+                        blackout.StartDate.Hour, blackout.StartDate.Minute, 0);
+                    var recurEnd = new DateTime(year, blackout.EndDate.Month, blackout.EndDate.Day,
+                        blackout.EndDate.Hour, blackout.EndDate.Minute, 0);
+                    if (recurEnd < recurStart) recurEnd = recurEnd.AddYears(1);
+                    if (recurStart < slotEnd && recurEnd > slotStart)
+                        return true;
+                }
+                catch (ArgumentOutOfRangeException) { continue; }
+            }
+            return false;
+        }
+        return blackout.StartDate < slotEnd && blackout.EndDate > slotStart;
     }
 
     // Shift time helpers are now in ShiftTimeHelper.cs (shared with SchedulingService)

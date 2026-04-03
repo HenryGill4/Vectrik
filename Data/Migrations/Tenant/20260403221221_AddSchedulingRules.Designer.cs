@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vectrik.Data;
 
@@ -10,9 +11,11 @@ using Vectrik.Data;
 namespace Vectrik.Data.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    partial class TenantDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260403221221_AddSchedulingRules")]
+    partial class AddSchedulingRules
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.4");
@@ -842,9 +845,6 @@ namespace Vectrik.Data.Migrations.Tenant
 
                     b.Property<bool>("RequiresVerification")
                         .HasColumnType("INTEGER");
-
-                    b.Property<decimal>("SchedulingRuleWeight")
-                        .HasColumnType("decimal(4,2)");
 
                     b.Property<decimal>("ThroughputWeight")
                         .HasColumnType("decimal(4,2)");

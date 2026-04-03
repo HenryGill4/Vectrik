@@ -16,9 +16,11 @@ public record DispatchScore(
     int DueDateScore,
     int ChangeoverScore,
     int ThroughputScore,
+    int SchedulingRuleScore,
     int MaintenanceModifier,
     decimal DueDateWeight,
     decimal ChangeoverWeight,
     decimal ThroughputWeight,
+    decimal SchedulingRuleWeight,
     string PriorityReason,
     string ScoreBreakdownJson);

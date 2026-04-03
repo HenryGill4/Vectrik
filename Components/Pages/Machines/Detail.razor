@@ -5,6 +5,7 @@
 @inject IMaintenanceService MaintenanceService
 @inject IOeeService OeeService
 @inject IMachineProgramService MachineProgramService
+@inject ISchedulingRuleService SchedulingRuleService
 @inject NavigationManager Nav
 @inject ToastService Toast
 @using Vectrik.Models.Maintenance
@@ -85,6 +86,7 @@ else
         <button class="tab @(_tab == "maintenance" ? "active" : "")" @onclick="SelectMaintenanceTab">Maintenance@(_alertCount > 0 ? $" ({_alertCount})" : "")</button>
         <button class="tab @(_tab == "programs" ? "active" : "")" @onclick="SelectProgramsTab">Programs (@(_machinePrograms?.Count ?? 0))</button>
         <button class="tab @(_tab == "schedule" ? "active" : "")" @onclick="SelectScheduleTab">Schedule (@(_schedule?.Count ?? 0))</button>
+        <button class="tab @(_tab == "rules" ? "active" : "")" @onclick="SelectRulesTab">Rules (@(_schedulingRules?.Count(r => r.IsEnabled) ?? 0))</button>
     </div>
     }
 
@@ -614,6 +616,290 @@ else
             </div>
         }
     }
+
+    @* ══════ RULES TAB ══════ *@
+    @if (!IsNew && _tab == "rules")
+    {
+        @if (_schedulingRules == null)
+        {
+            <div class="loading"><span class="spinner"></span></div>
+        }
+        else
+        {
+            @* ── Section 1: Rule Summary ── *@
+            <div class="card" style="margin-bottom: 16px;">
+                <div class="card-header">Rule Summary</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 4px 0;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.1rem;">@(_ruleSummary?.RequiresOperatorForChangeover == true ? "✅" : "❌")</span>
+                        <div>
+                            <div style="font-weight: 600; font-size: 0.85rem;">Operator Required for Changeover</div>
+                            <div style="font-size: 0.78rem; color: var(--text-muted);">@(_ruleSummary?.RequiresOperatorForChangeover == true ? "Enforced — builds blocked when no operator on shift" : "Not configured — builds can schedule without operator")</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.1rem;">@(_ruleSummary?.MaxConsecutiveBuilds != null ? "✅" : "❌")</span>
+                        <div>
+                            <div style="font-weight: 600; font-size: 0.85rem;">Max Consecutive Builds</div>
+                            <div style="font-size: 0.78rem; color: var(--text-muted);">@(_ruleSummary?.MaxConsecutiveBuilds != null ? $"Limit: {_ruleSummary.MaxConsecutiveBuilds} builds, {_ruleSummary.MinBreakHours ?? 2}hr break" : "Not configured")</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.1rem;">@(_ruleSummary?.ActiveBlackoutCount > 0 ? "✅" : "❌")</span>
+                        <div>
+                            <div style="font-weight: 600; font-size: 0.85rem;">Blackout Periods</div>
+                            <div style="font-size: 0.78rem; color: var(--text-muted);">@(_ruleSummary?.ActiveBlackoutCount > 0 ? $"{_ruleSummary.ActiveBlackoutCount} active blackout(s) assigned" : "No blackouts assigned")</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ── Section 2: Scheduling Rules ── *@
+            <div class="card" style="margin-bottom: 16px;">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>Scheduling Rules</span>
+                    @if (_canEdit && !_showAddRuleForm)
+                    {
+                        <button class="btn btn-primary btn-sm" @onclick="() => _showAddRuleForm = true">+ Add Rule</button>
+                    }
+                </div>
+
+                @if (_showAddRuleForm)
+                {
+                    <div class="sched-rule-add-form" style="background: var(--bg-secondary); border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-group">
+                                <label class="form-label">Rule Type</label>
+                                <select class="form-control" @bind="_newRuleType">
+                                    @foreach (var rt in Enum.GetValues<SchedulingRuleType>())
+                                    {
+                                        <option value="@rt">@FormatRuleType(rt)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Name</label>
+                                <input class="form-control" @bind="_newRuleName" placeholder="@GetDefaultRuleName(_newRuleType)" />
+                            </div>
+                            @if (_newRuleType == SchedulingRuleType.MaxConsecutiveBuilds)
+                            {
+                                <div class="form-group">
+                                    <label class="form-label">Max Consecutive Builds</label>
+                                    <input type="number" class="form-control" @bind="_newRuleMaxBuilds" min="1" max="100" />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Min Break (hours)</label>
+                                    <input type="number" class="form-control" @bind="_newRuleMinBreak" min="0.5" max="48" step="0.5" />
+                                </div>
+                            }
+                        </div>
+                        <div class="form-group" style="margin-top: 8px;">
+                            <label class="form-label">Description (optional)</label>
+                            <input class="form-control" @bind="_newRuleDescription" placeholder="Why this rule exists..." />
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 12px;">
+                            <button class="btn btn-primary btn-sm" @onclick="AddSchedulingRule" disabled="@_saving">@(_saving ? "Saving…" : "Add Rule")</button>
+                            <button class="btn btn-secondary btn-sm" @onclick="() => _showAddRuleForm = false">Cancel</button>
+                        </div>
+                    </div>
+                }
+
+                @if (!_schedulingRules.Any())
+                {
+                    <div style="text-align: center; padding: 24px; color: var(--text-muted);">
+                        No scheduling rules configured. Add a rule to control when builds can be scheduled.
+                    </div>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">Active</th>
+                                <th>Type</th>
+                                <th>Name</th>
+                                <th>Parameters</th>
+                                <th style="width: 80px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var rule in _schedulingRules)
+                            {
+                                <tr style="@(!rule.IsEnabled ? "opacity: 0.5;" : "")">
+                                    <td>
+                                        <label class="switch-label" style="margin: 0;">
+                                            <input type="checkbox" checked="@rule.IsEnabled" @onchange="e => ToggleRule(rule.Id, (bool)(e.Value ?? false))" disabled="@(!_canEdit)" />
+                                            <span class="switch-slider"></span>
+                                        </label>
+                                    </td>
+                                    <td><span class="badge badge-@GetRuleTypeBadgeClass(rule.RuleType)">@FormatRuleType(rule.RuleType)</span></td>
+                                    <td>
+                                        <div style="font-weight: 600;">@rule.Name</div>
+                                        @if (!string.IsNullOrEmpty(rule.Description))
+                                        {
+                                            <div style="font-size: 0.78rem; color: var(--text-muted);">@rule.Description</div>
+                                        }
+                                    </td>
+                                    <td style="font-size: 0.85rem; color: var(--text-muted);">
+                                        @switch (rule.RuleType)
+                                        {
+                                            case SchedulingRuleType.RequireOperatorForChangeover:
+                                                <span>Blocks builds when changeover falls outside operator shift windows</span>
+                                                break;
+                                            case SchedulingRuleType.MaxConsecutiveBuilds:
+                                                <span>Max @(rule.MaxConsecutiveBuilds ?? 0) builds, then @(rule.MinBreakHours ?? 2)hr break</span>
+                                                break;
+                                            case SchedulingRuleType.BlackoutPeriod:
+                                                <span>@(_machineBlackouts?.Count ?? 0) blackout period(s) assigned</span>
+                                                break;
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (_canEdit)
+                                        {
+                                            <button class="btn btn-danger btn-sm" @onclick="() => DeleteRule(rule.Id)" title="Delete rule" disabled="@_saving">🗑</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            @* ── Section 3: Blackout Calendar ── *@
+            <div class="card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>Blackout Calendar</span>
+                    @if (_canEdit)
+                    {
+                        <button class="btn btn-primary btn-sm" @onclick="OpenBlackoutModal">Manage Blackouts</button>
+                    }
+                </div>
+
+                @if (_machineBlackouts == null || !_machineBlackouts.Any())
+                {
+                    <div style="text-align: center; padding: 24px; color: var(--text-muted);">
+                        No blackout periods assigned to this machine. Manage blackouts to block scheduling during holidays or planned downtime.
+                    </div>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Start</th>
+                                <th>End</th>
+                                <th>Recurring</th>
+                                <th>Active</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var bp in _machineBlackouts.OrderBy(b => b.StartDate))
+                            {
+                                var isActive = bp.IsActive && bp.EndDate >= DateTime.UtcNow;
+                                <tr style="@(!isActive ? "opacity: 0.5;" : "")">
+                                    <td style="font-weight: 600;">@bp.Name</td>
+                                    <td>@bp.StartDate.ToString("yyyy-MM-dd")</td>
+                                    <td>@bp.EndDate.ToString("yyyy-MM-dd")</td>
+                                    <td>@(bp.IsRecurringAnnually ? "🔄 Annual" : "One-time")</td>
+                                    <td>@(bp.IsActive ? "✅" : "❌")</td>
+                                    <td style="font-size: 0.85rem; color: var(--text-muted);">@(bp.Reason ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+
+        @* ── Blackout Management Modal ── *@
+        @if (_showBlackoutModal)
+        {
+            <div class="modal-overlay" @onclick="() => _showBlackoutModal = false">
+                <div class="modal-content" style="max-width: 700px;" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h3 style="margin: 0;">Manage Blackout Periods</h3>
+                        <button class="btn btn-secondary btn-sm" @onclick="() => _showBlackoutModal = false">✕</button>
+                    </div>
+                    <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+
+                        @* ── Add New Blackout ── *@
+                        <div style="background: var(--bg-secondary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="margin: 0 0 12px 0; font-size: 0.9rem;">Create New Blackout Period</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div class="form-group">
+                                    <label class="form-label">Name</label>
+                                    <input class="form-control" @bind="_newBlackoutName" placeholder="e.g. Easter Weekend 2026" />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Reason</label>
+                                    <input class="form-control" @bind="_newBlackoutReason" placeholder="Holiday, shutdown, etc." />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Start Date</label>
+                                    <input type="date" class="form-control" @bind="_newBlackoutStart" />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">End Date</label>
+                                    <input type="date" class="form-control" @bind="_newBlackoutEnd" />
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 16px; align-items: center; margin-top: 8px;">
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem;">
+                                    <input type="checkbox" @bind="_newBlackoutRecurring" /> Recurring annually
+                                </label>
+                                <button class="btn btn-primary btn-sm" @onclick="CreateBlackoutPeriod" disabled="@_saving">Create</button>
+                            </div>
+                        </div>
+
+                        @* ── Existing Blackouts with machine assignment checkboxes ── *@
+                        <h4 style="margin: 0 0 8px 0; font-size: 0.9rem;">Assign Blackouts to This Machine</h4>
+                        @if (_allBlackouts == null || !_allBlackouts.Any())
+                        {
+                            <div style="color: var(--text-muted); font-size: 0.85rem;">No blackout periods exist. Create one above.</div>
+                        }
+                        else
+                        {
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;">Assign</th>
+                                        <th>Name</th>
+                                        <th>Dates</th>
+                                        <th>Recurring</th>
+                                        <th>Active</th>
+                                        <th style="width: 40px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var bp in _allBlackouts.OrderBy(b => b.StartDate))
+                                    {
+                                        var isAssigned = _machineBlackoutIds.Contains(bp.Id);
+                                        <tr>
+                                            <td>
+                                                <input type="checkbox" checked="@isAssigned"
+                                                    @onchange="e => ToggleBlackoutAssignment(bp.Id, (bool)(e.Value ?? false))" />
+                                            </td>
+                                            <td style="font-weight: 600;">@bp.Name</td>
+                                            <td>@bp.StartDate.ToString("MMM dd") – @bp.EndDate.ToString("MMM dd, yyyy")</td>
+                                            <td>@(bp.IsRecurringAnnually ? "🔄" : "—")</td>
+                                            <td>@(bp.IsActive ? "✅" : "❌")</td>
+                                            <td>
+                                                <button class="btn btn-danger btn-sm" @onclick="() => DeleteBlackoutPeriod(bp.Id)" title="Delete" disabled="@_saving">🗑</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
 }
 
 <ConfirmDialog @ref="_confirm" />
@@ -644,6 +930,29 @@ else
     private List<StageExecution>? _schedule;
     private List<MachineProgram>? _machinePrograms;
     private int _alertCount;
+
+    // Rules tab data
+    private List<MachineSchedulingRule>? _schedulingRules;
+    private List<BlackoutPeriod>? _machineBlackouts;
+    private List<BlackoutPeriod>? _allBlackouts;
+    private HashSet<int> _machineBlackoutIds = new();
+    private MachineRuleSummary? _ruleSummary;
+    private bool _showAddRuleForm;
+    private bool _showBlackoutModal;
+
+    // New rule form fields
+    private SchedulingRuleType _newRuleType = SchedulingRuleType.RequireOperatorForChangeover;
+    private string _newRuleName = "";
+    private string _newRuleDescription = "";
+    private int _newRuleMaxBuilds = 10;
+    private double _newRuleMinBreak = 2.0;
+
+    // Blackout form fields
+    private string _newBlackoutName = "";
+    private string _newBlackoutReason = "";
+    private DateTime _newBlackoutStart = DateTime.Today;
+    private DateTime _newBlackoutEnd = DateTime.Today.AddDays(1);
+    private bool _newBlackoutRecurring;
 
     private bool IsNew => Id == 0;
 
@@ -931,4 +1240,196 @@ else
             _validationErrors["Priority"] = "Priority must be 1–10.";
         return _validationErrors.Count == 0;
     }
+
+    // ══════════════════════════════════════════════════════════
+    // Rules Tab
+    // ══════════════════════════════════════════════════════════
+
+    private async Task SelectRulesTab()
+    {
+        _tab = "rules";
+        await LoadRulesDataAsync();
+    }
+
+    private async Task LoadRulesDataAsync()
+    {
+        try
+        {
+            _schedulingRules = await SchedulingRuleService.GetRulesForMachineAsync(_machine!.Id);
+            _machineBlackouts = await SchedulingRuleService.GetMachineBlackoutsAsync(_machine.Id);
+            _machineBlackoutIds = _machineBlackouts.Select(b => b.Id).ToHashSet();
+            _ruleSummary = await SchedulingRuleService.GetRuleSummaryAsync(_machine.Id);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Error loading rules: {ex.Message}");
+            _schedulingRules ??= new();
+            _machineBlackouts ??= new();
+        }
+    }
+
+    private async Task AddSchedulingRule()
+    {
+        _saving = true;
+        try
+        {
+            var name = string.IsNullOrWhiteSpace(_newRuleName) ? GetDefaultRuleName(_newRuleType) : _newRuleName.Trim();
+            var rule = new MachineSchedulingRule
+            {
+                MachineId = _machine!.Id,
+                RuleType = _newRuleType,
+                Name = name,
+                Description = string.IsNullOrWhiteSpace(_newRuleDescription) ? null : _newRuleDescription.Trim(),
+                IsEnabled = true,
+                CreatedBy = "System",
+                LastModifiedBy = "System"
+            };
+
+            if (_newRuleType == SchedulingRuleType.MaxConsecutiveBuilds)
+            {
+                rule.MaxConsecutiveBuilds = _newRuleMaxBuilds;
+                rule.MinBreakHours = _newRuleMinBreak;
+            }
+
+            await SchedulingRuleService.CreateRuleAsync(rule);
+            _showAddRuleForm = false;
+            _newRuleName = "";
+            _newRuleDescription = "";
+            Toast.ShowSuccess($"Rule \"{name}\" added.");
+            await LoadRulesDataAsync();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to add rule: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task ToggleRule(int ruleId, bool enabled)
+    {
+        try
+        {
+            await SchedulingRuleService.ToggleRuleAsync(ruleId, enabled);
+            await LoadRulesDataAsync();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to toggle rule: {ex.Message}"); }
+    }
+
+    private async Task DeleteRule(int ruleId)
+    {
+        if (!await _confirm.ShowAsync("Delete this scheduling rule?", "Delete Rule"))
+            return;
+        _saving = true;
+        try
+        {
+            await SchedulingRuleService.DeleteRuleAsync(ruleId);
+            Toast.ShowSuccess("Rule deleted.");
+            await LoadRulesDataAsync();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to delete rule: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task OpenBlackoutModal()
+    {
+        try { _allBlackouts = await SchedulingRuleService.GetAllBlackoutPeriodsAsync(); }
+        catch { _allBlackouts ??= new(); }
+        _showBlackoutModal = true;
+    }
+
+    // ── Blackout Management ──────────────────────────────────
+
+    private async Task CreateBlackoutPeriod()
+    {
+        if (string.IsNullOrWhiteSpace(_newBlackoutName))
+        {
+            Toast.ShowError("Blackout name is required.");
+            return;
+        }
+        if (_newBlackoutEnd <= _newBlackoutStart)
+        {
+            Toast.ShowError("End date must be after start date.");
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var period = await SchedulingRuleService.CreateBlackoutPeriodAsync(new BlackoutPeriod
+            {
+                Name = _newBlackoutName.Trim(),
+                StartDate = _newBlackoutStart,
+                EndDate = _newBlackoutEnd,
+                Reason = string.IsNullOrWhiteSpace(_newBlackoutReason) ? null : _newBlackoutReason.Trim(),
+                IsRecurringAnnually = _newBlackoutRecurring,
+                IsActive = true,
+                CreatedBy = "System"
+            });
+
+            // Auto-assign to this machine
+            await SchedulingRuleService.AssignBlackoutToMachineAsync(_machine!.Id, period.Id);
+
+            _newBlackoutName = "";
+            _newBlackoutReason = "";
+            _newBlackoutRecurring = false;
+            Toast.ShowSuccess($"Blackout \"{period.Name}\" created and assigned.");
+            _allBlackouts = await SchedulingRuleService.GetAllBlackoutPeriodsAsync();
+            await LoadRulesDataAsync();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to create blackout: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    private async Task ToggleBlackoutAssignment(int blackoutId, bool assign)
+    {
+        try
+        {
+            if (assign)
+                await SchedulingRuleService.AssignBlackoutToMachineAsync(_machine!.Id, blackoutId);
+            else
+                await SchedulingRuleService.UnassignBlackoutFromMachineAsync(_machine!.Id, blackoutId);
+
+            await LoadRulesDataAsync();
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to update assignment: {ex.Message}"); }
+    }
+
+    private async Task DeleteBlackoutPeriod(int periodId)
+    {
+        if (!await _confirm.ShowAsync("Delete this blackout period? It will be removed from all machines.", "Delete Blackout"))
+            return;
+        _saving = true;
+        try
+        {
+            await SchedulingRuleService.DeleteBlackoutPeriodAsync(periodId);
+            _allBlackouts = await SchedulingRuleService.GetAllBlackoutPeriodsAsync();
+            await LoadRulesDataAsync();
+            Toast.ShowSuccess("Blackout period deleted.");
+        }
+        catch (Exception ex) { Toast.ShowError($"Failed to delete blackout: {ex.Message}"); }
+        finally { _saving = false; }
+    }
+
+    // ── Rule Helpers ─────────────────────────────────────────
+
+    private static string FormatRuleType(SchedulingRuleType type) => type switch
+    {
+        SchedulingRuleType.RequireOperatorForChangeover => "Operator Required",
+        SchedulingRuleType.MaxConsecutiveBuilds => "Max Consecutive",
+        SchedulingRuleType.BlackoutPeriod => "Blackout Period",
+        _ => type.ToString()
+    };
+
+    private static string GetDefaultRuleName(SchedulingRuleType type) => type switch
+    {
+        SchedulingRuleType.RequireOperatorForChangeover => "Require Operator for Changeover",
+        SchedulingRuleType.MaxConsecutiveBuilds => "Consecutive Build Limit",
+        SchedulingRuleType.BlackoutPeriod => "Blackout Period Enforcement",
+        _ => type.ToString()
+    };
+
+    private static string GetRuleTypeBadgeClass(SchedulingRuleType type) => type switch
+    {
+        SchedulingRuleType.RequireOperatorForChangeover => "warning",
+        SchedulingRuleType.MaxConsecutiveBuilds => "info",
+        SchedulingRuleType.BlackoutPeriod => "secondary",
+        _ => "secondary"
+    };
 }

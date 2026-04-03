@@ -28,13 +28,21 @@ public class DispatchConfiguration
     // ── Scoring Weights (must sum to ~1.0) ───────────────────
 
     [Column(TypeName = "decimal(4,2)")]
-    public decimal ChangeoverPenaltyWeight { get; set; } = 0.35m;
+    public decimal ChangeoverPenaltyWeight { get; set; } = 0.30m;
 
     [Column(TypeName = "decimal(4,2)")]
-    public decimal DueDateWeight { get; set; } = 0.45m;
+    public decimal DueDateWeight { get; set; } = 0.40m;
 
     [Column(TypeName = "decimal(4,2)")]
-    public decimal ThroughputWeight { get; set; } = 0.20m;
+    public decimal ThroughputWeight { get; set; } = 0.15m;
+
+    /// <summary>
+    /// Weight for scheduling rule compliance scoring. Penalizes dispatches that
+    /// would place work in slots violating machine scheduling rules (e.g., no
+    /// operator for changeover, blackout periods, consecutive build limits).
+    /// </summary>
+    [Column(TypeName = "decimal(4,2)")]
+    public decimal SchedulingRuleWeight { get; set; } = 0.15m;
 
     // ── Behavior ─────────────────────────────────────────────
 

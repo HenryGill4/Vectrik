@@ -275,6 +275,18 @@
                             <span class="advisor-summary-value" style="color: var(--danger);">⚠ Risky — no operator in window</span>
                         }
                     </div>
+                    @if (State.ActiveSlot?.BlockedReasons?.Any() == true)
+                    {
+                        <div class="advisor-summary-item" style="grid-column: 1 / -1;">
+                            <span class="advisor-summary-label">Scheduling Rules</span>
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                @foreach (var reason in State.ActiveSlot.BlockedReasons)
+                                {
+                                    <span style="font-size: 0.78rem; color: var(--warning);">🛡 @reason</span>
+                                }
+                            </div>
+                        </div>
+                    }
                     <div class="advisor-summary-item">
                         <span class="advisor-summary-label">Est. Cost</span>
                         <span class="advisor-summary-value" style="font-weight: 700;">@EstimatedBuildCost.ToString("C0")</span>

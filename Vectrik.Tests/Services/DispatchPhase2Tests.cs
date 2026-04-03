@@ -489,7 +489,7 @@ public class DispatchScoringServiceTests
         machine.CurrentProgramId = program.Id;
         await db.SaveChangesAsync();
 
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
         var dispatch = new SetupDispatch
         {
             Id = 1, MachineId = machine.Id, MachineProgramId = program.Id,
@@ -511,7 +511,7 @@ public class DispatchScoringServiceTests
         machine.CurrentProgramId = currentProgram.Id;
         await db.SaveChangesAsync();
 
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
         var dispatch = new SetupDispatch
         {
             Id = 1, MachineId = machine.Id, MachineProgramId = targetProgram.Id,
@@ -530,7 +530,7 @@ public class DispatchScoringServiceTests
         var machine = DispatchTestFixtures.CreateSlsMachine(db);
         await db.SaveChangesAsync();
 
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
         var dispatch = new SetupDispatch
         {
             Id = 1, MachineId = machine.Id, EstimatedSetupMinutes = 30
@@ -546,7 +546,7 @@ public class DispatchScoringServiceTests
     {
         var db = TestDbContextFactory.Create();
         var machine = DispatchTestFixtures.CreateSlsMachine(db);
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
         var dispatch = new SetupDispatch { Id = 1, MachineId = machine.Id, EstimatedSetupMinutes = 30 };
 
         var score = await scoringSvc.ScoreDispatchAsync(dispatch);
@@ -567,7 +567,7 @@ public class DispatchScoringServiceTests
         machine.CurrentProgramId = program.Id;
         await db.SaveChangesAsync();
 
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
 
         var dispatches = new List<SetupDispatch>
         {
@@ -587,7 +587,7 @@ public class DispatchScoringServiceTests
         var db = TestDbContextFactory.Create();
         var machine = DispatchTestFixtures.CreateSlsMachine(db);
 
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
         var dispatch = new SetupDispatch { Id = 1, MachineId = machine.Id, EstimatedSetupMinutes = 30 };
 
         var score = await scoringSvc.ScoreDispatchAsync(dispatch);
@@ -610,7 +610,7 @@ public class DispatchGenerationServiceTests
         var machine = DispatchTestFixtures.CreateSlsMachine(db);
         // No DispatchConfiguration means AutoDispatchEnabled defaults to false
         var tenant = new StubTenantContext();
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
 
         var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant, NullLogger<DispatchGenerationService>.Instance);
         var result = await genSvc.GenerateDispatchSuggestionsAsync();
@@ -624,7 +624,7 @@ public class DispatchGenerationServiceTests
         var (db, svc, notifier) = DispatchTestFixtures.CreateDispatchService();
         var machine = DispatchTestFixtures.CreateSlsMachine(db);
         var tenant = new StubTenantContext();
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
 
         // Create a deferred auto-dispatch
         var dispatch = await svc.CreateManualDispatchAsync(machine.Id, DispatchType.Setup);
@@ -645,7 +645,7 @@ public class DispatchGenerationServiceTests
         var (db, svc, notifier) = DispatchTestFixtures.CreateDispatchService();
         var machine = DispatchTestFixtures.CreateSlsMachine(db);
         var tenant = new StubTenantContext();
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
 
         var dispatch = await svc.CreateManualDispatchAsync(machine.Id, DispatchType.Setup);
 
@@ -672,7 +672,7 @@ public class DispatchGenerationServiceTests
         await svc.CreateManualDispatchAsync(machine.Id, DispatchType.Setup);
 
         var tenant = new StubTenantContext();
-        var scoringSvc = new DispatchScoringService(db);
+        var scoringSvc = new DispatchScoringService(db, new SchedulingRuleService(db));
         var genSvc = new DispatchGenerationService(db, svc, scoringSvc, new StubDispatchLearningService(), notifier, tenant, NullLogger<DispatchGenerationService>.Instance);
 
         var result = await genSvc.GenerateDispatchSuggestionsAsync(machine.Id);

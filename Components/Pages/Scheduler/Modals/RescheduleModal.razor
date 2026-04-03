@@ -1,6 +1,7 @@
 @inject IStageService StageService
 @inject ISchedulingService Scheduler
 @inject IProgramSchedulingService ProgramScheduling
+@inject ISchedulingRuleService SchedulingRuleService
 @inject ToastService Toast
 
 @if (IsVisible && Execution != null)
@@ -40,6 +41,22 @@
                     <div class="form-group"><label class="form-label">Start</label><input class="form-control" type="datetime-local" @bind="_start" /></div>
                     <div class="form-group"><label class="form-label">End</label><input class="form-control" type="datetime-local" @bind="_end" /></div>
                 </div>
+
+                @* ── Scheduling Rules Info ── *@
+                @if (_ruleSummary != null && _ruleSummary.TotalEnabledRules > 0)
+                {
+                    <div style="padding: 8px 10px; margin-top: 8px; border-radius: 6px; background: rgba(var(--primary-rgb), 0.08); border: 1px solid rgba(var(--primary-rgb), 0.2); font-size: 0.82rem; display: flex; align-items: center; gap: 8px;">
+                        <span>🛡</span>
+                        <div>
+                            <strong>@_ruleSummary.TotalEnabledRules scheduling rule(s) active</strong>
+                            <span style="color: var(--text-muted); margin-left: 4px;">
+                                @if (_ruleSummary.RequiresOperatorForChangeover) { <text>· Operator required</text> }
+                                @if (_ruleSummary.MaxConsecutiveBuilds.HasValue) { <text>· Max @_ruleSummary.MaxConsecutiveBuilds builds</text> }
+                                @if (_ruleSummary.ActiveBlackoutCount > 0) { <text>· @_ruleSummary.ActiveBlackoutCount blackout(s)</text> }
+                            </span>
+                        </div>
+                    </div>
+                }
 
                 @* ── Changeover Warning ── *@
                 @if (_changeoverInfo != null && !_changeoverInfo.OperatorAvailable)
@@ -95,6 +112,7 @@
     private DateTime _end;
     private bool _saving;
     private ChangeoverAnalysis? _changeoverInfo;
+    private MachineRuleSummary? _ruleSummary;
     private int _downstreamCount;
 
     protected override async Task OnParametersSetAsync()
@@ -105,9 +123,10 @@
             _start = InitialStart;
             _end = InitialEnd;
             _changeoverInfo = null;
+            _ruleSummary = null;
             _downstreamCount = 0;
 
-            // Load changeover analysis if on an SLS machine
+            // Load changeover analysis and scheduling rules if on an SLS machine
             if (Execution.MachineId.HasValue)
             {
                 try
@@ -117,6 +136,7 @@
                     {
                         _changeoverInfo = await ProgramScheduling.AnalyzeChangeoverAsync(machine.Id, _end);
                     }
+                    _ruleSummary = await SchedulingRuleService.GetRuleSummaryAsync(Execution.MachineId.Value);
                 }
                 catch { }
             }

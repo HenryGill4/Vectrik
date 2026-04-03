@@ -36,6 +36,7 @@ public class RecentChangesTests : IDisposable
             new StubMachineProgramService(),
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
+            new SchedulingRuleService(_db),
             NullLogger<ProgramSchedulingService>.Instance);
     }
 
@@ -494,6 +495,7 @@ public class RecentChangesTests : IDisposable
             new StubMachineProgramService(),
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
+            new SchedulingRuleService(_db),
             NullLogger<ProgramSchedulingService>.Instance);
 
         Assert.NotNull(svc);

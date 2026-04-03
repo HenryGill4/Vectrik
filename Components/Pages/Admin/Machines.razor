@@ -1,6 +1,7 @@
 @page "/admin/machines"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
 @inject IMachineService MachineService
+@inject ISchedulingRuleService SchedulingRuleService
 @inject ToastService Toast
 
 <PageTitle>Machines - Admin - Vectrik</PageTitle>
@@ -24,7 +25,7 @@ else
 {
     <div class="card">
         <table class="data-table">
-            <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Department</th><th>Rate</th><th>Status</th><th>Hours</th><th></th></tr></thead>
+            <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Department</th><th>Rate</th><th>Status</th><th>Rules</th><th>Hours</th><th></th></tr></thead>
             <tbody>
                 @foreach (var m in _machines)
                 {
@@ -35,6 +36,17 @@ else
                         <td>@(m.Department ?? "—")</td>
                         <td>$@m.HourlyRate/hr</td>
                         <td><span class="badge badge-@m.Status.ToString().ToLower()">@m.Status</span></td>
+                        <td>
+                            @{ var ruleCount = _ruleCounts.GetValueOrDefault(m.Id, 0); }
+                            @if (ruleCount > 0)
+                            {
+                                <a href="machines/@m.Id" style="text-decoration: none;"><span class="badge badge-success" title="@ruleCount scheduling rule(s) active">🛡 @ruleCount</span></a>
+                            }
+                            else
+                            {
+                                <span style="color: var(--text-muted);">—</span>
+                            }
+                        </td>
                         <td>@m.TotalOperatingHours.ToString("F0")</td>
                         <td style="white-space: nowrap;">
                             <a href="machines/@m.Id" class="btn btn-sm btn-secondary">Edit</a>
@@ -51,11 +63,25 @@ else
 
 @code {
     private List<Machine>? _machines;
+    private Dictionary<int, int> _ruleCounts = new();
     private ConfirmDialog _confirm = null!;
 
     protected override async Task OnInitializedAsync()
     {
-        try { _machines = await MachineService.GetAllMachinesAsync(); }
+        try
+        {
+            _machines = await MachineService.GetAllMachinesAsync();
+            // Load rule counts for each machine
+            foreach (var m in _machines)
+            {
+                try
+                {
+                    var rules = await SchedulingRuleService.GetEnabledRulesForMachineAsync(m.Id);
+                    if (rules.Count > 0) _ruleCounts[m.Id] = rules.Count;
+                }
+                catch { }
+            }
+        }
         catch (Exception ex) { Toast.ShowError($"Failed to load machines: {ex.Message}"); _machines = new(); }
     }
 
