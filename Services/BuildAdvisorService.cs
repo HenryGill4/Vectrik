@@ -10,15 +10,18 @@ public class BuildAdvisorService : IBuildAdvisorService
     private readonly TenantDbContext _db;
     private readonly IProgramSchedulingService _programScheduling;
     private readonly IShiftManagementService _shiftService;
+    private readonly ISchedulingWeightsService _weightsService;
 
     public BuildAdvisorService(
         TenantDbContext db,
         IProgramSchedulingService programScheduling,
-        IShiftManagementService shiftService)
+        IShiftManagementService shiftService,
+        ISchedulingWeightsService weightsService)
     {
         _db = db;
         _programScheduling = programScheduling;
         _shiftService = shiftService;
+        _weightsService = weightsService;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -123,6 +126,7 @@ public class BuildAdvisorService : IBuildAdvisorService
             maxPartTypes = configuredMax;
 
         var shifts = await _shiftService.GetEffectiveShiftsForMachineAsync(machineId);
+        var weights = await _weightsService.GetWeightsAsync();
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
 
         // Filter to additive parts with build config and remaining demand
@@ -154,7 +158,7 @@ public class BuildAdvisorService : IBuildAdvisorService
         var primaryConfig = primary.BuildConfig!;
 
         // Select stack level based on changeover alignment
-        var bestLevel = SelectStackLevel(primaryConfig, slotStart, changeoverMinutes, shifts, primary.NetRemaining);
+        var bestLevel = SelectStackLevel(primaryConfig, slotStart, changeoverMinutes, shifts, primary.NetRemaining, weights);
         var primaryDuration = primaryConfig.GetStackDuration(bestLevel) ?? primaryConfig.SingleStackDurationHours ?? 24;
         var primaryPositions = primaryConfig.GetPositionsPerBuild(bestLevel);
 
@@ -175,24 +179,26 @@ public class BuildAdvisorService : IBuildAdvisorService
         maxPrintHours = primaryDuration;
 
         // Fill remaining plate capacity with other parts (up to maxPartTypes total)
-        var remainingPositions = primaryPositions - actualPositions;
-        if (remainingPositions > 0 && candidates.Count > 1)
+        // Use fraction-based capacity: each part's fraction = positions / its full-plate max
+        var usedFraction = primaryConfig.GetPlateFraction(actualPositions, bestLevel);
+        if (usedFraction < 1.0 && candidates.Count > 1)
         {
             foreach (var fill in candidates.Skip(1).Take(maxPartTypes - 1))
             {
-                if (remainingPositions <= 0) break;
+                if (usedFraction >= 1.0) break;
 
                 var fillConfig = fill.BuildConfig;
                 if (fillConfig == null) continue;
 
                 var fillLevel = bestLevel; // Use same stack level for consistency
-                var fillPerBuild = fillConfig.GetPositionsPerBuild(fillLevel);
-                if (fillPerBuild <= 0) continue;
+                var fillFullMax = fillConfig.GetPositionsPerBuild(fillLevel);
+                if (fillFullMax <= 0) continue;
 
-                // Scale positions proportionally
-                var fillPositions = Math.Min(remainingPositions, fillPerBuild);
+                // Scale fill positions by remaining plate fraction
+                var remainingFraction = 1.0 - usedFraction;
+                var capacityLimit = Math.Max(1, (int)Math.Floor(remainingFraction * fillFullMax));
                 var fillNeeded = (int)Math.Ceiling((double)fill.NetRemaining / fillLevel);
-                fillPositions = Math.Min(fillPositions, Math.Max(1, fillNeeded));
+                var fillPositions = Math.Min(capacityLimit, Math.Max(1, fillNeeded));
 
                 var fillDuration = fillConfig.GetStackDuration(fillLevel) ?? fillConfig.SingleStackDurationHours ?? 24;
                 maxPrintHours = Math.Max(maxPrintHours, fillDuration);
@@ -208,7 +214,7 @@ public class BuildAdvisorService : IBuildAdvisorService
                     fill.SourceLines.FirstOrDefault()?.WorkOrderLineId,
                     fill.EarliestDueDate));
 
-                remainingPositions -= fillPositions;
+                usedFraction += fillConfig.GetPlateFraction(fillPositions, fillLevel);
             }
         }
 
@@ -460,7 +466,8 @@ public class BuildAdvisorService : IBuildAdvisorService
     /// </summary>
     private static int SelectStackLevel(
         PartAdditiveBuildConfig config, DateTime slotStart,
-        double changeoverMinutes, List<OperatingShift> shifts, int netRemaining)
+        double changeoverMinutes, List<OperatingShift> shifts, int netRemaining,
+        SchedulingWeights w)
     {
         var levels = config.AvailableStackLevels;
         if (levels.Count <= 1) return 1;
@@ -478,23 +485,23 @@ public class BuildAdvisorService : IBuildAdvisorService
             var buildEnd = slotStart.AddHours(duration.Value);
             var changeoverEnd = buildEnd.AddMinutes(changeoverMinutes);
 
-            // Changeover alignment: +30 if operator is available (matches ProgramSchedulingService scoring)
+            // Changeover alignment bonus if operator is available
             if (changeoverMinutes <= 0 || ShiftTimeHelper.IsWithinShiftWindow(buildEnd, changeoverEnd, shifts))
-                score += 30;
+                score += w.StackChangeoverBonus;
 
-            // Demand fit: +30 if parts per build <= remaining (no overproduction)
+            // Demand fit bonus if parts per build <= remaining (no overproduction)
             if (partsPerBuild.Value <= netRemaining)
-                score += 30;
+                score += w.StackDemandFitBonus;
             else
             {
                 // Penalize overproduction proportionally
                 var overPct = (double)(partsPerBuild.Value - netRemaining) / partsPerBuild.Value;
-                score += (int)(30 * (1 - overPct));
+                score += (int)(w.StackDemandFitBonus * (1 - overPct));
             }
 
-            // Efficiency: +20 for higher parts-per-hour
+            // Efficiency: parts-per-hour scaled by multiplier
             var pph = partsPerBuild.Value / duration.Value;
-            score += (int)(pph * 5); // Rough scaling
+            score += (int)(pph * (double)w.StackEfficiencyMultiplier);
 
             if (score > bestScore)
             {

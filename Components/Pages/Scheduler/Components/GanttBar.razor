@@ -1,4 +1,5 @@
 @using System.Globalization
+@using Vectrik.Services
 
 @{
     var barClass = IsUnassigned ? "unassigned" : (Exec.Job?.Priority.ToString().ToLower() ?? "normal");
@@ -15,69 +16,77 @@
         JobScope.Batch => "📦 ",
         _ => ""
     };
+    var segments = ShiftTimeHelper.GetOnShiftSegments(Start, End, MachineShifts);
+    var isMultiSegment = segments.Count > 1;
+    var barAccentStyle = string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};";
 }
-<div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "") gantt-bar-has-tooltip"
-     style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @jobColorStyle @(string.IsNullOrEmpty(stageColor) || IsUnassigned ? "" : $"--bar-accent: {stageColor};")"
-     data-exec-id="@Exec.Id"
-     data-bar-type="exec"
-     data-job-id="@Exec.JobId"
-     @onclick="HandleClick"
-     @onclick:stopPropagation="true">
-    @if (IsSelected) { <span class="gantt-bar-check">✓</span> }
-    <span class="gantt-bar-text">@scopeIcon@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
-    <div class="gantt-bar-tooltip">
+@if (isMultiSegment)
+{
+    @* Multi-segment: wrapper with individual shift-aware segments *@
+    <div class="gantt-bar-wrapper gantt-bar-has-tooltip @(IsConflict ? "gantt-bar-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "")"
+         style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px;"
+         data-exec-id="@Exec.Id"
+         data-bar-type="exec"
+         data-job-id="@Exec.JobId"
+         @onclick="HandleClick"
+         @onclick:stopPropagation="true">
         @{
-            var ttPart = Exec.Job?.Part?.PartNumber ?? $"Job {Exec.JobId}";
-            var ttStage = Exec.ProductionStage?.Name ?? "Stage";
-            var ttWo = Exec.Job?.WorkOrderLine?.WorkOrder;
-            var ttScope = Exec.Job?.Scope switch { JobScope.Build => "Build", JobScope.Batch => "Batch", JobScope.Part => "Part", _ => "" };
+            var totalSpan = (End - Start).TotalHours;
+            var labelPlaced = false;
         }
-        <div class="gantt-bar-tooltip-title">
-            @if (IsUnassigned) { <span class="gantt-bar-tooltip-badge gantt-bar-tooltip-badge--warn">UNASSIGNED</span> }
-            @ttPart — @ttStage
-        </div>
-        <div class="gantt-bar-tooltip-row">
-            <span class="gantt-bar-tooltip-label">Time</span>
-            <span>@Start.ToLocalTime().ToString("ddd MMM d, h:mm tt") → @End.ToLocalTime().ToString("h:mm tt")</span>
-        </div>
-        <div class="gantt-bar-tooltip-row">
-            <span class="gantt-bar-tooltip-label">Est.</span>
-            <span>@(Exec.EstimatedHours?.ToString("F1") ?? "?")h</span>
-            <span class="gantt-bar-tooltip-label" style="margin-left: 8px;">Priority</span>
-            <span class="gantt-bar-tooltip-badge gantt-bar-tooltip-badge--@(Exec.Job?.Priority.ToString().ToLower() ?? "normal")">@Exec.Job?.Priority</span>
-        </div>
-        @if (!string.IsNullOrEmpty(ttScope))
+        @for (int i = 0; i < segments.Count; i++)
         {
-            <div class="gantt-bar-tooltip-row">
-                <span class="gantt-bar-tooltip-label">Scope</span>
-                <span>@ttScope</span>
-                <span class="gantt-bar-tooltip-label" style="margin-left: 8px;">Qty</span>
-                <span>@Exec.Job?.Quantity</span>
+            var seg = segments[i];
+            var segLeftPx = (seg.Start - Start).TotalHours / totalSpan * BarWidthPx;
+            var segWidthPx = Math.Max(2, (seg.End - seg.Start).TotalHours / totalSpan * BarWidthPx);
+            var isFirst = i == 0;
+            var isLast = i == segments.Count - 1;
+            var radiusClass = isFirst && isLast ? "gantt-seg-solo"
+                : isFirst ? "gantt-seg-first"
+                : isLast ? "gantt-seg-last"
+                : "gantt-seg-mid";
+
+            @* Gap connector before this segment (except the first) *@
+            if (!isFirst)
+            {
+                var prevEnd = segments[i - 1].End;
+                var gapLeftPx = (prevEnd - Start).TotalHours / totalSpan * BarWidthPx;
+                var gapWidthPx = segLeftPx - gapLeftPx;
+                if (gapWidthPx > 1)
+                {
+                    <div class="gantt-bar-offshift-gap"
+                         style="left: @(FormatPx(gapLeftPx))px; width: @(FormatPx(gapWidthPx))px;"></div>
+                }
+            }
+
+            <div class="gantt-bar gantt-bar-segment gantt-bar-@barClass @radiusClass"
+                 style="left: @(FormatPx(segLeftPx))px; width: @(FormatPx(segWidthPx))px; @batchBorder @jobColorStyle @barAccentStyle">
+                @if (IsSelected && isFirst) { <span class="gantt-bar-check">✓</span> }
+                @if (!labelPlaced && segWidthPx > 30)
+                {
+                    labelPlaced = true;
+                    <span class="gantt-bar-text">@scopeIcon@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
+                }
             </div>
         }
-        @if (Exec.Machine != null)
-        {
-            <div class="gantt-bar-tooltip-row">
-                <span class="gantt-bar-tooltip-label">Machine</span>
-                <span>@Exec.Machine.Name</span>
-            </div>
-        }
-        @if (ttWo != null)
-        {
-            <div class="gantt-bar-tooltip-row">
-                <span class="gantt-bar-tooltip-label">WO</span>
-                <span>@ttWo.OrderNumber — @ttWo.CustomerName</span>
-            </div>
-        }
-        @if (Exec.MachineProgram != null)
-        {
-            <div class="gantt-bar-tooltip-row">
-                <span class="gantt-bar-tooltip-label">Program</span>
-                <span>@Exec.MachineProgram.Name</span>
-            </div>
-        }
+        @RenderTooltip()
     </div>
-</div>
+}
+else
+{
+    @* Single segment: original rendering (no visual change) *@
+    <div class="gantt-bar gantt-bar-@barClass @(IsConflict ? "gantt-bar-conflict" : "") @(IsSelected ? "gantt-bar-selected" : "") gantt-bar-has-tooltip"
+         style="left: @(FormatPx(BarLeftPx))px; width: @(FormatPx(BarWidthPx))px; @batchBorder @jobColorStyle @barAccentStyle"
+         data-exec-id="@Exec.Id"
+         data-bar-type="exec"
+         data-job-id="@Exec.JobId"
+         @onclick="HandleClick"
+         @onclick:stopPropagation="true">
+        @if (IsSelected) { <span class="gantt-bar-check">✓</span> }
+        <span class="gantt-bar-text">@scopeIcon@(Exec.Job?.Part?.PartNumber ?? $"J{Exec.JobId}") · @(Exec.ProductionStage?.Name ?? "")</span>
+        @RenderTooltip()
+    </div>
+}
 
 @code {
     [Parameter, EditorRequired] public StageExecution Exec { get; set; } = default!;
@@ -89,59 +98,72 @@
     [Parameter] public bool IsUnassigned { get; set; }
     [Parameter] public bool IsSelected { get; set; }
     [Parameter] public EventCallback<StageExecution> OnClick { get; set; }
+    [Parameter] public List<OperatingShift> MachineShifts { get; set; } = new();
+    [Parameter] public double PixelsPerHour { get; set; }
 
     private static string FormatPx(double value) => value.ToString("F1", CultureInfo.InvariantCulture);
 
     private Task HandleClick() => OnClick.InvokeAsync(Exec);
 
-    /// <summary>
-    /// Generates a consistent hue (0-359) for a job based on its PartId.
-    /// All stages of the same part get the same hue, making it easy to
-    /// visually track a part's journey across machines on the Gantt.
-    /// </summary>
+    private RenderFragment RenderTooltip() => __builder =>
+    {
+        var ttPart = Exec.Job?.Part?.PartNumber ?? $"Job {Exec.JobId}";
+        var ttStage = Exec.ProductionStage?.Name ?? "Stage";
+        var ttWo = Exec.Job?.WorkOrderLine?.WorkOrder;
+        var ttScope = Exec.Job?.Scope switch { JobScope.Build => "Build", JobScope.Batch => "Batch", JobScope.Part => "Part", _ => "" };
+
+        <div class="gantt-bar-tooltip">
+            <div class="gantt-bar-tooltip-title">
+                @if (IsUnassigned) { <span class="gantt-bar-tooltip-badge gantt-bar-tooltip-badge--warn">UNASSIGNED</span> }
+                @ttPart — @ttStage
+            </div>
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Time</span>
+                <span>@Start.ToLocalTime().ToString("ddd MMM d, h:mm tt") → @End.ToLocalTime().ToString("h:mm tt")</span>
+            </div>
+            <div class="gantt-bar-tooltip-row">
+                <span class="gantt-bar-tooltip-label">Est.</span>
+                <span>@(Exec.EstimatedHours?.ToString("F1") ?? "?")h</span>
+                <span class="gantt-bar-tooltip-label" style="margin-left: 8px;">Priority</span>
+                <span class="gantt-bar-tooltip-badge gantt-bar-tooltip-badge--@(Exec.Job?.Priority.ToString().ToLower() ?? "normal")">@Exec.Job?.Priority</span>
+            </div>
+            @if (!string.IsNullOrEmpty(ttScope))
+            {
+                <div class="gantt-bar-tooltip-row">
+                    <span class="gantt-bar-tooltip-label">Scope</span>
+                    <span>@ttScope</span>
+                    <span class="gantt-bar-tooltip-label" style="margin-left: 8px;">Qty</span>
+                    <span>@Exec.Job?.Quantity</span>
+                </div>
+            }
+            @if (Exec.Machine != null)
+            {
+                <div class="gantt-bar-tooltip-row">
+                    <span class="gantt-bar-tooltip-label">Machine</span>
+                    <span>@Exec.Machine.Name</span>
+                </div>
+            }
+            @if (ttWo != null)
+            {
+                <div class="gantt-bar-tooltip-row">
+                    <span class="gantt-bar-tooltip-label">WO</span>
+                    <span>@ttWo.OrderNumber — @ttWo.CustomerName</span>
+                </div>
+            }
+            @if (Exec.MachineProgram != null)
+            {
+                <div class="gantt-bar-tooltip-row">
+                    <span class="gantt-bar-tooltip-label">Program</span>
+                    <span>@Exec.MachineProgram.Name</span>
+                </div>
+            }
+        </div>
+    };
+
     private int GetJobHue()
     {
         var key = Exec.Job?.PartId ?? Exec.JobId ?? -1;
         if (key <= 0) return -1;
-        // Golden-angle distribution gives visually distinct hues for sequential IDs
         return (int)((key * 137.508) % 360);
-    }
-
-    private string ComputeTooltip()
-    {
-        var part = Exec.Job?.Part?.PartNumber ?? "?";
-        var stage = Exec.ProductionStage?.Name ?? "";
-        var scope = Exec.Job?.Scope switch
-        {
-            JobScope.Build => "Build",
-            JobScope.Batch => "Batch",
-            JobScope.Part => "Part",
-            _ => ""
-        };
-
-        if (IsUnassigned)
-            return $"UNASSIGNED — {part} · {stage}";
-
-        var lines = new List<string>
-        {
-            $"{part} — {(string.IsNullOrEmpty(stage) ? "Stage" : stage)}",
-            $"{Start:MM/dd HH:mm} → {End:MM/dd HH:mm}",
-            $"Est: {Exec.EstimatedHours?.ToString("F1") ?? "?"}h | Priority: {Exec.Job?.Priority}"
-        };
-
-        if (!string.IsNullOrEmpty(scope))
-            lines.Add($"Scope: {scope} | Qty: {Exec.Job?.Quantity}");
-
-        if (Exec.Machine != null)
-            lines.Add($"Machine: {Exec.Machine.Name}");
-
-        var wo = Exec.Job?.WorkOrderLine?.WorkOrder;
-        if (wo != null)
-            lines.Add($"WO: {wo.OrderNumber} — {wo.CustomerName}");
-
-        if (Exec.MachineProgram != null)
-            lines.Add($"Program: {Exec.MachineProgram.Name}");
-
-        return string.Join("\n", lines);
     }
 }

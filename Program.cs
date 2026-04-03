@@ -129,6 +129,7 @@ builder.Services.AddScoped<ICustomerPricingService, CustomerPricingService>();
 builder.Services.AddScoped<ISchedulingRuleService, SchedulingRuleService>();
 builder.Services.AddScoped<IShiftManagementService, ShiftManagementService>();
 builder.Services.AddScoped<IBuildAdvisorService, BuildAdvisorService>();
+builder.Services.AddScoped<ISchedulingWeightsService, SchedulingWeightsService>();
 builder.Services.AddScoped<ISchedulingService, SchedulingService>();
 builder.Services.AddScoped<IProgramSchedulingService, ProgramSchedulingService>();
 builder.Services.AddScoped<IProgramPlanningService, ProgramPlanningService>();

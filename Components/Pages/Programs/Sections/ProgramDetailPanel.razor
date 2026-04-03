@@ -5,7 +5,7 @@
     <nav class="prg-section-tabs" @ref="_tabsRef">
         @foreach (var sec in _sections)
         {
-            if (sec.Id == "prg-section-buildplate" && !Program.IsBuildPlate) continue;
+            if ((sec.Id == "prg-section-buildplate" || sec.Id == "prg-section-runs") && !Program.IsBuildPlate) continue;
             var capturedId = sec.Id;
             var capturedLabel = sec.Label;
             <button class="prg-tab @(capturedId == _activeSection ? "prg-tab--active" : "")"
@@ -73,6 +73,11 @@
 
     @if (Program.IsBuildPlate)
     {
+        <div id="prg-section-runs">
+            <DetailRuns Program="Program"
+                        ProgramRuns="ProgramRuns" />
+        </div>
+
         <div id="prg-section-buildplate">
             <DetailBuildPlate Program="Program"
                               AdditiveParts="AdditiveParts"
@@ -94,6 +99,7 @@
     [Parameter] public List<ProgramToolingItem> ToolingItems { get; set; } = new();
     [Parameter] public List<ToolingReadinessAlert> ToolingAlerts { get; set; } = new();
     [Parameter] public List<StageExecution> ExecutionHistory { get; set; } = new();
+    [Parameter] public List<StageExecution> ProgramRuns { get; set; } = new();
     [Parameter] public List<ProgramFeedback> FeedbackList { get; set; } = new();
     [Parameter] public string FeedbackFilter { get; set; } = "All";
     [Parameter] public List<Part> AdditiveParts { get; set; } = new();
@@ -146,6 +152,7 @@
         new("prg-section-params", "Params"),
         new("prg-section-feedback", "Feedback"),
         new("prg-section-learning", "Learning"),
+        new("prg-section-runs", "Runs"),
         new("prg-section-buildplate", "Build Plate"),
     ];
 

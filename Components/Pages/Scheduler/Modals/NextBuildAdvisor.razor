@@ -288,6 +288,35 @@
             && !_plateAllocations.Any(a => a.PartId == d.PartId))
         .ToList();
 
+    /// <summary>
+    /// Calculates the fraction of the full plate used by all current allocations (0.0–1.0).
+    /// Each part's fraction = its positions / its full-plate max positions at that stack level.
+    /// </summary>
+    private double GetUsedPlateFraction(int? excludeIndex = null)
+    {
+        double used = 0;
+        for (int i = 0; i < _plateAllocations.Count; i++)
+        {
+            if (excludeIndex.HasValue && i == excludeIndex.Value) continue;
+            var alloc = _plateAllocations[i];
+            var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
+            if (config == null) continue;
+            used += config.GetPlateFraction(alloc.Positions, alloc.StackLevel);
+        }
+        return used;
+    }
+
+    /// <summary>
+    /// Returns the max positions a part can use given the remaining plate fraction.
+    /// </summary>
+    private int GetMaxPositionsForRemaining(PartAdditiveBuildConfig config, int stackLevel, int? excludeIndex = null)
+    {
+        var remaining = 1.0 - GetUsedPlateFraction(excludeIndex);
+        if (remaining <= 0) return 0;
+        var fullMax = config.GetPositionsPerBuild(stackLevel);
+        return Math.Max(0, (int)Math.Floor(remaining * fullMax));
+    }
+
     private double EstimatedPrintHours
     {
         get
@@ -684,6 +713,9 @@
     private void ApplySelectedOptionToPlate()
     {
         if (_selectedOption == null) return;
+
+        // Allocate positions in order (primary first), tracking remaining plate fraction
+        double usedFraction = 0;
         foreach (var alloc in _plateAllocations)
         {
             var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
@@ -691,9 +723,14 @@
             var levels = config.AvailableStackLevels;
             alloc.StackLevel = levels.Contains(_selectedOption.StackLevel)
                 ? _selectedOption.StackLevel : levels.First();
-            var maxPos = config.GetPositionsPerBuild(alloc.StackLevel);
+
+            var fullMax = config.GetPositionsPerBuild(alloc.StackLevel);
+            var remainingFraction = 1.0 - usedFraction;
+            var capacityLimit = Math.Max(0, (int)Math.Floor(remainingFraction * fullMax));
             var needed = (int)Math.Ceiling((double)alloc.DemandRemaining / alloc.StackLevel);
-            alloc.Positions = Math.Min(maxPos, Math.Max(1, needed));
+            alloc.Positions = Math.Min(capacityLimit, Math.Max(1, needed));
+
+            usedFraction += config.GetPlateFraction(alloc.Positions, alloc.StackLevel);
         }
         _plateEdited = false;
         RecalculateWarnings();
@@ -710,11 +747,22 @@
     private void OnComposerModeChanged(bool certified)
     {
         _useCertifiedLayouts = certified;
+        // Clear allocations when switching modes to prevent stale data
+        _plateAllocations.Clear();
+        _plateEdited = true;
         if (certified)
         {
-            // Switching to certified mode — clear free-form allocations
-            // User will place certified layouts via the WYSIWYG editor
+            // Switching to certified mode — clear free-form allocations.
+            // Sync from current layout assignments if any exist.
+            if (_plateLayoutAssignments.Any())
+                OnPlateLayoutAssignmentsChanged(_plateLayoutAssignments);
         }
+        else
+        {
+            // Switching to free-form — reset from recommendation
+            InitializePlateFromRecommendation();
+        }
+        RecalculateWarnings();
     }
 
     private void OnPlateLayoutAssignmentsChanged(List<PlateSlotAssignment> assignments)
@@ -722,8 +770,8 @@
         _plateLayoutAssignments = assignments;
         _plateEdited = true;
 
-        // Sync certified layout assignments to the legacy _plateAllocations
-        // so the rest of the wizard flow (timing, scheduling) still works
+        // Sync certified layout assignments to _plateAllocations.
+        // Aggregate same-part entries so demand coverage shows correctly.
         _plateAllocations.Clear();
         foreach (var a in assignments)
         {
@@ -731,17 +779,27 @@
             if (cl == null) continue;
 
             var demandMatch = _demand.FirstOrDefault(d => d.PartId == cl.PartId);
-            _plateAllocations.Add(new EditablePlateAllocation
+            var existing = _plateAllocations.FirstOrDefault(alloc => alloc.PartId == cl.PartId);
+
+            if (existing != null)
             {
-                PartId = cl.PartId,
-                PartNumber = cl.Part?.PartNumber ?? $"#{cl.PartId}",
-                Positions = cl.Positions,
-                StackLevel = cl.StackLevel,
-                DemandRemaining = demandMatch?.NetRemaining ?? 0,
-                SourceLines = demandMatch?.SourceLines ?? [],
-                WoDueDate = demandMatch?.EarliestDueDate,
-                WorkOrderLineId = demandMatch?.SourceLines?.FirstOrDefault()?.WorkOrderLineId
-            });
+                // Same part in multiple layout slots — aggregate positions
+                existing.Positions += cl.Positions;
+            }
+            else
+            {
+                _plateAllocations.Add(new EditablePlateAllocation
+                {
+                    PartId = cl.PartId,
+                    PartNumber = cl.Part?.PartNumber ?? $"#{cl.PartId}",
+                    Positions = cl.Positions,
+                    StackLevel = cl.StackLevel,
+                    DemandRemaining = demandMatch?.NetRemaining ?? 0,
+                    SourceLines = demandMatch?.SourceLines ?? [],
+                    WoDueDate = demandMatch?.EarliestDueDate,
+                    WorkOrderLineId = demandMatch?.SourceLines?.FirstOrDefault()?.WorkOrderLineId
+                });
+            }
         }
 
         RecalculateWarnings();
@@ -757,9 +815,10 @@
         var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
         if (config != null)
         {
-            var maxPos = config.GetPositionsPerBuild(newLevel);
+            // Cap by remaining plate capacity (excluding this part's current contribution)
+            var capacityLimit = GetMaxPositionsForRemaining(config, newLevel, excludeIndex: index);
             var needed = (int)Math.Ceiling((double)alloc.DemandRemaining / newLevel);
-            alloc.Positions = Math.Min(maxPos, Math.Max(1, needed));
+            alloc.Positions = Math.Min(capacityLimit, Math.Max(1, needed));
         }
 
         _plateEdited = true;
@@ -769,7 +828,12 @@
     private void OnPositionsChanged(int index, int newPositions)
     {
         if (index < 0 || index >= _plateAllocations.Count) return;
-        _plateAllocations[index].Positions = Math.Max(1, newPositions);
+        var alloc = _plateAllocations[index];
+        var config = _demand.FirstOrDefault(d => d.PartId == alloc.PartId)?.BuildConfig;
+        var capacityLimit = config != null
+            ? GetMaxPositionsForRemaining(config, alloc.StackLevel, excludeIndex: index)
+            : 500;
+        alloc.Positions = Math.Min(capacityLimit, Math.Max(1, newPositions));
         _plateEdited = true;
         RecalculateWarnings();
     }
@@ -787,13 +851,20 @@
         if (_plateAllocations.Any(a => a.PartId == d.PartId)) return;
         if (d.BuildConfig == null) return;
 
+        // Check if plate has any remaining capacity
+        var usedFraction = GetUsedPlateFraction();
+        if (usedFraction >= 1.0) return;
+
         var primaryLevel = _selectedOption?.StackLevel ?? _plateAllocations.FirstOrDefault()?.StackLevel ?? 1;
         var levels = d.BuildConfig.AvailableStackLevels;
         var level = levels.Contains(primaryLevel) ? primaryLevel : levels.First();
 
-        var perBuild = d.BuildConfig.GetPositionsPerBuild(level);
+        // Cap positions by remaining plate fraction
+        var fullMax = d.BuildConfig.GetPositionsPerBuild(level);
+        var remainingFraction = 1.0 - usedFraction;
+        var capacityLimit = Math.Max(1, (int)Math.Floor(remainingFraction * fullMax));
         var needed = (int)Math.Ceiling((double)d.NetRemaining / level);
-        var positions = Math.Min(perBuild, Math.Max(1, needed));
+        var positions = Math.Min(capacityLimit, Math.Max(1, needed));
 
         _plateAllocations.Add(new EditablePlateAllocation
         {

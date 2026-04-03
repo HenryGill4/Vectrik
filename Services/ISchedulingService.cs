@@ -41,6 +41,13 @@ public interface ISchedulingService
     Task<int> AutoScheduleAllAsync();
 
     /// <summary>
+    /// Reschedule all pending (not-started) executions by clearing their
+    /// current schedule and re-running auto-schedule with current shift definitions.
+    /// Call after shift configuration changes to rebase the schedule.
+    /// </summary>
+    Task<int> RescheduleAllPendingAsync();
+
+    /// <summary>
     /// Clear all scheduling data: nulls StageExecution schedule fields,
     /// resets Job schedule windows.
     /// Returns the number of entities affected.

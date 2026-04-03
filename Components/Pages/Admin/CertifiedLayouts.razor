@@ -58,9 +58,9 @@ else
                     <th style="min-width:130px;">Name</th>
                     <th>Size</th>
                     <th>Part</th>
-                    <th style="text-align:center;">Positions</th>
+                    <th style="text-align:center;">Plate Spots</th>
                     <th style="text-align:center;">Stack</th>
-                    <th style="text-align:center;">Total</th>
+                    <th style="text-align:center;">Parts / Build</th>
                     <th>Material</th>
                     <th>Status</th>
                     <th>Certified By</th>
@@ -133,9 +133,9 @@ else
                     </div>
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 0.82rem; margin-bottom: 10px;">
-                    <div><span style="color: var(--text-muted);">Positions</span><div style="font-weight: 600;">@l.Positions</div></div>
+                    <div><span style="color: var(--text-muted);">Plate Spots</span><div style="font-weight: 600;">@l.Positions</div></div>
                     <div><span style="color: var(--text-muted);">Stack</span><div style="font-weight: 600;">@(l.StackLevel)x</div></div>
-                    <div><span style="color: var(--text-muted);">Total Parts</span><div style="font-weight: 700; color: var(--accent);">@l.TotalParts</div></div>
+                    <div><span style="color: var(--text-muted);">Parts / Build</span><div style="font-weight: 700; color: var(--accent);">@l.TotalParts</div></div>
                 </div>
                 <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
                     @(l.Material?.Name ?? "—") · @(l.CertifiedBy ?? "—") · @l.UseCount use@(l.UseCount != 1 ? "s" : "")
@@ -173,24 +173,24 @@ else
                 <label class="form-label">Layout Size <span style="color:var(--danger);">*</span></label>
                 <div style="display: flex; gap: 12px;">
                     <label class="cl-size-option @(_edit.Size == LayoutSize.Quadrant ? "cl-size-option--selected" : "")"
-                           @onclick="() => _edit.Size = LayoutSize.Quadrant">
+                           @onclick="() => OnSizeChanged(LayoutSize.Quadrant)">
                         <div class="cl-size-grid">
                             <div class="cl-size-cell cl-size-cell--active"></div>
                             <div class="cl-size-cell"></div>
                             <div class="cl-size-cell"></div>
                             <div class="cl-size-cell"></div>
                         </div>
-                        <span>Quadrant (1/4)</span>
+                        <span>Quadrant (1/4 plate)</span>
                     </label>
                     <label class="cl-size-option @(_edit.Size == LayoutSize.Half ? "cl-size-option--selected" : "")"
-                           @onclick="() => _edit.Size = LayoutSize.Half">
+                           @onclick="() => OnSizeChanged(LayoutSize.Half)">
                         <div class="cl-size-grid">
                             <div class="cl-size-cell cl-size-cell--active"></div>
                             <div class="cl-size-cell"></div>
                             <div class="cl-size-cell cl-size-cell--active"></div>
                             <div class="cl-size-cell"></div>
                         </div>
-                        <span>Half (1/2)</span>
+                        <span>Half (1/2 plate)</span>
                     </label>
                 </div>
             </div>
@@ -234,7 +234,7 @@ else
                 @* ── Stack Level ── *@
                 <div class="form-group">
                     <label class="form-label">Stack Level <span style="color:var(--danger);">*</span></label>
-                    <select class="form-control" @bind="_edit.StackLevel">
+                    <select class="form-control" @bind="_edit.StackLevel" @bind:after="OnStackLevelChanged">
                         @foreach (var level in _availableStackLevels)
                         {
                             <option value="@level">@(level)x Stack</option>
@@ -244,19 +244,28 @@ else
 
                 @* ── Positions ── *@
                 <div class="form-group">
-                    <label class="form-label">Positions <span style="color:var(--danger);">*</span></label>
+                    <label class="form-label">Plate Spots <span style="color:var(--danger);">*</span></label>
                     <input class="form-control" type="number" min="1" max="@_maxPositions" @bind="_edit.Positions" />
-                    @if (_maxPositions < 500)
-                    {
-                        <span style="font-size: 0.75rem; color: var(--text-muted);">Max: @_maxPositions (from build config)</span>
-                    }
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">
+                        Max @_maxPositions for @(_edit.Size == LayoutSize.Half ? "half" : "quarter") plate
+                        @if (_maxPositions < 500) { <span>(from build config)</span> }
+                    </span>
                 </div>
             </div>
 
-            @* ── Computed total ── *@
-            <div style="padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; margin-bottom: 12px; font-size: 0.9rem;">
-                <strong>Total Parts:</strong> @_edit.Positions × @_edit.StackLevel = <strong>@(_edit.Positions * _edit.StackLevel)</strong>
-                <span style="margin-left: 12px; color: var(--text-muted);">Slots: @(_edit.Size == LayoutSize.Half ? 2 : 1)</span>
+            @* ── Computed total — prominent callout ── *@
+            @{
+                var editTotal = _edit.Positions * _edit.StackLevel;
+                var sizeLabel = _edit.Size == LayoutSize.Half ? "half" : "quarter";
+            }
+            <div style="padding: 10px 14px; background: rgba(var(--accent-rgb, 99, 102, 241), 0.08); border: 1px solid rgba(var(--accent-rgb, 99, 102, 241), 0.25); border-radius: 6px; margin-bottom: 12px;">
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--accent);">
+                    @editTotal parts per build
+                </div>
+                <div style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 2px;">
+                    @_edit.Positions plate spot@(_edit.Positions != 1 ? "s" : "") × @(_edit.StackLevel)x stack
+                    — covers @sizeLabel of the 450 × 450 mm plate (@(_edit.Size == LayoutSize.Half ? 2 : 1) of 4 slots)
+                </div>
             </div>
 
             <div class="form-group">
@@ -420,6 +429,25 @@ else
             _edit.MaterialId = part.MaterialEntity.Id;
 
         UpdatePartConstraints();
+        if (_edit.Positions > _maxPositions)
+            _edit.Positions = _maxPositions;
+    }
+
+    private void OnStackLevelChanged()
+    {
+        UpdatePartConstraints();
+        if (_edit != null && _edit.Positions > _maxPositions)
+            _edit.Positions = _maxPositions;
+    }
+
+    private void OnSizeChanged(LayoutSize newSize)
+    {
+        if (_edit == null) return;
+        _edit.Size = newSize;
+        UpdatePartConstraints();
+        // Clamp positions if they exceed new max
+        if (_edit.Positions > _maxPositions)
+            _edit.Positions = _maxPositions;
     }
 
     private void UpdatePartConstraints()
@@ -432,12 +460,13 @@ else
         if (config != null)
         {
             _availableStackLevels = config.AvailableStackLevels;
-            _maxPositions = config.GetPositionsPerBuild(_edit.StackLevel);
+            // Scale max positions by layout size — a Quadrant holds 1/4 plate, Half holds 1/2
+            _maxPositions = config.GetPositionsForLayoutSize(_edit.StackLevel, _edit.Size);
         }
         else
         {
             _availableStackLevels = [1, 2, 3];
-            _maxPositions = 500;
+            _maxPositions = _edit.Size == LayoutSize.Half ? 250 : 125;
         }
     }
 
@@ -450,6 +479,11 @@ else
         if (string.IsNullOrWhiteSpace(_edit.Name)) { _error = "Name is required."; return; }
         if (_edit.PartId <= 0) { _error = "Part is required."; return; }
         if (_edit.Positions < 1) { _error = "Positions must be at least 1."; return; }
+        if (_edit.Positions > _maxPositions)
+        {
+            _error = $"Positions ({_edit.Positions}) exceeds max for a {_edit.Size} layout ({_maxPositions}). A {_edit.Size} only covers {(_edit.Size == LayoutSize.Half ? "half" : "a quarter")} of the build plate.";
+            return;
+        }
 
         _saving = true;
         try

@@ -9,6 +9,18 @@ namespace Vectrik.Services;
 public static class ShiftTimeHelper
 {
     /// <summary>
+    /// Gets all active shifts for a given day, ordered by start time.
+    /// </summary>
+    public static List<OperatingShift> GetShiftsForDay(DateTime date, List<OperatingShift> shifts)
+    {
+        var dayName = date.DayOfWeek.ToString()[..3];
+        return shifts
+            .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(s => s.StartTime)
+            .ToList();
+    }
+
+    /// <summary>
     /// Finds the earliest point at or after <paramref name="from"/> that falls within a shift window.
     /// Returns <paramref name="from"/> unchanged if no shifts are defined (24/7 operation).
     /// </summary>
@@ -19,12 +31,7 @@ public static class ShiftTimeHelper
         for (int dayOffset = 0; dayOffset < 30; dayOffset++)
         {
             var checkDate = from.Date.AddDays(dayOffset);
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
+            var dayShifts = GetShiftsForDay(checkDate, shifts);
 
             foreach (var shift in dayShifts)
             {
@@ -57,11 +64,7 @@ public static class ShiftTimeHelper
             var checkDate = current.Date;
             if (checkDate < from.Date) checkDate = from.Date;
 
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
+            var dayShifts = GetShiftsForDay(checkDate, shifts);
 
             foreach (var shift in dayShifts)
             {
@@ -100,12 +103,7 @@ public static class ShiftTimeHelper
         if (!shifts.Any()) return true;
 
         var checkDate = windowStart.Date;
-        var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-        var dayShifts = shifts
-            .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.StartTime)
-            .ToList();
+        var dayShifts = GetShiftsForDay(checkDate, shifts);
 
         foreach (var shift in dayShifts)
         {
@@ -135,12 +133,7 @@ public static class ShiftTimeHelper
         for (int dayOffset = 0; dayOffset < 5; dayOffset++)
         {
             var checkDate = buildStart.Date.AddDays(dayOffset);
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
+            var dayShifts = GetShiftsForDay(checkDate, shifts);
 
             foreach (var shift in dayShifts)
             {
@@ -173,12 +166,7 @@ public static class ShiftTimeHelper
         for (int dayOffset = 0; cursor < to && dayOffset < 30; dayOffset++)
         {
             var checkDate = cursor.Date;
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
+            var dayShifts = GetShiftsForDay(checkDate, shifts);
 
             if (!dayShifts.Any())
             {
@@ -260,6 +248,48 @@ public static class ShiftTimeHelper
     }
 
     /// <summary>
+    /// Returns the on-shift time segments within a calendar window.
+    /// Used to visually split Gantt bars into active-work vs paused-overnight blocks.
+    /// Returns [(from, to)] if no shifts are defined (24/7 mode).
+    /// </summary>
+    public static List<(DateTime Start, DateTime End)> GetOnShiftSegments(
+        DateTime from, DateTime to, List<OperatingShift> shifts)
+    {
+        if (!shifts.Any() || from >= to)
+            return new List<(DateTime, DateTime)> { (from, to) };
+
+        var segments = new List<(DateTime Start, DateTime End)>();
+
+        for (var checkDate = from.Date; checkDate <= to.Date; checkDate = checkDate.AddDays(1))
+        {
+            var dayName = checkDate.DayOfWeek.ToString()[..3];
+
+            var dayShifts = shifts
+                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => s.StartTime)
+                .ToList();
+
+            foreach (var shift in dayShifts)
+            {
+                var shiftStart = checkDate + shift.StartTime;
+                var shiftEnd = checkDate + shift.EndTime;
+                if (shift.EndTime <= shift.StartTime)
+                    shiftEnd = shiftEnd.AddDays(1);
+
+                // Clip to the [from, to] window
+                var segStart = shiftStart < from ? from : shiftStart;
+                var segEnd = shiftEnd > to ? to : shiftEnd;
+
+                if (segStart < segEnd)
+                    segments.Add((segStart, segEnd));
+            }
+        }
+
+        // If no shifts matched (e.g., weekend-only window with weekday shifts), return full span
+        return segments.Count > 0 ? segments : new List<(DateTime, DateTime)> { (from, to) };
+    }
+
+    /// <summary>
     /// Finds the next shift start strictly after <paramref name="after"/>.
     /// Returns null if no shifts or none found within 7 days.
     /// </summary>
@@ -270,12 +300,7 @@ public static class ShiftTimeHelper
         for (int dayOffset = 0; dayOffset < 7; dayOffset++)
         {
             var checkDate = after.Date.AddDays(dayOffset);
-            var dayName = checkDate.DayOfWeek.ToString()[..3];
-
-            var dayShifts = shifts
-                .Where(s => s.DaysOfWeek.Contains(dayName, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StartTime)
-                .ToList();
+            var dayShifts = GetShiftsForDay(checkDate, shifts);
 
             foreach (var shift in dayShifts)
             {

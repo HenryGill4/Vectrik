@@ -2566,6 +2566,70 @@ dialog#components-reconnect-modal button:hover {
     50% { outline-color: transparent; }
 }
 
+/* ── Gap connector between split bar segments (non-working hours) ── */
+.gantt-bar-gap {
+    position: absolute;
+    top: 18px;
+    height: 8px;
+    border-top: 2px dashed rgba(255, 255, 255, 0.18);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* ── Shift-Aware Bar Segmentation (CNC/downstream — internal splits) ── */
+.gantt-bar-wrapper {
+    position: absolute;
+    top: 0;
+    height: 44px;
+    z-index: 2;
+    cursor: pointer;
+}
+.gantt-bar-wrapper .gantt-bar-segment {
+    position: absolute;
+    top: 0;
+    height: 44px;
+    z-index: 2;
+    overflow: hidden;
+}
+.gantt-bar-wrapper .gantt-seg-first { border-radius: 5px 3px 3px 5px; }
+.gantt-bar-wrapper .gantt-seg-last  { border-radius: 3px 5px 5px 3px; }
+.gantt-bar-wrapper .gantt-seg-mid   { border-radius: 3px; }
+.gantt-bar-wrapper .gantt-seg-solo  { border-radius: 5px; }
+.gantt-bar-offshift-gap {
+    position: absolute;
+    top: 50%;
+    height: 2px;
+    background: repeating-linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.3) 0px,
+        rgba(255, 255, 255, 0.3) 4px,
+        transparent 4px,
+        transparent 8px
+    );
+    transform: translateY(-50%);
+    pointer-events: none;
+    z-index: 1;
+}
+.gantt-bar-wrapper .gantt-bar-tooltip {
+    position: absolute;
+    left: 0;
+    top: 100%;
+}
+.gantt-bar-wrapper.gantt-bar-selected {
+    outline: none;
+    box-shadow: none;
+}
+.gantt-bar-wrapper.gantt-bar-selected .gantt-bar-segment {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    box-shadow: 0 0 8px rgba(var(--accent-rgb, 99, 102, 241), 0.5);
+}
+.gantt-bar-wrapper.gantt-bar-conflict .gantt-bar-segment {
+    outline: 2px solid var(--danger);
+    outline-offset: 2px;
+    animation: gantt-pulse 1.5s infinite;
+}
+
 /* ── Build Package Bars (Gantt overlay for SLS builds) ── */
 .gantt-build-bar-wrapper {
     position: absolute;
@@ -14860,3 +14924,16 @@ dialog#components-reconnect-modal button:hover {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Scheduling Weights Admin
+   ═══════════════════════════════════════════════════════════ */
+
+.page-subtitle { font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px; }
+.sched-weights-desc { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px; }
+.sched-weights-grid { display: flex; flex-direction: column; gap: 14px; max-width: 520px; }
+.sched-weights-slider { display: flex; flex-direction: column; gap: 2px; }
+.sched-weights-slider label { font-size: 0.9rem; }
+.sched-weights-slider input[type="range"] { width: 100%; accent-color: var(--accent); }
+.sched-weights-hint { font-size: 0.75rem; color: var(--text-secondary); }
+.sched-weights-actions { display: flex; gap: 8px; margin-top: 8px; }

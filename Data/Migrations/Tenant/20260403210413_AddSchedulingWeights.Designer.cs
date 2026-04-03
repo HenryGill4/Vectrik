@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vectrik.Data;
 
@@ -10,9 +11,11 @@ using Vectrik.Data;
 namespace Vectrik.Data.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    partial class TenantDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260403210413_AddSchedulingWeights")]
+    partial class AddSchedulingWeights
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.4");
@@ -56,46 +59,6 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.HasIndex("PartInstanceId", "Timestamp");
 
                     b.ToTable("BatchPartAssignments");
-                });
-
-            modelBuilder.Entity("Vectrik.Models.BlackoutPeriod", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("EndDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("IsRecurringAnnually")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Reason")
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("StartDate")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("BlackoutPeriods");
                 });
 
             modelBuilder.Entity("Vectrik.Models.BuildTemplate", b =>
@@ -842,9 +805,6 @@ namespace Vectrik.Data.Migrations.Tenant
 
                     b.Property<bool>("RequiresVerification")
                         .HasColumnType("INTEGER");
-
-                    b.Property<decimal>("SchedulingRuleWeight")
-                        .HasColumnType("decimal(4,2)");
 
                     b.Property<decimal>("ThroughputWeight")
                         .HasColumnType("decimal(4,2)");
@@ -1621,21 +1581,6 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.ToTable("Machines");
                 });
 
-            modelBuilder.Entity("Vectrik.Models.MachineBlackoutAssignment", b =>
-                {
-                    b.Property<int>("MachineId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("BlackoutPeriodId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("MachineId", "BlackoutPeriodId");
-
-                    b.HasIndex("BlackoutPeriodId");
-
-                    b.ToTable("MachineBlackoutAssignments");
-                });
-
             modelBuilder.Entity("Vectrik.Models.MachineConnectionSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -1982,59 +1927,6 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.HasIndex("MachineProgramId");
 
                     b.ToTable("MachineProgramFiles");
-                });
-
-            modelBuilder.Entity("Vectrik.Models.MachineSchedulingRule", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("LastModifiedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("LastModifiedDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("MachineId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("MaxConsecutiveBuilds")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<double?>("MinBreakHours")
-                        .HasColumnType("REAL");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("RuleType")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MachineId");
-
-                    b.ToTable("MachineSchedulingRules");
                 });
 
             modelBuilder.Entity("Vectrik.Models.MachineShiftAssignment", b =>
@@ -6316,25 +6208,6 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Navigation("CurrentProgram");
                 });
 
-            modelBuilder.Entity("Vectrik.Models.MachineBlackoutAssignment", b =>
-                {
-                    b.HasOne("Vectrik.Models.BlackoutPeriod", "BlackoutPeriod")
-                        .WithMany("MachineAssignments")
-                        .HasForeignKey("BlackoutPeriodId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Vectrik.Models.Machine", "Machine")
-                        .WithMany("BlackoutAssignments")
-                        .HasForeignKey("MachineId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("BlackoutPeriod");
-
-                    b.Navigation("Machine");
-                });
-
             modelBuilder.Entity("Vectrik.Models.MachineProgram", b =>
                 {
                     b.HasOne("Vectrik.Models.MachineProgram", "DepowderProgram")
@@ -6443,17 +6316,6 @@ namespace Vectrik.Data.Migrations.Tenant
                         .IsRequired();
 
                     b.Navigation("MachineProgram");
-                });
-
-            modelBuilder.Entity("Vectrik.Models.MachineSchedulingRule", b =>
-                {
-                    b.HasOne("Vectrik.Models.Machine", "Machine")
-                        .WithMany("SchedulingRules")
-                        .HasForeignKey("MachineId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Machine");
                 });
 
             modelBuilder.Entity("Vectrik.Models.MachineShiftAssignment", b =>
@@ -7506,11 +7368,6 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Navigation("WorkflowDefinition");
                 });
 
-            modelBuilder.Entity("Vectrik.Models.BlackoutPeriod", b =>
-                {
-                    b.Navigation("MachineAssignments");
-                });
-
             modelBuilder.Entity("Vectrik.Models.BuildTemplate", b =>
                 {
                     b.Navigation("Parts");
@@ -7553,13 +7410,9 @@ namespace Vectrik.Data.Migrations.Tenant
 
             modelBuilder.Entity("Vectrik.Models.Machine", b =>
                 {
-                    b.Navigation("BlackoutAssignments");
-
                     b.Navigation("Components");
 
                     b.Navigation("ProgramAssignments");
-
-                    b.Navigation("SchedulingRules");
 
                     b.Navigation("ShiftAssignments");
                 });

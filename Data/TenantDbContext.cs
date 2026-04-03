@@ -175,6 +175,7 @@ public class TenantDbContext : DbContext
     public DbSet<SetupHistory> SetupHistories { get; set; }
     public DbSet<OperatorSetupProfile> OperatorSetupProfiles { get; set; }
     public DbSet<DispatchConfiguration> DispatchConfigurations { get; set; }
+    public DbSet<SchedulingWeights> SchedulingWeights { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

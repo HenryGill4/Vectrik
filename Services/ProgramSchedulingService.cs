@@ -19,9 +19,11 @@ public class ProgramSchedulingService : IProgramSchedulingService
     private readonly INumberSequenceService _numberSeq;
     private readonly IStageCostService _costService;
     private readonly IMachineProgramService _programService;
+    private readonly IProgramPlanningService _planningService;
     private readonly ISerialNumberService _serialNumberService;
     private readonly IDownstreamProgramService _downstreamService;
     private readonly ISchedulingRuleService _ruleService;
+    private readonly ISchedulingWeightsService _weightsService;
     private readonly ILogger<ProgramSchedulingService> _logger;
 
     public ProgramSchedulingService(
@@ -32,9 +34,11 @@ public class ProgramSchedulingService : IProgramSchedulingService
         INumberSequenceService numberSeq,
         IStageCostService costService,
         IMachineProgramService programService,
+        IProgramPlanningService planningService,
         ISerialNumberService serialNumberService,
         IDownstreamProgramService downstreamService,
         ISchedulingRuleService ruleService,
+        ISchedulingWeightsService weightsService,
         ILogger<ProgramSchedulingService> logger)
     {
         _db = db;
@@ -44,10 +48,34 @@ public class ProgramSchedulingService : IProgramSchedulingService
         _numberSeq = numberSeq;
         _costService = costService;
         _programService = programService;
+        _planningService = planningService;
         _serialNumberService = serialNumberService;
         _downstreamService = downstreamService;
         _ruleService = ruleService;
+        _weightsService = weightsService;
         _logger = logger;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // Shared Helpers
+    // ══════════════════════════════════════════════════════════
+
+    private async Task<List<OperatingShift>> GetActiveShiftsAsync()
+    {
+        return await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+    }
+
+    private static void ValidateBuildPlateForScheduling(MachineProgram program, bool requireParts = false)
+    {
+        if (program.ProgramType != ProgramType.BuildPlate)
+            throw new InvalidOperationException("Only BuildPlate programs can be scheduled as builds.");
+
+        if (!program.EstimatedPrintHours.HasValue || program.EstimatedPrintHours <= 0)
+            throw new InvalidOperationException("Enter slicer data (print duration) before scheduling.");
+
+        if (requireParts && !program.ProgramParts.Any())
+            throw new InvalidOperationException("Add at least one part to the build plate before scheduling.");
+
     }
 
     // ══════════════════════════════════════════════════════════
@@ -62,64 +90,49 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .FirstOrDefaultAsync(p => p.Id == machineProgramId)
             ?? throw new InvalidOperationException("Machine program not found.");
 
-        if (program.ProgramType != ProgramType.BuildPlate)
-            throw new InvalidOperationException("Only BuildPlate programs can be scheduled as builds.");
+        ValidateBuildPlateForScheduling(program, requireParts: true);
 
-        if (!program.EstimatedPrintHours.HasValue || program.EstimatedPrintHours <= 0)
-            throw new InvalidOperationException("Enter slicer data (print duration) before scheduling.");
-
-        if (!program.ProgramParts.Any())
-            throw new InvalidOperationException("Add at least one part to the build plate before scheduling.");
-
-        // ── Guard: prevent rescheduling a build that is actively printing or in post-print ──
-        if (program.ScheduleStatus == ProgramScheduleStatus.Printing)
-            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is currently printing. End the print first.");
-        if (program.ScheduleStatus == ProgramScheduleStatus.PostPrint)
-            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is in post-print processing.");
-        if (program.ScheduleStatus == ProgramScheduleStatus.Completed)
-            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is already completed.");
-
-        // ── Reschedule: clean up existing job if this program was already scheduled ──
+        // ── Multi-run support: only clean up previous job if it hasn't started ──
         if (program.ScheduledJobId.HasValue)
         {
-            var oldJobId = program.ScheduledJobId.Value;
-
-            // Delete per-part jobs that were created for this program's previous schedule
-            // Per-part job notes use format: "Post-build processing: ... (program {ProgramNumber})"
-            var programRef = $"(program {program.ProgramNumber ?? program.Name})";
-            var perPartJobs = await _db.Jobs
-                .Where(j => j.Notes != null && j.Notes.Contains(programRef) && j.Id != oldJobId)
-                .ToListAsync();
-
-            // Delete old stage executions for the build job
-            var oldExecutions = await _db.StageExecutions
-                .Where(se => se.JobId == oldJobId)
-                .ToListAsync();
-            _db.StageExecutions.RemoveRange(oldExecutions);
-
-            // Delete per-part job stage executions and the jobs themselves
-            if (perPartJobs.Any())
+            var oldJob = await _db.Jobs.FindAsync(program.ScheduledJobId.Value);
+            if (oldJob != null && (oldJob.Status == JobStatus.Draft || oldJob.Status == JobStatus.Scheduled))
             {
-                var oldPerPartJobIds = perPartJobs.Select(j => j.Id).ToList();
-                var perPartExecutions = await _db.StageExecutions
-                    .Where(se => se.JobId != null && oldPerPartJobIds.Contains(se.JobId.Value))
-                    .ToListAsync();
-                _db.StageExecutions.RemoveRange(perPartExecutions);
-                _db.Jobs.RemoveRange(perPartJobs);
-            }
+                var oldJobId = oldJob.Id;
 
-            // Delete the old build job
-            var oldJob = await _db.Jobs.FindAsync(oldJobId);
-            if (oldJob != null)
+                // Delete per-part jobs that were created for this program's previous schedule
+                var programRef = $"(program {program.ProgramNumber ?? program.Name})";
+                var perPartJobs = await _db.Jobs
+                    .Where(j => j.Notes != null && j.Notes.Contains(programRef) && j.Id != oldJobId
+                        && (j.Status == JobStatus.Draft || j.Status == JobStatus.Scheduled))
+                    .ToListAsync();
+
+                // Delete old stage executions for the build job
+                var oldExecutions = await _db.StageExecutions
+                    .Where(se => se.JobId == oldJobId)
+                    .ToListAsync();
+                _db.StageExecutions.RemoveRange(oldExecutions);
+
+                // Delete per-part job stage executions and the jobs themselves
+                if (perPartJobs.Any())
+                {
+                    var oldPerPartJobIds = perPartJobs.Select(j => j.Id).ToList();
+                    var perPartExecutions = await _db.StageExecutions
+                        .Where(se => se.JobId != null && oldPerPartJobIds.Contains(se.JobId.Value))
+                        .ToListAsync();
+                    _db.StageExecutions.RemoveRange(perPartExecutions);
+                    _db.Jobs.RemoveRange(perPartJobs);
+                }
+
                 _db.Jobs.Remove(oldJob);
 
-            // Clear the program's scheduling state so it can be re-scheduled fresh
-            program.ScheduledJobId = null;
-            program.ScheduledDate = null;
-            program.ScheduleStatus = ProgramScheduleStatus.None;
-            program.IsLocked = false;
-            program.PredecessorProgramId = null;
-            await _db.SaveChangesAsync();
+                program.ScheduledJobId = null;
+                program.ScheduledDate = null;
+                program.ScheduleStatus = ProgramScheduleStatus.None;
+                program.IsLocked = false;
+                program.PredecessorProgramId = null;
+                await _db.SaveChangesAsync();
+            }
         }
 
         // Validate downstream program readiness
@@ -240,7 +253,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .Where(m => m.IsActive)
             .ToDictionaryAsync(m => m.MachineId, m => m.Id);
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
         var totalPartCount = program.TotalPartCount;
         var currentStart = slot.PrintEnd;
 
@@ -389,19 +402,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .FirstOrDefaultAsync(p => p.Id == machineProgramId)
             ?? throw new InvalidOperationException("Machine program not found.");
 
-        if (program.ProgramType != ProgramType.BuildPlate)
-            throw new InvalidOperationException("Only BuildPlate programs can be scheduled as builds.");
-
-        if (!program.EstimatedPrintHours.HasValue || program.EstimatedPrintHours <= 0)
-            throw new InvalidOperationException("Enter slicer data (print duration) before scheduling.");
-
-        // Guard: prevent rescheduling active builds (same check as ScheduleBuildPlateAsync)
-        if (program.ScheduleStatus == ProgramScheduleStatus.Printing)
-            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is currently printing.");
-        if (program.ScheduleStatus == ProgramScheduleStatus.PostPrint)
-            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is in post-print processing.");
-        if (program.ScheduleStatus == ProgramScheduleStatus.Completed)
-            throw new InvalidOperationException($"Cannot reschedule '{program.Name ?? program.ProgramNumber}' — it is already completed.");
+        ValidateBuildPlateForScheduling(program);
 
         var notBefore = startAfter ?? DateTime.UtcNow;
         var bestSlot = await FindBestSlotAsync(program.EstimatedPrintHours.Value, notBefore, machineType: "SLS");
@@ -475,15 +476,15 @@ public class ProgramSchedulingService : IProgramSchedulingService
         int machineProgramId, int machineId, DateTime? startAfter = null)
     {
         var source = await _db.MachinePrograms
-            .Include(p => p.ProgramParts)
             .FirstOrDefaultAsync(p => p.Id == machineProgramId)
             ?? throw new InvalidOperationException("Machine program not found.");
 
         if (!source.HasSlicerData)
             throw new InvalidOperationException("Slicer data must be entered before scheduling a run.");
 
-        // Create a copy of the program for this run
-        var copy = await CreateScheduledCopyAsync(machineProgramId, "Scheduler");
+        // Create a scheduled copy so the source program stays available for future runs.
+        // Each copy is a separate print run tracked via SourceProgramId.
+        var copy = await _planningService.CreateScheduledCopyAsync(machineProgramId, "Scheduler");
 
         return await ScheduleBuildPlateAsync(copy.Id, machineId, startAfter);
     }
@@ -498,7 +499,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         if (!source.HasSlicerData)
             throw new InvalidOperationException("Slicer data must be entered before scheduling a run.");
 
-        var copy = await CreateScheduledCopyAsync(machineProgramId, "Scheduler");
+        // Create a scheduled copy first, then find the best slot and schedule it.
+        var copy = await _planningService.CreateScheduledCopyAsync(machineProgramId, "Scheduler");
 
         var notBefore = startAfter ?? DateTime.UtcNow;
         var bestSlot = await FindBestSlotAsync(copy.EstimatedPrintHours!.Value, notBefore, machineType: "SLS");
@@ -563,7 +565,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var executions = new List<StageExecution>();
         var currentStart = notBefore;
         var sortOrder = 0;
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
 
         if (process?.Stages.Any() == true)
         {
@@ -927,7 +929,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var machine = await _db.Machines.FindAsync(machineId)
             ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
         var isContinuous = machine.AutoChangeoverEnabled;
 
         // Query program-based executions — exclude the program being rescheduled
@@ -1265,7 +1267,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
         var plateCapacity = machine.BuildPlateCapacity;
-        var timelineShifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var timelineShifts = await GetActiveShiftsAsync();
         var entries = new List<ProgramTimelineEntry>();
         var consecutiveOffShift = 0;
 
@@ -1340,7 +1342,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
             .OrderBy(p => p.ScheduledDate)
             .ToListAsync();
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
 
         foreach (var prog in orphanPrograms)
         {
@@ -1378,7 +1380,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var machine = await _db.Machines.FindAsync(machineId)
             ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
+        var weights = await _weightsService.GetWeightsAsync();
         var options = new List<ScheduleOption>();
 
         // Collect stack levels to evaluate
@@ -1399,7 +1402,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         {
             // Option 1: Earliest available slot
             var slot = await FindEarliestSlotAsync(machineId, duration, notBefore);
-            var score = ComputeOptionScore(slot, duration, level, partsPerBuild, demandQuantity, shifts, machine);
+            var score = ComputeOptionScore(slot, duration, level, partsPerBuild, demandQuantity, shifts, machine, weights);
 
             options.Add(new ScheduleOption(
                 Label: level == 1 ? "Earliest (Single)" : level == 2 ? "Earliest (Double Stack)" : "Earliest (Triple Stack)",
@@ -1418,8 +1421,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 var aligned = await FindShiftAlignedSlotAsync(machineId, duration, notBefore, shifts, machine);
                 if (aligned != null)
                 {
-                    var alignedScore = ComputeOptionScore(aligned, duration, level, partsPerBuild, demandQuantity, shifts, machine);
-                    alignedScore += 15; // Bonus for being aligned
+                    var alignedScore = ComputeOptionScore(aligned, duration, level, partsPerBuild, demandQuantity, shifts, machine, weights);
+                    alignedScore += weights.ShiftAlignedBonus; // Bonus for being aligned
 
                     options.Add(new ScheduleOption(
                         Label: level == 1 ? "Shift-Aligned (Single)" : level == 2 ? "Shift-Aligned (Double)" : "Shift-Aligned (Triple)",
@@ -1482,37 +1485,36 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
     private int ComputeOptionScore(ProgramScheduleSlot slot, double durationHours,
         int stackLevel, int partsPerBuild, int demandQuantity,
-        List<OperatingShift> shifts, Machine machine)
+        List<OperatingShift> shifts, Machine machine, SchedulingWeights w)
     {
-        var score = 50; // Base score
+        var score = w.BaseScore;
 
-        // Changeover alignment: +30 if operator available
+        // Changeover alignment bonus if operator available
         if (slot.OperatorAvailableForChangeover)
-            score += 30;
+            score += w.ChangeoverAlignmentBonus;
 
         // Downtime penalty: penalize options that cause machine downtime
-        // Cost = downtimeHours * ~3 points per hour (weekend = ~36h downtime = -108 pts, capped)
         if (!slot.OperatorAvailableForChangeover && slot.DowntimeStart.HasValue && slot.DowntimeEnd.HasValue)
         {
             var downtimeHours = (slot.DowntimeEnd.Value - slot.DowntimeStart.Value).TotalHours;
-            score -= Math.Min((int)(downtimeHours * 3), 40); // Cap at -40 to avoid always negative
+            score -= Math.Min((int)(downtimeHours * w.DowntimePenaltyPerHour), w.MaxDowntimePenalty);
         }
 
-        // Earliness: +20 if starts within 4 hours, scales down
+        // Earliness bonus, scales down with distance
         var hoursFromNow = (slot.PrintStart - DateTime.UtcNow).TotalHours;
-        if (hoursFromNow < 4) score += 20;
-        else if (hoursFromNow < 24) score += 10;
+        if (hoursFromNow < 4) score += w.EarlinessBonus4h;
+        else if (hoursFromNow < 24) score += w.EarlinessBonus24h;
 
         // Demand fit: penalty if parts per build > remaining demand (overproduction)
         if (demandQuantity > 0 && partsPerBuild > demandQuantity)
         {
             var overproduction = (double)(partsPerBuild - demandQuantity) / partsPerBuild;
-            score -= (int)(overproduction * 20); // Up to -20 for 100% overproduction
+            score -= (int)(overproduction * w.OverproductionPenaltyMax);
         }
 
-        // Weekend optimization: bonus if a longer build spans the weekend cleanly
+        // Weekend optimization bonus
         if (IsWeekendOptimal(slot, shifts))
-            score += 25;
+            score += w.WeekendOptimizationBonus;
 
         return Math.Clamp(score, 0, 100);
     }
@@ -1534,7 +1536,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var machine = await _db.Machines.FindAsync(machineId)
             ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
 
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
         var suggestions = new List<BuildSequenceSuggestion>();
 
@@ -1656,7 +1658,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
         if (!operatorAvailable)
         {
-            var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+            var shifts = await GetActiveShiftsAsync();
             var plateCapacity = machine.BuildPlateCapacity;
 
             // Count consecutive off-shift changeovers preceding this one
@@ -1715,7 +1717,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
             return [];
 
         var timeline = await GetMachineTimelineAsync(machineId, from, to);
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
         var conflicts = new List<ProgramChangeoverConflict>();
 
         for (int i = 0; i < timeline.Count - 1; i++)
@@ -1921,63 +1923,6 @@ public class ProgramSchedulingService : IProgramSchedulingService
     // Private Helpers
     // ══════════════════════════════════════════════════════════
 
-    private async Task<MachineProgram> CreateScheduledCopyAsync(int sourceProgramId, string createdBy)
-    {
-        var source = await _db.MachinePrograms
-            .Include(p => p.ProgramParts)
-            .FirstOrDefaultAsync(p => p.Id == sourceProgramId)
-            ?? throw new InvalidOperationException("Source program not found.");
-
-        var copy = new MachineProgram
-        {
-            ProgramType = source.ProgramType,
-            PartId = source.PartId,
-            MachineId = source.MachineId,
-            MachineType = source.MachineType,
-            ProgramNumber = $"{source.ProgramNumber}-RUN",
-            Name = $"{source.Name} (Run)",
-            Description = source.Description,
-            Version = source.Version,
-            Status = ProgramStatus.Active,
-            ScheduleStatus = ProgramScheduleStatus.Ready,
-            EstimatedPrintHours = source.EstimatedPrintHours,
-            LayerCount = source.LayerCount,
-            BuildHeightMm = source.BuildHeightMm,
-            EstimatedPowderKg = source.EstimatedPowderKg,
-            SlicerFileName = source.SlicerFileName,
-            SlicerSoftware = source.SlicerSoftware,
-            SlicerVersion = source.SlicerVersion,
-            PartPositionsJson = source.PartPositionsJson,
-            MaterialId = source.MaterialId,
-            DepowderProgramId = source.DepowderProgramId,
-            EdmProgramId = source.EdmProgramId,
-            SourceProgramId = sourceProgramId,
-            CreatedBy = createdBy,
-            LastModifiedBy = createdBy,
-            CreatedDate = DateTime.UtcNow,
-            LastModifiedDate = DateTime.UtcNow
-        };
-
-        _db.MachinePrograms.Add(copy);
-        await _db.SaveChangesAsync();
-
-        // Copy program parts — do NOT copy WorkOrderLineId since each scheduled run
-        // gets its own WO fulfillment links via LinkProgramPartsToWorkOrdersAsync
-        foreach (var srcPart in source.ProgramParts)
-        {
-            _db.ProgramParts.Add(new ProgramPart
-            {
-                MachineProgramId = copy.Id,
-                PartId = srcPart.PartId,
-                Quantity = srcPart.Quantity,
-                StackLevel = srcPart.StackLevel,
-                PositionNotes = srcPart.PositionNotes
-            });
-        }
-
-        await _db.SaveChangesAsync();
-        return copy;
-    }
 
     private async Task<List<int>> CreateProgramPartJobsAsync(
         MachineProgram program,
@@ -2143,7 +2088,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
     private async Task<bool> IsOperatorAvailableDuringWindowAsync(DateTime windowStart, DateTime windowEnd)
     {
-        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+        var shifts = await GetActiveShiftsAsync();
         return ShiftTimeHelper.IsWithinShiftWindow(windowStart, windowEnd, shifts);
     }
 

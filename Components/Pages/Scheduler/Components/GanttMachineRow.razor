@@ -59,26 +59,78 @@
             var start = first.ScheduledStartAt ?? first.Job?.ScheduledStart ?? DataRangeStart;
             var end = last.ScheduledEndAt ?? last.Job?.ScheduledEnd ?? start.AddHours(first.EstimatedHours ?? 4);
             var partList = string.Join(", ", group.Select(e => e.Job?.Part?.PartNumber ?? "?").Distinct());
-            <GanttBuildGroupBar FirstExec="first"
-                BarLeftPx="GetBarLeftPx(start)"
-                BarWidthPx="GetBarWidthPx(start, end)"
-                Start="start" End="end"
-                PartList="@partList"
-                IsSelected="SelectedExecIds.Contains(first.Id)"
-                OnClick="OnBarClick" />
+            var segments = GetBarSegments(start, end);
+            @if (segments.Count <= 1)
+            {
+                <GanttBuildGroupBar FirstExec="first"
+                    BarLeftPx="GetBarLeftPx(start)"
+                    BarWidthPx="GetBarWidthPx(start, end)"
+                    Start="start" End="end"
+                    PartList="@partList"
+                    IsSelected="SelectedExecIds.Contains(first.Id)"
+                    OnClick="OnBarClick" />
+            }
+            else
+            {
+                @foreach (var seg in segments)
+                {
+                    @if (seg.IsWork)
+                    {
+                        <GanttBuildGroupBar FirstExec="first"
+                            BarLeftPx="GetBarLeftPx(seg.Start)"
+                            BarWidthPx="GetBarWidthPx(seg.Start, seg.End)"
+                            Start="seg.Start" End="seg.End"
+                            PartList="@partList"
+                            IsSelected="SelectedExecIds.Contains(first.Id)"
+                            OnClick="OnBarClick" />
+                    }
+                    else
+                    {
+                        <div class="gantt-bar-gap" style="left: @(FormatPx(GetBarLeftPx(seg.Start)))px; width: @(FormatPx(GetBarWidthPx(seg.Start, seg.End)))px;"></div>
+                    }
+                }
+            }
         }
         @foreach (var exec in individualExecs)
         {
             var start = exec.ScheduledStartAt ?? exec.Job?.ScheduledStart ?? DataRangeStart;
             var end = exec.ScheduledEndAt ?? exec.Job?.ScheduledEnd ?? start.AddHours(exec.EstimatedHours ?? 4);
             var isConflict = HasOverlap(exec);
-            <GanttBar Exec="exec"
-                BarLeftPx="GetBarLeftPx(start)"
-                BarWidthPx="GetBarWidthPx(start, end)"
-                Start="start" End="end"
-                IsConflict="isConflict"
-                IsSelected="SelectedExecIds.Contains(exec.Id)"
-                OnClick="OnBarClick" />
+            var segments = GetBarSegments(start, end);
+            @if (segments.Count <= 1)
+            {
+                <GanttBar Exec="exec"
+                    BarLeftPx="GetBarLeftPx(start)"
+                    BarWidthPx="GetBarWidthPx(start, end)"
+                    Start="start" End="end"
+                    IsConflict="isConflict"
+                    IsSelected="SelectedExecIds.Contains(exec.Id)"
+                    OnClick="OnBarClick"
+                    MachineShifts="MachineShifts"
+                    PixelsPerHour="PixelsPerHour" />
+            }
+            else
+            {
+                @foreach (var seg in segments)
+                {
+                    @if (seg.IsWork)
+                    {
+                        <GanttBar Exec="exec"
+                            BarLeftPx="GetBarLeftPx(seg.Start)"
+                            BarWidthPx="GetBarWidthPx(seg.Start, seg.End)"
+                            Start="seg.Start" End="seg.End"
+                            IsConflict="isConflict"
+                            IsSelected="SelectedExecIds.Contains(exec.Id)"
+                            OnClick="OnBarClick"
+                            MachineShifts="MachineShifts"
+                            PixelsPerHour="PixelsPerHour" />
+                    }
+                    else
+                    {
+                        <div class="gantt-bar-gap" style="left: @(FormatPx(GetBarLeftPx(seg.Start)))px; width: @(FormatPx(GetBarWidthPx(seg.Start, seg.End)))px;"></div>
+                    }
+                }
+            }
         }
         @* ── "+" zone for SLS machines ── *@
         @if (Machine.IsAdditiveMachine && OnNextBuildRequested.HasDelegate)
@@ -100,6 +152,7 @@
     [Parameter, EditorRequired] public List<StageExecution> Executions { get; set; } = [];
     [Parameter, EditorRequired] public DateTime DataRangeStart { get; set; }
     [Parameter, EditorRequired] public double PixelsPerHour { get; set; }
+    [Parameter] public List<(DateTime Start, DateTime End)> NonShiftPeriods { get; set; } = [];
     [Parameter] public EventCallback<StageExecution> OnBarClick { get; set; }
     [Parameter] public EventCallback<(MachineProgram Build, string Action)> OnBuildAction { get; set; }
     [Parameter] public List<MachineProgram> BuildPrograms { get; set; } = [];
@@ -107,12 +160,60 @@
     [Parameter] public HashSet<int> SelectedExecIds { get; set; } = [];
     [Parameter] public HashSet<int> SelectedBuildIds { get; set; } = [];
     [Parameter] public EventCallback<int> OnNextBuildRequested { get; set; }
+    [Parameter] public List<OperatingShift> MachineShifts { get; set; } = new();
+
+    private static string FormatPx(double value) =>
+        value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
 
     private double GetBarLeftPx(DateTime start) =>
         (start - DataRangeStart).TotalHours * PixelsPerHour;
 
     private double GetBarWidthPx(DateTime start, DateTime end) =>
         Math.Max(8, (end - start).TotalHours * PixelsPerHour);
+
+    /// <summary>
+    /// Splits a bar's time range into alternating work/gap segments at non-shift boundaries.
+    /// If the bar doesn't span any non-shift periods, returns a single work segment.
+    /// </summary>
+    private List<BarSegment> GetBarSegments(DateTime barStart, DateTime barEnd)
+    {
+        if (!NonShiftPeriods.Any())
+            return [new(barStart, barEnd, true)];
+
+        // Find non-shift gaps that overlap this bar's time range
+        var overlapping = NonShiftPeriods
+            .Where(g => g.Start < barEnd && g.End > barStart)
+            .OrderBy(g => g.Start)
+            .ToList();
+
+        if (!overlapping.Any())
+            return [new(barStart, barEnd, true)];
+
+        var segments = new List<BarSegment>();
+        var cursor = barStart;
+
+        foreach (var gap in overlapping)
+        {
+            var gapStart = gap.Start < barStart ? barStart : gap.Start;
+            var gapEnd = gap.End > barEnd ? barEnd : gap.End;
+
+            // Work segment before this gap
+            if (cursor < gapStart)
+                segments.Add(new(cursor, gapStart, true));
+
+            // Gap segment (non-working)
+            segments.Add(new(gapStart, gapEnd, false));
+            cursor = gapEnd;
+        }
+
+        // Work segment after last gap
+        if (cursor < barEnd)
+            segments.Add(new(cursor, barEnd, true));
+
+        return segments;
+    }
+
+    private record BarSegment(DateTime Start, DateTime End, bool IsWork);
 
     private DateTime GetLastScheduledEnd()
     {

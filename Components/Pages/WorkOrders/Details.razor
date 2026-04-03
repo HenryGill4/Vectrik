@@ -846,106 +846,107 @@ else
     private async Task PrintTraveler()
     {
         if (_order == null) return;
-        var template = await TemplateService.GetDefaultTemplateAsync("WorkOrder");
-        if (template == null)
+        try
         {
-            Toast.ShowError("No default traveler template configured. Go to Admin → Document Templates.");
-            return;
-        }
-
-        var linesHtml = "<table><thead><tr><th>Part</th><th>Process</th><th>Qty</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead><tbody>";
-        foreach (var l in _order.Lines)
-        {
-            var proc = l.Part?.ManufacturingProcess;
-            var procName = proc?.Name ?? "—";
-            var stagesSummary = proc?.Stages?.OrderBy(s => s.ExecutionOrder)
-                .Select(s => s.ProductionStage?.Name ?? $"Stage {s.ExecutionOrder}")
-                .ToList();
-            var procDetail = stagesSummary?.Count > 0
-                ? $"{procName}<br/><small style='color:#888;'>{string.Join(" → ", stagesSummary)}</small>"
-                : procName;
-            linesHtml += $"<tr><td>{l.Part?.PartNumber ?? "—"} — {l.Part?.Name ?? ""}</td><td>{procDetail}</td><td>{l.Quantity}</td><td>{l.ProducedQuantity}</td><td>{l.ShippedQuantity}</td><td>{l.Status}</td></tr>";
-        }
-        linesHtml += "</tbody></table>";
-
-        var routingHtml = "<table><thead><tr><th>#</th><th>Stage</th><th>Level</th><th>Setup</th><th>Run</th><th>Machine</th><th>Status</th><th>Operator</th><th>Date</th><th>Sign-off</th></tr></thead><tbody>";
-        var stageNum = 1;
-        foreach (var line in _order.Lines)
-        {
-            var proc = line.Part?.ManufacturingProcess;
-            if (proc != null)
+            var template = await TemplateService.GetDefaultTemplateAsync("WorkOrder");
+            if (template == null)
             {
-                routingHtml += $"<tr><td colspan='10' style='background:#f5f5f5; font-weight:bold; padding:6px;'>{line.Part?.PartNumber} — {proc.Name} ({proc.Stages?.Count ?? 0} stages)</td></tr>";
+                Toast.ShowError("No default traveler template configured. Go to Admin → Document Templates.");
+                return;
             }
 
-            foreach (var job in line.Jobs.OrderBy(j => j.Id))
+            var linesHtml = "<table><thead><tr><th>Part</th><th>Process</th><th>Qty</th><th>Produced</th><th>Shipped</th><th>Status</th></tr></thead><tbody>";
+            foreach (var l in _order.Lines)
             {
-                foreach (var stage in job.Stages.OrderBy(s => s.SortOrder))
+                var proc = l.Part?.ManufacturingProcess;
+                var procName = proc?.Name ?? "—";
+                var stagesSummary = proc?.Stages?.OrderBy(s => s.ExecutionOrder)
+                    .Select(s => s.ProductionStage?.Name ?? $"Stage {s.ExecutionOrder}")
+                    .ToList();
+                var procDetail = stagesSummary?.Count > 0
+                    ? $"{procName}<br/><small style='color:#888;'>{string.Join(" → ", stagesSummary)}</small>"
+                    : procName;
+                linesHtml += $"<tr><td>{l.Part?.PartNumber ?? "—"} — {l.Part?.Name ?? ""}</td><td>{procDetail}</td><td>{l.Quantity}</td><td>{l.ProducedQuantity}</td><td>{l.ShippedQuantity}</td><td>{l.Status}</td></tr>";
+            }
+            linesHtml += "</tbody></table>";
+
+            var routingHtml = "<table><thead><tr><th>#</th><th>Stage</th><th>Level</th><th>Setup</th><th>Run</th><th>Machine</th><th>Status</th><th>Operator</th><th>Date</th><th>Sign-off</th></tr></thead><tbody>";
+            var stageNum = 1;
+            foreach (var line in _order.Lines)
+            {
+                var proc = line.Part?.ManufacturingProcess;
+                if (proc != null)
                 {
-                    var ps = stage.ProcessStage;
-                    var level = ps?.ProcessingLevel.ToString() ?? "—";
-                    var setup = ps?.SetupTimeMinutes is {} stm ? $"{stm:F0}m" : "—";
-                    var run = ps?.RunTimeMinutes is {} rtm ? $"{rtm:F0}m" : "—";
-                    var machine = stage.Machine?.Name ?? ps?.AssignedMachine?.Name ?? "—";
+                    routingHtml += $"<tr><td colspan='10' style='background:#f5f5f5; font-weight:bold; padding:6px;'>{line.Part?.PartNumber} — {proc.Name} ({proc.Stages?.Count ?? 0} stages)</td></tr>";
+                }
 
-                    // Sign-off column: show signed-off status or blank line
-                    var signOffCell = stage.SignedOffAt.HasValue
-                        ? $"✓ {stage.SignedOffBy} ({stage.SignedOffAt?.ToString("MM/dd")})"
-                        : "<span class='sign-line'></span>";
-
-                    routingHtml += $"<tr><td>{stageNum++}</td><td>{stage.ProductionStage?.Name ?? "—"}</td><td>{level}</td><td>{setup}</td><td>{run}</td><td>{machine}</td><td>{stage.Status}</td><td>{stage.OperatorName ?? ""}</td><td>{stage.CompletedAt?.ToString("yyyy-MM-dd") ?? ""}</td><td>{signOffCell}</td></tr>";
-
-                    // Add work instruction sign-off checklist items as sub-rows
-                    var checklist = _signOffChecklists.GetValueOrDefault(stage.Id);
-                    if (checklist is { Count: > 0 })
+                foreach (var job in line.Jobs.OrderBy(j => j.Id))
+                {
+                    foreach (var stage in job.Stages.OrderBy(s => s.SortOrder))
                     {
-                        foreach (var item in checklist)
+                        var ps = stage.ProcessStage;
+                        var level = ps?.ProcessingLevel.ToString() ?? "—";
+                        var setup = ps?.SetupTimeMinutes is {} stm ? $"{stm:F0}m" : "—";
+                        var run = ps?.RunTimeMinutes is {} rtm ? $"{rtm:F0}m" : "—";
+                        var machine = stage.Machine?.Name ?? ps?.AssignedMachine?.Name ?? "—";
+
+                        // Sign-off column: show signed-off status or blank line
+                        var signOffCell = stage.SignedOffAt.HasValue
+                            ? $"✓ {stage.SignedOffBy} ({stage.SignedOffAt?.ToString("MM/dd")})"
+                            : "<span class='sign-line'></span>";
+
+                        routingHtml += $"<tr><td>{stageNum++}</td><td>{stage.ProductionStage?.Name ?? "—"}</td><td>{level}</td><td>{setup}</td><td>{run}</td><td>{machine}</td><td>{stage.Status}</td><td>{stage.OperatorName ?? ""}</td><td>{stage.CompletedAt?.ToString("yyyy-MM-dd") ?? ""}</td><td>{signOffCell}</td></tr>";
+
+                        // Add work instruction sign-off checklist items as sub-rows
+                        var checklist = _signOffChecklists.GetValueOrDefault(stage.Id);
+                        if (checklist is { Count: > 0 })
                         {
-                            var itemStatus = item.SignedOff
-                                ? $"✓ {item.SignedBy} ({item.SignedAt?.ToString("MM/dd HH:mm")})"
-                                : "<span class='sign-line'></span>";
-                            routingHtml += $"<tr><td></td><td colspan='8' style='padding-left:24px; font-size:0.85em; color:#555;'>☐ {item.Title}</td><td>{itemStatus}</td></tr>";
+                            foreach (var item in checklist)
+                            {
+                                var itemStatus = item.SignedOff
+                                    ? $"✓ {item.SignedBy} ({item.SignedAt?.ToString("MM/dd HH:mm")})"
+                                    : "<span class='sign-line'></span>";
+                                routingHtml += $"<tr><td></td><td colspan='8' style='padding-left:24px; font-size:0.85em; color:#555;'>☐ {item.Title}</td><td>{itemStatus}</td></tr>";
+                            }
                         }
                     }
                 }
-            }
 
-            // Fallback: show process stages when no jobs exist yet
-            if (!line.Jobs.Any() && proc?.Stages != null)
-            {
-                foreach (var ps in proc.Stages.OrderBy(s => s.ExecutionOrder))
+                // Fallback: show process stages when no jobs exist yet
+                if (!line.Jobs.Any() && proc?.Stages != null)
                 {
-                    var level = ps.ProcessingLevel.ToString();
-                    var setup = ps.SetupTimeMinutes is {} stm ? $"{stm:F0}m" : "—";
-                    var run = ps.RunTimeMinutes is {} rtm ? $"{rtm:F0}m" : "—";
-                    var machine = ps.AssignedMachine?.Name ?? "—";
-                    routingHtml += $"<tr><td>{stageNum++}</td><td>{ps.ProductionStage?.Name ?? $"Stage {ps.ExecutionOrder}"}</td><td>{level}</td><td>{setup}</td><td>{run}</td><td>{machine}</td><td>Pending</td><td></td><td></td><td><span class='sign-line'></span></td></tr>";
+                    foreach (var ps in proc.Stages.OrderBy(s => s.ExecutionOrder))
+                    {
+                        var level = ps.ProcessingLevel.ToString();
+                        var setup = ps.SetupTimeMinutes is {} stm ? $"{stm:F0}m" : "—";
+                        var run = ps.RunTimeMinutes is {} rtm ? $"{rtm:F0}m" : "—";
+                        var machine = ps.AssignedMachine?.Name ?? "—";
+                        routingHtml += $"<tr><td>{stageNum++}</td><td>{ps.ProductionStage?.Name ?? $"Stage {ps.ExecutionOrder}"}</td><td>{level}</td><td>{setup}</td><td>{run}</td><td>{machine}</td><td>Pending</td><td></td><td></td><td><span class='sign-line'></span></td></tr>";
+                    }
                 }
             }
-        }
-        routingHtml += "</tbody></table>";
+            routingHtml += "</tbody></table>";
 
-        var fields = new Dictionary<string, string>
-        {
-            ["OrderNumber"] = _order.OrderNumber,
-            ["CustomerName"] = _order.CustomerName,
-            ["CustomerPO"] = _order.CustomerPO ?? "—",
-            ["OrderDate"] = _order.OrderDate.ToString("yyyy-MM-dd"),
-            ["DueDate"] = _order.DueDate.ToString("yyyy-MM-dd"),
-            ["Priority"] = _order.Priority.ToString(),
-            ["Status"] = _order.Status.ToString(),
-            ["Notes"] = _order.Notes ?? "",
-            ["LinesTable"] = linesHtml,
-            ["RoutingTable"] = routingHtml
-        };
+            var fields = new Dictionary<string, string>
+            {
+                ["OrderNumber"] = _order.OrderNumber,
+                ["CustomerName"] = _order.CustomerName,
+                ["CustomerPO"] = _order.CustomerPO ?? "—",
+                ["OrderDate"] = _order.OrderDate.ToString("yyyy-MM-dd"),
+                ["DueDate"] = _order.DueDate.ToString("yyyy-MM-dd"),
+                ["Priority"] = _order.Priority.ToString(),
+                ["Status"] = _order.Status.ToString(),
+                ["Notes"] = _order.Notes ?? "",
+                ["LinesTable"] = linesHtml,
+                ["RoutingTable"] = routingHtml
+            };
 
-        var html = TemplateService.RenderHtml(template, fields);
-        try
-        {
+            var html = TemplateService.RenderHtml(template, fields);
             await JS.InvokeVoidAsync("vectrik.printHtml", html, $"Traveler {_order.OrderNumber}");
         }
         catch (TaskCanceledException) { }
         catch (JSDisconnectedException) { }
+        catch (Exception ex) { Toast.ShowError($"Failed to print traveler: {ex.Message}"); }
     }
 
     private static string GetBadge(WorkOrderStatus status) => status switch

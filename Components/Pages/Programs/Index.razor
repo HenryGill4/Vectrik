@@ -249,6 +249,7 @@ else
                                     ToolingItems="_toolingItems"
                                     ToolingAlerts="_toolingAlerts"
                                     ExecutionHistory="_executionHistory"
+                                    ProgramRuns="_programRuns"
                                     FeedbackList="_feedbackList"
                                     FeedbackFilter="_feedbackFilter"
                                     AdditiveParts="_additiveParts"
@@ -406,6 +407,9 @@ else
 
     // Learning
     private List<StageExecution> _executionHistory = new();
+
+    // Runs
+    private List<StageExecution> _programRuns = new();
 
     // Files
     private string? _uploadDescription;
@@ -569,6 +573,7 @@ else
         _toolingItems = await ProgramService.GetToolingItemsAsync(_selectedProgram.Id);
         _toolingAlerts = await ProgramService.CheckToolingReadinessAsync(_selectedProgram.Id);
         _executionHistory = await ProgramService.GetExecutionHistoryAsync(_selectedProgram.Id);
+        _programRuns = await ProgramService.GetProgramRunsAsync(_selectedProgram.Id);
         await LoadFeedback();
     }
 

@@ -26,6 +26,8 @@ public class RecentChangesTests : IDisposable
     public RecentChangesTests()
     {
         _db = TestDbContextFactory.Create();
+        var machineProgramService = new StubMachineProgramService();
+        var planningService = new ProgramPlanningService(_db, new StubNumberSequenceService(), machineProgramService);
         _sut = new ProgramSchedulingService(
             _db,
             new StubSchedulingService(),
@@ -33,10 +35,12 @@ public class RecentChangesTests : IDisposable
             new StubBatchService(),
             new StubNumberSequenceService(),
             new StubStageCostService(),
-            new StubMachineProgramService(),
+            machineProgramService,
+            planningService,
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
             new SchedulingRuleService(_db),
+            new SchedulingWeightsService(_db),
             NullLogger<ProgramSchedulingService>.Instance);
     }
 
@@ -485,6 +489,7 @@ public class RecentChangesTests : IDisposable
     public void ProgramSchedulingService_ConstructsWithNullLogger()
     {
         using var db = TestDbContextFactory.Create();
+        var stubProgSvc = new StubMachineProgramService();
         var svc = new ProgramSchedulingService(
             db,
             new StubSchedulingService(),
@@ -492,10 +497,12 @@ public class RecentChangesTests : IDisposable
             new StubBatchService(),
             new StubNumberSequenceService(),
             new StubStageCostService(),
-            new StubMachineProgramService(),
+            stubProgSvc,
+            new ProgramPlanningService(db, new StubNumberSequenceService(), stubProgSvc),
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
-            new SchedulingRuleService(_db),
+            new SchedulingRuleService(db),
+            new SchedulingWeightsService(db),
             NullLogger<ProgramSchedulingService>.Instance);
 
         Assert.NotNull(svc);
