@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vectrik.Data;
 
@@ -10,9 +11,11 @@ using Vectrik.Data;
 namespace Vectrik.Data.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    partial class TenantDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260403222750_AddSchedulingRuleWeight")]
+    partial class AddSchedulingRuleWeight
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.4");
@@ -4641,59 +4644,6 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.HasKey("Id");
 
                     b.ToTable("SavedReports");
-                });
-
-            modelBuilder.Entity("Vectrik.Models.SchedulingWeights", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("BaseScore")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ChangeoverAlignmentBonus")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("DowntimePenaltyPerHour")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EarlinessBonus24h")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EarlinessBonus4h")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("LastModifiedBy")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("LastModifiedDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("MaxDowntimePenalty")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("OverproductionPenaltyMax")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ShiftAlignedBonus")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StackChangeoverBonus")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StackDemandFitBonus")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<decimal>("StackEfficiencyMultiplier")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("WeekendOptimizationBonus")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("SchedulingWeights");
                 });
 
             modelBuilder.Entity("Vectrik.Models.SetupDispatch", b =>

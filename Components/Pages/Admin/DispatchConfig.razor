@@ -49,6 +49,13 @@ else
                        @onchange="(e) => OnThroughputWeightChanged(e)" />
                 <span class="dispatch-config-slider-hint">Maximize downstream throughput</span>
             </div>
+            <div class="dispatch-config-slider">
+                <label>Scheduling Rules: <strong>@($"{_globalConfig.SchedulingRuleWeight:F2}")</strong></label>
+                <input type="range" min="0" max="100" step="5"
+                       value="@((int)(_globalConfig.SchedulingRuleWeight * 100))"
+                       @onchange="(e) => OnSchedulingRuleWeightChanged(e)" />
+                <span class="dispatch-config-slider-hint">Penalize dispatches that violate machine scheduling rules (operator requirements, blackouts, consecutive limits)</span>
+            </div>
             <div class="dispatch-config-weight-sum @(_weightSum < 0.95m || _weightSum > 1.05m ? "dispatch-config-weight-warn" : "")">
                 Sum: @($"{_weightSum:F2}") @(_weightSum < 0.95m || _weightSum > 1.05m ? " (should be ~1.0)" : "")
             </div>
@@ -108,6 +115,7 @@ else
                     <th>Due Date</th>
                     <th>Changeover</th>
                     <th>Throughput</th>
+                    <th>Rules</th>
                     <th></th>
                 </tr>
             </thead>
@@ -122,6 +130,7 @@ else
                         <td>@($"{mc.DueDateWeight:F2}")</td>
                         <td>@($"{mc.ChangeoverPenaltyWeight:F2}")</td>
                         <td>@($"{mc.ThroughputWeight:F2}")</td>
+                        <td>@($"{mc.SchedulingRuleWeight:F2}")</td>
                         <td>
                             <button class="btn btn-xs btn-secondary" @onclick="() => EditMachineConfig(mc)">Edit</button>
                             <button class="btn btn-xs btn-danger" @onclick="() => DeleteMachineConfig(mc.Id)">Remove</button>
@@ -206,6 +215,11 @@ else
                     <label class="form-label">Throughput Weight</label>
                     <input type="number" class="form-control" step="0.05" min="0" max="1" @bind="_editingMachineConfig.ThroughputWeight" />
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Scheduling Rule Weight</label>
+                    <input type="number" class="form-control" step="0.05" min="0" max="1" @bind="_editingMachineConfig.SchedulingRuleWeight" />
+                    <span style="font-size: 0.78rem; color: var(--text-secondary);">Penalizes dispatches violating machine scheduling rules</span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @onclick="() => _editingMachineConfig = null">Cancel</button>
@@ -265,7 +279,8 @@ else
 
     private void UpdateWeightSum()
     {
-        _weightSum = _globalConfig.DueDateWeight + _globalConfig.ChangeoverPenaltyWeight + _globalConfig.ThroughputWeight;
+        _weightSum = _globalConfig.DueDateWeight + _globalConfig.ChangeoverPenaltyWeight
+            + _globalConfig.ThroughputWeight + _globalConfig.SchedulingRuleWeight;
     }
 
     private void OnDueDateWeightChanged(ChangeEventArgs e)
@@ -286,6 +301,12 @@ else
             SetWeight(nameof(_globalConfig.ThroughputWeight), v);
     }
 
+    private void OnSchedulingRuleWeightChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v))
+            SetWeight(nameof(_globalConfig.SchedulingRuleWeight), v);
+    }
+
     private void SetWeight(string prop, int pctValue)
     {
         var val = pctValue / 100m;
@@ -294,6 +315,7 @@ else
             case nameof(_globalConfig.DueDateWeight): _globalConfig.DueDateWeight = val; break;
             case nameof(_globalConfig.ChangeoverPenaltyWeight): _globalConfig.ChangeoverPenaltyWeight = val; break;
             case nameof(_globalConfig.ThroughputWeight): _globalConfig.ThroughputWeight = val; break;
+            case nameof(_globalConfig.SchedulingRuleWeight): _globalConfig.SchedulingRuleWeight = val; break;
         }
         UpdateWeightSum();
     }
@@ -343,6 +365,7 @@ else
             DueDateWeight = _globalConfig.DueDateWeight,
             ChangeoverPenaltyWeight = _globalConfig.ChangeoverPenaltyWeight,
             ThroughputWeight = _globalConfig.ThroughputWeight,
+            SchedulingRuleWeight = _globalConfig.SchedulingRuleWeight,
             MaxQueueDepth = _globalConfig.MaxQueueDepth,
             LookAheadHours = _globalConfig.LookAheadHours
         };

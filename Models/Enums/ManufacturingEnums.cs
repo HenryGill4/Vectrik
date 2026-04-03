@@ -288,3 +288,30 @@ public enum MachineSetupState
 {
     Unknown, SetUp, ChangingOver, AwaitingSetup, Running, MaintenanceDue, MaintenanceInProgress
 }
+
+/// <summary>
+/// Types of scheduling constraint rules that can be applied per-machine.
+/// Each rule type is enforced as a hard block in FindEarliestSlotAsync —
+/// the scheduler skips candidate slots that violate any enabled rule.
+/// </summary>
+public enum SchedulingRuleType
+{
+    /// <summary>
+    /// Block scheduling if the changeover window falls outside all operator shift windows.
+    /// Prevents builds from being scheduled when no operator is available to empty
+    /// the cooldown chamber, avoiding unplanned machine downtime.
+    /// </summary>
+    RequireOperatorForChangeover,
+
+    /// <summary>
+    /// Limit the number of consecutive builds on a machine before requiring a break.
+    /// After MaxConsecutiveBuilds, a gap of MinBreakHours is enforced for maintenance/inspection.
+    /// </summary>
+    MaxConsecutiveBuilds,
+
+    /// <summary>
+    /// Block scheduling during specific date ranges (holidays, planned shutdowns).
+    /// Uses shared BlackoutPeriod records assigned to the machine via MachineBlackoutAssignment.
+    /// </summary>
+    BlackoutPeriod
+}

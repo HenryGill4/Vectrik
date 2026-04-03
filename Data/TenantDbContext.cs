@@ -41,6 +41,9 @@ public class TenantDbContext : DbContext
     public DbSet<OperatingShift> OperatingShifts { get; set; }
     public DbSet<MachineShiftAssignment> MachineShiftAssignments { get; set; }
     public DbSet<UserShiftAssignment> UserShiftAssignments { get; set; }
+    public DbSet<MachineSchedulingRule> MachineSchedulingRules { get; set; }
+    public DbSet<BlackoutPeriod> BlackoutPeriods { get; set; }
+    public DbSet<MachineBlackoutAssignment> MachineBlackoutAssignments { get; set; }
 
     // Production Tracking
     public DbSet<StageExecution> StageExecutions { get; set; }
@@ -551,6 +554,26 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.MaintenanceRule)
                 .WithMany()
                 .HasForeignKey(e => e.MaintenanceRuleId);
+        });
+
+        // MachineSchedulingRule
+        modelBuilder.Entity<MachineSchedulingRule>(entity =>
+        {
+            entity.HasOne(e => e.Machine)
+                .WithMany(e => e.SchedulingRules)
+                .HasForeignKey(e => e.MachineId);
+        });
+
+        // MachineBlackoutAssignment (composite key join table)
+        modelBuilder.Entity<MachineBlackoutAssignment>(entity =>
+        {
+            entity.HasKey(e => new { e.MachineId, e.BlackoutPeriodId });
+            entity.HasOne(e => e.Machine)
+                .WithMany(e => e.BlackoutAssignments)
+                .HasForeignKey(e => e.MachineId);
+            entity.HasOne(e => e.BlackoutPeriod)
+                .WithMany(e => e.MachineAssignments)
+                .HasForeignKey(e => e.BlackoutPeriodId);
         });
 
         // CustomFieldConfig

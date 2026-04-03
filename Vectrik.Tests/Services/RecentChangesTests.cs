@@ -39,6 +39,7 @@ public class RecentChangesTests : IDisposable
             planningService,
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
+            new SchedulingRuleService(_db),
             new SchedulingWeightsService(_db),
             NullLogger<ProgramSchedulingService>.Instance);
     }
@@ -500,6 +501,7 @@ public class RecentChangesTests : IDisposable
             new ProgramPlanningService(db, new StubNumberSequenceService(), stubProgSvc),
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
+            new SchedulingRuleService(db),
             new SchedulingWeightsService(db),
             NullLogger<ProgramSchedulingService>.Instance);
 

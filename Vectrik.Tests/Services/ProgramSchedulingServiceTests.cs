@@ -36,6 +36,7 @@ public class ProgramSchedulingServiceTests : IDisposable
             new StubProgramPlanningService(),
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
+            new SchedulingRuleService(_db),
             new SchedulingWeightsService(_db),
             NullLogger<ProgramSchedulingService>.Instance);
     }
@@ -625,6 +626,7 @@ public class ProgramSchedulingServiceTests : IDisposable
             new StubProgramPlanningService(),
             new StubSerialNumberService(),
             failingDownstream,
+            new SchedulingRuleService(_db),
             new SchedulingWeightsService(_db),
             NullLogger<ProgramSchedulingService>.Instance);
 

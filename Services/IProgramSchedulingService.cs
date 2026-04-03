@@ -240,7 +240,13 @@ public record ProgramScheduleSlot(
     int MachineId,
     bool OperatorAvailableForChangeover,
     DateTime? DowntimeStart = null,
-    DateTime? DowntimeEnd = null);
+    DateTime? DowntimeEnd = null,
+    /// <summary>
+    /// Reasons why earlier candidate slots were blocked by scheduling rules.
+    /// Null if no rules were violated. Populated for UI to show the user
+    /// why the build was pushed later than the physical earliest slot.
+    /// </summary>
+    List<string>? BlockedReasons = null);
 
 /// <summary>
 /// Result of FindBestSlotAsync — wraps a ProgramScheduleSlot with the chosen machine info.

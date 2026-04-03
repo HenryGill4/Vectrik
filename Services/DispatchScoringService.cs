@@ -10,10 +10,12 @@ namespace Vectrik.Services;
 public class DispatchScoringService : IDispatchScoringService
 {
     private readonly TenantDbContext _db;
+    private readonly ISchedulingRuleService _ruleService;
 
-    public DispatchScoringService(TenantDbContext db)
+    public DispatchScoringService(TenantDbContext db, ISchedulingRuleService ruleService)
     {
         _db = db;
+        _ruleService = ruleService;
     }
 
     public async Task<DispatchScore> ScoreDispatchAsync(SetupDispatch dispatch)
@@ -23,15 +25,17 @@ public class DispatchScoringService : IDispatchScoringService
         var dueDateScore = await CalculateDueDateScoreAsync(dispatch);
         var changeoverScore = await CalculateChangeoverScoreAsync(dispatch);
         var throughputScore = await CalculateThroughputScoreAsync(dispatch);
+        var schedulingRuleScore = await CalculateSchedulingRuleScoreAsync(dispatch);
         var maintenanceModifier = await CalculateMaintenanceModifierAsync(dispatch, config);
 
         var weighted = (dueDateScore * config.DueDateWeight)
             + (changeoverScore * config.ChangeoverPenaltyWeight)
-            + (throughputScore * config.ThroughputWeight);
+            + (throughputScore * config.ThroughputWeight)
+            + (schedulingRuleScore * config.SchedulingRuleWeight);
 
         var finalScore = (int)Math.Clamp(weighted + maintenanceModifier, 0, 100);
 
-        var reason = BuildPriorityReason(finalScore, dueDateScore, changeoverScore, throughputScore, maintenanceModifier);
+        var reason = BuildPriorityReason(finalScore, dueDateScore, changeoverScore, throughputScore, schedulingRuleScore, maintenanceModifier);
 
         var breakdown = new
         {
@@ -41,6 +45,8 @@ public class DispatchScoringService : IDispatchScoringService
             changeoverWeight = config.ChangeoverPenaltyWeight,
             throughputScore,
             throughputWeight = config.ThroughputWeight,
+            schedulingRuleScore,
+            schedulingRuleWeight = config.SchedulingRuleWeight,
             maintenanceModifier,
             finalScore,
             calculatedAt = DateTime.UtcNow.ToString("o")
@@ -51,10 +57,12 @@ public class DispatchScoringService : IDispatchScoringService
             DueDateScore: dueDateScore,
             ChangeoverScore: changeoverScore,
             ThroughputScore: throughputScore,
+            SchedulingRuleScore: schedulingRuleScore,
             MaintenanceModifier: maintenanceModifier,
             DueDateWeight: config.DueDateWeight,
             ChangeoverWeight: config.ChangeoverPenaltyWeight,
             ThroughputWeight: config.ThroughputWeight,
+            SchedulingRuleWeight: config.SchedulingRuleWeight,
             PriorityReason: reason,
             ScoreBreakdownJson: JsonSerializer.Serialize(breakdown));
     }
@@ -254,6 +262,84 @@ public class DispatchScoringService : IDispatchScoringService
         return 0;
     }
 
+    // ── Scheduling Rule Score ─────────────────────────────────
+
+    /// <summary>
+    /// Scores how well a dispatch complies with the machine's scheduling rules.
+    /// 100 = fully compliant (no rules, or all rules satisfied).
+    /// 0 = violates critical rules (e.g., no operator for changeover during dispatch window).
+    /// </summary>
+    private async Task<int> CalculateSchedulingRuleScoreAsync(SetupDispatch dispatch)
+    {
+        var rules = await _ruleService.GetEnabledRulesForMachineAsync(dispatch.MachineId);
+        if (!rules.Any()) return 100; // No rules = fully compliant
+
+        var score = 100;
+        var machine = await _db.Machines.FindAsync(dispatch.MachineId);
+        if (machine == null) return 100;
+
+        foreach (var rule in rules)
+        {
+            switch (rule.RuleType)
+            {
+                case SchedulingRuleType.RequireOperatorForChangeover:
+                    // Check if dispatch's estimated completion falls within operator shift windows
+                    if (machine.AutoChangeoverEnabled && dispatch.ScheduledStartAt.HasValue)
+                    {
+                        var estimatedEnd = dispatch.ScheduledStartAt.Value
+                            .AddMinutes(dispatch.EstimatedSetupMinutes ?? 60);
+                        var changeoverEnd = estimatedEnd.AddMinutes(machine.ChangeoverMinutes);
+
+                        var shifts = await _db.OperatingShifts.Where(s => s.IsActive).ToListAsync();
+                        var operatorAvailable = ShiftTimeHelper.IsWithinShiftWindow(
+                            estimatedEnd, changeoverEnd, shifts);
+
+                        if (!operatorAvailable)
+                            score -= 40; // Heavy penalty: changeover without operator
+                    }
+                    break;
+
+                case SchedulingRuleType.MaxConsecutiveBuilds:
+                    if (rule.MaxConsecutiveBuilds.HasValue)
+                    {
+                        // Count recent consecutive dispatches on this machine
+                        var recentDispatches = await _db.SetupDispatches
+                            .Where(d => d.MachineId == dispatch.MachineId
+                                && d.Status != DispatchStatus.Cancelled
+                                && d.Status != DispatchStatus.Completed
+                                && d.Id != dispatch.Id)
+                            .CountAsync();
+
+                        if (recentDispatches >= rule.MaxConsecutiveBuilds.Value)
+                            score -= 30; // Moderate penalty: exceeding consecutive limit
+                        else if (recentDispatches >= rule.MaxConsecutiveBuilds.Value - 1)
+                            score -= 10; // Light penalty: approaching limit
+                    }
+                    break;
+
+                case SchedulingRuleType.BlackoutPeriod:
+                    if (dispatch.ScheduledStartAt.HasValue)
+                    {
+                        var estimatedEnd = dispatch.ScheduledStartAt.Value
+                            .AddMinutes(dispatch.EstimatedSetupMinutes ?? 60);
+                        var blackouts = await _ruleService.GetMachineBlackoutsAsync(dispatch.MachineId);
+
+                        foreach (var blackout in blackouts.Where(b => b.IsActive))
+                        {
+                            if (blackout.StartDate < estimatedEnd && blackout.EndDate > dispatch.ScheduledStartAt.Value)
+                            {
+                                score -= 50; // Severe penalty: overlaps blackout
+                                break;
+                            }
+                        }
+                    }
+                    break;
+            }
+        }
+
+        return Math.Max(0, score);
+    }
+
     // ── Helpers ────────────────────────────────────────────────
 
     private async Task<DispatchConfiguration> GetConfigForMachineAsync(int machineId)
@@ -268,13 +354,15 @@ public class DispatchScoringService : IDispatchScoringService
         return config ?? new DispatchConfiguration();
     }
 
-    private static string BuildPriorityReason(int final, int dueDate, int changeover, int throughput, int maintenance)
+    private static string BuildPriorityReason(int final, int dueDate, int changeover, int throughput, int ruleScore, int maintenance)
     {
         var parts = new List<string>();
         if (dueDate >= 80) parts.Add("urgent due date");
         if (changeover >= 80) parts.Add("minimal changeover");
         else if (changeover < 30) parts.Add("heavy changeover penalty");
         if (throughput >= 50) parts.Add("good throughput impact");
+        if (ruleScore < 50) parts.Add("scheduling rule violation");
+        else if (ruleScore >= 100) parts.Add("rule-compliant");
         if (maintenance < 0) parts.Add("maintenance conflict");
         else if (maintenance > 0) parts.Add("maintenance-friendly");
 

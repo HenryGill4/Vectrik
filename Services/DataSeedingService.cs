@@ -511,6 +511,76 @@ public class DataSeedingService : IDataSeedingService
         if (machinesAdded > 0 || machinesUpdated > 0)
             await db.SaveChangesAsync();
 
+        // ── Scheduling Rules: ensure SLS machines have the operator changeover rule ──
+        var slsMachines = await db.Machines
+            .Where(m => m.IsAdditiveMachine && m.AutoChangeoverEnabled)
+            .ToListAsync();
+
+        foreach (var slsMachine in slsMachines)
+        {
+            var hasOperatorRule = await db.MachineSchedulingRules
+                .AnyAsync(r => r.MachineId == slsMachine.Id
+                    && r.RuleType == SchedulingRuleType.RequireOperatorForChangeover);
+
+            if (!hasOperatorRule)
+            {
+                db.MachineSchedulingRules.Add(new MachineSchedulingRule
+                {
+                    MachineId = slsMachine.Id,
+                    RuleType = SchedulingRuleType.RequireOperatorForChangeover,
+                    Name = "Require Operator for Changeover",
+                    Description = "Prevents scheduling builds when no operator is on shift to empty the cooldown chamber. " +
+                                  "Without this rule, builds can be scheduled over weekends/nights causing machine downtime.",
+                    IsEnabled = true,
+                    CreatedBy = "System",
+                    LastModifiedBy = "System"
+                });
+
+                // Also add a disabled MaxConsecutiveBuilds template
+                var hasMaxBuildsRule = await db.MachineSchedulingRules
+                    .AnyAsync(r => r.MachineId == slsMachine.Id
+                        && r.RuleType == SchedulingRuleType.MaxConsecutiveBuilds);
+
+                if (!hasMaxBuildsRule)
+                {
+                    db.MachineSchedulingRules.Add(new MachineSchedulingRule
+                    {
+                        MachineId = slsMachine.Id,
+                        RuleType = SchedulingRuleType.MaxConsecutiveBuilds,
+                        Name = "Consecutive Build Limit",
+                        Description = "Limits back-to-back builds to allow for periodic maintenance or inspection. Disabled by default.",
+                        IsEnabled = false,
+                        MaxConsecutiveBuilds = 10,
+                        MinBreakHours = 2.0,
+                        CreatedBy = "System",
+                        LastModifiedBy = "System"
+                    });
+                }
+
+                // Also add a disabled BlackoutPeriod template
+                var hasBlackoutRule = await db.MachineSchedulingRules
+                    .AnyAsync(r => r.MachineId == slsMachine.Id
+                        && r.RuleType == SchedulingRuleType.BlackoutPeriod);
+
+                if (!hasBlackoutRule)
+                {
+                    db.MachineSchedulingRules.Add(new MachineSchedulingRule
+                    {
+                        MachineId = slsMachine.Id,
+                        RuleType = SchedulingRuleType.BlackoutPeriod,
+                        Name = "Blackout Period Enforcement",
+                        Description = "Blocks scheduling during assigned blackout periods (holidays, planned shutdowns). Enable and assign blackout dates.",
+                        IsEnabled = false,
+                        CreatedBy = "System",
+                        LastModifiedBy = "System"
+                    });
+                }
+            }
+        }
+
+        if (slsMachines.Any())
+            await db.SaveChangesAsync();
+
         // ── Production stages: add missing, update DefaultMachineId on existing ──
         var expectedStages = GetExpectedProductionStages();
         var existingStages = await db.ProductionStages.ToListAsync();
