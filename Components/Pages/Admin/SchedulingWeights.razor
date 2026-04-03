@@ -1,0 +1,196 @@
+@page "/admin/scheduling-weights"
+@using Vectrik.Services
+@using Vectrik.Models
+@inject ISchedulingWeightsService WeightsService
+@inject ToastService Toast
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+
+<PageTitle>Scheduling Weights - Vectrik</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Scheduling Algorithm Weights</h1>
+    <p class="page-subtitle">Tune how the SLS build scheduler and stack selector score scheduling options.</p>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading...</div>
+}
+else if (_weights != null)
+{
+    @* ── Build Scheduling Weights ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <h2 class="card-header">Build Scheduling Weights</h2>
+        <p class="sched-weights-desc">
+            Controls how the scheduler scores each candidate time slot when scheduling SLS builds.
+            Higher bonuses make that factor more influential in the recommendation.
+        </p>
+
+        <div class="sched-weights-grid">
+            <div class="sched-weights-slider">
+                <label>Base Score: <strong>@_weights.BaseScore</strong></label>
+                <input type="range" min="0" max="100" step="5"
+                       value="@_weights.BaseScore"
+                       @onchange="(e) => { _weights.BaseScore = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Starting score for every option before bonuses/penalties</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Changeover Alignment Bonus: <strong>+@_weights.ChangeoverAlignmentBonus</strong></label>
+                <input type="range" min="0" max="60" step="5"
+                       value="@_weights.ChangeoverAlignmentBonus"
+                       @onchange="(e) => { _weights.ChangeoverAlignmentBonus = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Bonus when operator is available for the changeover</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Downtime Penalty / Hour: <strong>-@_weights.DowntimePenaltyPerHour</strong></label>
+                <input type="range" min="0" max="10" step="1"
+                       value="@_weights.DowntimePenaltyPerHour"
+                       @onchange="(e) => { _weights.DowntimePenaltyPerHour = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Points deducted per hour of machine downtime caused</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Max Downtime Penalty: <strong>-@_weights.MaxDowntimePenalty</strong></label>
+                <input type="range" min="0" max="80" step="5"
+                       value="@_weights.MaxDowntimePenalty"
+                       @onchange="(e) => { _weights.MaxDowntimePenalty = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Cap on total downtime penalty (prevents runaway negative scores)</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Earliness Bonus (&lt;4h): <strong>+@_weights.EarlinessBonus4h</strong></label>
+                <input type="range" min="0" max="40" step="5"
+                       value="@_weights.EarlinessBonus4h"
+                       @onchange="(e) => { _weights.EarlinessBonus4h = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Bonus when build can start within 4 hours</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Earliness Bonus (&lt;24h): <strong>+@_weights.EarlinessBonus24h</strong></label>
+                <input type="range" min="0" max="30" step="5"
+                       value="@_weights.EarlinessBonus24h"
+                       @onchange="(e) => { _weights.EarlinessBonus24h = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Bonus when build can start within 24 hours</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Overproduction Penalty Max: <strong>-@_weights.OverproductionPenaltyMax</strong></label>
+                <input type="range" min="0" max="40" step="5"
+                       value="@_weights.OverproductionPenaltyMax"
+                       @onchange="(e) => { _weights.OverproductionPenaltyMax = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Max penalty when build produces more parts than demanded</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Weekend Optimization Bonus: <strong>+@_weights.WeekendOptimizationBonus</strong></label>
+                <input type="range" min="0" max="50" step="5"
+                       value="@_weights.WeekendOptimizationBonus"
+                       @onchange="(e) => { _weights.WeekendOptimizationBonus = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Bonus when a build spans the weekend cleanly</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Shift-Aligned Bonus: <strong>+@_weights.ShiftAlignedBonus</strong></label>
+                <input type="range" min="0" max="30" step="5"
+                       value="@_weights.ShiftAlignedBonus"
+                       @onchange="(e) => { _weights.ShiftAlignedBonus = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Extra bonus for options aligned to operator shift boundaries</span>
+            </div>
+        </div>
+    </div>
+
+    @* ── Stack Selection Weights ── *@
+    <div class="card" style="margin-bottom: 16px;">
+        <h2 class="card-header">Stack Selection Weights</h2>
+        <p class="sched-weights-desc">
+            Controls how the build advisor chooses between single, double, and triple stacking.
+        </p>
+
+        <div class="sched-weights-grid">
+            <div class="sched-weights-slider">
+                <label>Changeover Bonus: <strong>+@_weights.StackChangeoverBonus</strong></label>
+                <input type="range" min="0" max="60" step="5"
+                       value="@_weights.StackChangeoverBonus"
+                       @onchange="(e) => { _weights.StackChangeoverBonus = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Bonus for stack levels with changeover during operator hours</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Demand Fit Bonus: <strong>+@_weights.StackDemandFitBonus</strong></label>
+                <input type="range" min="0" max="60" step="5"
+                       value="@_weights.StackDemandFitBonus"
+                       @onchange="(e) => { _weights.StackDemandFitBonus = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Bonus for stack levels that match demand without overproduction</span>
+            </div>
+
+            <div class="sched-weights-slider">
+                <label>Efficiency Multiplier: <strong>@($"{_weights.StackEfficiencyMultiplier:F1}x")</strong></label>
+                <input type="range" min="0" max="20" step="1"
+                       value="@((int)_weights.StackEfficiencyMultiplier)"
+                       @onchange="(e) => { _weights.StackEfficiencyMultiplier = int.Parse(e.Value!.ToString()!); }" />
+                <span class="sched-weights-hint">Parts-per-hour multiplied by this value for efficiency score</span>
+            </div>
+        </div>
+    </div>
+
+    @* ── Actions ── *@
+    <div class="sched-weights-actions">
+        <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+            @if (_saving) { <span class="spinner-sm"></span> } Save Weights
+        </button>
+        <button class="btn btn-secondary" @onclick="ResetAsync" disabled="@_saving">
+            Reset to Defaults
+        </button>
+    </div>
+}
+
+@code {
+    private Models.SchedulingWeights? _weights;
+    private bool _loading = true;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _weights = await WeightsService.GetWeightsAsync();
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_weights == null) return;
+        _saving = true;
+        try
+        {
+            await WeightsService.UpdateWeightsAsync(_weights);
+            Toast.ShowSuccess("Scheduling weights saved.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        _saving = true;
+        try
+        {
+            _weights = await WeightsService.ResetToDefaultsAsync();
+            Toast.ShowSuccess("Weights reset to defaults.");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to reset: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}
