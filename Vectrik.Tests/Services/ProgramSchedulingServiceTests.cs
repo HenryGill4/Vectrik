@@ -36,6 +36,7 @@ public class ProgramSchedulingServiceTests : IDisposable
             new StubProgramPlanningService(),
             new StubSerialNumberService(),
             new StubDownstreamProgramService(),
+            new SchedulingWeightsService(_db),
             NullLogger<ProgramSchedulingService>.Instance);
     }
 
@@ -624,6 +625,7 @@ public class ProgramSchedulingServiceTests : IDisposable
             new StubProgramPlanningService(),
             new StubSerialNumberService(),
             failingDownstream,
+            new SchedulingWeightsService(_db),
             NullLogger<ProgramSchedulingService>.Instance);
 
         var machine = await AddSlsMachineAsync("M4-DS", "Downstream Machine");

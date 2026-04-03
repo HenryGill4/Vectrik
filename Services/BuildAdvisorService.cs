@@ -10,15 +10,18 @@ public class BuildAdvisorService : IBuildAdvisorService
     private readonly TenantDbContext _db;
     private readonly IProgramSchedulingService _programScheduling;
     private readonly IShiftManagementService _shiftService;
+    private readonly ISchedulingWeightsService _weightsService;
 
     public BuildAdvisorService(
         TenantDbContext db,
         IProgramSchedulingService programScheduling,
-        IShiftManagementService shiftService)
+        IShiftManagementService shiftService,
+        ISchedulingWeightsService weightsService)
     {
         _db = db;
         _programScheduling = programScheduling;
         _shiftService = shiftService;
+        _weightsService = weightsService;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -123,6 +126,7 @@ public class BuildAdvisorService : IBuildAdvisorService
             maxPartTypes = configuredMax;
 
         var shifts = await _shiftService.GetEffectiveShiftsForMachineAsync(machineId);
+        var weights = await _weightsService.GetWeightsAsync();
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
 
         // Filter to additive parts with build config and remaining demand
@@ -154,7 +158,7 @@ public class BuildAdvisorService : IBuildAdvisorService
         var primaryConfig = primary.BuildConfig!;
 
         // Select stack level based on changeover alignment
-        var bestLevel = SelectStackLevel(primaryConfig, slotStart, changeoverMinutes, shifts, primary.NetRemaining);
+        var bestLevel = SelectStackLevel(primaryConfig, slotStart, changeoverMinutes, shifts, primary.NetRemaining, weights);
         var primaryDuration = primaryConfig.GetStackDuration(bestLevel) ?? primaryConfig.SingleStackDurationHours ?? 24;
         var primaryPositions = primaryConfig.GetPositionsPerBuild(bestLevel);
 
@@ -462,7 +466,8 @@ public class BuildAdvisorService : IBuildAdvisorService
     /// </summary>
     private static int SelectStackLevel(
         PartAdditiveBuildConfig config, DateTime slotStart,
-        double changeoverMinutes, List<OperatingShift> shifts, int netRemaining)
+        double changeoverMinutes, List<OperatingShift> shifts, int netRemaining,
+        SchedulingWeights w)
     {
         var levels = config.AvailableStackLevels;
         if (levels.Count <= 1) return 1;
@@ -480,23 +485,23 @@ public class BuildAdvisorService : IBuildAdvisorService
             var buildEnd = slotStart.AddHours(duration.Value);
             var changeoverEnd = buildEnd.AddMinutes(changeoverMinutes);
 
-            // Changeover alignment: +30 if operator is available (matches ProgramSchedulingService scoring)
+            // Changeover alignment bonus if operator is available
             if (changeoverMinutes <= 0 || ShiftTimeHelper.IsWithinShiftWindow(buildEnd, changeoverEnd, shifts))
-                score += 30;
+                score += w.StackChangeoverBonus;
 
-            // Demand fit: +30 if parts per build <= remaining (no overproduction)
+            // Demand fit bonus if parts per build <= remaining (no overproduction)
             if (partsPerBuild.Value <= netRemaining)
-                score += 30;
+                score += w.StackDemandFitBonus;
             else
             {
                 // Penalize overproduction proportionally
                 var overPct = (double)(partsPerBuild.Value - netRemaining) / partsPerBuild.Value;
-                score += (int)(30 * (1 - overPct));
+                score += (int)(w.StackDemandFitBonus * (1 - overPct));
             }
 
-            // Efficiency: +20 for higher parts-per-hour
+            // Efficiency: parts-per-hour scaled by multiplier
             var pph = partsPerBuild.Value / duration.Value;
-            score += (int)(pph * 5); // Rough scaling
+            score += (int)(pph * (double)w.StackEfficiencyMultiplier);
 
             if (score > bestScore)
             {

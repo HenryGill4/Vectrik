@@ -22,6 +22,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
     private readonly IProgramPlanningService _planningService;
     private readonly ISerialNumberService _serialNumberService;
     private readonly IDownstreamProgramService _downstreamService;
+    private readonly ISchedulingWeightsService _weightsService;
     private readonly ILogger<ProgramSchedulingService> _logger;
 
     public ProgramSchedulingService(
@@ -35,6 +36,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         IProgramPlanningService planningService,
         ISerialNumberService serialNumberService,
         IDownstreamProgramService downstreamService,
+        ISchedulingWeightsService weightsService,
         ILogger<ProgramSchedulingService> logger)
     {
         _db = db;
@@ -47,6 +49,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         _planningService = planningService;
         _serialNumberService = serialNumberService;
         _downstreamService = downstreamService;
+        _weightsService = weightsService;
         _logger = logger;
     }
 
@@ -1257,6 +1260,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
             ?? throw new InvalidOperationException($"Machine '{machineId}' not found.");
 
         var shifts = await GetActiveShiftsAsync();
+        var weights = await _weightsService.GetWeightsAsync();
         var options = new List<ScheduleOption>();
 
         // Collect stack levels to evaluate
@@ -1277,7 +1281,7 @@ public class ProgramSchedulingService : IProgramSchedulingService
         {
             // Option 1: Earliest available slot
             var slot = await FindEarliestSlotAsync(machineId, duration, notBefore);
-            var score = ComputeOptionScore(slot, duration, level, partsPerBuild, demandQuantity, shifts, machine);
+            var score = ComputeOptionScore(slot, duration, level, partsPerBuild, demandQuantity, shifts, machine, weights);
 
             options.Add(new ScheduleOption(
                 Label: level == 1 ? "Earliest (Single)" : level == 2 ? "Earliest (Double Stack)" : "Earliest (Triple Stack)",
@@ -1296,8 +1300,8 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 var aligned = await FindShiftAlignedSlotAsync(machineId, duration, notBefore, shifts, machine);
                 if (aligned != null)
                 {
-                    var alignedScore = ComputeOptionScore(aligned, duration, level, partsPerBuild, demandQuantity, shifts, machine);
-                    alignedScore += 15; // Bonus for being aligned
+                    var alignedScore = ComputeOptionScore(aligned, duration, level, partsPerBuild, demandQuantity, shifts, machine, weights);
+                    alignedScore += weights.ShiftAlignedBonus; // Bonus for being aligned
 
                     options.Add(new ScheduleOption(
                         Label: level == 1 ? "Shift-Aligned (Single)" : level == 2 ? "Shift-Aligned (Double)" : "Shift-Aligned (Triple)",
@@ -1360,37 +1364,36 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
     private int ComputeOptionScore(ProgramScheduleSlot slot, double durationHours,
         int stackLevel, int partsPerBuild, int demandQuantity,
-        List<OperatingShift> shifts, Machine machine)
+        List<OperatingShift> shifts, Machine machine, SchedulingWeights w)
     {
-        var score = 50; // Base score
+        var score = w.BaseScore;
 
-        // Changeover alignment: +30 if operator available
+        // Changeover alignment bonus if operator available
         if (slot.OperatorAvailableForChangeover)
-            score += 30;
+            score += w.ChangeoverAlignmentBonus;
 
         // Downtime penalty: penalize options that cause machine downtime
-        // Cost = downtimeHours * ~3 points per hour (weekend = ~36h downtime = -108 pts, capped)
         if (!slot.OperatorAvailableForChangeover && slot.DowntimeStart.HasValue && slot.DowntimeEnd.HasValue)
         {
             var downtimeHours = (slot.DowntimeEnd.Value - slot.DowntimeStart.Value).TotalHours;
-            score -= Math.Min((int)(downtimeHours * 3), 40); // Cap at -40 to avoid always negative
+            score -= Math.Min((int)(downtimeHours * w.DowntimePenaltyPerHour), w.MaxDowntimePenalty);
         }
 
-        // Earliness: +20 if starts within 4 hours, scales down
+        // Earliness bonus, scales down with distance
         var hoursFromNow = (slot.PrintStart - DateTime.UtcNow).TotalHours;
-        if (hoursFromNow < 4) score += 20;
-        else if (hoursFromNow < 24) score += 10;
+        if (hoursFromNow < 4) score += w.EarlinessBonus4h;
+        else if (hoursFromNow < 24) score += w.EarlinessBonus24h;
 
         // Demand fit: penalty if parts per build > remaining demand (overproduction)
         if (demandQuantity > 0 && partsPerBuild > demandQuantity)
         {
             var overproduction = (double)(partsPerBuild - demandQuantity) / partsPerBuild;
-            score -= (int)(overproduction * 20); // Up to -20 for 100% overproduction
+            score -= (int)(overproduction * w.OverproductionPenaltyMax);
         }
 
-        // Weekend optimization: bonus if a longer build spans the weekend cleanly
+        // Weekend optimization bonus
         if (IsWeekendOptimal(slot, shifts))
-            score += 25;
+            score += w.WeekendOptimizationBonus;
 
         return Math.Clamp(score, 0, 100);
     }
