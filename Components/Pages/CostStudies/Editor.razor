@@ -1,0 +1,792 @@
+@page "/cost-studies/{StudyId:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ICostStudyService Service
+@inject IPartService PartService
+@inject IMaterialService MaterialService
+@inject IStageService StageService
+@inject ToastService Toast
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using Vectrik.Models
+
+<PageTitle>@(_study?.Name ?? "Cost Study") - Vectrik</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }
+    </Authorized>
+</AuthorizeView>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading study…</div>
+}
+else if (_study is null)
+{
+    <div class="card"><p>Study not found. <a href="cost-studies">Back to list</a></p></div>
+}
+else
+{
+    var total = Service.ComputeStudyCost(_study);
+
+    <div class="page-header cost-study-header">
+        <div>
+            <button class="btn btn-icon btn-ghost" title="Back" @onclick="GoBack">←</button>
+            <h1 class="page-title" style="display:inline">@_study.Name</h1>
+            <span class="badge @StatusBadge(_study.Status)" style="margin-left:0.6rem">@_study.Status</span>
+            <span class="muted-small" style="margin-left:0.6rem">@_study.StudyNumber</span>
+        </div>
+        <div class="page-actions">
+            <select class="form-control" style="width:130px;display:inline-block" @bind="_study.Status" @bind:after="SaveHeader">
+                <option value="Draft">Draft</option>
+                <option value="Final">Final</option>
+                <option value="Archived">Archived</option>
+            </select>
+            <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="ExportCsv" title="Download CSV">📥 CSV</button>
+            <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="OpenReport">📄 Management Report</button>
+        </div>
+    </div>
+
+    @* ── Study header controls ── *@
+    <div class="card cost-study-config">
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:16px;">
+            <div class="form-group">
+                <label class="form-label">Study Name</label>
+                <input class="form-control" @bind="_study.Name" @bind:after="SaveHeader" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Customer</label>
+                <input class="form-control" @bind="_study.CustomerName" @bind:after="SaveHeader" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Project</label>
+                <input class="form-control" @bind="_study.ProjectName" @bind:after="SaveHeader" />
+            </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;">
+            <div class="form-group">
+                <label class="form-label">Target Margin %</label>
+                <input class="form-control" type="number" step="0.5" min="0" @bind="_study.TargetMarginPercent" @bind:after="SaveHeader" />
+                <div class="muted-small">Applied to cost/part to derive suggested sell price.</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Contingency %</label>
+                <input class="form-control" type="number" step="0.5" min="0" @bind="_study.ContingencyPercent" @bind:after="SaveHeader" />
+                <div class="muted-small">Risk buffer on total cost before margin.</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">G&amp;A Overhead %</label>
+                <input class="form-control" type="number" step="0.5" min="0" @bind="_study.AdminOverheadPercent" @bind:after="SaveHeader" />
+                <div class="muted-small">Administrative / corporate overhead.</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Vendor Margin %</label>
+                <input class="form-control" type="number" step="0.5" min="0" @bind="_study.DefaultVendorMarkupPercent" @bind:after="SaveHeader" />
+                <div class="muted-small">Default markup on external/outside ops when stage doesn't override.</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Payment Terms Disc %</label>
+                <input class="form-control" type="number" step="0.25" min="0" @bind="_study.PaymentTermsDiscountPercent" @bind:after="SaveHeader" />
+                <div class="muted-small">E.g. 2% net-10. Applied to sales price.</div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" rows="2" @bind="_study.Notes" @bind:after="SaveHeader"></textarea>
+        </div>
+    </div>
+
+    @* ── Study-level KPIs ── *@
+    <div class="kpi-grid cost-study-kpis" style="margin-top:1rem;margin-bottom:1rem">
+        <div class="kpi-card">
+            <div class="kpi-label">Parts Modeled</div>
+            <div class="kpi-value">@_study.Parts.Count</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Total Cost</div>
+            <div class="kpi-value">$@total.TotalCost.ToString("N2")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Suggested Total</div>
+            <div class="kpi-value" style="color:var(--accent)">$@total.SuggestedTotal.ToString("N2")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Margin</div>
+            <div class="kpi-value" style="color:@(total.TotalMargin >= 0 ? "var(--success)" : "var(--danger)")">
+                $@total.TotalMargin.ToString("N2") <span class="muted-small">(@total.MarginPercent.ToString("F1")%)</span>
+            </div>
+        </div>
+    </div>
+
+    @* ── Add-part bar ── *@
+    <div class="card cost-study-add-bar">
+        <strong>Add a part to model:</strong>
+        <button class="btn btn-primary" @onclick="ShowNewBlankPart">+ Blank Part</button>
+        <button class="btn btn-secondary" @onclick="ShowSeedPart">🔗 From Catalog</button>
+        <span class="muted-small">Hypothetical parts stay inside this study — they won't appear in production.</span>
+    </div>
+
+    @* ── Parts ── *@
+    @foreach (var p in _study.Parts.OrderBy(x => x.DisplayOrder))
+    {
+        var bd = Service.ComputePartCost(_study, p);
+        <div class="card cost-study-part" style="margin-top:1rem">
+            <div class="cost-study-part-header">
+                <div>
+                    <span class="part-number">@p.PartNumber</span>
+                    <strong style="margin-left:0.5rem">@p.Name</strong>
+                    @if (p.PartId.HasValue)
+                    { <span class="badge badge-info" style="margin-left:0.5rem">📎 Catalog</span> }
+                    else
+                    { <span class="badge badge-warning" style="margin-left:0.5rem">Hypothetical</span> }
+                </div>
+                <div class="cost-study-part-summary">
+                    <span><span class="muted-small">Cost/Part</span> <strong>$@bd.CostPerPart.ToString("N2")</strong></span>
+                    <span>
+                        <span class="muted-small">Sell/Part</span>
+                        <strong style="color:var(--accent)">$@bd.SalesPricePerPart.ToString("N2")</strong>
+                        @if (bd.SalesPriceIsOverride)
+                        { <span class="badge badge-info" style="margin-left:0.3rem">Override</span> }
+                    </span>
+                    <span><span class="muted-small">Qty</span> <strong>@p.OrderQuantity</strong></span>
+                    <span><span class="muted-small">Order $</span> <strong>$@bd.TotalOrderCost.ToString("N2")</strong></span>
+                    <span>
+                        <span class="muted-small">Margin</span>
+                        <strong style="color:@(bd.MarginAmount >= 0 ? "var(--success)" : "var(--danger)")">
+                            @bd.MarginPercent.ToString("F1")%
+                        </strong>
+                    </span>
+                    <button class="btn btn-sm btn-ghost" @onclick="() => TogglePart(p.Id)">@(_expandedParts.Contains(p.Id) ? "Collapse ▲" : "Expand ▼")</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => DeletePartAsync(p.Id)">🗑</button>
+                </div>
+            </div>
+
+            @if (_expandedParts.Contains(p.Id))
+            {
+                @* ── Part fields ── *@
+                <div class="cost-study-part-fields">
+                    <div class="form-group">
+                        <label class="form-label">Part #</label>
+                        <input class="form-control" @bind="p.PartNumber" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Name</label>
+                        <input class="form-control" @bind="p.Name" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Order Quantity</label>
+                        <input class="form-control" type="number" min="1" @bind="p.OrderQuantity" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Material</label>
+                        <select class="form-control" @bind="p.MaterialId" @bind:after="() => OnMaterialChange(p)">
+                            <option value="">— Custom —</option>
+                            @foreach (var m in _materials)
+                            {
+                                <option value="@m.Id">@m.Name (@m.CostPerKg.ToString("C"))/kg</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Material Name (custom)</label>
+                        <input class="form-control" @bind="p.MaterialName" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">$/kg</label>
+                        <input class="form-control" type="number" step="0.01" min="0" @bind="p.MaterialCostPerKg" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Weight/Part (kg)</label>
+                        <input class="form-control" type="number" step="0.0001" min="0" @bind="p.WeightPerPartKg" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Scrap %</label>
+                        <input class="form-control" type="number" step="0.5" min="0" @bind="p.MaterialScrapPercent" @bind:after="() => SavePart(p)" />
+                    </div>
+                </div>
+
+                <div class="cost-study-section-label">
+                    <label class="toggle">
+                        <input type="checkbox" @bind="p.IsAdditive" @bind:after="() => SavePart(p)" />
+                        SLS / Additive Build (per-plate slicer data)
+                    </label>
+                </div>
+
+                @if (p.IsAdditive)
+                {
+                    <div class="cost-study-part-fields">
+                        <div class="form-group">
+                            <label class="form-label">Parts / Plate</label>
+                            <input class="form-control" type="number" min="1" @bind="p.PartsPerPlate" @bind:after="() => SavePart(p)" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Build Hours (from slicer)</label>
+                            <input class="form-control" type="number" step="0.1" min="0" @bind="p.PlateBuildHours" @bind:after="() => SavePart(p)" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Stack Level</label>
+                            <input class="form-control" type="number" min="1" max="3" @bind="p.StackLevel" @bind:after="() => SavePart(p)" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Machine $/hr</label>
+                            <input class="form-control" type="number" step="0.01" min="0" @bind="p.MachineHourlyRate" @bind:after="() => SavePart(p)" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Consumables/Plate ($)</label>
+                            <input class="form-control" type="number" step="0.01" min="0" @bind="p.ConsumablesPerPlate" @bind:after="() => SavePart(p)" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Notes</label>
+                            <input class="form-control" @bind="p.Notes" @bind:after="() => SavePart(p)" />
+                        </div>
+                    </div>
+                    <div class="cost-study-calc-row">
+                        <span>Raw material: <strong>$@p.EffectiveMaterialCostPerPart.ToString("N2")</strong>/part</span>
+                        <span>SLS build share: <strong>$@p.SlsBuildCostPerPart.ToString("N2")</strong>/part (@(p.PartsPerPlate > 0 ? $"{p.PlateBuildHours:F1}h / {p.PartsPerPlate} parts" : "—"))</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="cost-study-calc-row">
+                        <span>Raw material: <strong>$@p.EffectiveMaterialCostPerPart.ToString("N2")</strong>/part</span>
+                    </div>
+                }
+
+                @* ── Stages ── *@
+                <div class="cost-study-stages-header">
+                    <h4>Manufacturing Stages <span class="muted-small">(@p.Stages.Count)</span></h4>
+                    <div>
+                        <button class="btn btn-sm btn-primary" @onclick="() => ShowAddStage(p.Id, false)">+ Custom Stage</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => ShowAddStage(p.Id, true)">🔗 From Catalog</button>
+                    </div>
+                </div>
+
+                @if (p.Stages.Count == 0)
+                {
+                    <div class="empty-inline">No stages yet. Add custom times or pull from the production-stage catalog.</div>
+                }
+                else
+                {
+                    <table class="data-table cost-stage-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Stage</th>
+                                <th title="Setup (min)">Setup</th>
+                                <th title="Minutes per part">min/pc</th>
+                                <th title="Fixed minutes per batch run (e.g. heat treat)">Batch min</th>
+                                <th title="Batch size (parts per run)">Batch sz</th>
+                                <th>$/hr</th>
+                                <th title="Number of operators">Ops</th>
+                                <th title="Overhead % on time cost">OH%</th>
+                                <th title="Per-part material/consumables cost">Mat $/pc</th>
+                                <th title="Tooling cost per batch run">Tool/run</th>
+                                <th title="External vendor cost per part">Ext $/pc</th>
+                                <th title="Yield %">Yld%</th>
+                                <th>Stage Cost</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in p.Stages.OrderBy(x => x.DisplayOrder))
+                            {
+                                var sc = bd.Stages.FirstOrDefault(x => x.StageId == s.Id);
+                                <tr>
+                                    <td>@s.DisplayOrder</td>
+                                    <td>
+                                        <input class="form-control form-control-sm" @bind="s.StageName" @bind:after="() => SaveStage(s)" style="min-width:160px" />
+                                        @if (!string.IsNullOrEmpty(s.Category))
+                                        { <div class="muted-small">@s.Category</div> }
+                                    </td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="1" min="0" @bind="s.SetupMinutes" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="0.1" min="0" @bind="s.MinutesPerPart" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="1" min="0" @bind="s.BatchMinutes" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" min="1" @bind="s.BatchSize" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="0.01" min="0" @bind="s.HourlyRate" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" min="1" @bind="s.OperatorCount" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="0.5" min="0" @bind="s.OverheadPercent" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="0.01" min="0" @bind="s.MaterialCostPerPart" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="0.01" min="0" @bind="s.ToolingCostPerRun" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="0.01" min="0" @bind="s.ExternalVendorCostPerPart" @bind:after="() => SaveStage(s)" /></td>
+                                    <td><input class="form-control form-control-sm compact-num" type="number" step="1" min="0" max="100" @bind="s.YieldPercent" @bind:after="() => SaveStage(s)" /></td>
+                                    <td class="stage-cost-cell">
+                                        <strong>$@(sc?.TotalCost.ToString("N2") ?? "0.00")</strong>
+                                        <div class="muted-small">$@(sc?.CostPerPart.ToString("N2") ?? "0.00")/pc · @((sc?.TotalMinutes ?? 0).ToString("F0")) min</div>
+                                    </td>
+                                    <td style="white-space:nowrap">
+                                        <button class="btn btn-sm btn-ghost" title="Move up" @onclick="() => MoveStageUp(p, s)">▲</button>
+                                        <button class="btn btn-sm btn-ghost" title="Move down" @onclick="() => MoveStageDown(p, s)">▼</button>
+                                        <button class="btn btn-sm btn-danger" title="Delete" @onclick="() => DeleteStageAsync(s.Id)">🗑</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+
+                @* ── NRE / Setup ── *@
+                <div class="cost-study-section-label">Setup &amp; NRE (one-time order charges)</div>
+                <div class="cost-study-part-fields">
+                    <div class="form-group">
+                        <label class="form-label">Engineering / Programming NRE ($)</label>
+                        <input class="form-control" type="number" step="0.01" min="0" @bind="p.EngineeringNreCost" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tooling / Fixture NRE ($)</label>
+                        <input class="form-control" type="number" step="0.01" min="0" @bind="p.ToolingNreCost" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">FAI / CoC / Cert Cost ($)</label>
+                        <input class="form-control" type="number" step="0.01" min="0" @bind="p.FirstArticleAndCertCost" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" @bind="p.AmortizeNreAcrossOrder" @bind:after="() => SavePart(p)" />
+                            Amortize across order
+                        </label>
+                        <div class="muted-small">If off, NRE is tracked but kept out of per-part cost (billed separately).</div>
+                    </div>
+                </div>
+
+                @* ── Packaging & Freight ── *@
+                <div class="cost-study-section-label">Packaging &amp; Freight</div>
+                <div class="cost-study-part-fields">
+                    <div class="form-group">
+                        <label class="form-label">Packaging $ / Part</label>
+                        <input class="form-control" type="number" step="0.01" min="0" @bind="p.PackagingCostPerPart" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Packaging $ / Order</label>
+                        <input class="form-control" type="number" step="0.01" min="0" @bind="p.PackagingCostPerOrder" @bind:after="() => SavePart(p)" />
+                        <div class="muted-small">Crate, pallet, dunnage.</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Freight $ / Order</label>
+                        <input class="form-control" type="number" step="0.01" min="0" @bind="p.FreightCostPerOrder" @bind:after="() => SavePart(p)" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Freight Markup %</label>
+                        <input class="form-control" type="number" step="0.5" min="0" @bind="p.FreightMarkupPercent" @bind:after="() => SavePart(p)" />
+                    </div>
+                </div>
+
+                @* ── Sales Price ── *@
+                <div class="cost-study-section-label">Sales Price</div>
+                <div class="cost-study-part-fields">
+                    <div class="form-group">
+                        <label class="form-label">Computed Sell / Part (margin-based)</label>
+                        <input class="form-control" type="text" readonly value="@($"${bd.ComputedSellPricePerPart:N2}")" />
+                        <div class="muted-small">Cost/part × (1 + @_study.TargetMarginPercent%).</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Sales Price Override ($ / Part)</label>
+                        <input class="form-control" type="number" step="0.01" min="0" placeholder="Leave blank to use computed" @bind="p.SalesPriceOverridePerPart" @bind:after="() => SavePart(p)" />
+                        <div class="muted-small">Negotiated or contracted price, if different.</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Effective Sell / Part</label>
+                        <input class="form-control" type="text" readonly value="@($"${bd.SalesPricePerPart:N2}")" style="@(bd.SalesPriceIsOverride ? "color: var(--accent); font-weight: 600;" : "")" />
+                        <div class="muted-small">@(bd.SalesPriceIsOverride ? "Using override." : "Using computed.")</div>
+                    </div>
+                </div>
+
+                @* ── Part cost roll-up ── *@
+                <div class="cost-study-rollup">
+                    <div class="rollup-line">SLS build (× @p.OrderQuantity): <strong>$@((bd.SlsBuildCostPerPart * p.OrderQuantity).ToString("N2"))</strong></div>
+                    <div class="rollup-line">Raw material (× @p.OrderQuantity): <strong>$@((bd.RawMaterialCostPerPart * p.OrderQuantity).ToString("N2"))</strong></div>
+                    <div class="rollup-line">Stage costs: <strong>$@bd.StageCostSubtotal.ToString("N2")</strong></div>
+                    @if (bd.NreCostTotal > 0)
+                    {
+                        <div class="rollup-line">
+                            Setup / NRE @(bd.NreAmortized ? "(amortized)" : "(billed separately)"):
+                            <strong>$@bd.NreCostTotal.ToString("N2")</strong>
+                        </div>
+                    }
+                    @if (bd.PackagingCostTotal > 0)
+                    { <div class="rollup-line">Packaging: <strong>$@bd.PackagingCostTotal.ToString("N2")</strong></div> }
+                    @if (bd.FreightCostTotal > 0)
+                    { <div class="rollup-line">Freight (+@p.FreightMarkupPercent%): <strong>$@bd.FreightCostTotal.ToString("N2")</strong></div> }
+                    <div class="rollup-line muted-small">— Subtotal before overheads: $@bd.OrderCostBeforeOverheads.ToString("N2") —</div>
+                    <div class="rollup-line">+ Contingency (@_study.ContingencyPercent%): <strong>$@bd.ContingencyAmount.ToString("N2")</strong></div>
+                    <div class="rollup-line">+ G&amp;A (@_study.AdminOverheadPercent%): <strong>$@bd.AdminOverheadAmount.ToString("N2")</strong></div>
+                    <div class="rollup-line rollup-total">Total order cost: <strong>$@bd.TotalOrderCost.ToString("N2")</strong> · cost/part $@bd.CostPerPart.ToString("N2")</div>
+                    <div class="rollup-line rollup-sell">
+                        Order price (@(bd.SalesPriceIsOverride ? "override" : $"{_study.TargetMarginPercent}% margin")):
+                        <strong>$@bd.SuggestedOrderPrice.ToString("N2")</strong>
+                        @if (_study.PaymentTermsDiscountPercent > 0)
+                        {
+                            <span class="muted-small"> − @(_study.PaymentTermsDiscountPercent)% terms ($@bd.PaymentTermsDiscountAmount.ToString("N2"))</span>
+                            <span> = net <strong>$@bd.NetOrderPrice.ToString("N2")</strong></span>
+                        }
+                        ·
+                        <span style="color:@(bd.MarginAmount >= 0 ? "var(--success)" : "var(--danger)")">
+                            margin $@bd.MarginAmount.ToString("N2") (@bd.MarginPercent.ToString("F1")%)
+                        </span>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@* ── Modals ── *@
+@if (_showNewPartModal)
+{
+    <div class="modal-overlay" @onclick="CloseNewPart">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width:560px;">
+            <div class="modal-header"><h3>Add Hypothetical Part</h3><button class="modal-close" @onclick="CloseNewPart">✕</button></div>
+            <div class="modal-body">
+                <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;">
+                    <div class="form-group">
+                        <label class="form-label">Part # <span style="color:var(--danger)">*</span></label>
+                        <input class="form-control" @bind="_newPart.PartNumber" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Name <span style="color:var(--danger)">*</span></label>
+                        <input class="form-control" @bind="_newPart.Name" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" rows="2" @bind="_newPart.Description"></textarea>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div class="form-group">
+                        <label class="form-label">Order Quantity</label>
+                        <input class="form-control" type="number" min="1" @bind="_newPart.OrderQuantity" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" @bind="_newPart.IsAdditive" /> SLS / Additive
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseNewPart">Cancel</button>
+                <button class="btn btn-primary" @onclick="AddPartAsync" disabled="@(string.IsNullOrWhiteSpace(_newPart.PartNumber) || string.IsNullOrWhiteSpace(_newPart.Name))">Add Part</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showSeedPartModal)
+{
+    <div class="modal-overlay" @onclick="CloseSeed">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width:560px;">
+            <div class="modal-header"><h3>Add Part From Catalog</h3><button class="modal-close" @onclick="CloseSeed">✕</button></div>
+            <div class="modal-body">
+                <input type="text" class="form-control" placeholder="Filter parts…" @bind="_partFilter" @bind:event="oninput" />
+                <div class="part-seed-list">
+                    @foreach (var p in FilteredCatalogParts())
+                    {
+                        <button class="part-seed-row" @onclick="() => SeedPartAsync(p.Id)">
+                            <span class="part-number">@p.PartNumber</span>
+                            <span>@p.Name</span>
+                            @if (p.MaterialEntity is not null)
+                            { <span class="muted-small">@p.MaterialEntity.Name</span> }
+                        </button>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" @onclick="CloseSeed">Close</button></div>
+        </div>
+    </div>
+}
+
+@if (_showAddStageModal)
+{
+    <div class="modal-overlay" @onclick="CloseAddStage">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width:520px;">
+            <div class="modal-header"><h3>@(_addStageFromCatalog ? "Add Stage From Catalog" : "Add Custom Stage")</h3><button class="modal-close" @onclick="CloseAddStage">✕</button></div>
+            <div class="modal-body">
+                @if (_addStageFromCatalog)
+                {
+                    <div class="part-seed-list">
+                        @foreach (var st in _stages)
+                        {
+                            <button class="part-seed-row" @onclick="() => AddStageFromCatalogAsync(st.Id)">
+                                <span class="stage-color-dot" style="background:@st.StageColor"></span>
+                                <span><strong>@st.Name</strong></span>
+                                @if (!string.IsNullOrEmpty(st.Department))
+                                { <span class="muted-small">@st.Department</span> }
+                                <span class="muted-small">@st.DefaultSetupMinutes min setup · @st.DefaultHourlyRate.ToString("C")/hr</span>
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="form-group">
+                        <label class="form-label">Stage Name <span style="color:var(--danger)">*</span></label>
+                        <input class="form-control" @bind="_newStageName" placeholder="e.g. Tumble Deburr, Passivation, Custom Finish" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Category (optional)</label>
+                        <input class="form-control" @bind="_newStageCategory" placeholder="e.g. Finishing, External, QC" />
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div class="form-group">
+                            <label class="form-label">Setup Minutes</label>
+                            <input class="form-control" type="number" min="0" @bind="_newStageSetup" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Minutes per part</label>
+                            <input class="form-control" type="number" step="0.1" min="0" @bind="_newStageMinPer" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">$/hr</label>
+                            <input class="form-control" type="number" step="0.01" min="0" @bind="_newStageRate" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Material $/part</label>
+                            <input class="form-control" type="number" step="0.01" min="0" @bind="_newStageMat" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" @bind="_newStageExternal" /> External / Outsourced
+                        </label>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseAddStage">Cancel</button>
+                @if (!_addStageFromCatalog)
+                {
+                    <button class="btn btn-primary" @onclick="AddCustomStageAsync" disabled="@string.IsNullOrWhiteSpace(_newStageName)">Add Stage</button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int StudyId { get; set; }
+
+    private CostStudy? _study;
+    private bool _loading = true;
+    private string _currentUser = "System";
+
+    private List<Part> _catalogParts = new();
+    private List<Material> _materials = new();
+    private List<ProductionStage> _stages = new();
+
+    private readonly HashSet<int> _expandedParts = new();
+
+    // New-part modal
+    private bool _showNewPartModal;
+    private CostStudyPart _newPart = new();
+
+    // Seed-part modal
+    private bool _showSeedPartModal;
+    private string _partFilter = "";
+
+    // Add-stage modal
+    private bool _showAddStageModal;
+    private bool _addStageFromCatalog;
+    private int _addStageForPartId;
+    private string _newStageName = "";
+    private string _newStageCategory = "";
+    private double _newStageSetup;
+    private double _newStageMinPer;
+    private decimal _newStageRate = 85m;
+    private decimal _newStageMat;
+    private bool _newStageExternal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _study = await Service.GetByIdAsync(StudyId);
+            if (_study is not null)
+            {
+                foreach (var p in _study.Parts) _expandedParts.Add(p.Id);
+            }
+            _catalogParts = await PartService.GetAllPartsAsync(activeOnly: true);
+            _materials = await MaterialService.GetAllMaterialsAsync(activeOnly: true);
+            _stages = await StageService.GetAllStagesAsync(activeOnly: true);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task ReloadStudyAsync()
+    {
+        _study = await Service.GetByIdAsync(StudyId);
+        StateHasChanged();
+    }
+
+    private async Task SaveHeader()
+    {
+        if (_study is null) return;
+        await Service.UpdateAsync(_study, _currentUser);
+    }
+
+    private async Task SavePart(CostStudyPart p)
+    {
+        await Service.UpdatePartAsync(p, _currentUser);
+    }
+
+    private async Task OnMaterialChange(CostStudyPart p)
+    {
+        if (p.MaterialId.HasValue)
+        {
+            var mat = _materials.FirstOrDefault(m => m.Id == p.MaterialId);
+            if (mat is not null)
+            {
+                p.MaterialName = mat.Name;
+                p.MaterialCostPerKg = mat.CostPerKg;
+            }
+        }
+        await SavePart(p);
+    }
+
+    private async Task SaveStage(CostStudyStage s)
+    {
+        await Service.UpdateStageAsync(s, _currentUser);
+    }
+
+    private void TogglePart(int partId)
+    {
+        if (!_expandedParts.Add(partId)) _expandedParts.Remove(partId);
+    }
+
+    // ── New Part ──
+    private void ShowNewBlankPart()
+    {
+        _newPart = new CostStudyPart { OrderQuantity = 1, IsAdditive = true, MaterialScrapPercent = 5, MachineHourlyRate = 200m };
+        _showNewPartModal = true;
+    }
+    private void CloseNewPart() => _showNewPartModal = false;
+
+    private async Task AddPartAsync()
+    {
+        if (_study is null) return;
+        if (string.IsNullOrWhiteSpace(_newPart.PartNumber) || string.IsNullOrWhiteSpace(_newPart.Name)) return;
+        var added = await Service.AddPartAsync(_study.Id, _newPart, _currentUser);
+        _showNewPartModal = false;
+        await ReloadStudyAsync();
+        _expandedParts.Add(added.Id);
+    }
+
+    // ── Seed From Catalog ──
+    private void ShowSeedPart() { _partFilter = ""; _showSeedPartModal = true; }
+    private void CloseSeed() => _showSeedPartModal = false;
+    private IEnumerable<Part> FilteredCatalogParts()
+    {
+        if (string.IsNullOrWhiteSpace(_partFilter)) return _catalogParts.Take(100);
+        var f = _partFilter.Trim();
+        return _catalogParts.Where(p =>
+            p.PartNumber.Contains(f, StringComparison.OrdinalIgnoreCase) ||
+            p.Name.Contains(f, StringComparison.OrdinalIgnoreCase)).Take(100);
+    }
+    private async Task SeedPartAsync(int partId)
+    {
+        if (_study is null) return;
+        var added = await Service.SeedPartFromCatalogAsync(_study.Id, partId, _currentUser);
+        if (added is not null)
+        {
+            _expandedParts.Add(added.Id);
+            Toast.ShowSuccess($"Seeded {added.PartNumber} from catalog.");
+        }
+        _showSeedPartModal = false;
+        await ReloadStudyAsync();
+    }
+
+    // ── Delete part ──
+    private async Task DeletePartAsync(int partId)
+    {
+        await Service.DeletePartAsync(partId, _currentUser);
+        _expandedParts.Remove(partId);
+        await ReloadStudyAsync();
+    }
+
+    // ── Stages ──
+    private void ShowAddStage(int partId, bool fromCatalog)
+    {
+        _addStageForPartId = partId;
+        _addStageFromCatalog = fromCatalog;
+        _newStageName = ""; _newStageCategory = ""; _newStageSetup = 0;
+        _newStageMinPer = 0; _newStageRate = 85m; _newStageMat = 0; _newStageExternal = false;
+        _showAddStageModal = true;
+    }
+    private void CloseAddStage() => _showAddStageModal = false;
+
+    private async Task AddCustomStageAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newStageName)) return;
+        var stage = new CostStudyStage
+        {
+            StageName = _newStageName,
+            Category = string.IsNullOrWhiteSpace(_newStageCategory) ? null : _newStageCategory,
+            SetupMinutes = _newStageSetup,
+            MinutesPerPart = _newStageMinPer,
+            HourlyRate = _newStageRate,
+            MaterialCostPerPart = _newStageMat,
+            IsExternal = _newStageExternal,
+            YieldPercent = 100,
+        };
+        await Service.AddStageAsync(_addStageForPartId, stage, _currentUser);
+        _showAddStageModal = false;
+        await ReloadStudyAsync();
+    }
+
+    private async Task AddStageFromCatalogAsync(int stageId)
+    {
+        await Service.AddStageFromCatalogAsync(_addStageForPartId, stageId, _currentUser);
+        _showAddStageModal = false;
+        await ReloadStudyAsync();
+    }
+
+    private async Task DeleteStageAsync(int stageId)
+    {
+        await Service.DeleteStageAsync(stageId, _currentUser);
+        await ReloadStudyAsync();
+    }
+
+    private async Task MoveStageUp(CostStudyPart p, CostStudyStage s)
+    {
+        var ordered = p.Stages.OrderBy(x => x.DisplayOrder).ToList();
+        var idx = ordered.FindIndex(x => x.Id == s.Id);
+        if (idx <= 0) return;
+        (ordered[idx], ordered[idx - 1]) = (ordered[idx - 1], ordered[idx]);
+        await Service.ReorderStagesAsync(p.Id, ordered.Select(x => x.Id).ToList(), _currentUser);
+        await ReloadStudyAsync();
+    }
+
+    private async Task MoveStageDown(CostStudyPart p, CostStudyStage s)
+    {
+        var ordered = p.Stages.OrderBy(x => x.DisplayOrder).ToList();
+        var idx = ordered.FindIndex(x => x.Id == s.Id);
+        if (idx < 0 || idx >= ordered.Count - 1) return;
+        (ordered[idx], ordered[idx + 1]) = (ordered[idx + 1], ordered[idx]);
+        await Service.ReorderStagesAsync(p.Id, ordered.Select(x => x.Id).ToList(), _currentUser);
+        await ReloadStudyAsync();
+    }
+
+    // ── Export ──
+    private async Task ExportCsv()
+    {
+        if (_study is null) return;
+        var csv = Service.GenerateCsv(_study);
+        var name = $"cost-study-{_study.StudyNumber}.csv";
+        await JS.InvokeVoidAsync("downloadCsv", name, csv);
+    }
+
+    private void OpenReport()
+    {
+        if (_study is null) return;
+        Nav.NavigateTo($"cost-studies/{_study.Id}/report");
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "Final" => "badge-success",
+        "Archived" => "badge-muted",
+        _ => "badge-warning",
+    };
+
+    private void GoBack() => Nav.NavigateTo("cost-studies");
+}

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vectrik.Data;
 
@@ -10,9 +11,11 @@ using Vectrik.Data;
 namespace Vectrik.Data.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    partial class TenantDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260422142149_AddCostStudies")]
+    partial class AddCostStudies
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.4");
@@ -490,9 +493,6 @@ namespace Vectrik.Data.Migrations.Tenant
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
-                    b.Property<double>("DefaultVendorMarkupPercent")
-                        .HasColumnType("REAL");
-
                     b.Property<string>("LastModifiedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -509,9 +509,6 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Property<string>("Notes")
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
-
-                    b.Property<double>("PaymentTermsDiscountPercent")
-                        .HasColumnType("REAL");
 
                     b.Property<string>("ProjectName")
                         .HasMaxLength(100)
@@ -545,9 +542,6 @@ namespace Vectrik.Data.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("AmortizeNreAcrossOrder")
-                        .HasColumnType("INTEGER");
-
                     b.Property<decimal>("ConsumablesPerPlate")
                         .HasColumnType("decimal(10,2)");
 
@@ -560,18 +554,6 @@ namespace Vectrik.Data.Migrations.Tenant
 
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("INTEGER");
-
-                    b.Property<decimal>("EngineeringNreCost")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<decimal>("FirstArticleAndCertCost")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<decimal>("FreightCostPerOrder")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<double>("FreightMarkupPercent")
-                        .HasColumnType("REAL");
 
                     b.Property<bool>("IsAdditive")
                         .HasColumnType("INTEGER");
@@ -604,12 +586,6 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Property<int>("OrderQuantity")
                         .HasColumnType("INTEGER");
 
-                    b.Property<decimal>("PackagingCostPerOrder")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<decimal>("PackagingCostPerPart")
-                        .HasColumnType("decimal(10,2)");
-
                     b.Property<int?>("PartId")
                         .HasColumnType("INTEGER");
 
@@ -624,14 +600,8 @@ namespace Vectrik.Data.Migrations.Tenant
                     b.Property<double>("PlateBuildHours")
                         .HasColumnType("REAL");
 
-                    b.Property<decimal?>("SalesPriceOverridePerPart")
-                        .HasColumnType("decimal(10,2)");
-
                     b.Property<int>("StackLevel")
                         .HasColumnType("INTEGER");
-
-                    b.Property<decimal>("ToolingNreCost")
-                        .HasColumnType("decimal(10,2)");
 
                     b.Property<decimal>("WeightPerPartKg")
                         .HasColumnType("decimal(10,4)");

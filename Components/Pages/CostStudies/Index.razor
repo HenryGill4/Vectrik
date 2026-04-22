@@ -1,0 +1,225 @@
+@page "/cost-studies"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ICostStudyService Service
+@inject NavigationManager Nav
+@inject ToastService Toast
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using Vectrik.Models
+
+<PageTitle>Cost Studies - Vectrik</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @{ _currentUser = context.User.FindFirst("FullName")?.Value ?? context.User.FindFirst(ClaimTypes.Name)?.Value ?? "System"; }
+    </Authorized>
+</AuthorizeView>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Cost Studies</h1>
+        <div class="page-subtitle">Price-model hypothetical parts, sweep stage costs, and export a report for management.</div>
+    </div>
+    <div class="page-actions">
+        <select class="form-control" style="width:140px;display:inline-block" @bind="_statusFilter" @bind:after="LoadAsync">
+            <option value="">All Statuses</option>
+            <option value="Draft">Draft</option>
+            <option value="Final">Final</option>
+            <option value="Archived">Archived</option>
+        </select>
+        <input type="text" class="form-control" style="width:220px;display:inline-block;margin-left:0.5rem"
+               placeholder="Search name, customer…" @bind="_search" @bind:event="oninput" @onkeydown="OnKey" />
+        <button class="btn btn-secondary" style="margin-left:0.5rem" @onclick="LoadAsync">Apply</button>
+        <button class="btn btn-primary" style="margin-left:0.5rem" @onclick="ShowNew">+ New Study</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span> Loading…</div>
+}
+else if (_rows.Count == 0)
+{
+    <div class="card empty-state">
+        <div class="empty-state-icon">📋</div>
+        <h3>No cost studies yet</h3>
+        <p>Create a study to price out a new part, a quote-in-progress, or a "what if we used this process?" scenario.</p>
+        <button class="btn btn-primary" @onclick="ShowNew">+ Create First Study</button>
+    </div>
+}
+else
+{
+    <div class="kpi-grid" style="margin-bottom:1rem">
+        <div class="kpi-card">
+            <div class="kpi-label">Total Studies</div>
+            <div class="kpi-value">@_rows.Count</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Draft</div>
+            <div class="kpi-value" style="color:var(--warning)">@_rows.Count(r => r.Status == "Draft")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Final</div>
+            <div class="kpi-value" style="color:var(--success)">@_rows.Count(r => r.Status == "Final")</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Total Parts Modeled</div>
+            <div class="kpi-value">@_rows.Sum(r => r.Parts.Count)</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <table class="data-table cost-study-table">
+            <thead>
+                <tr>
+                    <th>Study #</th>
+                    <th>Name</th>
+                    <th>Customer / Project</th>
+                    <th>Parts</th>
+                    <th>Status</th>
+                    <th>Modified</th>
+                    <th style="text-align:right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in _rows)
+                {
+                    <tr>
+                        <td><strong>@s.StudyNumber</strong></td>
+                        <td>
+                            <a href="cost-studies/@s.Id" class="cost-study-link">@s.Name</a>
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(s.CustomerName))
+                            { <div>@s.CustomerName</div> }
+                            @if (!string.IsNullOrWhiteSpace(s.ProjectName))
+                            { <div class="muted-small">@s.ProjectName</div> }
+                        </td>
+                        <td>@s.Parts.Count</td>
+                        <td><span class="badge @StatusBadge(s.Status)">@s.Status</span></td>
+                        <td class="muted-small">@s.LastModifiedDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td style="text-align:right; white-space:nowrap">
+                            <button class="btn btn-sm btn-secondary" title="Open" @onclick="() => Open(s.Id)">Open</button>
+                            <button class="btn btn-sm btn-secondary" title="Duplicate" @onclick="() => Duplicate(s)">Duplicate</button>
+                            <button class="btn btn-sm btn-danger" title="Delete" @onclick="() => ConfirmDelete(s)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showNewModal)
+{
+    <div class="modal-overlay" @onclick="CloseNew">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width: 560px;">
+            <div class="modal-header">
+                <h3>New Cost Study</h3>
+                <button class="modal-close" @onclick="CloseNew">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Study Name <span style="color:var(--danger)">*</span></label>
+                    <input class="form-control" @bind="_newStudy.Name" placeholder="e.g. Acme Titanium Bracket — Initial Pricing" />
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div class="form-group">
+                        <label class="form-label">Customer</label>
+                        <input class="form-control" @bind="_newStudy.CustomerName" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Project</label>
+                        <input class="form-control" @bind="_newStudy.ProjectName" />
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                    <div class="form-group">
+                        <label class="form-label">Target Margin %</label>
+                        <input class="form-control" type="number" step="0.5" min="0" @bind="_newStudy.TargetMarginPercent" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Contingency %</label>
+                        <input class="form-control" type="number" step="0.5" min="0" @bind="_newStudy.ContingencyPercent" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">G&amp;A Overhead %</label>
+                        <input class="form-control" type="number" step="0.5" min="0" @bind="_newStudy.AdminOverheadPercent" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Notes</label>
+                    <textarea class="form-control" rows="3" @bind="_newStudy.Notes"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseNew">Cancel</button>
+                <button class="btn btn-primary" @onclick="CreateAsync" disabled="@string.IsNullOrWhiteSpace(_newStudy.Name)">Create &amp; Open</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<CostStudy> _rows = new();
+    private bool _loading = true;
+    private string _statusFilter = "";
+    private string _search = "";
+    private string _currentUser = "System";
+
+    private bool _showNewModal;
+    private CostStudy _newStudy = new();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _rows = await Service.GetAllAsync(string.IsNullOrEmpty(_statusFilter) ? null : _statusFilter, _search); }
+        finally { _loading = false; }
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadAsync();
+    }
+
+    private void Open(int id) => Nav.NavigateTo($"cost-studies/{id}");
+
+    private void ShowNew()
+    {
+        _newStudy = new CostStudy { Name = "", TargetMarginPercent = 30, ContingencyPercent = 5, AdminOverheadPercent = 0 };
+        _showNewModal = true;
+    }
+    private void CloseNew() => _showNewModal = false;
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newStudy.Name)) return;
+        var created = await Service.CreateAsync(_newStudy, _currentUser);
+        Toast.ShowSuccess($"Created study {created.StudyNumber}.");
+        _showNewModal = false;
+        Nav.NavigateTo($"cost-studies/{created.Id}");
+    }
+
+    private async Task Duplicate(CostStudy s)
+    {
+        var copy = await Service.DuplicateAsync(s.Id, $"{s.Name} (Copy)", _currentUser);
+        Toast.ShowSuccess($"Duplicated as {copy.StudyNumber}.");
+        Nav.NavigateTo($"cost-studies/{copy.Id}");
+    }
+
+    private async Task ConfirmDelete(CostStudy s)
+    {
+        await Service.DeleteAsync(s.Id);
+        Toast.ShowInfo($"Deleted {s.StudyNumber}.");
+        await LoadAsync();
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "Final" => "badge-success",
+        "Archived" => "badge-muted",
+        _ => "badge-warning",
+    };
+}
