@@ -177,6 +177,11 @@ public class TenantDbContext : DbContext
     public DbSet<DispatchConfiguration> DispatchConfigurations { get; set; }
     public DbSet<SchedulingWeights> SchedulingWeights { get; set; }
 
+    // Cost Studies
+    public DbSet<CostStudy> CostStudies { get; set; }
+    public DbSet<CostStudyPart> CostStudyParts { get; set; }
+    public DbSet<CostStudyStage> CostStudyStages { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -1332,6 +1337,44 @@ public class TenantDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.WorkOrderLineId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Cost Studies ─────────────────────────────────────────
+
+        modelBuilder.Entity<CostStudy>(entity =>
+        {
+            entity.HasIndex(e => e.StudyNumber);
+            entity.HasIndex(e => e.Status);
+        });
+
+        modelBuilder.Entity<CostStudyPart>(entity =>
+        {
+            entity.HasOne(e => e.CostStudy)
+                .WithMany(e => e.Parts)
+                .HasForeignKey(e => e.CostStudyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Part)
+                .WithMany()
+                .HasForeignKey(e => e.PartId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Material)
+                .WithMany()
+                .HasForeignKey(e => e.MaterialId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => e.CostStudyId);
+        });
+
+        modelBuilder.Entity<CostStudyStage>(entity =>
+        {
+            entity.HasOne(e => e.CostStudyPart)
+                .WithMany(e => e.Stages)
+                .HasForeignKey(e => e.CostStudyPartId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ProductionStage)
+                .WithMany()
+                .HasForeignKey(e => e.ProductionStageId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => e.CostStudyPartId);
         });
     }
 }

@@ -108,6 +108,7 @@ builder.Services.AddScoped<IBatchService, BatchService>();
 builder.Services.AddScoped<IMachineProgramService, MachineProgramService>();
 builder.Services.AddScoped<IStageCostService, StageCostService>();
 builder.Services.AddScoped<IPartPricingService, PartPricingService>();
+builder.Services.AddScoped<ICostStudyService, CostStudyService>();
 
 // Customization Foundation (Stage 0.5)
 builder.Services.AddScoped<ITenantFeatureService, TenantFeatureService>();

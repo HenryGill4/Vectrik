@@ -1,0 +1,345 @@
+@page "/cost-studies/{StudyId:int}/report"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ICostStudyService Service
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using Vectrik.Models
+
+<PageTitle>Cost Study Report — @(_study?.Name ?? "") - Vectrik</PageTitle>
+
+<HeadContent>
+    <style>
+        @@media print {
+            .sidebar, .app-header, .no-print, nav, .vectrik-topbar, .topbar, .tab-manager { display: none !important; }
+            body, .main-content, .page-wrapper { background: white !important; color: black !important; }
+            .cost-report, .cost-report * { color: #111 !important; }
+            .cost-report { padding: 0 !important; }
+            .cost-report .card, .cost-report .report-section { break-inside: avoid; border: 1px solid #ccc !important; }
+            .cost-report h1, .cost-report h2, .cost-report h3 { color: #111 !important; }
+            .cost-report .report-kpi { background: #f5f5f5 !important; }
+            .cost-report .data-table th { background: #eee !important; color: #111 !important; }
+            .cost-report table { font-size: 9.5pt; }
+        }
+    </style>
+</HeadContent>
+
+@if (_loading)
+{
+    <div class="loading"><span class="spinner"></span></div>
+}
+else if (_study is null)
+{
+    <div class="card"><p>Study not found. <a href="cost-studies">Back</a></p></div>
+}
+else
+{
+    var total = Service.ComputeStudyCost(_study);
+    <div class="cost-report">
+        <div class="no-print report-toolbar">
+            <button class="btn btn-secondary" @onclick="BackToEditor">← Back to Editor</button>
+            <button class="btn btn-primary" @onclick="Print">🖨 Print / Save as PDF</button>
+            <button class="btn btn-secondary" @onclick="ExportCsv">📥 CSV</button>
+        </div>
+
+        @* ── Cover ── *@
+        <div class="report-cover">
+            <div class="report-brand">COST STUDY REPORT</div>
+            <h1 class="report-title">@_study.Name</h1>
+            <div class="report-meta">
+                <div><strong>Study #:</strong> @_study.StudyNumber</div>
+                @if (!string.IsNullOrWhiteSpace(_study.CustomerName))
+                { <div><strong>Customer:</strong> @_study.CustomerName</div> }
+                @if (!string.IsNullOrWhiteSpace(_study.ProjectName))
+                { <div><strong>Project:</strong> @_study.ProjectName</div> }
+                <div><strong>Status:</strong> @_study.Status</div>
+                <div><strong>Generated:</strong> @DateTime.Now.ToString("yyyy-MM-dd HH:mm")</div>
+                <div><strong>Prepared by:</strong> @_study.LastModifiedBy</div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_study.Notes))
+            {
+                <div class="report-notes">
+                    <strong>Notes:</strong>
+                    <div>@_study.Notes</div>
+                </div>
+            }
+        </div>
+
+        @* ── Executive Summary KPIs ── *@
+        <div class="report-section">
+            <h2>Executive Summary</h2>
+            <div class="report-kpi-grid">
+                <div class="report-kpi">
+                    <div class="report-kpi-label">Parts Modeled</div>
+                    <div class="report-kpi-value">@total.Parts.Count</div>
+                </div>
+                <div class="report-kpi">
+                    <div class="report-kpi-label">Total Order Cost</div>
+                    <div class="report-kpi-value">$@total.TotalCost.ToString("N2")</div>
+                </div>
+                <div class="report-kpi">
+                    <div class="report-kpi-label">Suggested Sell</div>
+                    <div class="report-kpi-value">$@total.SuggestedTotal.ToString("N2")</div>
+                </div>
+                <div class="report-kpi">
+                    <div class="report-kpi-label">Gross Margin</div>
+                    <div class="report-kpi-value">$@total.TotalMargin.ToString("N2") (@total.MarginPercent.ToString("F1")%)</div>
+                </div>
+            </div>
+
+            <div class="report-assumptions">
+                <strong>Pricing Assumptions:</strong>
+                Target margin @_study.TargetMarginPercent% ·
+                Contingency @_study.ContingencyPercent% ·
+                G&amp;A overhead @_study.AdminOverheadPercent%
+            </div>
+        </div>
+
+        @* ── Part summary ── *@
+        <div class="report-section">
+            <h2>Part Summary</h2>
+            <table class="data-table report-table">
+                <thead>
+                    <tr>
+                        <th>Part #</th>
+                        <th>Name</th>
+                        <th style="text-align:right">Qty</th>
+                        <th style="text-align:right">Cost / Part</th>
+                        <th style="text-align:right">Sell / Part</th>
+                        <th style="text-align:right">Order Cost</th>
+                        <th style="text-align:right">Suggested Total</th>
+                        <th style="text-align:right">Margin</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in total.Parts)
+                    {
+                        <tr>
+                            <td><strong>@p.PartNumber</strong></td>
+                            <td>@p.Name</td>
+                            <td style="text-align:right">@p.Quantity</td>
+                            <td style="text-align:right">$@p.CostPerPart.ToString("N2")</td>
+                            <td style="text-align:right">
+                                $@p.SalesPricePerPart.ToString("N2")
+                                @if (p.SalesPriceIsOverride)
+                                { <span class="muted-small"> (override)</span> }
+                            </td>
+                            <td style="text-align:right">$@p.TotalOrderCost.ToString("N2")</td>
+                            <td style="text-align:right">$@p.SuggestedOrderPrice.ToString("N2")</td>
+                            <td style="text-align:right">$@p.MarginAmount.ToString("N2") (@p.MarginPercent.ToString("F1")%)</td>
+                        </tr>
+                    }
+                    <tr class="report-total-row">
+                        <td colspan="5"><strong>Study Totals</strong></td>
+                        <td style="text-align:right"><strong>$@total.TotalCost.ToString("N2")</strong></td>
+                        <td style="text-align:right"><strong>$@total.SuggestedTotal.ToString("N2")</strong></td>
+                        <td style="text-align:right"><strong>$@total.TotalMargin.ToString("N2") (@total.MarginPercent.ToString("F1")%)</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        @* ── Per-part breakdown ── *@
+        @foreach (var p in _study.Parts.OrderBy(x => x.DisplayOrder))
+        {
+            var bd = Service.ComputePartCost(_study, p);
+            <div class="report-section part-detail-section">
+                <h2>@p.PartNumber — @p.Name</h2>
+                @if (!string.IsNullOrWhiteSpace(p.Description))
+                {
+                    <div class="report-part-desc">@p.Description</div>
+                }
+
+                <div class="report-part-meta">
+                    <div><strong>Quantity:</strong> @p.OrderQuantity</div>
+                    <div><strong>Material:</strong> @(p.MaterialName ?? "—")</div>
+                    <div><strong>Material $/kg:</strong> $@p.MaterialCostPerKg.ToString("N2")</div>
+                    <div><strong>Weight / Part:</strong> @p.WeightPerPartKg.ToString("F4") kg</div>
+                    <div><strong>Scrap:</strong> @p.MaterialScrapPercent%</div>
+                    @if (p.IsAdditive)
+                    {
+                        <div><strong>Build Time:</strong> @p.PlateBuildHours.ToString("F1") h / plate</div>
+                        <div><strong>Parts / Plate:</strong> @p.PartsPerPlate (stack @p.StackLevel)</div>
+                        <div><strong>Machine $/hr:</strong> $@p.MachineHourlyRate.ToString("N2")</div>
+                        <div><strong>Consumables / Plate:</strong> $@p.ConsumablesPerPlate.ToString("N2")</div>
+                    }
+                    @if (p.EngineeringNreCost + p.ToolingNreCost + p.FirstArticleAndCertCost > 0)
+                    {
+                        <div><strong>Engineering NRE:</strong> $@p.EngineeringNreCost.ToString("N2")</div>
+                        <div><strong>Tooling NRE:</strong> $@p.ToolingNreCost.ToString("N2")</div>
+                        <div><strong>FAI / Certs:</strong> $@p.FirstArticleAndCertCost.ToString("N2")</div>
+                    }
+                    @if (p.PackagingCostPerPart + p.PackagingCostPerOrder > 0)
+                    {
+                        <div><strong>Packaging $/pt:</strong> $@p.PackagingCostPerPart.ToString("N2")</div>
+                        <div><strong>Packaging $/order:</strong> $@p.PackagingCostPerOrder.ToString("N2")</div>
+                    }
+                    @if (p.FreightCostPerOrder > 0)
+                    {
+                        <div><strong>Freight $/order:</strong> $@p.FreightCostPerOrder.ToString("N2") (+@p.FreightMarkupPercent%)</div>
+                    }
+                </div>
+
+                @* Stage table *@
+                <table class="data-table report-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Stage</th>
+                            <th style="text-align:right">Minutes</th>
+                            <th style="text-align:right">Labor + Machine</th>
+                            <th style="text-align:right">Overhead</th>
+                            <th style="text-align:right">Material</th>
+                            <th style="text-align:right">Tooling</th>
+                            <th style="text-align:right">External</th>
+                            <th style="text-align:right">Total</th>
+                            <th style="text-align:right">Cost / Part</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in bd.Stages)
+                        {
+                            <tr>
+                                <td>@(bd.Stages.IndexOf(s) + 1)</td>
+                                <td>
+                                    <strong>@s.StageName</strong>
+                                    @if (!string.IsNullOrEmpty(s.Category))
+                                    { <span class="muted-small"> · @s.Category</span> }
+                                    @if (s.IsExternal)
+                                    { <span class="badge badge-info" style="margin-left:0.3rem">Ext</span> }
+                                </td>
+                                <td style="text-align:right">@s.TotalMinutes.ToString("F0")</td>
+                                <td style="text-align:right">$@s.LaborAndMachineCost.ToString("N2")</td>
+                                <td style="text-align:right">$@s.OverheadCost.ToString("N2")</td>
+                                <td style="text-align:right">$@s.MaterialCost.ToString("N2")</td>
+                                <td style="text-align:right">$@s.ToolingCost.ToString("N2")</td>
+                                <td style="text-align:right">$@s.ExternalCost.ToString("N2")</td>
+                                <td style="text-align:right"><strong>$@s.TotalCost.ToString("N2")</strong></td>
+                                <td style="text-align:right">$@s.CostPerPart.ToString("N2")</td>
+                            </tr>
+                        }
+                        <tr class="report-subtotal-row">
+                            <td colspan="2"><em>SLS Build Share (× @p.OrderQuantity)</em></td>
+                            <td colspan="7" style="text-align:right"></td>
+                            <td style="text-align:right"><em>$@((bd.SlsBuildCostPerPart * p.OrderQuantity).ToString("N2"))</em></td>
+                        </tr>
+                        <tr class="report-subtotal-row">
+                            <td colspan="2"><em>Raw Material (× @p.OrderQuantity)</em></td>
+                            <td colspan="7" style="text-align:right"></td>
+                            <td style="text-align:right"><em>$@((bd.RawMaterialCostPerPart * p.OrderQuantity).ToString("N2"))</em></td>
+                        </tr>
+                        <tr class="report-subtotal-row">
+                            <td colspan="2"><em>Stage Subtotal</em></td>
+                            <td colspan="7" style="text-align:right"></td>
+                            <td style="text-align:right"><em>$@bd.StageCostSubtotal.ToString("N2")</em></td>
+                        </tr>
+                        @if (bd.NreCostTotal > 0)
+                        {
+                            <tr class="report-subtotal-row">
+                                <td colspan="2"><em>Setup / NRE @(bd.NreAmortized ? "(amortized)" : "(billed separately)")</em></td>
+                                <td colspan="7" style="text-align:right"></td>
+                                <td style="text-align:right"><em>$@bd.NreCostTotal.ToString("N2")</em></td>
+                            </tr>
+                        }
+                        @if (bd.PackagingCostTotal > 0)
+                        {
+                            <tr class="report-subtotal-row">
+                                <td colspan="2"><em>Packaging</em></td>
+                                <td colspan="7" style="text-align:right"></td>
+                                <td style="text-align:right"><em>$@bd.PackagingCostTotal.ToString("N2")</em></td>
+                            </tr>
+                        }
+                        @if (bd.FreightCostTotal > 0)
+                        {
+                            <tr class="report-subtotal-row">
+                                <td colspan="2"><em>Freight (+@p.FreightMarkupPercent%)</em></td>
+                                <td colspan="7" style="text-align:right"></td>
+                                <td style="text-align:right"><em>$@bd.FreightCostTotal.ToString("N2")</em></td>
+                            </tr>
+                        }
+                        <tr class="report-subtotal-row">
+                            <td colspan="2">+ Contingency (@_study.ContingencyPercent%)</td>
+                            <td colspan="7" style="text-align:right"></td>
+                            <td style="text-align:right">$@bd.ContingencyAmount.ToString("N2")</td>
+                        </tr>
+                        <tr class="report-subtotal-row">
+                            <td colspan="2">+ G&amp;A (@_study.AdminOverheadPercent%)</td>
+                            <td colspan="7" style="text-align:right"></td>
+                            <td style="text-align:right">$@bd.AdminOverheadAmount.ToString("N2")</td>
+                        </tr>
+                        <tr class="report-total-row">
+                            <td colspan="2"><strong>Total Order Cost</strong></td>
+                            <td colspan="6" style="text-align:right">
+                                <strong>Cost/Part: $@bd.CostPerPart.ToString("N2")</strong>
+                            </td>
+                            <td style="text-align:right"></td>
+                            <td style="text-align:right"><strong>$@bd.TotalOrderCost.ToString("N2")</strong></td>
+                        </tr>
+                        <tr class="report-sell-row">
+                            <td colspan="2">
+                                <strong>Sales Price @(bd.SalesPriceIsOverride ? "(Override)" : $"({_study.TargetMarginPercent}% margin)")</strong>
+                            </td>
+                            <td colspan="6" style="text-align:right">
+                                <strong>Sell/Part: $@bd.SalesPricePerPart.ToString("N2")</strong>
+                            </td>
+                            <td style="text-align:right"></td>
+                            <td style="text-align:right"><strong>$@bd.SuggestedOrderPrice.ToString("N2")</strong></td>
+                        </tr>
+                        @if (_study.PaymentTermsDiscountPercent > 0 && bd.PaymentTermsDiscountAmount > 0)
+                        {
+                            <tr class="report-subtotal-row">
+                                <td colspan="2">− Terms Discount (@_study.PaymentTermsDiscountPercent%)</td>
+                                <td colspan="7" style="text-align:right"></td>
+                                <td style="text-align:right">−$@bd.PaymentTermsDiscountAmount.ToString("N2")</td>
+                            </tr>
+                            <tr class="report-sell-row">
+                                <td colspan="2"><strong>Net Order Price</strong></td>
+                                <td colspan="7" style="text-align:right"></td>
+                                <td style="text-align:right"><strong>$@bd.NetOrderPrice.ToString("N2")</strong></td>
+                            </tr>
+                        }
+                        <tr class="report-subtotal-row">
+                            <td colspan="2"><strong>Gross Margin</strong></td>
+                            <td colspan="7" style="text-align:right"></td>
+                            <td style="text-align:right">
+                                <strong>$@bd.MarginAmount.ToString("N2") (@bd.MarginPercent.ToString("F1")%)</strong>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                @if (!string.IsNullOrWhiteSpace(p.Notes))
+                {
+                    <div class="report-part-notes"><strong>Part Notes:</strong> @p.Notes</div>
+                }
+            </div>
+        }
+
+        <div class="report-footer">
+            <div>Generated by Vectrik · @DateTime.Now.ToString("yyyy-MM-dd HH:mm") · Study @_study.StudyNumber</div>
+            <div class="muted-small">Figures are estimates based on current pricing assumptions and planning data. Final quotes may require engineering review.</div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int StudyId { get; set; }
+
+    private CostStudy? _study;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _study = await Service.GetByIdAsync(StudyId); }
+        finally { _loading = false; }
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("window.print");
+    private void BackToEditor() => Nav.NavigateTo($"cost-studies/{StudyId}");
+
+    private async Task ExportCsv()
+    {
+        if (_study is null) return;
+        var csv = Service.GenerateCsv(_study);
+        await JS.InvokeVoidAsync("downloadCsv", $"cost-study-{_study.StudyNumber}.csv", csv);
+    }
+}
