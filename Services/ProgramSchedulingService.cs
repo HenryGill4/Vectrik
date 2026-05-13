@@ -1323,6 +1323,16 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var changeoverMinutes = machine.AutoChangeoverEnabled ? machine.ChangeoverMinutes : 0;
         var plateCapacity = machine.BuildPlateCapacity;
         var timelineShifts = await GetActiveShiftsAsync();
+
+        // Rule-aware downtime: when "Require Operator for Changeover" is enabled the
+        // machine is effectively idle whenever a changeover falls outside operator
+        // shifts (regardless of chamber capacity), because no new build is allowed
+        // to start without an operator. Without the rule we fall back to the
+        // overflow-based heuristic.
+        var timelineRules = await _ruleService.GetEnabledRulesForMachineAsync(machineId);
+        var requireOperatorForChangeover = timelineRules
+            .Any(r => r.RuleType == SchedulingRuleType.RequireOperatorForChangeover);
+
         var entries = new List<ProgramTimelineEntry>();
         var consecutiveOffShift = 0;
 
@@ -1349,6 +1359,14 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
                 if (changeoverInShift)
                 {
+                    consecutiveOffShift = 0;
+                }
+                else if (requireOperatorForChangeover)
+                {
+                    // Rule forces the machine to wait for operator regardless of chamber.
+                    downtimeStart = changeoverEnd;
+                    var nextShift = ShiftTimeHelper.FindNextShiftStart(changeoverEnd.Value, timelineShifts);
+                    downtimeEnd = (nextShift ?? changeoverEnd).Value.AddMinutes(machine.OperatorUnloadMinutes);
                     consecutiveOffShift = 0;
                 }
                 else
@@ -1530,9 +1548,12 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
         if (targetStart < notBefore) return null;
 
-        // Verify this slot is actually available
+        // Verify this slot is actually available. Tolerance derives from the machine's
+        // own changeover duration — a slot we asked for is "good enough" if it lands
+        // within one changeover window of the requested start (no hardcoded 30 min).
         var verifySlot = await FindEarliestSlotAsync(machineId, durationHours, targetStart);
-        if (Math.Abs((verifySlot.PrintStart - targetStart).TotalMinutes) < 30) // Within 30min tolerance
+        var alignmentToleranceMinutes = Math.Max(changeoverMinutes, 1);
+        if (Math.Abs((verifySlot.PrintStart - targetStart).TotalMinutes) < alignmentToleranceMinutes)
             return verifySlot;
 
         return null;

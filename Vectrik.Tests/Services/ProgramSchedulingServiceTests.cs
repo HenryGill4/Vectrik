@@ -1418,6 +1418,47 @@ public class ProgramSchedulingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetMachineTimeline_RequireOperatorRule_SurfacesDowntimeForOffShiftChangeover()
+    {
+        // Regression: the Gantt downtime indicator used to only fire on chamber
+        // overflow (consecutiveOffShift > plateCapacity). With RequireOperatorForChangeover
+        // enabled the machine is effectively idle on any off-shift changeover even
+        // when the chamber has space, because no new build can start without an
+        // operator. The timeline should populate DowntimeStart/DowntimeEnd so the
+        // Gantt bar renders the red "DOWN Xh" segment.
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+
+        _db.MachineSchedulingRules.Add(new MachineSchedulingRule
+        {
+            MachineId = machine.Id,
+            RuleType = SchedulingRuleType.RequireOperatorForChangeover,
+            Name = "Require Operator for Changeover",
+            IsEnabled = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        // Build ends Mon 22:00 (off-shift by 6 hours). Capacity is 1 so this is a
+        // SINGLE off-shift changeover — historically would not have triggered
+        // downtime under the overflow heuristic.
+        var prog = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 22, "Build");
+        await AddProgramBlockAsync(machine.Id, prog.Id, Mon, Mon.AddHours(22));
+
+        var timeline = await _sut.GetMachineTimelineAsync(machine.Id, Mon, Mon.AddDays(3));
+
+        var entry = Assert.Single(timeline);
+        Assert.NotNull(entry.DowntimeStart);
+        Assert.NotNull(entry.DowntimeEnd);
+
+        // Downtime starts when the auto-changeover ends (Mon 22:30) and ends after
+        // the operator unloads on Tue 08:00 + 90 min = Tue 09:30.
+        Assert.Equal(Mon.AddHours(22).AddMinutes(30), entry.DowntimeStart);
+        Assert.Equal(Mon.AddDays(1).AddHours(8).AddMinutes(90), entry.DowntimeEnd);
+    }
+
+    [Fact]
     public async Task FindEarliestSlot_CompliantSlot_DoesNotSurfaceResolvedBlockedReasons()
     {
         // Regression for the wizard UI showing "🛡 Blocked by..." messages even when
