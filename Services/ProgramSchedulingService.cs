@@ -1142,6 +1142,21 @@ public class ProgramSchedulingService : IProgramSchedulingService
                             {
                                 candidateStart = proposedStart;
                             }
+
+                            // The new build's START is also a changeover (the one that loads
+                            // THIS build's plate). The operator must be on shift then too —
+                            // otherwise the rule's intent is violated by backing the start
+                            // into a weekend or other off-shift window. If the proposed start
+                            // is off-shift, push it forward to the next shift start.
+                            var startChangeoverEnd = candidateStart.AddMinutes(changeoverMinutes);
+                            if (!await IsOperatorAvailableDuringWindowAsync(candidateStart, startChangeoverEnd))
+                            {
+                                var nextShiftForStart = ShiftTimeHelper.FindNextShiftStart(candidateStart, shifts)
+                                    ?? ShiftTimeHelper.SnapToNextShiftStart(candidateStart, shifts);
+                                if (nextShiftForStart < maxSearchHorizon)
+                                    candidateStart = nextShiftForStart;
+                            }
+
                             candidateEnd = isContinuous
                                 ? candidateStart.AddHours(durationHours)
                                 : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);

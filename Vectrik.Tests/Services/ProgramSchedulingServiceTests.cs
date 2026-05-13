@@ -1375,6 +1375,49 @@ public class ProgramSchedulingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FindEarliestSlot_RequireOperatorRule_StartTimeMustAlsoBeInShift()
+    {
+        // Regression for "scheduling for Sunday at 10am, should be Monday at 10am":
+        // Onyx #2 with prior build ending Fri 06:00 (in-shift), 20h follow-up.
+        // The buggy Phase 2 rule-advance computed candidateStart = candidateEnd - 20h
+        // and landed the START on a Sunday (off-shift) even though the END changeover
+        // was correctly aligned with the Monday shift start.
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddShiftAsync("Day", TimeSpan.FromHours(6), TimeSpan.FromHours(18));
+
+        _db.MachineSchedulingRules.Add(new MachineSchedulingRule
+        {
+            MachineId = machine.Id,
+            RuleType = SchedulingRuleType.RequireOperatorForChangeover,
+            Name = "Require Operator for Changeover",
+            IsEnabled = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        // Prior build: Mon..Fri 06:00 (96h). Ends at the start of an operator shift.
+        var fri6am = Mon.AddDays(4).AddHours(6); // Fri 06:00
+        var prior = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 102, "Prior");
+        await AddProgramBlockAsync(machine.Id, prior.Id, Mon, fri6am);
+
+        // Act: request a 20h slot
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, durationHours: 20, fri6am);
+
+        // The start of THIS build is itself a changeover that needs an operator.
+        // Sunday 10:00 AM has no operator on shift, so it's not a valid start —
+        // even though the corresponding end (Mon 06:00) is in-shift. The earliest
+        // legal start is Mon 10:00 (operator on shift) → Tue 06:00 (operator
+        // on shift for the end-changeover).
+        var sun10am = Mon.AddDays(6).AddHours(10);
+        Assert.NotEqual(sun10am, slot.PrintStart);
+
+        // The day-of-week of the start must be Mon-Fri.
+        Assert.NotEqual(DayOfWeek.Saturday, slot.PrintStart.DayOfWeek);
+        Assert.NotEqual(DayOfWeek.Sunday, slot.PrintStart.DayOfWeek);
+    }
+
+    [Fact]
     public async Task FindEarliestSlot_CompliantSlot_DoesNotSurfaceResolvedBlockedReasons()
     {
         // Regression for the wizard UI showing "🛡 Blocked by..." messages even when
