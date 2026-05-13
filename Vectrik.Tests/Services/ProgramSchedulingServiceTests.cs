@@ -1373,4 +1373,44 @@ public class ProgramSchedulingServiceTests : IDisposable
             $"With RequireOperatorForChangeover enabled, slot must start no earlier than "
             + $"Tue 07:30 (operator shift + unload). Got {slot.PrintStart:ddd HH:mm}.");
     }
+
+    [Fact]
+    public async Task FindEarliestSlot_CompliantSlot_DoesNotSurfaceResolvedBlockedReasons()
+    {
+        // Regression for the wizard UI showing "🛡 Blocked by..." messages even when
+        // the slot finder successfully advanced past the conflict. The final returned
+        // slot is rule-compliant; the iteration-history reasons should not leak into
+        // ProgramScheduleSlot.BlockedReasons.
+        //
+        // Setup mirrors the live D&M shop with the night shift deactivated: a 5/14
+        // build ends overnight Sat 04:18, the next operator shift is Mon 06:00, and
+        // the slot finder has to advance Phase 1 (prior unload) AND Phase 2 (new
+        // build's end changeover) before landing on a compliant slot.
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+
+        _db.MachineSchedulingRules.Add(new MachineSchedulingRule
+        {
+            MachineId = machine.Id,
+            RuleType = SchedulingRuleType.RequireOperatorForChangeover,
+            Name = "Require Operator for Changeover",
+            IsEnabled = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        // Prior build ends Mon 22:00 (off-shift by 6 hours), 20h follow-up requested.
+        // The rule loop will (a) push Phase 1's blockEnd to operator unload, then
+        // (b) advance Phase 2 again because the new build's first end-changeover
+        // also lands off-shift. Both conflicts get resolved by iteration.
+        var prior = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 22, "Prior");
+        await AddProgramBlockAsync(machine.Id, prior.Id, Mon, Mon.AddHours(22));
+
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, durationHours: 20, Mon);
+
+        // The slot has to be compliant (start in-shift, end-changeover in-shift),
+        // and BlockedReasons must NOT carry resolved iteration entries forward.
+        Assert.Null(slot.BlockedReasons);
+    }
 }

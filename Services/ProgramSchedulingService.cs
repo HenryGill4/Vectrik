@@ -1220,12 +1220,16 @@ public class ProgramSchedulingService : IProgramSchedulingService
                     }
                 }
 
+                // blockedReasons here is the iteration history — entries describing
+                // candidate slots the rule loop had to advance past. They've all been
+                // resolved by the time we return a compliant slot. Surface them only
+                // on the horizon-fallback path below where the conflicts are unresolved.
                 return new ProgramScheduleSlot(
                     candidateStart, candidateEnd,
                     changeoverStart, changeoverEnd,
                     machineId, operatorAvailable,
                     downtimeStart, downtimeEnd,
-                    blockedReasons.Count > 0 ? blockedReasons : null);
+                    null);
             }
         }
 
