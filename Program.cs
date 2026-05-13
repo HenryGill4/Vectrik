@@ -211,14 +211,9 @@ try
         ).GetAwaiter().GetResult();
     }
 
-    // Ensure all active tenants have seeded data (handles deleted/recreated tenant DBs)
-    foreach (var tenant in platformDb.Tenants.Where(t => t.IsActive).ToList())
-    {
-        var isDemo = tenant.Code == "demo";
-        Task.Run(async () =>
-            await tenantService.SeedTenantDatabaseAsync(tenant.Code, isDemoTenant: isDemo)
-        ).GetAwaiter().GetResult();
-    }
+    // Per-tenant re-seeding is deferred to a background task after startup so
+    // it does not block Azure App Service's ANCM startup timeout (120 s default).
+    // See ApplicationStarted hook below app.Build().
 
     // Seed default feature flags for demo tenant
     if (!platformDb.TenantFeatureFlags.Any(f => f.TenantCode == "demo"))
@@ -265,6 +260,39 @@ catch (Exception ex)
 {
     app.Logger.LogError(ex, "Database seeding failed. App will continue but data may be incomplete.");
 }
+
+// Re-seed active tenants in the background AFTER the host has started serving requests.
+// This work used to block startup and pushed cold starts past Azure's 120 s ANCM timeout.
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var bgScope = app.Services.CreateScope();
+            var bgPlatformDb = bgScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var bgTenantService = bgScope.ServiceProvider.GetRequiredService<ITenantService>();
+            var activeTenants = bgPlatformDb.Tenants.Where(t => t.IsActive).ToList();
+            app.Logger.LogInformation("Background tenant re-seed starting for {Count} tenant(s).", activeTenants.Count);
+            foreach (var tenant in activeTenants)
+            {
+                try
+                {
+                    await bgTenantService.SeedTenantDatabaseAsync(tenant.Code, isDemoTenant: tenant.Code == "demo");
+                    app.Logger.LogInformation("Background re-seed completed for tenant {Code}.", tenant.Code);
+                }
+                catch (Exception perTenantEx)
+                {
+                    app.Logger.LogError(perTenantEx, "Background re-seed failed for tenant {Code}.", tenant.Code);
+                }
+            }
+        }
+        catch (Exception bgEx)
+        {
+            app.Logger.LogError(bgEx, "Background tenant re-seed loop crashed.");
+        }
+    });
+});
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
