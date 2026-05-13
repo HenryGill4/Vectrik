@@ -281,7 +281,13 @@ public enum DispatchStatus
 public enum DispatchType
 {
     Setup, Changeover, Maintenance, BuildPlateLoad, Inspection, Teardown,
-    PlateLayout, PrintStart
+    PlateLayout, PrintStart,
+    /// <summary>
+    /// Operator must remove a finished build's plate from the cooldown chamber so
+    /// the next auto-changeover can complete. Generated when a build with the
+    /// RequireOperatorPlateUnload rule transitions to Completed.
+    /// </summary>
+    PlateUnload
 }
 
 public enum MachineSetupState
@@ -313,5 +319,14 @@ public enum SchedulingRuleType
     /// Block scheduling during specific date ranges (holidays, planned shutdowns).
     /// Uses shared BlackoutPeriod records assigned to the machine via MachineBlackoutAssignment.
     /// </summary>
-    BlackoutPeriod
+    BlackoutPeriod,
+
+    /// <summary>
+    /// Track operator plate removal from the cooldown chamber. When enabled, each
+    /// completed build on this machine generates a PlateUnload dispatch entry; the
+    /// scheduler treats the chamber as full until the operator marks the plate
+    /// removed. If a plate isn't unloaded on time, downstream builds slide forward
+    /// to the next operator shift because the chamber has no free slot.
+    /// </summary>
+    RequireOperatorPlateUnload
 }

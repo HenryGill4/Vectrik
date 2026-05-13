@@ -158,6 +158,7 @@ builder.Services.AddSingleton<IDispatchNotifier, DispatchNotifier>();
 builder.Services.AddScoped<IChangeoverDispatchService, ChangeoverDispatchService>();
 builder.Services.AddScoped<IPlateLayoutDispatchService, PlateLayoutDispatchService>();
 builder.Services.AddScoped<IPrintStartDispatchService, PrintStartDispatchService>();
+builder.Services.AddScoped<IPlateUnloadDispatchService, PlateUnloadDispatchService>();
 builder.Services.AddScoped<IPrintCompletionService, PrintCompletionService>();
 builder.Services.AddScoped<IDispatchScoringService, DispatchScoringService>();
 builder.Services.AddScoped<IDispatchGenerationService, DispatchGenerationService>();

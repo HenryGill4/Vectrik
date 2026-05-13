@@ -15,6 +15,16 @@ namespace Vectrik.Tests.Services;
 // Stubs for Phase 2 tests
 // ══════════════════════════════════════════════════════════════
 
+internal sealed class StubPlateUnloadDispatchService : IPlateUnloadDispatchService
+{
+    public Task<SetupDispatch?> CreatePlateUnloadDispatchAsync(
+        int machineId, int machineProgramId, int? predecessorDispatchId = null)
+        => Task.FromResult<SetupDispatch?>(null);
+
+    public Task<SetupDispatch> CompletePlateUnloadAsync(int dispatchId, int operatorUserId)
+        => throw new NotImplementedException("PrintCompletionService tests don't exercise this path.");
+}
+
 internal sealed class StubDispatchNotifier : IDispatchNotifier
 {
     public List<string> UrgentMessages { get; } = new();
@@ -354,7 +364,7 @@ public class PrintCompletionServiceTests
         var program = DispatchTestFixtures.CreateProgram(db, machine.Id);
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
+        var completionSvc = new PrintCompletionService(db, svc, new StubPlateUnloadDispatchService(), notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         var dispatch = await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
 
         Assert.Equal(DispatchType.Teardown, dispatch.DispatchType);
@@ -373,7 +383,7 @@ public class PrintCompletionServiceTests
     {
         var (db, svc, notifier) = DispatchTestFixtures.CreateDispatchService();
         var tenant = new StubTenantContext();
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
+        var completionSvc = new PrintCompletionService(db, svc, new StubPlateUnloadDispatchService(), notifier, tenant, NullLogger<PrintCompletionService>.Instance);
 
         var checklist = completionSvc.GetDefaultSlsInspectionChecklist();
         Assert.Equal(6, checklist.Count);
@@ -388,7 +398,7 @@ public class PrintCompletionServiceTests
         var program = DispatchTestFixtures.CreateProgram(db, machine.Id);
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
+        var completionSvc = new PrintCompletionService(db, svc, new StubPlateUnloadDispatchService(), notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         var dispatch = await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
 
         // Start the dispatch first
@@ -419,7 +429,7 @@ public class PrintCompletionServiceTests
         var program = DispatchTestFixtures.CreateProgram(db, machine.Id);
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
+        var completionSvc = new PrintCompletionService(db, svc, new StubPlateUnloadDispatchService(), notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         var dispatch = await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
         await svc.StartDispatchAsync(dispatch.Id);
 
@@ -443,7 +453,7 @@ public class PrintCompletionServiceTests
         var program = DispatchTestFixtures.CreateProgram(db, machine.Id);
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
+        var completionSvc = new PrintCompletionService(db, svc, new StubPlateUnloadDispatchService(), notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         var dispatch = await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
         await svc.StartDispatchAsync(dispatch.Id);
 
@@ -465,7 +475,7 @@ public class PrintCompletionServiceTests
         await db.SaveChangesAsync();
         var tenant = new StubTenantContext();
 
-        var completionSvc = new PrintCompletionService(db, svc, notifier, tenant, NullLogger<PrintCompletionService>.Instance);
+        var completionSvc = new PrintCompletionService(db, svc, new StubPlateUnloadDispatchService(), notifier, tenant, NullLogger<PrintCompletionService>.Instance);
         await completionSvc.CreatePrintCompletionDispatchAsync(machine.Id, program.Id);
 
         var updated = await db.MachinePrograms.FindAsync(program.Id);

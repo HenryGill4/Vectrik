@@ -13,6 +13,7 @@ public class PrintCompletionService : IPrintCompletionService
 {
     private readonly TenantDbContext _db;
     private readonly ISetupDispatchService _dispatchService;
+    private readonly IPlateUnloadDispatchService _plateUnloadDispatch;
     private readonly IDispatchNotifier _notifier;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<PrintCompletionService> _logger;
@@ -20,12 +21,14 @@ public class PrintCompletionService : IPrintCompletionService
     public PrintCompletionService(
         TenantDbContext db,
         ISetupDispatchService dispatchService,
+        IPlateUnloadDispatchService plateUnloadDispatch,
         IDispatchNotifier notifier,
         ITenantContext tenantContext,
         ILogger<PrintCompletionService> logger)
     {
         _db = db;
         _dispatchService = dispatchService;
+        _plateUnloadDispatch = plateUnloadDispatch;
         _notifier = notifier;
         _tenantContext = tenantContext;
         _logger = logger;
@@ -141,6 +144,28 @@ public class PrintCompletionService : IPrintCompletionService
                 program.ScheduleStatus = ProgramScheduleStatus.Completed;
                 program.LastModifiedDate = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
+            }
+        }
+
+        // Generate a PlateUnload dispatch so an operator can clear the cooldown
+        // chamber. The service short-circuits when the machine doesn't have the
+        // RequireOperatorPlateUnload rule enabled, so this is always safe to call.
+        if (completed.MachineProgramId.HasValue)
+        {
+            try
+            {
+                await _plateUnloadDispatch.CreatePlateUnloadDispatchAsync(
+                    machineId: completed.MachineId,
+                    machineProgramId: completed.MachineProgramId.Value,
+                    predecessorDispatchId: completed.Id);
+            }
+            catch (Exception ex)
+            {
+                // Don't fail the inspection-complete path if dispatch generation hits
+                // a race — operators can still see the build and unload manually.
+                _logger.LogWarning(ex,
+                    "Failed to generate PlateUnload dispatch for program {ProgramId} on machine {MachineId}",
+                    completed.MachineProgramId, completed.MachineId);
             }
         }
 

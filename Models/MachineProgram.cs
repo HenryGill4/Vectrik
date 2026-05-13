@@ -206,6 +206,15 @@ public class MachineProgram
     public DateTime? PlateReleasedAt { get; set; }
 
     /// <summary>
+    /// When an operator removed this build's plate from the machine's cooldown
+    /// chamber. Set by the PlateUnload dispatch flow on machines with the
+    /// RequireOperatorPlateUnload scheduling rule enabled. While null after print
+    /// completion, the plate is considered to be occupying chamber space and the
+    /// scheduler blocks new builds that would need the slot.
+    /// </summary>
+    public DateTime? PlateUnloadedAt { get; set; }
+
+    /// <summary>
     /// Locks the program for scheduling — prevents part changes once scheduled.
     /// </summary>
     public bool IsLocked { get; set; }

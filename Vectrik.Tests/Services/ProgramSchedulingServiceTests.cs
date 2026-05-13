@@ -1418,6 +1418,56 @@ public class ProgramSchedulingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FindEarliestSlot_PlateUnloadRule_PendingPlatesBlockNewBuildsUntilOperatorShift()
+    {
+        // When RequireOperatorPlateUnload is enabled and a completed build's plate
+        // hasn't been removed from the cooldown chamber, the chamber slot is
+        // genuinely occupied right now — a new build can't start until the
+        // operator's next shift arrives and the unload completes.
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+
+        _db.MachineSchedulingRules.Add(new MachineSchedulingRule
+        {
+            MachineId = machine.Id,
+            RuleType = SchedulingRuleType.RequireOperatorPlateUnload,
+            Name = "Require Operator Plate Unload",
+            IsEnabled = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        });
+
+        // A completed build whose plate is still sitting in the chamber.
+        var pending = new MachineProgram
+        {
+            Name = "Done but not unloaded",
+            ProgramType = ProgramType.BuildPlate,
+            Status = ProgramStatus.Active,
+            MachineId = machine.Id,
+            ScheduledDate = Mon,
+            EstimatedPrintHours = 10,
+            ScheduleStatus = ProgramScheduleStatus.Completed,
+            PrintCompletedAt = Mon.AddHours(10),
+            PlateUnloadedAt = null, // still in the chamber
+            IsLocked = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        };
+        _db.MachinePrograms.Add(pending);
+        await _db.SaveChangesAsync();
+
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, durationHours: 4, Mon.AddHours(10));
+
+        // Default plate capacity is 1 — chamber is full. Next shift after "now"
+        // (which is Mon during shift in this test world) is the current shift,
+        // and unload takes 90 min, so the earliest start is at most 90 minutes
+        // out. The key assertion: the start cannot be at Mon 10:00 — it must
+        // be pushed at least to allow operator unload first.
+        Assert.True(slot.PrintStart > Mon.AddHours(10),
+            $"With a pending unswapped plate, slot must be pushed past the unload window. Got {slot.PrintStart:ddd HH:mm}.");
+    }
+
+    [Fact]
     public async Task GetMachineTimeline_RequireOperatorRule_SurfacesDowntimeForOffShiftChangeover()
     {
         // Regression: the Gantt downtime indicator used to only fire on chamber

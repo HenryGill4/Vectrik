@@ -1000,6 +1000,33 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var enabledRulesForPhase1 = await _ruleService.GetEnabledRulesForMachineAsync(machineId);
         var requireOperatorForChangeover = enabledRulesForPhase1
             .Any(r => r.RuleType == SchedulingRuleType.RequireOperatorForChangeover);
+        var requireOperatorPlateUnload = enabledRulesForPhase1
+            .Any(r => r.RuleType == SchedulingRuleType.RequireOperatorPlateUnload);
+
+        // Current chamber state: completed-but-not-unloaded plates already occupy
+        // slots. If the chamber is full right now, the next build can't start
+        // until enough plates have been unloaded by an operator.
+        if (requireOperatorPlateUnload && plateCapacity > 0)
+        {
+            var pendingUnloads = await _db.MachinePrograms
+                .Where(p => p.MachineId == machineId
+                    && p.PrintCompletedAt != null
+                    && p.PlateUnloadedAt == null
+                    && p.ScheduleStatus != ProgramScheduleStatus.Cancelled)
+                .CountAsync();
+            if (pendingUnloads >= plateCapacity)
+            {
+                var nextShift = ShiftTimeHelper.FindNextShiftStart(DateTime.UtcNow, shifts);
+                var chamberClearsAt = (nextShift ?? DateTime.UtcNow).AddMinutes(operatorUnloadMinutes);
+                if (candidateStart < chamberClearsAt)
+                {
+                    candidateStart = chamberClearsAt;
+                    candidateEnd = isContinuous
+                        ? candidateStart.AddHours(durationHours)
+                        : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
+                }
+            }
+        }
 
         // Track consecutive off-shift changeovers to model cooldown chamber state.
         // With BuildPlateCapacity N, the chamber can hold N builds in cooldown.
