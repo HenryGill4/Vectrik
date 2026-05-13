@@ -995,11 +995,11 @@ public class ProgramSchedulingService : IProgramSchedulingService
             ? candidateStart.AddHours(durationHours)
             : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
 
-        // Resolve scheduling rules up-front so Phase 1 can enforce the prerequisite-
-        // unload constraint when the user requires operator presence for changeovers.
+        // Resolve scheduling rules up-front. Phase 1 stays purely physical (chamber
+        // overflow); the RequireOperatorForChangeover rule is enforced in Phase 2 only
+        // when overflow is imminent. RequireOperatorPlateUnload uses real-time DB
+        // state and pushes the floor forward when the chamber is currently full.
         var enabledRulesForPhase1 = await _ruleService.GetEnabledRulesForMachineAsync(machineId);
-        var requireOperatorForChangeover = enabledRulesForPhase1
-            .Any(r => r.RuleType == SchedulingRuleType.RequireOperatorForChangeover);
         var requireOperatorPlateUnload = enabledRulesForPhase1
             .Any(r => r.RuleType == SchedulingRuleType.RequireOperatorPlateUnload);
 
@@ -1052,31 +1052,26 @@ public class ProgramSchedulingService : IProgramSchedulingService
                     consecutiveOffShiftChangeovers = 0;
                     blockEnd = autoChangeoverEnd;
                 }
-                else if (requireOperatorForChangeover)
-                {
-                    // RequireOperatorForChangeover rule: the prior plate cannot be
-                    // unloaded without an operator, regardless of remaining chamber
-                    // space. The new build must wait until the operator's next shift
-                    // and the unload completes. This prevents starting a new build
-                    // before the previous plate has been removed.
-                    var nextShift = ShiftTimeHelper.FindNextShiftStart(block.End, shifts);
-                    blockEnd = (nextShift ?? autoChangeoverEnd).AddMinutes(operatorUnloadMinutes);
-                    consecutiveOffShiftChangeovers = 0; // operator empties chamber on arrival
-                }
                 else
                 {
+                    // Off-shift changeover: plate goes into the cooldown chamber. As long
+                    // as the chamber has room (cumulative off-shift changeovers since the
+                    // last in-shift one ≤ BuildPlateCapacity), the next auto-changeover
+                    // can still run and the next build can start. Only when the chamber
+                    // would actually overflow does the machine go DOWN until the operator
+                    // returns and empties it. This matches the physical behavior:
+                    // multiple back-to-back auto-changeovers are fine; a lapse in operator
+                    // coverage only matters once the chamber fills.
                     consecutiveOffShiftChangeovers++;
 
                     if (consecutiveOffShiftChangeovers > plateCapacity)
                     {
-                        // Chamber overflow — machine DOWN until operator arrives and unloads
                         var nextShift = ShiftTimeHelper.FindNextShiftStart(block.End, shifts);
                         blockEnd = (nextShift ?? autoChangeoverEnd).AddMinutes(operatorUnloadMinutes);
                         consecutiveOffShiftChangeovers = 0; // operator empties everything on arrival
                     }
                     else
                     {
-                        // Chamber has space — auto-changeover works, just add swap time
                         blockEnd = autoChangeoverEnd;
                     }
                 }
@@ -1138,10 +1133,17 @@ public class ProgramSchedulingService : IProgramSchedulingService
                 switch (rule.RuleType)
                 {
                     case SchedulingRuleType.RequireOperatorForChangeover:
-                        if (!operatorAvailable && changeoverMinutes > 0)
+                        // The rule only fires when the new build's end would actually
+                        // overflow the cooldown chamber with no operator present. Multiple
+                        // off-shift changeovers are fine as long as the chamber has space
+                        // (capacity ≥ consecutiveCount + 1). Only the (capacity + 1)-th
+                        // off-shift end is a hard block — that's the one with nowhere to
+                        // put the plate, which is what physically stops the machine.
+                        if (!operatorAvailable && changeoverMinutes > 0 && plateCapacity > 0
+                            && consecutiveCount + 1 > plateCapacity)
                         {
-                            // HARD BLOCK: No operator for changeover — advance to next shift start
-                            var reason = $"Blocked by \"{rule.Name}\": changeover at {changeoverStart:MMM dd HH:mm} has no operator on shift";
+                            // HARD BLOCK: chamber would overflow — advance to next shift start
+                            var reason = $"Blocked by \"{rule.Name}\": changeover at {changeoverStart:MMM dd HH:mm} would overflow the cooldown chamber (capacity {plateCapacity}, would be #{consecutiveCount + 1} consecutive off-shift)";
                             if (!blockedReasons.Contains(reason)) blockedReasons.Add(reason);
                             _logger.LogInformation("Scheduling rule block: {Reason} on machine {MachineId}", reason, machineId);
 
@@ -1351,15 +1353,6 @@ public class ProgramSchedulingService : IProgramSchedulingService
         var plateCapacity = machine.BuildPlateCapacity;
         var timelineShifts = await GetActiveShiftsAsync();
 
-        // Rule-aware downtime: when "Require Operator for Changeover" is enabled the
-        // machine is effectively idle whenever a changeover falls outside operator
-        // shifts (regardless of chamber capacity), because no new build is allowed
-        // to start without an operator. Without the rule we fall back to the
-        // overflow-based heuristic.
-        var timelineRules = await _ruleService.GetEnabledRulesForMachineAsync(machineId);
-        var requireOperatorForChangeover = timelineRules
-            .Any(r => r.RuleType == SchedulingRuleType.RequireOperatorForChangeover);
-
         var entries = new List<ProgramTimelineEntry>();
         var consecutiveOffShift = 0;
 
@@ -1386,14 +1379,6 @@ public class ProgramSchedulingService : IProgramSchedulingService
 
                 if (changeoverInShift)
                 {
-                    consecutiveOffShift = 0;
-                }
-                else if (requireOperatorForChangeover)
-                {
-                    // Rule forces the machine to wait for operator regardless of chamber.
-                    downtimeStart = changeoverEnd;
-                    var nextShift = ShiftTimeHelper.FindNextShiftStart(changeoverEnd.Value, timelineShifts);
-                    downtimeEnd = (nextShift ?? changeoverEnd).Value.AddMinutes(machine.OperatorUnloadMinutes);
                     consecutiveOffShift = 0;
                 }
                 else

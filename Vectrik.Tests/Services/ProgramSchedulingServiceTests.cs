@@ -1336,11 +1336,16 @@ public class ProgramSchedulingServiceTests : IDisposable
     // ══════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task FindEarliestSlot_RequireOperatorRule_StartsAfterPriorUnloadCompletes()
+    public async Task FindEarliestSlot_RequireOperatorRule_BlocksOnlyWhenChamberWouldOverflow()
     {
-        // Arrange: long 06:00-22:00 shift so we can isolate the prior-unload constraint
-        // without the new build's end-changeover also tripping the rule.
+        // The RequireOperatorForChangeover rule fires when, and ONLY when, the new
+        // build's off-shift end would overflow the cooldown chamber. A single off-
+        // shift changeover with chamber room is fine — multiple back-to-back auto-
+        // changeovers are expected to happen overnight, the chamber holds plates
+        // until the operator returns. Only the build that would push the count
+        // past BuildPlateCapacity must wait for an operator shift.
         var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        // Long shift 06:00-22:00 so the new build's end-changeover is the deciding factor.
         await AddShiftAsync("Day", TimeSpan.FromHours(6), TimeSpan.FromHours(22));
 
         _db.MachineSchedulingRules.Add(new MachineSchedulingRule
@@ -1354,24 +1359,67 @@ public class ProgramSchedulingServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        // Prior 23h build runs Mon 00:00 → Mon 23:00. Build ends one hour after
-        // the operator's shift ended at 22:00. The plate sits in the cooldown
-        // chamber overnight; the operator can only unload it after arriving Tue 06:00.
+        // Prior 23h build runs Mon 00:00 → Mon 23:00 (ends one hour off-shift, chamber
+        // count = 1 = capacity). A second build whose end is ALSO off-shift would
+        // push the count to 2 — that's the overflow the rule must block.
         var prior = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 23, "Prior");
         await AddProgramBlockAsync(machine.Id, prior.Id, Mon, Mon.AddHours(23));
 
-        // Act: request a 6h slot starting no earlier than Mon 00:00 — it has to
-        // be scheduled AFTER the prior block since notBefore overlaps it.
+        // Act: request a 6h slot. The physical floor is Mon 23:30 (auto-changeover
+        // end). 6h from there is Tue 05:30 — off-shift. consecutiveCount + 1 = 2 >
+        // capacity 1 → overflow → rule advances the end to the next shift start
+        // (Tue 06:00), so the start moves backward into Mon late evening, but the
+        // start-in-shift guard then pushes it forward to Tue 06:00.
         var slot = await _sut.FindEarliestSlotAsync(machine.Id, durationHours: 6, Mon);
 
-        // Assert: new build CANNOT start before operator arrives + unload completes.
-        // Operator shift starts Tue 06:00. With 90 min unload, the earliest a new
-        // build can start is Tue 07:30. The buggy code returns slot starting Mon 23:30
-        // (auto-changeover only, ignoring operator presence requirement).
-        var earliestValidStart = Mon.AddDays(1).AddHours(6).AddMinutes(90); // Tue 07:30
-        Assert.True(slot.PrintStart >= earliestValidStart,
-            $"With RequireOperatorForChangeover enabled, slot must start no earlier than "
-            + $"Tue 07:30 (operator shift + unload). Got {slot.PrintStart:ddd HH:mm}.");
+        // The build must START in operator shift on a weekday so the changeover
+        // that loads its plate has a human present, and END in shift so the
+        // chamber doesn't overflow.
+        Assert.NotEqual(DayOfWeek.Saturday, slot.PrintStart.DayOfWeek);
+        Assert.NotEqual(DayOfWeek.Sunday, slot.PrintStart.DayOfWeek);
+        Assert.True(slot.PrintStart.TimeOfDay >= TimeSpan.FromHours(6)
+                    && slot.PrintStart.TimeOfDay < TimeSpan.FromHours(22),
+            $"Start must be in operator shift 06:00-22:00. Got {slot.PrintStart:ddd HH:mm}.");
+        Assert.True(slot.PrintEnd.TimeOfDay >= TimeSpan.FromHours(6)
+                    && slot.PrintEnd.TimeOfDay < TimeSpan.FromHours(22),
+            $"End must be in operator shift so the chamber doesn't overflow. Got {slot.PrintEnd:ddd HH:mm}.");
+    }
+
+    [Fact]
+    public async Task FindEarliestSlot_RequireOperatorRule_SingleOffShiftEnd_IsAllowed()
+    {
+        // Companion to the overflow test: with capacity=2 and only one off-shift
+        // prior plate, the rule must NOT block a second off-shift end — the chamber
+        // still has room. This is the "auto-change during the day, lapse fills the
+        // chamber" pattern the user described.
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        machine.BuildPlateCapacity = 2;
+        await _db.SaveChangesAsync();
+        await AddShiftAsync("Day", TimeSpan.FromHours(6), TimeSpan.FromHours(22));
+
+        _db.MachineSchedulingRules.Add(new MachineSchedulingRule
+        {
+            MachineId = machine.Id,
+            RuleType = SchedulingRuleType.RequireOperatorForChangeover,
+            Name = "Require Operator for Changeover",
+            IsEnabled = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        var prior = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 23, "Prior");
+        await AddProgramBlockAsync(machine.Id, prior.Id, Mon, Mon.AddHours(23));
+
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, durationHours: 6, Mon);
+
+        // 1 plate in chamber + 1 new build's plate = 2 = capacity → no overflow.
+        // Slot can land just after the prior auto-changeover. Start-in-shift check
+        // still pushes the start into the next operator shift since Mon 23:30 is
+        // off-shift, but we should NOT have to wait for chamber clearance.
+        Assert.True(slot.PrintStart < Mon.AddDays(2),
+            $"With chamber room (capacity 2), slot should not be delayed past the next operator shift. "
+            + $"Got {slot.PrintStart:ddd HH:mm}.");
     }
 
     [Fact]
@@ -1468,44 +1516,36 @@ public class ProgramSchedulingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetMachineTimeline_RequireOperatorRule_SurfacesDowntimeForOffShiftChangeover()
+    public async Task GetMachineTimeline_DowntimeFiresOnlyOnChamberOverflow()
     {
-        // Regression: the Gantt downtime indicator used to only fire on chamber
-        // overflow (consecutiveOffShift > plateCapacity). With RequireOperatorForChangeover
-        // enabled the machine is effectively idle on any off-shift changeover even
-        // when the chamber has space, because no new build can start without an
-        // operator. The timeline should populate DowntimeStart/DowntimeEnd so the
-        // Gantt bar renders the red "DOWN Xh" segment.
+        // Downtime on the Gantt represents the machine being physically stopped
+        // because the cooldown chamber is full. A single off-shift changeover is
+        // not downtime — the chamber holds the plate. Only the (capacity + 1)-th
+        // consecutive off-shift changeover marks the machine DOWN until the
+        // operator arrives. This test pins that semantic in place against a future
+        // regression that would surface stray downtime on every off-shift build.
         var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
-        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00
+        await AddDayShiftAsync(); // Mon-Fri 08:00-16:00 (capacity defaults to 1)
 
-        _db.MachineSchedulingRules.Add(new MachineSchedulingRule
-        {
-            MachineId = machine.Id,
-            RuleType = SchedulingRuleType.RequireOperatorForChangeover,
-            Name = "Require Operator for Changeover",
-            IsEnabled = true,
-            CreatedBy = "test",
-            LastModifiedBy = "test"
-        });
-        await _db.SaveChangesAsync();
+        // Single off-shift build: should NOT have downtime even with the rule on.
+        var single = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 22, "Single");
+        await AddProgramBlockAsync(machine.Id, single.Id, Mon, Mon.AddHours(22));
 
-        // Build ends Mon 22:00 (off-shift by 6 hours). Capacity is 1 so this is a
-        // SINGLE off-shift changeover — historically would not have triggered
-        // downtime under the overflow heuristic.
-        var prog = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 22, "Build");
-        await AddProgramBlockAsync(machine.Id, prog.Id, Mon, Mon.AddHours(22));
+        var t1 = await _sut.GetMachineTimelineAsync(machine.Id, Mon, Mon.AddDays(3));
+        var first = Assert.Single(t1);
+        Assert.Null(first.DowntimeStart);
+        Assert.Null(first.DowntimeEnd);
 
-        var timeline = await _sut.GetMachineTimelineAsync(machine.Id, Mon, Mon.AddDays(3));
+        // Add a second consecutive off-shift build. Now the chamber overflows at
+        // the second changeover and downtime should fire on that entry.
+        var second = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon.AddHours(22.5), 22, "Second");
+        await AddProgramBlockAsync(machine.Id, second.Id, Mon.AddHours(22.5), Mon.AddHours(44.5));
 
-        var entry = Assert.Single(timeline);
-        Assert.NotNull(entry.DowntimeStart);
-        Assert.NotNull(entry.DowntimeEnd);
-
-        // Downtime starts when the auto-changeover ends (Mon 22:30) and ends after
-        // the operator unloads on Tue 08:00 + 90 min = Tue 09:30.
-        Assert.Equal(Mon.AddHours(22).AddMinutes(30), entry.DowntimeStart);
-        Assert.Equal(Mon.AddDays(1).AddHours(8).AddMinutes(90), entry.DowntimeEnd);
+        var t2 = await _sut.GetMachineTimelineAsync(machine.Id, Mon, Mon.AddDays(4));
+        Assert.Equal(2, t2.Count);
+        var overflowing = t2[1];
+        Assert.NotNull(overflowing.DowntimeStart);
+        Assert.NotNull(overflowing.DowntimeEnd);
     }
 
     [Fact]
