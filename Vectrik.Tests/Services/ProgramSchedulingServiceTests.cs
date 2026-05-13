@@ -1328,4 +1328,49 @@ public class ProgramSchedulingServiceTests : IDisposable
         Assert.NotNull(analysis.DowntimeHours);
         Assert.True(analysis.DowntimeHours > 0);
     }
+
+    // ══════════════════════════════════════════════════════════
+    // RequireOperatorForChangeover — covers the prerequisite-unload constraint
+    // (regression for 2026-05-13 bug: new build starting before prior plate
+    //  could have been unloaded by an operator)
+    // ══════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FindEarliestSlot_RequireOperatorRule_StartsAfterPriorUnloadCompletes()
+    {
+        // Arrange: long 06:00-22:00 shift so we can isolate the prior-unload constraint
+        // without the new build's end-changeover also tripping the rule.
+        var machine = await AddSlsMachineAsync(changeoverMinutes: 30, operatorUnloadMinutes: 90);
+        await AddShiftAsync("Day", TimeSpan.FromHours(6), TimeSpan.FromHours(22));
+
+        _db.MachineSchedulingRules.Add(new MachineSchedulingRule
+        {
+            MachineId = machine.Id,
+            RuleType = SchedulingRuleType.RequireOperatorForChangeover,
+            Name = "Require Operator for Changeover",
+            IsEnabled = true,
+            CreatedBy = "test",
+            LastModifiedBy = "test"
+        });
+        await _db.SaveChangesAsync();
+
+        // Prior 23h build runs Mon 00:00 → Mon 23:00. Build ends one hour after
+        // the operator's shift ended at 22:00. The plate sits in the cooldown
+        // chamber overnight; the operator can only unload it after arriving Tue 06:00.
+        var prior = await AddScheduledBuildPlateProgramAsync(machine.Id, Mon, 23, "Prior");
+        await AddProgramBlockAsync(machine.Id, prior.Id, Mon, Mon.AddHours(23));
+
+        // Act: request a 6h slot starting no earlier than Mon 00:00 — it has to
+        // be scheduled AFTER the prior block since notBefore overlaps it.
+        var slot = await _sut.FindEarliestSlotAsync(machine.Id, durationHours: 6, Mon);
+
+        // Assert: new build CANNOT start before operator arrives + unload completes.
+        // Operator shift starts Tue 06:00. With 90 min unload, the earliest a new
+        // build can start is Tue 07:30. The buggy code returns slot starting Mon 23:30
+        // (auto-changeover only, ignoring operator presence requirement).
+        var earliestValidStart = Mon.AddDays(1).AddHours(6).AddMinutes(90); // Tue 07:30
+        Assert.True(slot.PrintStart >= earliestValidStart,
+            $"With RequireOperatorForChangeover enabled, slot must start no earlier than "
+            + $"Tue 07:30 (operator shift + unload). Got {slot.PrintStart:ddd HH:mm}.");
+    }
 }

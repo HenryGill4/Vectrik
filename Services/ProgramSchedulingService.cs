@@ -995,6 +995,12 @@ public class ProgramSchedulingService : IProgramSchedulingService
             ? candidateStart.AddHours(durationHours)
             : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
 
+        // Resolve scheduling rules up-front so Phase 1 can enforce the prerequisite-
+        // unload constraint when the user requires operator presence for changeovers.
+        var enabledRulesForPhase1 = await _ruleService.GetEnabledRulesForMachineAsync(machineId);
+        var requireOperatorForChangeover = enabledRulesForPhase1
+            .Any(r => r.RuleType == SchedulingRuleType.RequireOperatorForChangeover);
+
         // Track consecutive off-shift changeovers to model cooldown chamber state.
         // With BuildPlateCapacity N, the chamber can hold N builds in cooldown.
         // The operator empties the chamber when they arrive at the start of their shift.
@@ -1018,6 +1024,17 @@ public class ProgramSchedulingService : IProgramSchedulingService
                     // Operator present during changeover → they empty the chamber → reset counter
                     consecutiveOffShiftChangeovers = 0;
                     blockEnd = autoChangeoverEnd;
+                }
+                else if (requireOperatorForChangeover)
+                {
+                    // RequireOperatorForChangeover rule: the prior plate cannot be
+                    // unloaded without an operator, regardless of remaining chamber
+                    // space. The new build must wait until the operator's next shift
+                    // and the unload completes. This prevents starting a new build
+                    // before the previous plate has been removed.
+                    var nextShift = ShiftTimeHelper.FindNextShiftStart(block.End, shifts);
+                    blockEnd = (nextShift ?? autoChangeoverEnd).AddMinutes(operatorUnloadMinutes);
+                    consecutiveOffShiftChangeovers = 0; // operator empties chamber on arrival
                 }
                 else
                 {
@@ -1055,9 +1072,17 @@ public class ProgramSchedulingService : IProgramSchedulingService
         // After finding the physical slot, validate against all enabled
         // machine scheduling rules. If any rule blocks, advance the slot
         // and re-validate until we find a compliant slot or hit the search horizon.
-        var enabledRules = await _ruleService.GetEnabledRulesForMachineAsync(machineId);
+        var enabledRules = enabledRulesForPhase1;
         var maxSearchHorizon = candidateStart.AddDays(14); // Safety limit
         var blockedReasons = new List<string>();
+
+        // Floor for any rule-driven advancement: a candidate start can never
+        // regress earlier than (a) the original notBefore, or (b) the end of the
+        // last existing block. Both are no-go zones the physical pass already
+        // cleared. Without this floor the RequireOperatorForChangeover advance
+        // path can land the new build before the prior build has even ended.
+        var lastBlockEnd = blocks.Count > 0 ? blocks[^1].End.AddMinutes(changeoverMinutes) : DateTime.MinValue;
+        var earliestAllowedStart = candidateStart;
 
         while (candidateStart < maxSearchHorizon)
         {
@@ -1101,11 +1126,22 @@ public class ProgramSchedulingService : IProgramSchedulingService
                             }
 
                             // Recalculate: the build must END during a shift so the changeover has an operator.
-                            // Work backward from next shift start to find when the build should start.
+                            // Work backward from next shift start to find when the build should start —
+                            // but never regress earlier than the physical floor (notBefore or last block end).
                             candidateEnd = nextShift.Value; // changeover starts at shift start
-                            candidateStart = isContinuous
-                                ? candidateEnd.AddHours(-durationHours)
-                                : candidateEnd.AddHours(-durationHours); // simplified for continuous machines
+                            var proposedStart = candidateEnd.AddHours(-durationHours);
+                            var floor = lastBlockEnd > earliestAllowedStart ? lastBlockEnd : earliestAllowedStart;
+                            if (proposedStart < floor)
+                            {
+                                // Pull the build forward instead of backward: start at the floor,
+                                // and let candidateEnd land wherever the duration takes us. The
+                                // next iteration will re-check the end changeover under the rule.
+                                candidateStart = floor;
+                            }
+                            else
+                            {
+                                candidateStart = proposedStart;
+                            }
                             candidateEnd = isContinuous
                                 ? candidateStart.AddHours(durationHours)
                                 : ShiftTimeHelper.AdvanceByWorkHours(candidateStart, durationHours, shifts);
